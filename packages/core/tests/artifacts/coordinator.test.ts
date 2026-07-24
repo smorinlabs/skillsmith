@@ -8,6 +8,7 @@ import {
   readdir,
   rename,
   rm,
+  stat,
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -23,6 +24,7 @@ import {
   authenticateArtifactGroupLeaseScaffold,
   commitArtifactPair,
   commitArtifactPairWithLease,
+  commitRetainedArtifactPairWithLease,
   prepareArtifactGroupLeaseScaffold,
   readCoordinatedArtifactPair,
   recoverArtifactPair,
@@ -147,6 +149,69 @@ const interruptedHumanRecovery = async (cursor: 'prepared' | 'staging') => {
 };
 
 describe('artifact coordinator', () => {
+  test('restores exact retained manifest and lock bytes with their original modes', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-coordinator-retained-restore-'));
+    roots.push(root);
+    const base = await createTestNodeArtifactCoordinatorPorts(join(root, 'coordination'));
+    const manifestPath = join(root, 'custom.toml');
+    const lockPath = join(root, 'custom.lock');
+    const pair = Object.freeze({
+      ...pairFor(manifestPath, lockPath),
+      lockfileSource: 'explicit' as const,
+    });
+    const oldManifest = 'version = 1\n\n# retained trivia\nskills = []\n';
+    const newManifest = 'version = 1\nskills = []\n';
+    const lockFor = (source: string) => {
+      const parsed = readManifestSource(source);
+      if (!parsed.ok) throw new Error('retained manifest fixture is invalid');
+      const normalized = normalizeManifestDocument(parsed.value);
+      if (!normalized.ok) throw new Error('retained manifest fixture is invalid');
+      const serialized = serializePortableLock({
+        version: 1,
+        hashSchemaVersion: 1,
+        manifestHash: hashManifestSemantics(normalized.value),
+        skills: [],
+      });
+      if (!serialized.ok) throw new Error('retained lock fixture is invalid');
+      return serialized.value;
+    };
+    const oldLock = lockFor(oldManifest);
+    const newLock = lockFor(newManifest);
+    await Promise.all([
+      writeFile(manifestPath, newManifest, { mode: 0o600 }),
+      writeFile(lockPath, newLock, { mode: 0o604 }),
+    ]);
+    await chmod(lockPath, 0o604);
+
+    await withArtifactGroupLock(base, pair, undefined, async (lease) => {
+      await lease.acquireCompatibilityTargets([manifestPath, lockPath]);
+      expect(
+        await commitRetainedArtifactPairWithLease(lease, {
+          kind: 'retained-preimage',
+          pair,
+          role: 'manifest',
+          bytes: new TextEncoder().encode(oldManifest),
+          mode: 0o640,
+        }),
+      ).toMatchObject({ ok: true, value: { outcome: 'committed' } });
+      expect(
+        await commitRetainedArtifactPairWithLease(lease, {
+          kind: 'retained-preimage',
+          pair,
+          role: 'lock',
+          bytes: new TextEncoder().encode(oldLock),
+          mode: 0o600,
+        }),
+      ).toMatchObject({ ok: true, value: { outcome: 'committed' } });
+    });
+
+    expect(await readFile(manifestPath, 'utf8')).toBe(oldManifest);
+    expect(await readFile(lockPath, 'utf8')).toBe(oldLock);
+    expect((await stat(manifestPath)).mode & 0o7777).toBe(0o640);
+    expect((await stat(lockPath)).mode & 0o7777).toBe(0o600);
+    expect(await base.recovery.discover()).toEqual([]);
+  });
+
   test('commits sequential manifest and lock mutations under one genuine exact-pair lease', async () => {
     const root = await mkdtemp(join(tmpdir(), 'skillsmith-coordinator-lease-sequential-'));
     roots.push(root);

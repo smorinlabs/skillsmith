@@ -21,7 +21,7 @@ import type { RelevantCapabilityQueryV1 } from '../agents/capabilities.ts';
 import { classifyPlacement } from '../agents/placement-shared.ts';
 import { FLIP_TOOLS, type PlacementToolId, toolRegistry } from '../agents/registry.ts';
 import type { ArtifactCoordinatorPorts } from '../artifacts/coordinator-types.ts';
-import { hashCanonicalInput } from '../artifacts/hash.ts';
+import { type ArtifactDigest, hashCanonicalInput } from '../artifacts/hash.ts';
 import { normalizeSourceIdentity } from '../artifacts/identity.ts';
 import type { LedgerModel } from '../artifacts/ledger-types.ts';
 import type { PortableLockV1 } from '../artifacts/lock.ts';
@@ -38,6 +38,7 @@ import { validateExecutionPreconditions } from '../execution/index.ts';
 import type { ValidatedExecutionBinding } from '../execution/types.ts';
 import type { ObservationBundle } from '../observation/types.ts';
 import {
+  type PlacementExecutionInput,
   createPlacementExecutionInput,
   createPlacementSwapRequest,
   executePlacementPlanObserved,
@@ -750,7 +751,66 @@ const executePhysicalPlacement = async (
   if (!state.ok)
     return physicalOperationResult(operation, binding, { ok: false, error: state.error });
   const ledger = ledgerModelForMutation(state.value, runtime.ports.wallNowIso());
-  const input = createAcquireExecutionInput(
+  const currentPair =
+    operation.skill === null || operation.tool === null
+      ? null
+      : getLedgerPairAt(ledger, liveProjectKey(operation.before), operation.skill, operation.tool);
+  const beforeHash = operation.before.kind === 'placement' ? operation.before.contentHash : null;
+  const updateArtifactBackedRepair =
+    operation.kind === 'repair' &&
+    ledger.history.some(
+      (journal) =>
+        journal.phase === 'committed' &&
+        journal.disposition === 'forward' &&
+        journal.intent.groupId === operation.groupId &&
+        journal.intent.pairId === null &&
+        (journal.intent.kind === 'write-manifest' || journal.intent.kind === 'write-lock') &&
+        journal.context.command === 'update' &&
+        journal.context.workflow === 'update-artifact-history',
+    );
+  let retainedPlacementBefore: PlacementExecutionInput['retainedPlacementBefore'];
+  let logicalPlacementBefore: PlacementExecutionInput['logicalPlacementBefore'];
+  if (
+    (operation.kind === 'update' || updateArtifactBackedRepair) &&
+    operation.pairId !== null &&
+    beforeHash !== null &&
+    currentPair?.pinned !== null &&
+    currentPair?.pinned !== undefined
+  ) {
+    const observedRetained = await exactContentHash(runtime.ports, currentPair.pinned.storePath);
+    if (observedRetained === beforeHash) {
+      retainedPlacementBefore = Object.freeze({
+        resourceId: operation.pairId,
+        role: 'store' as const,
+        path: currentPair.pinned.storePath,
+        repositoryRevision: {
+          kind: 'resource' as const,
+          digest: beforeHash as ArtifactDigest,
+        },
+        contentHash: beforeHash as ArtifactDigest,
+        retainUntil: null,
+      });
+      const origin = currentPair.origin;
+      if (origin !== undefined && operation.before.kind === 'placement') {
+        logicalPlacementBefore = Object.freeze({
+          ...operation.before,
+          source: Object.freeze({
+            kind: 'portable' as const,
+            identity: Object.freeze({
+              host: origin.host,
+              repository: origin.repo,
+              path: origin.skillPath.length === 0 ? null : origin.skillPath,
+            }),
+            requestedRef: origin.refRequested,
+            resolvedSha: origin.refResolved,
+            sourcePath: origin.skillPath,
+            contentHash: beforeHash,
+          }),
+        });
+      }
+    }
+  }
+  const baseInput = createAcquireExecutionInput(
     runtime.ports,
     ledgerPath,
     ledger,
@@ -758,6 +818,14 @@ const executePhysicalPlacement = async (
     { ...(runtime.signal === undefined ? {} : { signal: runtime.signal }) },
     operation,
   );
+  const input =
+    retainedPlacementBefore === undefined
+      ? baseInput
+      : Object.freeze({
+          ...baseInput,
+          retainedPlacementBefore,
+          ...(logicalPlacementBefore === undefined ? {} : { logicalPlacementBefore }),
+        });
   if (operation.skill !== null && exactPendingPlacementOperation(ledger, operation)) {
     const resumed = await recoverPlacementWithObservation(
       input,

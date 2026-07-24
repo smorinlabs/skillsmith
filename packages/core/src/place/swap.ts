@@ -259,6 +259,7 @@ const liveActual = (
   image: OperationImage,
   pair: PairRecord,
   fallbackState: 'absent' | 'present',
+  preferPairContentHash = false,
 ): JournalResourceActualV1Dto => {
   if (image.kind === 'absent') {
     return {
@@ -274,9 +275,10 @@ const liveActual = (
     };
   }
   if (image.kind === 'placement') {
-    const digest = (image.contentHash ??
-      image.source?.contentHash ??
-      ZERO_DIGEST) as ArtifactDigest;
+    const contentHash = (
+      preferPairContentHash ? (pair.pinned?.contentHash ?? image.contentHash) : image.contentHash
+    ) as ArtifactDigest | null;
+    const digest = (contentHash ?? image.source?.contentHash ?? ZERO_DIGEST) as ArtifactDigest;
     return {
       resourceId: 'live:placement',
       role: 'live',
@@ -286,7 +288,7 @@ const liveActual = (
       liveKind: image.representation === 'symlink' ? 'symlink' : 'directory',
       mode: image.classification === 'dev' ? 'dev' : 'pinned',
       symlinkTarget: image.linkTarget?.kind === 'machine-bound' ? image.linkTarget.path : null,
-      contentHash: image.contentHash as ArtifactDigest | null,
+      contentHash,
     };
   }
   return fallbackState === 'absent'
@@ -393,12 +395,16 @@ const forwardPlacementRetention = (
   operation: ExecutableOperation,
   pair: PairRecord,
   shadow: Journal,
+  retainedOverride?: SwapCtx['retainedPlacementBefore'],
 ): Readonly<{
   reversibility: LogicalJournalV1Dto['intent']['reversibility'];
   retained: LogicalJournalV1Dto['actual']['retained'];
 }> => {
+  const updateReplacement =
+    operation.kind === 'update' || (operation.kind === 'repair' && retainedOverride !== undefined);
   const reversibleFamily =
     operation.kind === 'install' ||
+    updateReplacement ||
     operation.kind === 'remove' ||
     operation.kind === 'link-dev' ||
     operation.kind === 'promote';
@@ -411,7 +417,20 @@ const forwardPlacementRetention = (
   ) {
     return { reversibility: { kind: 'none', retentionResourceIds: [] }, retained: [] };
   }
-  const retained = retainedPlacementBefore(operation, pair, shadow);
+  const derived = retainedPlacementBefore(operation, pair, shadow);
+  const beforeHash = operation.before.kind === 'placement' ? operation.before.contentHash : null;
+  const retained =
+    derived ??
+    (updateReplacement &&
+    retainedOverride !== undefined &&
+    retainedOverride.resourceId === operation.pairId &&
+    beforeHash !== null &&
+    retainedOverride.contentHash === beforeHash &&
+    retainedOverride.repositoryRevision.kind === 'resource' &&
+    retainedOverride.repositoryRevision.digest === beforeHash &&
+    retainedOverride.retainUntil === null
+      ? retainedOverride
+      : null);
   return {
     reversibility: { kind: 'conditional', retentionResourceIds: [operation.pairId] },
     retained: retained === null ? [] : [retained],
@@ -426,8 +445,23 @@ const logicalJournalFor = (
     readonly before: ArtifactDigest;
     readonly after: ArtifactDigest;
   }>,
+  retainedPlacementBefore?: SwapCtx['retainedPlacementBefore'],
+  logicalPlacementBefore?: SwapCtx['logicalPlacementBefore'],
 ): LogicalJournalV1Dto => {
   const visible = shadow.phase === 'live' || shadow.phase === 'committed';
+  const updateReplacement =
+    operation.kind === 'update' ||
+    (operation.kind === 'repair' && retainedPlacementBefore !== undefined);
+  const beforeImage =
+    updateReplacement &&
+    operation.before.kind === 'placement' &&
+    logicalPlacementBefore !== undefined &&
+    logicalPlacementBefore.source?.kind === 'portable' &&
+    logicalPlacementBefore.source.contentHash === logicalPlacementBefore.contentHash &&
+    canonicalPlanningString({ ...logicalPlacementBefore, source: operation.before.source }) ===
+      canonicalPlanningString(operation.before)
+      ? logicalPlacementBefore
+      : operation.before;
   const imageSource = operation.after.kind === 'placement' ? operation.after.source : null;
   const source =
     operation.kind === 'promote' && operation.source?.kind !== 'portable'
@@ -483,7 +517,7 @@ const logicalJournalFor = (
   });
   const ledgerBefore = ledgerActual(ledgerRevisions?.before ?? ZERO_DIGEST);
   const ledgerAfter = ledgerActual(ledgerRevisions?.after ?? ZERO_DIGEST);
-  const retention = forwardPlacementRetention(operation, pair, shadow);
+  const retention = forwardPlacementRetention(operation, pair, shadow, retainedPlacementBefore);
   return {
     schemaVersion: 1,
     kind: 'skillsmith.transaction-journal',
@@ -497,7 +531,7 @@ const logicalJournalFor = (
       source: source as unknown as LogicalJournalV1Dto['intent']['source'],
       tool: operation.tool,
       scope: operation.scope,
-      before: operation.before as unknown as LogicalJournalV1Dto['intent']['before'],
+      before: beforeImage as unknown as LogicalJournalV1Dto['intent']['before'],
       after: afterImage as unknown as LogicalJournalV1Dto['intent']['after'],
       mutates: operation.mutates,
       reversibility: retention.reversibility,
@@ -513,9 +547,12 @@ const logicalJournalFor = (
     disposition: 'forward',
     phase: shadow.phase,
     actual: {
-      before: [liveActual(operation.before, pair, 'absent'), ledgerBefore],
+      before: [liveActual(beforeImage, pair, 'absent'), ledgerBefore],
       after: visible
-        ? [liveActual(afterImage as OperationImage, pair, 'present'), ledgerAfter]
+        ? [
+            liveActual(afterImage as OperationImage, pair, 'present', updateReplacement),
+            ledgerAfter,
+          ]
         : [],
       retained: retention.retained,
     },
@@ -619,6 +656,8 @@ const commitRecordOnlyLogicalTransactionInternal = async (
         completedAt,
       },
       { before: beforeRevision.value, after: afterRevision.value },
+      ctx.retainedPlacementBefore,
+      ctx.logicalPlacementBefore,
     );
     const validation = validateJournalV1DtoShape(committed);
     if (!validation.ok) {
@@ -1500,7 +1539,14 @@ const persistPair = async (
     }
   }
   if (operation !== undefined && pair.journal != null) {
-    const freshJournal = logicalJournalFor(operation, pair, pair.journal);
+    const freshJournal = logicalJournalFor(
+      operation,
+      pair,
+      pair.journal,
+      undefined,
+      ctx.retainedPlacementBefore,
+      ctx.logicalPlacementBefore,
+    );
     const persistedPending = model.transactions[freshJournal.transactionId];
     let observedAfter = freshJournal.actual.after;
     if (
@@ -1901,9 +1947,14 @@ const buildStaging = async (
       if (!plan.promote) return err(genericError('promote plan missing promote payload'));
       await env.copyTree(plan.promote.storePath, j.stagingPath);
       await fsyncTree(env, j.stagingPath);
-      const h = await contentHashOf(env, j.stagingPath);
-      if (!h.ok) return h;
-      if (h.value !== plan.promote.contentHash) {
+      const matches = await contentMatchesAnyHash(
+        env,
+        j.stagingPath,
+        [plan.promote.contentHash],
+        true,
+      );
+      if (!matches.ok) return matches;
+      if (!matches.value) {
         return err(
           flipFailedError(
             `staging hash mismatch for ${plan.skill}: expected ${plan.promote.contentHash}`,
@@ -2558,12 +2609,16 @@ const stagePair = (
   }
   // promote / dev — mode stays the before-mode until P5 (P12 shape, unchanged).
   const mode = before.mode === 'dev' ? 'dev' : 'pinned';
+  const origin =
+    plan.op === 'promote' && plan.promote?.origin !== undefined
+      ? plan.promote.origin
+      : (existing?.origin ?? null);
   return ok({
     placementPath: plan.placementPath,
     mode,
     dev: plan.op === 'promote' ? (plan.promote?.devRecord ?? null) : (plan.dev?.devRecord ?? null),
     pinned: plan.op === 'promote' ? (plan.promote?.pinned ?? null) : (existing?.pinned ?? null),
-    ...(existing?.origin ? { origin: existing.origin } : {}),
+    ...(origin === null ? {} : { origin }),
     journal,
   });
 };
@@ -2634,6 +2689,7 @@ const runSwapInternal = async (
       transactionId: txId,
       operationId: operation.operationId,
       groupId: operation.groupId,
+      pairId: operation.pairId,
       command: 'skillsmith-undo',
       workflow: 'undo',
       startedAt: journal.startedAt,
@@ -2697,7 +2753,7 @@ const machineProjectRoot = (operation: ExecutableOperation): string | null => {
 
 const exactFreshRetainedAuthority = (
   parent: LogicalJournalV1Dto,
-  pairId: string,
+  retentionResourceId: string,
   path: string,
   contentHash: string,
 ): Extract<
@@ -2707,10 +2763,10 @@ const exactFreshRetainedAuthority = (
   const retained = parent.actual.retained[0];
   return parent.intent.reversibility.kind === 'conditional' &&
     parent.intent.reversibility.retentionResourceIds.length === 1 &&
-    parent.intent.reversibility.retentionResourceIds[0] === pairId &&
+    parent.intent.reversibility.retentionResourceIds[0] === retentionResourceId &&
     parent.actual.retained.length === 1 &&
     retained?.role === 'store' &&
-    retained.resourceId === pairId &&
+    retained.resourceId === retentionResourceId &&
     retained.path === path &&
     retained.contentHash === contentHash &&
     retained.repositoryRevision.kind === 'resource' &&
@@ -2718,6 +2774,46 @@ const exactFreshRetainedAuthority = (
     retained.retainUntil === null
     ? retained
     : null;
+};
+
+const freshReversalCurrentMatchesParent = (
+  operation: ExecutableOperation,
+  parent: LogicalJournalV1Dto,
+): boolean => {
+  if (canonicalPlanningString(operation.before) === canonicalPlanningString(parent.intent.after)) {
+    return true;
+  }
+  const current = operation.before;
+  const recorded = parent.intent.after;
+  if (
+    (parent.intent.kind !== 'update' && parent.intent.kind !== 'repair') ||
+    current.kind !== 'placement' ||
+    recorded.kind !== 'placement'
+  ) {
+    return false;
+  }
+  const lives = parent.actual.after.filter((resource) => resource.role === 'live');
+  const live = lives[0];
+  if (
+    lives.length !== 1 ||
+    live === undefined ||
+    live.state !== 'present' ||
+    live.contentHash === null ||
+    live.contentHash !== current.contentHash ||
+    current.resource.location.kind !== 'machine-bound' ||
+    current.resource.location.path !== live.placementPath
+  ) {
+    return false;
+  }
+  const normalizedCurrent = {
+    ...current,
+    contentHash: recorded.contentHash,
+    source:
+      current.source?.kind === 'portable' && recorded.source?.kind === 'portable'
+        ? { ...current.source, contentHash: recorded.source.contentHash }
+        : current.source,
+  };
+  return canonicalPlanningString(normalizedCurrent) === canonicalPlanningString(recorded);
 };
 
 const freshReversalPlan = (
@@ -2737,7 +2833,7 @@ const freshReversalPlan = (
     operation.tool === null ||
     operation.scope === null ||
     operation.pairId === null ||
-    canonicalPlanningString(operation.before) !== canonicalPlanningString(parent.intent.after) ||
+    !freshReversalCurrentMatchesParent(operation, parent) ||
     canonicalPlanningString(operation.after) !== canonicalPlanningString(parent.intent.before)
   ) {
     return err(flipFailedError('fresh placement reversal authority is inconsistent'));
@@ -2763,6 +2859,11 @@ const freshReversalPlan = (
   );
   const desired = operation.after;
   const current = operation.before;
+  const retentionResourceId =
+    operation.reversibility.kind === 'conditional' &&
+    operation.reversibility.retentionResourceIds.length === 1
+      ? operation.reversibility.retentionResourceIds[0]
+      : undefined;
   if (desired.kind === 'absent') {
     return pair === null ||
       parent.actual.retained.length !== 0 ||
@@ -2786,8 +2887,9 @@ const freshReversalPlan = (
       return err(flipFailedError('fresh development reversal source is invalid'));
     }
     if (
-      exactFreshRetainedAuthority(parent, operation.pairId, source.path, source.contentHash) ===
-      null
+      retentionResourceId === undefined ||
+      exactFreshRetainedAuthority(parent, retentionResourceId, source.path, source.contentHash) ===
+        null
     ) {
       return err(flipFailedError('fresh development reversal retained authority is invalid'));
     }
@@ -2818,10 +2920,12 @@ const freshReversalPlan = (
       ? null
       : exactFreshRetainedAuthority(
           parent,
-          operation.pairId,
+          retentionResourceId ?? '',
           parent.actual.retained[0]?.path ?? '',
           desired.contentHash,
         );
+  const terminalLives = parent.actual.before.filter((resource) => resource.role === 'live');
+  const terminalLive = terminalLives[0];
   if (
     (desired.classification !== 'pinned' && desired.classification !== 'store-linked') ||
     (desired.representation !== 'copy' && desired.representation !== 'symlink') ||
@@ -2833,6 +2937,11 @@ const freshReversalPlan = (
     retained.repositoryRevision.kind !== 'resource' ||
     retained.repositoryRevision.digest !== desired.contentHash ||
     retained.retainUntil !== null ||
+    terminalLives.length !== 1 ||
+    terminalLive === undefined ||
+    terminalLive.state !== 'present' ||
+    terminalLive.contentHash === null ||
+    terminalLive.placementPath !== path ||
     (desired.representation === 'copy'
       ? desired.linkTarget !== null
       : desired.linkTarget?.kind !== 'machine-bound' || desired.linkTarget.path !== retained.path)
@@ -2844,7 +2953,7 @@ const freshReversalPlan = (
     rev: source.resolvedSha.slice(0, 12),
     gitSha: source.resolvedSha,
     dirty: false,
-    contentHash: source.contentHash,
+    contentHash: terminalLive.contentHash,
     snapshotAt: parent.completedAt ?? parent.updatedAt,
     verify: 'passed' as const,
     placement: desired.representation,
@@ -2870,14 +2979,34 @@ const freshReversalPlan = (
       install: {
         build: desired.representation,
         storePath: retained.path,
-        contentHash: source.contentHash,
+        contentHash: terminalLive.contentHash,
         pinned,
         origin,
         adoptedDev: null,
       },
     });
   }
-  if (current.kind !== 'placement' || pair === null || pair.dev === null) {
+  const recordedCurrent = parent.intent.after;
+  const currentLives = parent.actual.after.filter((resource) => resource.role === 'live');
+  const currentLive = currentLives[0];
+  if (
+    current.kind !== 'placement' ||
+    recordedCurrent.kind !== 'placement' ||
+    (recordedCurrent.classification !== 'pinned' &&
+      recordedCurrent.classification !== 'store-linked') ||
+    (recordedCurrent.representation !== 'copy' && recordedCurrent.representation !== 'symlink') ||
+    recordedCurrent.contentHash === null ||
+    pair === null ||
+    pair.mode !== 'pinned' ||
+    pair.pinned == null ||
+    currentLives.length !== 1 ||
+    currentLive === undefined ||
+    currentLive.state !== 'present' ||
+    currentLive.contentHash === null ||
+    (pair.pinned.contentHash !== current.contentHash &&
+      pair.pinned.contentHash !== currentLive.contentHash) ||
+    pair.pinned.placement !== recordedCurrent.representation
+  ) {
     return err(flipFailedError('fresh promotion reversal pair authority is invalid'));
   }
   return ok({
@@ -2885,9 +3014,10 @@ const freshReversalPlan = (
     op: 'promote',
     promote: {
       storePath: retained.path,
-      contentHash: source.contentHash,
+      contentHash: terminalLive.contentHash,
       pinned,
       devRecord: pair.dev,
+      origin,
     },
   });
 };
@@ -3352,7 +3482,9 @@ const canonicalAcquireJournal = (
   if (journal?.phase !== 'committed' || journal.disposition !== 'forward') return null;
   const acquisitionKindMatches =
     (shadow.op === 'install' &&
-      (journal.intent.kind === 'install' || journal.intent.kind === 'update')) ||
+      (journal.intent.kind === 'install' ||
+        journal.intent.kind === 'update' ||
+        journal.intent.kind === 'repair')) ||
     (shadow.op === 'uninstall' && journal.intent.kind === 'remove');
   return acquisitionKindMatches && legacyJournalMatchesLogicalShadow(journal, identity, pair)
     ? journal

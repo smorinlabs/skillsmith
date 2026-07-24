@@ -17,6 +17,11 @@ import {
   readManifestArtifact,
 } from '../artifacts/repository.ts';
 import {
+  decodeRetainedArtifactPreimageV1,
+  retainedArtifactJournalAuthorityV1,
+} from '../artifacts/retained-preimage-codec.ts';
+import {
+  hashSourceContentV1,
   projectSourceContent,
   serializeSourceContentProjection,
 } from '../artifacts/source-content.ts';
@@ -58,6 +63,7 @@ import {
   planStatusRetention,
 } from './join.ts';
 import type {
+  StatusArtifactRetentionObservation,
   StatusBrokenReason,
   StatusLifecycleHistoryReadRequest,
   StatusLifecycleHistoryReadResult,
@@ -904,6 +910,7 @@ const observedDigest = (result: ReturnType<typeof hashCanonicalInput>): string |
 
 type RetainedContentKind =
   | 'source-content'
+  | 'source-content-v1'
   | 'manifest-bytes'
   | 'lock-canonical'
   | 'resource-bytes'
@@ -921,8 +928,13 @@ const logicalRetainedContentKind = (
     role: 'backup' | 'store';
     sourceRole: 'live' | 'manifest' | 'lock' | 'ledger' | null;
   }>,
+  operation: string,
 ): Exclude<RetainedContentKind, null> => {
-  if (retained.role === 'store' || retained.sourceRole === 'live') return 'source-content';
+  if (retained.role === 'store' || retained.sourceRole === 'live') {
+    return operation === 'update' || operation === 'repair'
+      ? 'source-content-v1'
+      : 'source-content';
+  }
   if (retained.sourceRole === 'manifest') return 'manifest-bytes';
   if (retained.sourceRole === 'lock') return 'lock-canonical';
   return 'resource-bytes';
@@ -961,6 +973,17 @@ const hashRetainedSourceContent = async (
   const result = await contentHashOf(focused, path);
   if (tracker.cancelled(signal)) throw CANCELLED;
   return result.ok ? result.value : null;
+};
+
+const hashRetainedSourceContentV1 = async (
+  ports: StatusReadPorts,
+  path: string,
+  signal?: AbortSignal,
+): Promise<string | null> => {
+  const projected = await projectRetainedSourceContent(ports, path, signal);
+  if (!projected.ok) return null;
+  const hashed = hashSourceContentV1(projected.value);
+  return hashed.ok ? hashed.value : null;
 };
 
 const observeRetainedPhysical = async (
@@ -1013,10 +1036,16 @@ const observeRetainedPhysical = async (
           hashCanonicalInput('resource', 1, JSON.stringify(['symlink', linkTarget])),
         );
       }
-      if (needs.contentKind === 'source-content' && needs.followSourceSymlink) {
+      if (
+        (needs.contentKind === 'source-content' || needs.contentKind === 'source-content-v1') &&
+        needs.followSourceSymlink
+      ) {
         try {
           const resolved = await ports.realpath(path);
-          sourceDigest = await hashRetainedSourceContent(ports, resolved, signal);
+          sourceDigest =
+            needs.contentKind === 'source-content-v1'
+              ? await hashRetainedSourceContentV1(ports, resolved, signal)
+              : await hashRetainedSourceContent(ports, resolved, signal);
         } catch (error) {
           if (error === CANCELLED || isStatusReadCancellation(error, signal)) {
             throw CANCELLED;
@@ -1025,9 +1054,16 @@ const observeRetainedPhysical = async (
         }
       }
     } else if (metadata.kind === 'dir') {
-      if (needs.repositoryKind === 'resource' || needs.contentKind === 'source-content') {
-        if (needs.contentKind === 'source-content') {
-          sourceDigest = await hashRetainedSourceContent(ports, path, signal);
+      if (
+        needs.repositoryKind === 'resource' ||
+        needs.contentKind === 'source-content' ||
+        needs.contentKind === 'source-content-v1'
+      ) {
+        if (needs.contentKind === 'source-content' || needs.contentKind === 'source-content-v1') {
+          sourceDigest =
+            needs.contentKind === 'source-content-v1'
+              ? await hashRetainedSourceContentV1(ports, path, signal)
+              : await hashRetainedSourceContent(ports, path, signal);
         } else {
           const projection = await projectRetainedSourceContent(ports, path, signal);
           if (projection.ok && needs.repositoryKind === 'resource') {
@@ -1041,7 +1077,7 @@ const observeRetainedPhysical = async (
     }
     if (
       needs.repositoryKind === 'resource' &&
-      needs.contentKind === 'source-content' &&
+      (needs.contentKind === 'source-content' || needs.contentKind === 'source-content-v1') &&
       sourceDigest !== null
     ) {
       repositoryDigest = sourceDigest;
@@ -1049,7 +1085,7 @@ const observeRetainedPhysical = async (
     if (isStatusReadCancelled(signal)) throw CANCELLED;
 
     let contentDigest: string | null = null;
-    if (needs.contentKind === 'source-content') {
+    if (needs.contentKind === 'source-content' || needs.contentKind === 'source-content-v1') {
       contentDigest = sourceDigest;
     } else if (needs.contentKind === 'manifest-bytes' && bytes !== null) {
       contentDigest = hashManifestBytes(bytes);
@@ -1109,10 +1145,13 @@ const observeRetention = async (
             resourceId: retained.resourceId,
             path: retained.path,
             repositoryKind: retained.repositoryRevision.kind,
-            contentKind: logicalRetainedContentKind({
-              role: retained.role,
-              sourceRole: retained.role === 'store' ? null : retained.sourceRole,
-            }),
+            contentKind: logicalRetainedContentKind(
+              {
+                role: retained.role,
+                sourceRole: retained.role === 'store' ? null : retained.sourceRole,
+              },
+              plan.journal.intent.kind,
+            ),
             structuralNode: false,
             followSourceSymlink: true,
           }))
@@ -1160,10 +1199,96 @@ const observeRetention = async (
   return probes;
 };
 
+const observeArtifactRetentionHistory = async (
+  ports: StatusReadPorts,
+  ledgerState: LedgerReadState,
+  signal?: AbortSignal,
+): Promise<readonly StatusArtifactRetentionObservation[]> => {
+  if (ledgerState.state === 'absent') return Object.freeze([]);
+  const journals = [
+    ...ledgerState.model.history,
+    ...Object.values(ledgerState.model.transactions).sort((left, right) =>
+      left.transactionId.localeCompare(right.transactionId),
+    ),
+  ];
+  const observations: StatusArtifactRetentionObservation[] = [];
+  for (const journal of journals) {
+    const authority = retainedArtifactJournalAuthorityV1(journal);
+    if (authority === null) continue;
+    if (isStatusReadCancelled(signal)) throw CANCELLED;
+    const common = {
+      transactionId: journal.transactionId,
+      operationId: authority.operationId,
+      groupId: authority.groupId,
+      role: authority.role,
+      artifactPath: authority.path,
+      retainedPath: authority.retained.path,
+    } as const;
+    try {
+      const directory = dirname(authority.retained.path);
+      const parentBefore = await ports.readFileMetadata(directory);
+      const before = await ports.readFileMetadata(authority.retained.path);
+      if (isStatusReadCancelled(signal)) throw CANCELLED;
+      if (before.kind === 'absent') {
+        observations.push(Object.freeze({ ...common, state: 'missing', envelope: null }));
+        continue;
+      }
+      if (
+        parentBefore.kind !== 'dir' ||
+        parentBefore.identity === null ||
+        parentBefore.mode !== 0o700 ||
+        before.kind !== 'file' ||
+        before.identity === null ||
+        before.mode !== 0o600 ||
+        before.linkCount !== 1
+      ) {
+        observations.push(Object.freeze({ ...common, state: 'unverified', envelope: null }));
+        continue;
+      }
+      const bytes = new Uint8Array(await ports.readBytes(authority.retained.path));
+      const decoded = decodeRetainedArtifactPreimageV1(bytes, {
+        operationId: authority.operationId,
+        role: authority.role,
+        path: authority.path,
+      });
+      const after = await ports.readFileMetadata(authority.retained.path);
+      const parentAfter = await ports.readFileMetadata(directory);
+      if (isStatusReadCancelled(signal)) throw CANCELLED;
+      if (
+        after.kind !== 'file' ||
+        after.identity !== before.identity ||
+        after.mode !== 0o600 ||
+        after.linkCount !== 1 ||
+        parentAfter.kind !== 'dir' ||
+        parentAfter.identity !== parentBefore.identity ||
+        parentAfter.mode !== 0o700
+      ) {
+        observations.push(Object.freeze({ ...common, state: 'unverified', envelope: null }));
+        continue;
+      }
+      if (
+        !decoded.ok ||
+        decoded.value.model.after.digest !== authority.afterDigest ||
+        decoded.value.repositoryDigest !== authority.retained.repositoryRevision.digest ||
+        decoded.value.contentDigest !== authority.retained.contentHash
+      ) {
+        observations.push(Object.freeze({ ...common, state: 'mismatch', envelope: null }));
+        continue;
+      }
+      observations.push(Object.freeze({ ...common, state: 'satisfied', envelope: decoded.value }));
+    } catch (error) {
+      if (error === CANCELLED || isStatusReadCancellation(error, signal)) throw CANCELLED;
+      observations.push(Object.freeze({ ...common, state: 'unverified', envelope: null }));
+    }
+  }
+  return Object.freeze(observations);
+};
+
 interface StatusReadObservation {
   readonly report: StatusReport;
   readonly ledgerPath: string;
   readonly ledgerState: LedgerReadState;
+  readonly artifactRetention: readonly StatusArtifactRetentionObservation[];
 }
 
 const exactLedgerReadState = (
@@ -1265,11 +1390,25 @@ const readStatusObservation = async (
     if (isStatusReadCancelled(request.signal)) return err(CANCELLED);
     const ledgerState = exactLedgerReadState(ledgerRead.value, ledgerBytes);
     if (ledgerState === null) return err(OBSERVATION_FAILED);
+    const artifactRetention =
+      request.artifactSelection.state === 'unselected' &&
+      request.artifactSelection.reason === 'lifecycle-history'
+        ? await observeArtifactRetentionHistory(ports, ledgerState, request.signal)
+        : Object.freeze([]);
 
     const complete = (
       report: Result<StatusReport, StatusReadError>,
     ): Result<StatusReadObservation, StatusReadError> =>
-      report.ok ? ok(Object.freeze({ report: report.value, ledgerPath, ledgerState })) : report;
+      report.ok
+        ? ok(
+            Object.freeze({
+              report: report.value,
+              ledgerPath,
+              ledgerState,
+              artifactRetention,
+            }),
+          )
+        : report;
 
     const live = await observeSelectedRoots(ports, request, storeRootOf(dataDir));
     if (isStatusReadCancelled(request.signal)) return err(CANCELLED);

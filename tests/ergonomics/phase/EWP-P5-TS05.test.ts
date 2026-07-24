@@ -104,6 +104,12 @@ describe('EWP-P5-TS05', () => {
       expect(
         parseBatchJson(await runBatchCli(fleet, ['update', '--all', '--yes', '--json'])),
       ).toMatchObject({ state: 'current', summary: { available: 0, failed: 0 } });
+      expect(
+        parseBatchJson(
+          await runBatchCli(fleet, ['undo', 'factor-scan', '--project', '--dry-run', '--json']),
+          3,
+        ),
+      ).toMatchObject({ kind: 'error', code: 'undo-artifact-suffix', exitCode: 3 });
       const undo = parseBatchJson(
         await runBatchCli(fleet, ['undo', '--all', '--project', '--dry-run', '--json']),
       );
@@ -112,7 +118,27 @@ describe('EWP-P5-TS05', () => {
         mode: 'dry-run',
         selection: { batchPolicy: 'fail-fast' },
         approval: { required: false, outcome: 'not-required' },
-        groups: [{ outcome: 'planned' }],
+        groups: [{ outcome: 'planned' }, { outcome: 'planned' }],
+      });
+      expect(
+        parseBatchJson(await runBatchCli(fleet, ['undo', '--all', '--project', '--yes', '--json'])),
+      ).toMatchObject({
+        state: 'completed',
+        groups: [{ outcome: 'succeeded' }, { outcome: 'succeeded' }],
+        summary: { actionable: 2, succeeded: 2, failed: 0 },
+      });
+      const restored = await snapshotBatchState(fleet);
+      expect(restored.manifest).toEqual(before.manifest);
+      expect(restored.lock).toEqual(before.lock);
+      expect(restored.codex).toEqual(before.codex);
+      expect(restored.claude).toEqual(before.claude);
+      expect(
+        parseBatchJson(await runBatchCli(fleet, ['undo', '--all', '--project', '--yes', '--json'])),
+      ).toMatchObject({
+        state: 'completed',
+        operations: [],
+        groups: [{ outcome: 'already-reversed' }, { outcome: 'already-reversed' }],
+        summary: { actionable: 0, alreadyReversed: 2, failed: 0 },
       });
     } finally {
       await destroyBatchFleet(fleet);

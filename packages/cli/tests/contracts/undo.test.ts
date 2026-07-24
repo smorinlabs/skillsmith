@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
-import { lstat, mkdir, rm, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   UNDO_SECRET_CANARIES,
@@ -26,7 +26,7 @@ import {
 import { CURRENT_APPLICATION_SERVICES } from '../../../core/src/application/current-services.ts';
 import { CURRENT_COMMAND_SPECS } from '../../src/spec/index.ts';
 
-setDefaultTimeout(90_000);
+setDefaultTimeout(180_000);
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -272,6 +272,106 @@ describe('undo command contract', () => {
       expect({ ...restoredPin, ledger: null }).toEqual({ ...beforePin, ledger: null });
     } finally {
       await destroyUpdateFleet(selected);
+    }
+
+    const subset = await createUpdateFleet();
+    try {
+      const before = await snapshotUpdateState(subset);
+      await runUpdateCli(subset, ['update', 'factor-scan', '--json']);
+      const afterUpdate = await snapshotUpdateState(subset);
+      expect(
+        requireUndoReport(
+          await runUpdateCli(subset, [
+            'undo',
+            'factor-scan',
+            '--project',
+            '--tool',
+            'claude-code',
+            '--yes',
+            '--json',
+          ]),
+        ),
+      ).toMatchObject({ summary: { failed: 0, succeeded: 1 } });
+      const partial = await snapshotUpdateState(subset);
+      expect(partial.lock).toEqual(before.lock);
+      expect(partial.claude).toEqual(before.claude);
+      expect(partial.codex).toEqual(afterUpdate.codex);
+
+      const remaining = requireUndoReport(
+        await runUpdateCli(subset, [
+          'undo',
+          'factor-scan',
+          '--project',
+          '--tool',
+          'codex',
+          '--dry-run',
+          '--json',
+        ]),
+      );
+      expect(records(remaining.operations).map(({ kind }) => kind)).toEqual([
+        expect.stringMatching(/install|promote|update/),
+      ]);
+      expect(
+        requireUndoReport(
+          await runUpdateCli(subset, [
+            'undo',
+            'factor-scan',
+            '--project',
+            '--tool',
+            'codex',
+            '--yes',
+            '--json',
+          ]),
+        ),
+      ).toMatchObject({ summary: { failed: 0, succeeded: 1 } });
+      const restored = await snapshotUpdateState(subset);
+      expect({ ...restored, ledger: null }).toEqual({ ...before, ledger: null });
+    } finally {
+      await destroyUpdateFleet(subset);
+    }
+
+    const custom = await createUpdateFleet();
+    try {
+      const selectedDirectory = join(custom.root, 'selected-artifacts');
+      const customManifest = join(selectedDirectory, 'custom.toml');
+      const customLock = join(selectedDirectory, 'custom.lock');
+      await mkdir(selectedDirectory);
+      await Promise.all([
+        writeFile(customManifest, await readFile(custom.manifest)),
+        writeFile(customLock, await readFile(custom.lock)),
+      ]);
+      await Promise.all([chmod(customManifest, 0o604), chmod(customLock, 0o640)]);
+      const before = await snapshotUpdateState(custom);
+      const retainedManifest = await readFile(customManifest);
+      const retainedLock = await readFile(customLock);
+
+      expect(
+        requireJsonObject(
+          await runUpdateCli(custom, [
+            'update',
+            'factor-scan',
+            '--file',
+            customManifest,
+            '--lockfile',
+            customLock,
+            '--pin',
+            '--json',
+          ]),
+        ),
+      ).toMatchObject({ state: 'completed' });
+      expect(
+        requireUndoReport(
+          await runUpdateCli(custom, ['undo', 'factor-scan', '--project', '--yes', '--json']),
+        ),
+      ).toMatchObject({ summary: { failed: 0, succeeded: 1 } });
+      expect(await readFile(customManifest)).toEqual(retainedManifest);
+      expect(await readFile(customLock)).toEqual(retainedLock);
+      expect((await lstat(customManifest)).mode & 0o7777).toBe(0o604);
+      expect((await lstat(customLock)).mode & 0o7777).toBe(0o640);
+      const restored = await snapshotUpdateState(custom);
+      expect({ ...restored, ledger: null }).toEqual({ ...before, ledger: null });
+    } finally {
+      await destroyUpdateFleet(custom);
     }
   });
 

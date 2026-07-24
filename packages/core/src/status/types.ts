@@ -1,5 +1,9 @@
 import type { SupportedTool } from '../agents/types.ts';
 import type { LedgerReadState } from '../artifacts/ledger-types.ts';
+import type {
+  DecodedRetainedArtifactPreimageV1,
+  RetainedArtifactRoleV1,
+} from '../artifacts/retained-preimage-codec.ts';
 import type { Scope } from '../config/types.ts';
 import type { ProjectContext } from '../context/types.ts';
 import type {
@@ -62,6 +66,19 @@ export interface StatusLifecycleHistoryReadResult {
   readonly report: StatusReport;
   readonly ledgerPath: string;
   readonly ledgerState: LedgerReadState;
+  /** Private pair-null update carriers; never projected into the public status schema. */
+  readonly artifactRetention: readonly StatusArtifactRetentionObservation[];
+}
+
+export interface StatusArtifactRetentionObservation {
+  readonly transactionId: string;
+  readonly operationId: string;
+  readonly groupId: string;
+  readonly role: RetainedArtifactRoleV1;
+  readonly artifactPath: string;
+  readonly retainedPath: string;
+  readonly state: 'satisfied' | 'missing' | 'mismatch' | 'unverified';
+  readonly envelope: DecodedRetainedArtifactPreimageV1 | null;
 }
 
 export interface StatusReadError {

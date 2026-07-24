@@ -654,7 +654,20 @@ describe('G3B-02 operation scheduler', () => {
     };
     const base = structuralPlanFor([retainedManifest, dependent], 'fail-fast');
     for (const command of ['update', 'undo'] as const) {
-      const selected = { ...base, command } as CurrentMutatorOperationPlan;
+      const selected = {
+        ...base,
+        command,
+        operations:
+          command === 'undo'
+            ? [
+                {
+                  ...retainedManifest,
+                  mutates: { ...retainedManifest.mutates, ledger: true },
+                },
+                dependent,
+              ]
+            : base.operations,
+      } as CurrentMutatorOperationPlan;
       const calls: string[] = [];
       const results = await requireScheduler()(
         selected,

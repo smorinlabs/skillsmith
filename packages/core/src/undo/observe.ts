@@ -1,10 +1,14 @@
 import { dirname } from 'node:path';
 import { toolRegistry } from '../agents/registry.ts';
 import type { LogicalJournalV1Dto } from '../artifacts/journal-types.ts';
-import { resolveFreshRollbackParent } from '../artifacts/ledger-history.ts';
+import {
+  resolveFreshRollbackLineage,
+  resolveFreshRollbackParent,
+} from '../artifacts/ledger-history.ts';
 import type { LedgerModel, LedgerReadState } from '../artifacts/ledger-types.ts';
 import { committedPlacementCleanupTransactionForTarget } from '../place/swap.ts';
 import { createOperationGroupId } from '../planning/create.ts';
+import { canonicalPlanningString } from '../planning/order.ts';
 import type { ResolvedRuntimeConfiguration } from '../ports/types.ts';
 import { type Result, err, ok } from '../result.ts';
 import { resolveTargetSelection } from '../selection/resolve.ts';
@@ -12,6 +16,7 @@ import type { TargetSelection, TargetSelectionError } from '../selection/types.t
 import { readLifecycleHistoryStatus } from '../status/read.ts';
 import type { StatusJournalState, StatusPlacement } from '../status/types.ts';
 import type {
+  UndoArtifactCandidate,
   UndoCandidate,
   UndoError,
   UndoJournalAuthority,
@@ -66,6 +71,45 @@ const familyFor = (operation: string): UndoOperationFamily | null => {
     default:
       return null;
   }
+};
+
+const updateRepairCarrier = (
+  ledger: LedgerModel,
+  source: LogicalJournalV1Dto,
+): LogicalJournalV1Dto | null => {
+  if (
+    source.intent.kind !== 'repair' ||
+    source.phase !== 'committed' ||
+    source.disposition !== 'forward' ||
+    source.context.command !== 'skillsmith-place' ||
+    source.context.workflow !== 'placement-swap' ||
+    source.intent.reversibility.kind !== 'conditional' ||
+    source.intent.reversibility.retentionResourceIds.length !== 1 ||
+    source.actual.retained.length !== 1 ||
+    source.actual.retained[0]?.role !== 'store'
+  ) {
+    return null;
+  }
+  const sourceIndex = ledger.history.findIndex(
+    ({ transactionId }) => transactionId === source.transactionId,
+  );
+  if (sourceIndex < 0) return null;
+  for (let index = sourceIndex - 1; index >= 0; index -= 1) {
+    const candidate = ledger.history[index];
+    if (
+      candidate !== undefined &&
+      candidate.phase === 'committed' &&
+      candidate.disposition === 'forward' &&
+      candidate.intent.groupId === source.intent.groupId &&
+      candidate.intent.pairId === null &&
+      (candidate.intent.kind === 'write-manifest' || candidate.intent.kind === 'write-lock') &&
+      candidate.context.command === 'update' &&
+      candidate.context.workflow === 'update-artifact-history'
+    ) {
+      return candidate;
+    }
+  }
+  return null;
 };
 
 const logicalAuthority = (
@@ -157,7 +201,9 @@ export const candidateForStatusPlacement = (
     authority = correlated.value;
     const journal = authority.journal;
     disposition = journal.disposition;
-    operationFamily = familyFor(authority.source.intent.kind);
+    operationFamily =
+      familyFor(authority.source.intent.kind) ??
+      (updateRepairCarrier(ledger, authority.source) === null ? null : 'update');
     sourceTransactionId = authority.source.transactionId;
     sourceOperationId = authority.source.intent.operationId;
     activeOperationId = journal.intent.operationId;
@@ -450,7 +496,7 @@ export const observeUndo = async (
       failure(`undo-${status.error.reason}`, status.error.message, status.error.exitClass),
     );
   }
-  const { report, ledgerPath, ledgerState } = status.value;
+  const { report, ledgerPath, ledgerState, artifactRetention } = status.value;
   const ledger: LedgerModel =
     ledgerState.state === 'present'
       ? ledgerState.model
@@ -500,16 +546,197 @@ export const observeUndo = async (
     }
     pairAnchors.add(anchor);
   }
-  const unavailable = ordered.find(({ operationFamily }) => operationFamily === 'update');
-  if (unavailable !== undefined) {
+  const artifacts: UndoArtifactCandidate[] = [];
+  const updateGroups = new Set(
+    ordered
+      .filter(
+        ({ operationFamily, outcome }) =>
+          operationFamily === 'update' && outcome !== 'already-reversed',
+      )
+      .map(({ sourceGroupId }) => sourceGroupId),
+  );
+  const historyIndex = new Map(
+    ledger.history.map((journal, index) => [journal.transactionId, index] as const),
+  );
+  const freshLineage = resolveFreshRollbackLineage(ledger.history, ledger.transactions);
+  if (!freshLineage.ok) {
     return err(
       failure(
-        'undo-update-unavailable',
-        `update reversal for '${unavailable.name}' is not available until the lock-restoration milestone`,
-        'capability',
+        'undo-artifact-lineage',
+        'retained update rollback lineage is ambiguous or incomplete',
+        'state',
       ),
     );
   }
+  const journalByTransactionId = new Map(
+    [...ledger.history, ...Object.values(ledger.transactions)].map(
+      (journal) => [journal.transactionId, journal] as const,
+    ),
+  );
+  for (const sourceGroupId of updateGroups) {
+    const selectedIndexes = ordered
+      .filter(
+        (candidate) =>
+          candidate.sourceGroupId === sourceGroupId &&
+          candidate.operationFamily === 'update' &&
+          candidate.outcome !== 'already-reversed',
+      )
+      .map(({ sourceTransactionId }) => historyIndex.get(sourceTransactionId))
+      .filter((index): index is number => index !== undefined);
+    if (selectedIndexes.length === 0) {
+      return err(
+        failure(
+          'undo-artifact-lineage',
+          'selected update history has no commit-order anchor',
+          'state',
+        ),
+      );
+    }
+    const beforeIndex = Math.min(...selectedIndexes);
+    const nearestByRole = new Map<'manifest' | 'lock', (typeof artifactRetention)[number]>();
+    for (const retained of artifactRetention) {
+      const index = historyIndex.get(retained.transactionId);
+      if (retained.groupId !== sourceGroupId || index === undefined || index >= beforeIndex)
+        continue;
+      const previous = nearestByRole.get(retained.role);
+      const previousIndex =
+        previous === undefined ? -1 : (historyIndex.get(previous.transactionId) ?? -1);
+      if (index > previousIndex) nearestByRole.set(retained.role, retained);
+    }
+    if (nearestByRole.size === 0) {
+      return err(
+        failure(
+          'undo-artifact-lineage',
+          'selected update predates exact retained artifact history and cannot be reversed safely',
+          'state',
+        ),
+      );
+    }
+    for (const retained of [...nearestByRole.values()].sort((left, right) =>
+      left.role === right.role ? 0 : left.role === 'manifest' ? -1 : 1,
+    )) {
+      const journal = ledger.history[historyIndex.get(retained.transactionId) ?? -1];
+      if (journal === undefined || retained.state !== 'satisfied' || retained.envelope === null) {
+        return err(
+          failure(
+            'undo-artifact-retention',
+            `retained ${retained.role} preimage is ${retained.state} and cannot be restored`,
+            'state',
+          ),
+        );
+      }
+      const childTransactionId =
+        freshLineage.value.childTransactionIdByParentTransactionId[journal.transactionId];
+      const rollbackJournal =
+        childTransactionId === undefined
+          ? null
+          : (journalByTransactionId.get(childTransactionId) ?? null);
+      if (childTransactionId !== undefined && rollbackJournal === null) {
+        return err(
+          failure(
+            'undo-artifact-lineage',
+            `retained ${retained.role} rollback child is missing from history`,
+            'state',
+          ),
+        );
+      }
+      artifacts.push(
+        deepFreeze({
+          physicalHead: false,
+          action:
+            rollbackJournal === null
+              ? 'restore'
+              : rollbackJournal.phase === 'committed'
+                ? 'already-restored'
+                : 'resume',
+          role: retained.role,
+          artifactPath: retained.artifactPath,
+          retainedPath: retained.retainedPath,
+          sourceTransactionId: retained.transactionId,
+          sourceOperationId: retained.operationId,
+          sourceGroupId,
+          journal,
+          rollbackJournal,
+          envelope: retained.envelope,
+        }),
+      );
+    }
+  }
+  const selectedArtifactTransactions = new Set(
+    artifacts.map(({ sourceTransactionId }) => sourceTransactionId),
+  );
+  const activeArtifactRetention = artifactRetention.filter((retained) => {
+    const childTransactionId =
+      freshLineage.value.childTransactionIdByParentTransactionId[retained.transactionId];
+    if (childTransactionId === undefined) return true;
+    return journalByTransactionId.get(childTransactionId)?.phase !== 'committed';
+  });
+  for (const artifact of artifacts) {
+    const artifactIndex = historyIndex.get(artifact.sourceTransactionId);
+    if (artifactIndex === undefined) continue;
+    const omittedNewer = activeArtifactRetention.find((retained) => {
+      const retainedIndex = historyIndex.get(retained.transactionId);
+      return (
+        retained.role === artifact.role &&
+        retained.artifactPath === artifact.artifactPath &&
+        retainedIndex !== undefined &&
+        retainedIndex > artifactIndex &&
+        !selectedArtifactTransactions.has(retained.transactionId)
+      );
+    });
+    if (omittedNewer !== undefined) {
+      return err(
+        failure(
+          'undo-artifact-suffix',
+          `selected ${artifact.role} history omits a newer update on '${artifact.artifactPath}'`,
+          'state',
+        ),
+      );
+    }
+  }
+  const groupHistoryRank = new Map<string, number>();
+  for (const artifact of artifacts) {
+    groupHistoryRank.set(
+      artifact.sourceGroupId,
+      Math.max(
+        groupHistoryRank.get(artifact.sourceGroupId) ?? -1,
+        historyIndex.get(artifact.sourceTransactionId) ?? -1,
+      ),
+    );
+  }
+  const orderedArtifacts = [...artifacts].sort((left, right) => {
+    const groupOrder =
+      (groupHistoryRank.get(right.sourceGroupId) ?? -1) -
+      (groupHistoryRank.get(left.sourceGroupId) ?? -1);
+    if (groupOrder !== 0) return groupOrder;
+    return left.role === right.role ? 0 : left.role === 'manifest' ? -1 : 1;
+  });
+  const priorByArtifact = new Map<string, UndoArtifactCandidate>();
+  for (const artifact of orderedArtifacts) {
+    const key = JSON.stringify([artifact.role, artifact.artifactPath]);
+    const newer = priorByArtifact.get(key);
+    if (
+      newer !== undefined &&
+      canonicalPlanningString(newer.journal.intent.before) !==
+        canonicalPlanningString(artifact.journal.intent.after)
+    ) {
+      return err(
+        failure(
+          'undo-artifact-suffix',
+          `selected ${artifact.role} history is not one contiguous update suffix`,
+          'state',
+        ),
+      );
+    }
+    priorByArtifact.set(key, artifact);
+  }
+  const physicalHeads = new Set<string>();
+  const artifactsWithHeads = orderedArtifacts.map((artifact) => {
+    const key = JSON.stringify([artifact.role, artifact.artifactPath]);
+    const physicalHead = !physicalHeads.has(key);
+    physicalHeads.add(key);
+    return deepFreeze({ ...artifact, physicalHead });
+  });
   const ineligible = ordered.find(
     ({ outcome, eligibility }) => outcome !== 'already-reversed' && eligibility !== 'eligible',
   );
@@ -549,6 +776,7 @@ export const observeUndo = async (
       ledger,
       migrationPending: ledgerState.state === 'present' && ledgerState.sourceVersion === 1,
       candidates: ordered,
+      artifacts: artifactsWithHeads,
     }),
   );
 };

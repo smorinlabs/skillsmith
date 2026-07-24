@@ -126,6 +126,7 @@ const validateArtifactPrerequisite = (
     (kind === 'write-manifest' || kind === 'write-lock') &&
     operation.reversibility.kind === 'conditional' &&
     operation.reversibility.retentionResourceIds.length === 1;
+  const retainedUndoArtifact = command === 'undo' && retainedUpdateArtifact;
   if (
     !retainedUpdateArtifact &&
     (operation.reversibility.kind !== 'none' ||
@@ -157,8 +158,8 @@ const validateArtifactPrerequisite = (
       : kind === 'migrate-project-config'
         ? { live: false, manifest: true, lock: false, ledger: false }
         : kind === 'write-manifest'
-          ? { live: false, manifest: true, lock: false, ledger: false }
-          : { live: false, manifest: false, lock: true, ledger: false };
+          ? { live: false, manifest: true, lock: false, ledger: retainedUndoArtifact }
+          : { live: false, manifest: false, lock: true, ledger: retainedUndoArtifact };
   if (
     !sameLocation(operation.mutates, expectedMutations) ||
     !validArtifactImages(kind, operation.before, operation.after)

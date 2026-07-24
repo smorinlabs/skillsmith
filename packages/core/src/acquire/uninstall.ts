@@ -1578,6 +1578,11 @@ const runUninstallInternal = async (
     ) {
       return Object.freeze({ transition: undefined, actions: new Map() });
     }
+    if (artifact.manifest.revision.domain !== 'manifest') {
+      throw new Error('selected uninstall manifest revision has the wrong domain');
+    }
+    const initialManifestResourceRevision = artifact.manifest.revision
+      .byteRevision as OperationDigest;
     let manifestModel = artifact.manifest.value;
     const manifestPath = artifact.pair.file.path;
     const lockPath = artifact.pair.lockfile.path;
@@ -1680,7 +1685,11 @@ const runUninstallInternal = async (
       );
       return Object.freeze({
         transition: Object.freeze({
-          initial: Object.freeze({ manifest: initialManifest, lock: initialLock }),
+          initial: Object.freeze({
+            manifest: initialManifest,
+            manifestResourceRevision: initialManifestResourceRevision,
+            lock: initialLock,
+          }),
           groups: Object.freeze([
             Object.freeze({
               groupIdentity,
@@ -1948,7 +1957,11 @@ const runUninstallInternal = async (
     }
     return Object.freeze({
       transition: Object.freeze({
-        initial: Object.freeze({ manifest: initialManifest, lock: initialLock }),
+        initial: Object.freeze({
+          manifest: initialManifest,
+          manifestResourceRevision: initialManifestResourceRevision,
+          lock: initialLock,
+        }),
         groups: Object.freeze(transitionGroups),
         unchangedGroups: Object.freeze(unchangedGroups),
       }),

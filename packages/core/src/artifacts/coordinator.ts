@@ -70,6 +70,23 @@ type DesiredRole = {
   readonly opaqueManifestBackup: boolean;
 };
 
+/** Private exact-byte restore authority consumed only by retained undo history. */
+export interface RetainedArtifactPairMutationRequest {
+  readonly kind: 'retained-preimage';
+  readonly pair: ResolvedArtifactPair;
+  readonly role: Role;
+  readonly bytes: Uint8Array;
+  readonly mode: number;
+  readonly signal?: AbortSignal;
+}
+
+type CoordinatorMutationRequest = ArtifactPairMutationRequest | RetainedArtifactPairMutationRequest;
+
+const isRetainedMutationRequest = (
+  request: CoordinatorMutationRequest,
+): request is RetainedArtifactPairMutationRequest =>
+  'kind' in request && request.kind === 'retained-preimage';
+
 const compareUtf8 = (left: string, right: string): number =>
   Buffer.compare(Buffer.from(left, 'utf8'), Buffer.from(right, 'utf8'));
 
@@ -1167,6 +1184,92 @@ const makeDesiredRoles = (
         (manifest.mode !== null &&
           snapshot.manifest.state === 'file' &&
           snapshot.manifest.mode !== manifest.mode),
+      opaqueBefore: false,
+      opaqueManifestBackup: false,
+    }),
+  ]);
+};
+
+const makeRetainedDesiredRoles = (
+  request: RetainedArtifactPairMutationRequest,
+  snapshot: ArtifactPairSnapshot,
+): readonly DesiredRole[] => {
+  if (
+    !Number.isInteger(request.mode) ||
+    request.mode < 0 ||
+    request.mode > 0o7777 ||
+    request.bytes.byteLength === 0
+  ) {
+    throw artifactMutationError('invalid-request', { role: request.role });
+  }
+  const bytes = new Uint8Array(request.bytes);
+  validateCandidateBytes(bytes, request.role);
+  if (request.role === 'manifest') {
+    normalizedManifest(bytes);
+  } else {
+    const lock = readPortableLockSource(bytes);
+    if (
+      !lock.ok ||
+      snapshot.manifest.state !== 'file' ||
+      correlatePortableLock(normalizedManifest(snapshot.manifest.bytes), lock.value).state !==
+        'current'
+    ) {
+      throw artifactMutationError('invalid-lock', { role: 'lock' });
+    }
+  }
+  const manifestBytes =
+    request.role === 'manifest'
+      ? bytes
+      : snapshot.manifest.state === 'file'
+        ? new Uint8Array(snapshot.manifest.bytes)
+        : null;
+  const manifestMode =
+    request.role === 'manifest'
+      ? request.mode
+      : snapshot.manifest.state === 'file'
+        ? snapshot.manifest.mode
+        : null;
+  const lockBytes =
+    request.role === 'lock'
+      ? bytes
+      : snapshot.lock.state === 'file'
+        ? new Uint8Array(snapshot.lock.bytes)
+        : null;
+  const lockMode =
+    request.role === 'lock'
+      ? request.mode
+      : snapshot.lock.state === 'file'
+        ? snapshot.lock.mode
+        : null;
+  return Object.freeze([
+    Object.freeze({
+      role: 'lock' as const,
+      digestKind: 'lock' as const,
+      path: request.pair.lockfile.path,
+      before: snapshot.lock,
+      afterBytes: lockBytes,
+      afterMode: lockMode,
+      changed:
+        !equalBytes(snapshot.lock.state === 'file' ? snapshot.lock.bytes : null, lockBytes) ||
+        (lockMode !== null && snapshot.lock.state === 'file' && snapshot.lock.mode !== lockMode),
+      opaqueBefore: false,
+      opaqueManifestBackup: false,
+    }),
+    Object.freeze({
+      role: 'manifest' as const,
+      digestKind: 'manifest' as const,
+      path: request.pair.file.path,
+      before: snapshot.manifest,
+      afterBytes: manifestBytes,
+      afterMode: manifestMode,
+      changed:
+        !equalBytes(
+          snapshot.manifest.state === 'file' ? snapshot.manifest.bytes : null,
+          manifestBytes,
+        ) ||
+        (manifestMode !== null &&
+          snapshot.manifest.state === 'file' &&
+          snapshot.manifest.mode !== manifestMode),
       opaqueBefore: false,
       opaqueManifestBackup: false,
     }),
@@ -3084,7 +3187,7 @@ const asResultError = (error: unknown): ArtifactMutationError => {
 
 const commitArtifactPairWithinAuthority = async (
   ports: ArtifactCoordinatorPorts,
-  request: ArtifactPairMutationRequest,
+  request: CoordinatorMutationRequest,
   paths: readonly string[],
   operationId: string,
   barrier: BarrierEmitter,
@@ -3092,8 +3195,9 @@ const commitArtifactPairWithinAuthority = async (
   recovered: boolean,
   membersAlreadyHeld: boolean,
 ): Promise<Result<ArtifactPairMutationResult, ArtifactMutationError>> => {
+  const retained = isRetainedMutationRequest(request);
   const allowOpaqueLock =
-    request.lock.kind === 'replace-invalid' || request.lock.kind === 'replace-exact';
+    !retained && (request.lock.kind === 'replace-invalid' || request.lock.kind === 'replace-exact');
   const provisional = await observeArtifactPair(
     ports,
     request.pair.file.path,
@@ -3101,8 +3205,10 @@ const commitArtifactPairWithinAuthority = async (
     { allowOpaqueLock },
   );
   if ('code' in provisional) throw provisional;
-  validateLockPrecondition(provisional, request, 'provisional');
-  const provisionalRoles = makeDesiredRoles(request, provisional);
+  if (!retained) validateLockPrecondition(provisional, request, 'provisional');
+  const provisionalRoles = retained
+    ? makeRetainedDesiredRoles(request, provisional)
+    : makeDesiredRoles(request, provisional);
   if (membersAlreadyHeld && request.signal?.aborted) throw cancellation('unobserved-before');
   if (provisionalRoles.every((role) => !role.changed)) {
     return ok(
@@ -3138,7 +3244,7 @@ const commitArtifactPairWithinAuthority = async (
       }
       throw fresh;
     }
-    validateLockPrecondition(fresh, request, 'fresh');
+    if (!retained) validateLockPrecondition(fresh, request, 'fresh');
     const replay = classifyFreshSnapshot(provisional, fresh, provisionalRoles);
     if (replay.convergedToDesired) {
       return ok(
@@ -3150,7 +3256,9 @@ const commitArtifactPairWithinAuthority = async (
         }),
       );
     }
-    const roles = makeDesiredRoles(request, fresh);
+    const roles = retained
+      ? makeRetainedDesiredRoles(request, fresh)
+      : makeDesiredRoles(request, fresh);
     assertStableDesiredPlan(provisionalRoles, roles);
     if (roles.every((role) => !role.changed)) {
       return ok(
@@ -3214,9 +3322,9 @@ export const commitArtifactPair = async (
   }
 };
 
-export const commitArtifactPairWithLease = async (
+const commitArtifactMutationWithLease = async (
   lease: ArtifactGroupLockLease,
-  request: ArtifactPairMutationRequest,
+  request: CoordinatorMutationRequest,
 ): Promise<Result<ArtifactPairMutationResult, ArtifactMutationError>> => {
   const state = artifactGroupLeaseStates.get(lease);
   if (
@@ -3276,6 +3384,19 @@ export const commitArtifactPairWithLease = async (
   state.inFlight = execution;
   return execution;
 };
+
+export const commitArtifactPairWithLease = (
+  lease: ArtifactGroupLockLease,
+  request: ArtifactPairMutationRequest,
+): Promise<Result<ArtifactPairMutationResult, ArtifactMutationError>> =>
+  commitArtifactMutationWithLease(lease, request);
+
+/** Commit one exact retained preimage without widening the public artifact action vocabulary. */
+export const commitRetainedArtifactPairWithLease = (
+  lease: ArtifactGroupLockLease,
+  request: RetainedArtifactPairMutationRequest,
+): Promise<Result<ArtifactPairMutationResult, ArtifactMutationError>> =>
+  commitArtifactMutationWithLease(lease, request);
 
 export const readCoordinatedArtifactPair = async (
   ports: ArtifactCoordinatorPorts,

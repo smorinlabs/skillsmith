@@ -1200,6 +1200,7 @@ export const createLifecycleApplicationServices = (
         selection.value as ValidatedUndoSelection,
         {
           ports: context.ports,
+          artifactCoordinator: context.artifactCoordinator,
           projectContext: project.value,
           configuration: context.configuration,
           observation: context.observation,
@@ -1345,6 +1346,7 @@ export const createLifecycleApplicationServices = (
         selection.value as ValidatedUndoSelection,
         {
           ports: context.ports,
+          artifactCoordinator: context.artifactCoordinator,
           projectContext: project.value,
           configuration: context.configuration,
           observation: context.observation,

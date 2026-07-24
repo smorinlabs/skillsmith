@@ -7,6 +7,7 @@ import type {
   LedgerReadState,
   LegacyPairJournalV1Dto,
 } from '../artifacts/ledger-types.ts';
+import type { DecodedRetainedArtifactPreimageV1 } from '../artifacts/retained-preimage-codec.ts';
 import type { ProjectContext } from '../context/types.ts';
 import type {
   ExecutableOperation,
@@ -99,6 +100,21 @@ export interface UndoCandidate {
   readonly authority: UndoJournalAuthority;
 }
 
+export interface UndoArtifactCandidate {
+  readonly action: 'restore' | 'resume' | 'already-restored';
+  /** True only for the current physical head of one selected role/path transition chain. */
+  readonly physicalHead: boolean;
+  readonly role: 'manifest' | 'lock';
+  readonly artifactPath: string;
+  readonly retainedPath: string;
+  readonly sourceTransactionId: string;
+  readonly sourceOperationId: string;
+  readonly sourceGroupId: string;
+  readonly journal: LogicalJournalV1Dto;
+  readonly rollbackJournal: LogicalJournalV1Dto | null;
+  readonly envelope: DecodedRetainedArtifactPreimageV1;
+}
+
 export interface UndoObservation {
   readonly request: UndoRequest;
   readonly selection: Readonly<{
@@ -115,6 +131,7 @@ export interface UndoObservation {
   readonly ledger: LedgerModel;
   readonly migrationPending: boolean;
   readonly candidates: readonly UndoCandidate[];
+  readonly artifacts?: readonly UndoArtifactCandidate[];
 }
 
 export interface UndoPlanPair {

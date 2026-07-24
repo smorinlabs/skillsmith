@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 import type { ArtifactDigest } from '../../src/artifacts/hash.ts';
 import type { LogicalJournalV1Dto } from '../../src/artifacts/journal-types.ts';
+import { createTestNodeArtifactCoordinatorPorts } from '../../src/artifacts/node-coordinator.ts';
 import {
   createObservationEmitter,
   createOperationContext,
@@ -28,6 +29,9 @@ describe('undo execution preparation', () => {
   test('executes an exact filter-zero plan once without manufacturing operations', async () => {
     const fleet = await buildFixtureFleet();
     open.push(fleet);
+    const artifactCoordinator = await createTestNodeArtifactCoordinatorPorts(
+      join(fleet.data, 'undo-coordination'),
+    );
     const ledgerPath = ledgerPathOf(fleet.data);
     const ledgerState = await readLedgerState(fleet.env, ledgerPath);
     if (!ledgerState.ok) throw new Error('fixture ledger read failed');
@@ -84,6 +88,7 @@ describe('undo execution preparation', () => {
 
     const prepared = await prepareUndoFromObservation(observed, {
       ports: fleet.env,
+      artifactCoordinator,
       projectContext,
       configuration: fleet.configuration,
       observation: runtimeObservation,
@@ -110,6 +115,9 @@ describe('undo execution preparation', () => {
   test('guards cleanup aggregate and mixed first-P1 publication races with convergent retries', async () => {
     const fleet = await buildFixtureFleet();
     open.push(fleet);
+    const artifactCoordinator = await createTestNodeArtifactCoordinatorPorts(
+      join(fleet.data, 'undo-coordination'),
+    );
     const ledgerPath = ledgerPathOf(fleet.data);
     const skillsRoot = join(fleet.home, '.codex', 'skills');
     const placementPath = join(skillsRoot, 'review');
@@ -356,6 +364,7 @@ describe('undo execution preparation', () => {
 
     const prepared = await prepareUndoFromObservation(observed, {
       ports: fleet.env,
+      artifactCoordinator,
       projectContext,
       configuration: fleet.configuration,
       observation: runtimeObservation,
@@ -395,6 +404,7 @@ describe('undo execution preparation', () => {
     };
     const cleanupOnlyRace = await prepareUndoFromObservation(raceObserved, {
       ports: fleet.env,
+      artifactCoordinator,
       projectContext,
       configuration: fleet.configuration,
       observation: runtimeObservation,
@@ -523,6 +533,7 @@ describe('undo execution preparation', () => {
     };
     const mixed = await prepareUndoFromObservation(mixedObserved, {
       ports: fleet.env,
+      artifactCoordinator,
       projectContext,
       configuration: fleet.configuration,
       observation: runtimeObservation,
@@ -664,6 +675,7 @@ describe('undo execution preparation', () => {
     };
     const aggregate = await prepareUndoFromObservation(aggregateObserved, {
       ports: aggregateRacePorts,
+      artifactCoordinator,
       projectContext,
       configuration: fleet.configuration,
       observation: runtimeObservation,
@@ -710,6 +722,7 @@ describe('undo execution preparation', () => {
       },
       {
         ports: fleet.env,
+        artifactCoordinator,
         projectContext,
         configuration: fleet.configuration,
         observation: runtimeObservation,
@@ -761,6 +774,7 @@ describe('undo execution preparation', () => {
     };
     const publicationMixed = await prepareUndoFromObservation(publicationMixedObserved, {
       ports: mixedPublicationPorts,
+      artifactCoordinator,
       projectContext,
       configuration: fleet.configuration,
       observation: runtimeObservation,
@@ -805,6 +819,7 @@ describe('undo execution preparation', () => {
       },
       {
         ports: fleet.env,
+        artifactCoordinator,
         projectContext,
         configuration: fleet.configuration,
         observation: runtimeObservation,

@@ -10,6 +10,7 @@ import {
   toolRegistry as defaultLifecycleToolRegistry,
 } from '../agents/registry.ts';
 import { parseArtifactDigest } from '../artifacts/hash.ts';
+import type { LogicalJournalV1Dto } from '../artifacts/journal-types.ts';
 import { resolveFreshRollbackParent } from '../artifacts/ledger-history.ts';
 import type { PlanImageV1, PlanSourceV1 } from '../artifacts/plan-types.ts';
 import { logicalJournalPairIdentity } from '../artifacts/registry.ts';
@@ -996,6 +997,8 @@ export interface PlacementRollbackIntentV1 extends PlacementIntentIdentityV1 {
   readonly kind: 'rollback';
   readonly storeResourceId: string | null;
   readonly sourceContent?: ContentObservationIdentityV1;
+  /** Stable identity of this committed occurrence; fresh reversals must never reuse prior IDs. */
+  readonly occurrenceTarget?: string;
 }
 
 export type PlacementSyncIntentV1 = PlacementIntentIdentityV1 &
@@ -1970,6 +1973,34 @@ const retainedPlacementMatchesLive = (
   );
 };
 
+const updateActualMatchesLive = (
+  journal: LogicalJournalV1Dto,
+  current: LiveOperationImage,
+): boolean => {
+  if (
+    (journal.intent.kind !== 'update' && journal.intent.kind !== 'repair') ||
+    current.kind !== 'placement'
+  )
+    return false;
+  const lives = journal.actual.after.filter((resource) => resource.role === 'live');
+  const actual = lives[0];
+  if (lives.length !== 1 || actual === undefined || actual.state !== 'present') return false;
+  return (
+    current.resource.location.kind === 'machine-bound' &&
+    current.resource.location.path === actual.placementPath &&
+    actual.mode === 'pinned' &&
+    (current.classification === 'pinned' || current.classification === 'store-linked') &&
+    (actual.liveKind === 'directory'
+      ? current.representation === 'copy'
+      : actual.liveKind === 'symlink' &&
+        current.representation === 'symlink' &&
+        current.linkTarget?.kind === 'machine-bound' &&
+        current.linkTarget.path === actual.symlinkTarget) &&
+    actual.contentHash !== null &&
+    actual.contentHash === current.contentHash
+  );
+};
+
 const retainedPlacementHistoryInverse = (
   snapshot: ObservedStateSnapshotV1<unknown>,
   intent: PlacementRollbackIntentV1,
@@ -1993,8 +2024,13 @@ const retainedPlacementHistoryInverse = (
     }
     if (journal.phase !== 'committed' || journal.disposition !== 'forward') return null;
     const inverse = ownedLiveOperationImage(journal.intent.before, liveResource);
-    const retainedCurrent = ownedLiveOperationImage(journal.intent.after, liveResource);
-    if (!retainedPlacementMatchesLive(retainedCurrent, current)) {
+    const recordedCurrent = ownedLiveOperationImage(journal.intent.after, liveResource);
+    const retainedCurrent = retainedPlacementMatchesLive(recordedCurrent, current)
+      ? recordedCurrent
+      : updateActualMatchesLive(journal, current)
+        ? recordedCurrent
+        : null;
+    if (retainedCurrent === null) {
       throw new TypeError(
         'placement planning: retained rollback history does not match live state',
       );
@@ -2032,7 +2068,8 @@ const pendingFreshPlacementHistoryInverse = (
   }
   const parent = resolvedParent.value ?? undefined;
   const identity = parent === undefined ? null : logicalJournalPairIdentity(parent);
-  const pairId = parent?.intent.pairId ?? null;
+  const parentPairId = parent?.intent.pairId ?? null;
+  const childPairId = child.intent.pairId;
   const projectRoot = intent.projectRoot?.kind === 'machine-bound' ? intent.projectRoot.path : null;
   if (
     parent === undefined ||
@@ -2040,15 +2077,16 @@ const pendingFreshPlacementHistoryInverse = (
     identity.projectRoot !== projectRoot ||
     identity.skill !== intent.skill ||
     identity.tool !== intent.tool ||
-    pairId === null ||
-    child.intent.pairId !== pairId
+    parentPairId === null ||
+    childPairId === null
   ) {
     throw new TypeError('placement planning: fresh rollback parent targets another placement');
   }
   return {
     child,
     parent,
-    pairId,
+    pairId: childPairId,
+    retentionResourceId: parentPairId,
     before: ownedLiveOperationImage(parent.intent.after, liveResource),
     after: ownedLiveOperationImage(parent.intent.before, liveResource),
   };
@@ -2070,7 +2108,13 @@ const placementRollbackOperationFor = (
       ? null
       : pendingFreshPlacementHistoryInverse(snapshot, intent, liveResource, ledgerPair);
   if (pendingFresh !== null) {
-    const { child, pairId, before: parentAfter, after: parentBefore } = pendingFresh;
+    const {
+      child,
+      pairId,
+      retentionResourceId,
+      before: parentAfter,
+      after: parentBefore,
+    } = pendingFresh;
     const kind: ExecutableOperation['kind'] =
       parentBefore.kind === 'absent'
         ? 'remove'
@@ -2106,7 +2150,7 @@ const placementRollbackOperationFor = (
       pairId,
       reversibility: {
         kind: 'conditional',
-        retentionResourceIds: [pairId],
+        retentionResourceIds: [retentionResourceId],
       },
       before: parentAfter,
       after: parentBefore,
@@ -2175,6 +2219,15 @@ const placementRollbackOperationFor = (
       after.linkTarget?.kind === 'machine-bound'
         ? after.linkTarget.path
         : null;
+    const groupTarget =
+      intent.occurrenceTarget === undefined
+        ? target
+        : canonicalPlanningString({
+            domain: 'skillsmith.undo-occurrence',
+            schemaVersion: 1,
+            occurrence: intent.occurrenceTarget,
+            target,
+          });
     if (kind === 'link-dev' && (source?.kind !== 'local-dev' || target === null)) {
       throw new TypeError('placement planning: retained dev rollback history is incomplete');
     }
@@ -2188,29 +2241,11 @@ const placementRollbackOperationFor = (
       liveResource,
       kind,
       source,
-      target,
+      groupTarget,
       planningContext,
     );
-    const operationIdentity = {
-      domain: 'skillsmith.operation-identity',
-      schemaVersion: 1,
-      groupId: journal.intent.groupId,
-      pairId: journal.intent.pairId,
-      kind,
-      skill: intent.skill,
-      source,
-      tool: intent.tool,
-      scope: intent.scope,
-    } as const;
-    const operationId =
-      planningContext === undefined
-        ? createOperationId(operationIdentity)
-        : createOperationId(operationIdentity, planningContext);
     return {
       ...base,
-      groupId: journal.intent.groupId,
-      pairId: journal.intent.pairId,
-      operationId,
       reversibility: {
         kind: 'conditional',
         retentionResourceIds: [journal.intent.pairId],

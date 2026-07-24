@@ -1832,6 +1832,13 @@ const runInstallInternal = async (
       transition: Object.freeze({
         initial: Object.freeze({
           manifest: initialManifestImage,
+          ...(artifact.manifest.revision.domain === 'manifest' &&
+          artifact.manifest.revision.state === 'present'
+            ? {
+                manifestResourceRevision: artifact.manifest.revision
+                  .byteRevision as OperationDigest,
+              }
+            : {}),
           lock: initialLockImage,
         }),
         groups: Object.freeze(transitionGroups),

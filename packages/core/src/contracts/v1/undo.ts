@@ -251,7 +251,7 @@ const unique = (values: readonly string[]): boolean => new Set(values).size === 
 const vectorsMatch = (left: readonly string[], right: readonly string[]): boolean =>
   left.length === right.length && left.every((value, index) => value === right[index]);
 const toolOrder = (tool: UndoTool): number => UNDO_TOOL_ORDER.get(tool) ?? Number.MAX_SAFE_INTEGER;
-const groupOutcome = (pairs: readonly UndoPairV1Dto[]): UndoGroupV1Dto['outcome'] => {
+const pairAggregateOutcome = (pairs: readonly UndoPairV1Dto[]): UndoGroupV1Dto['outcome'] => {
   const precedence: Readonly<Record<UndoGroupV1Dto['outcome'], number>> = {
     failed: 6,
     cancelled: 5,
@@ -264,6 +264,40 @@ const groupOutcome = (pairs: readonly UndoPairV1Dto[]): UndoGroupV1Dto['outcome'
     (selected, pair) => (precedence[pair.outcome] > precedence[selected] ? pair.outcome : selected),
     'already-reversed',
   );
+};
+const groupReduction = (
+  group: UndoGroupV1Dto,
+  pairs: readonly UndoPairV1Dto[],
+  results: ReadonlyMap<string, UndoOperationResultV1Dto>,
+  reduce: boolean,
+): Readonly<{
+  outcome: UndoGroupV1Dto['outcome'];
+  failure: UndoGroupV1Dto['failure'];
+}> => {
+  if (!reduce) return { outcome: pairAggregateOutcome(pairs), failure: null };
+  const own = group.operations.map((operationId) => results.get(operationId));
+  const failed = own.find(
+    (result): result is UndoOperationResultV1Dto => result?.outcome === 'failed',
+  );
+  if (failed !== undefined) {
+    return {
+      outcome: 'failed',
+      failure: {
+        code: failed.error?.code ?? 'undo-execution-failed',
+        message: failed.error?.message ?? 'undo execution failed',
+      },
+    };
+  }
+  if (own.some((result) => result?.outcome === 'cancelled')) {
+    return { outcome: 'cancelled', failure: null };
+  }
+  if (
+    own.length > 0 &&
+    own.some((result) => result === undefined || result.outcome === 'skipped-after-failure')
+  ) {
+    return { outcome: 'not-run', failure: null };
+  }
+  return { outcome: pairAggregateOutcome(pairs), failure: null };
 };
 const pairReduction = (
   pair: UndoPairV1Dto,
@@ -540,6 +574,8 @@ const UndoV1Schema = z
           'move-scope',
           'repair',
           'migrate-ledger',
+          'write-manifest',
+          'write-lock',
         ].includes(operation.kind)
       ) {
         context.addIssue({
@@ -556,15 +592,14 @@ const UndoV1Schema = z
         .filter(({ groupId, kind }) => groupId === group.groupId && kind !== 'migrate-ledger')
         .map(({ operationId }) => operationId);
       const pairOperations = group.pairs.flatMap(({ operations }) => operations);
-      const expectedFailure =
-        group.pairs.find(({ outcome }) => outcome === 'failed')?.failure ?? null;
+      const expectedGroup = groupReduction(group, group.pairs, resultById, reducePairs);
       if (
         !unique(pairOperations) ||
-        !vectorsMatch(group.operations, pairOperations) ||
         !vectorsMatch(group.operations, exactGroupOperations) ||
-        group.outcome !== groupOutcome(group.pairs) ||
-        (group.failure?.code ?? null) !== (expectedFailure?.code ?? null) ||
-        (group.failure?.message ?? null) !== (expectedFailure?.message ?? null) ||
+        pairOperations.some((operationId) => !group.operations.includes(operationId)) ||
+        group.outcome !== expectedGroup.outcome ||
+        (group.failure?.code ?? null) !== (expectedGroup.failure?.code ?? null) ||
+        (group.failure?.message ?? null) !== (expectedGroup.failure?.message ?? null) ||
         group.pairs.some(
           (pair, pairIndex) =>
             pairIndex > 0 &&
@@ -615,12 +650,23 @@ const UndoV1Schema = z
       }
     }
     const executableOperationIds = value.operations
-      .filter(({ kind }) => kind !== 'migrate-ledger')
+      .filter(({ kind, pairId }) => kind !== 'migrate-ledger' && pairId !== null)
       .map(({ operationId }) => operationId);
+    const invalidGroupOperations = value.operations.filter(
+      (operation) =>
+        operation.kind !== 'migrate-ledger' &&
+        operation.pairId === null &&
+        (operation.skill !== null ||
+          operation.source !== null ||
+          operation.tool !== null ||
+          operation.scope !== null ||
+          (operation.kind !== 'write-manifest' && operation.kind !== 'write-lock')),
+    );
     if (
       !unique(pairIds) ||
       !unique(coveredOperationIds) ||
-      !vectorsMatch(coveredOperationIds, executableOperationIds)
+      !vectorsMatch(coveredOperationIds, executableOperationIds) ||
+      invalidGroupOperations.length > 0
     ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,

@@ -369,6 +369,7 @@ export const createUndoApplicationService = (
       return refusal(project.error.exitClass, project.error.code, project.error.message);
     const prepared = await dependencies.prepare(normalized.value.request, selection.value, {
       ports: context.ports,
+      artifactCoordinator: context.artifactCoordinator,
       projectContext: project.value,
       configuration: context.configuration,
       observation: context.observation,

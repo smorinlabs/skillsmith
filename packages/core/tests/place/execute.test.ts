@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { toolRegistry } from '../../src/agents/registry.ts';
+import { artifactManifestImageFromBytesV1 } from '../../src/artifacts/execution.ts';
 import type { LogicalJournalV1Dto } from '../../src/artifacts/journal-types.ts';
 import { ledgerV2Codec } from '../../src/artifacts/ledger-codec.ts';
 import { createTestNodeArtifactCoordinatorPorts } from '../../src/artifacts/node-coordinator.ts';
@@ -42,6 +43,7 @@ import type { PairPlan } from '../../src/place/plan.ts';
 import { contentHashOf } from '../../src/place/store.ts';
 import type { PairRecord, PlacementPorts, SwapPlan } from '../../src/place/types.ts';
 import {
+  createOperationExecutionResult,
   createOperationGroupId,
   createOperationId,
   createOperationPairId,
@@ -532,6 +534,199 @@ const installOperation = (
 };
 
 describe('placement execution boundary', () => {
+  test('composes a placement from the ledger durably changed by an external prerequisite', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-place-external-ledger-'));
+    try {
+      const basePorts = await defaultRuntimePorts();
+      let now = '2026-07-16T18:00:00.000Z';
+      const ports = Object.freeze({ ...basePorts, wallNowIso: () => now }) as PlacementPorts;
+      const ledgerPath = join(root, 'placements.json');
+      const seeded = await writeLedger(ports, ledgerPath, emptyLedgerModel(now));
+      if (!seeded.ok) throw new Error(JSON.stringify(seeded.error));
+      const initial = await readLedgerState(ports, ledgerPath);
+      if (!initial.ok || initial.value.state !== 'present') {
+        throw new Error('seeded placement ledger is missing');
+      }
+      const project = await resolveProjectContext(ports, { invocationCwd: root });
+      if (!project.ok) throw new Error(JSON.stringify(project.error));
+      const placementPath = join(root, 'skills', 'alpha');
+      const basePlacement = installOperation(placementPath);
+      const pair: PairPlan = {
+        skill: 'alpha',
+        tool: 'codex',
+        scope: 'user',
+        scopeKey: null,
+        placement: {
+          skill: 'alpha',
+          root: join(root, 'skills'),
+          path: placementPath,
+          class: 'absent',
+          symlinkTarget: null,
+          dangling: false,
+        },
+        notices: [],
+      };
+      const authority = await createPlacementSnapshotAuthority(
+        toolRegistry,
+        [],
+        ports,
+        project.value,
+        ledgerPath,
+        join(root, 'store'),
+        [pair],
+        [],
+      );
+      if (!authority.ok) throw new Error(JSON.stringify(authority.error));
+
+      const manifestPath = join(root, 'skillsmith.toml');
+      const artifactBefore = artifactManifestImageFromBytesV1(
+        manifestPath,
+        new TextEncoder().encode('version = 1\nskills = []\n'),
+      );
+      const artifactAfter = artifactManifestImageFromBytesV1(
+        manifestPath,
+        new TextEncoder().encode('version = 1\n\n# changed\nskills = []\n'),
+      );
+      const artifactOperationId = createOperationId({
+        domain: 'skillsmith.operation-identity',
+        schemaVersion: 1,
+        groupId: basePlacement.groupId,
+        pairId: null,
+        kind: 'write-manifest',
+        skill: null,
+        source: null,
+        tool: null,
+        scope: null,
+      });
+      const manifestRevision = authority.value.snapshot.manifest.revision;
+      const liveRevision = authority.value.snapshot.live[0]?.revision;
+      if (liveRevision === undefined) throw new Error('live placement revision is missing');
+      const manifestPreconditionId = createExpectedRevisionPreconditionIdV1(manifestRevision);
+      const livePreconditionId = createExpectedRevisionPreconditionIdV1(liveRevision);
+      const artifact: ExecutableOperation = {
+        operationId: artifactOperationId,
+        groupId: basePlacement.groupId,
+        pairId: null,
+        kind: 'write-manifest',
+        dependencyMetadata: {
+          domain: 'skillsmith.operation-dependency',
+          schemaVersion: 1,
+          operationIds: [],
+        },
+        skill: null,
+        source: null,
+        tool: null,
+        scope: null,
+        before: artifactBefore,
+        after: artifactAfter,
+        reason: { code: 'rollback-artifact-inverse', message: 'Restore retained manifest.' },
+        selectionSource: 'explicit-targets',
+        preconditionIds: [manifestPreconditionId],
+        requiredCheckIds: [],
+        reversibility: {
+          kind: 'conditional',
+          retentionResourceIds: ['update-artifact-retention:v1:fixture'],
+        },
+        mutates: { live: false, manifest: true, lock: false, ledger: true },
+        conflict: null,
+      };
+      const placement: ExecutableOperation = {
+        ...basePlacement,
+        preconditionIds: [livePreconditionId],
+        dependencyMetadata: {
+          ...basePlacement.dependencyMetadata,
+          operationIds: [artifactOperationId],
+        },
+      };
+      const plan = createOperationPlan({
+        domain: 'skillsmith.operation-plan',
+        schemaVersion: 1,
+        command: 'undo',
+        selection: {
+          source: 'explicit-targets',
+          outcome: 'selected',
+          targets: ['alpha'],
+          all: false,
+          tools: ['codex'],
+          scopes: ['user'],
+        },
+        batchPolicy: 'fail-fast',
+        operations: [artifact, placement],
+        checks: [],
+        diagnostics: [],
+      });
+      const preconditions = createPlacementRevisionExecutionPreconditionsV1(authority.value, plan, [
+        manifestRevision,
+        liveRevision,
+      ]);
+      now = '2026-07-16T19:00:00.000Z';
+      let pairLedgerUpdatedAt = '';
+      const results = await executePlacementOperationPlan({
+        env: ports,
+        ledgerPath,
+        plan,
+        preconditions,
+        authority: authority.value,
+        reportOp: 'rollback',
+        modelNow: () => now,
+        journalNow: () => now,
+        bindingForOperation: (operation) =>
+          operation.operationId === artifactOperationId
+            ? {
+                kind: 'external' as const,
+                binding: {
+                  operationId: operation.operationId,
+                  groupId: operation.groupId,
+                  pairId: null,
+                  unstartedForce: null,
+                  observeActualBefore: async () => operation.before,
+                  execute: async (binding) => {
+                    const current = await readLedgerState(ports, ledgerPath);
+                    if (!current.ok || current.value.state !== 'present') {
+                      throw new Error('external prerequisite ledger is missing');
+                    }
+                    const persisted = await writeLedger(ports, ledgerPath, {
+                      ...current.value.model,
+                      updatedAt: now,
+                    });
+                    if (!persisted.ok) throw new Error(JSON.stringify(persisted.error));
+                    return createOperationExecutionResult({
+                      operationId: operation.operationId,
+                      outcome: 'succeeded',
+                      actualBefore: binding.actualBefore,
+                      actualAfter: operation.after,
+                      force: null,
+                      error: null,
+                    });
+                  },
+                },
+              }
+            : { kind: 'pair' as const, stageResourceIds: [] },
+        executePair: async (operation, ledger) => {
+          pairLedgerUpdatedAt = ledger.updatedAt;
+          return {
+            skill: operation.skill ?? 'alpha',
+            tool: 'codex' as const,
+            placementPath: join(root, 'skills', 'alpha'),
+            action: 'rolled-back',
+            reason: null,
+            before: null,
+            after: null,
+            store: null,
+            verify: null,
+          };
+        },
+        onStarted: () => {},
+      });
+
+      expect(results.map(({ outcome }) => outcome)).toEqual(['succeeded', 'rolled-back']);
+      expect(pairLedgerUpdatedAt).toBe(now);
+      expect(pairLedgerUpdatedAt).not.toBe(initial.value.model.updatedAt);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test('persists a zero-operation before-schedule ledger result under placement authority', async () => {
     const root = await mkdtemp(join(tmpdir(), 'skillsmith-place-before-schedule-empty-'));
     try {
@@ -1061,6 +1256,7 @@ describe('placement execution boundary', () => {
       transactionId: 'tx:fresh-reversal',
       operationId: 'operation:fresh-reversal',
       groupId: 'group:fresh-reversal',
+      pairId: 'pair:fresh-reversal',
       command: 'skillsmith-undo',
       workflow: 'undo',
       startedAt: reversalNow,
@@ -1109,6 +1305,7 @@ describe('placement execution boundary', () => {
         transactionId: 'tx:wrong-older-reversal',
         operationId: 'operation:wrong-older-reversal',
         groupId: 'group:wrong-older-reversal',
+        pairId: 'pair:wrong-older-reversal',
         command: 'skillsmith-undo',
         workflow: 'undo',
         startedAt: reversalNow,
@@ -1121,6 +1318,7 @@ describe('placement execution boundary', () => {
         transactionId: 'tx:exact-newer-reversal',
         operationId: 'operation:exact-newer-reversal',
         groupId: 'group:exact-newer-reversal',
+        pairId: 'pair:exact-newer-reversal',
         command: 'skillsmith-undo',
         workflow: 'undo',
         startedAt: reversalNow,
@@ -1142,6 +1340,7 @@ describe('placement execution boundary', () => {
           transactionId: 'tx:reused-history-child-id',
           operationId: reusedChildOperationId,
           groupId: 'group:reused-history-child-id',
+          pairId: 'pair:reused-history-child-id',
           command: 'skillsmith-undo',
           workflow: 'undo',
           startedAt: reversalNow,

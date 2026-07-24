@@ -1,5 +1,5 @@
 import { Buffer } from 'node:buffer';
-import { isAbsolute, win32 } from 'node:path';
+import { basename, dirname, isAbsolute, win32 } from 'node:path';
 import { types as utilTypes } from 'node:util';
 import { type Result, err, ok } from '../result.ts';
 import { decodeArtifactUtf8, ownArtifactBytes } from './codec.ts';
@@ -10,6 +10,7 @@ import {
   hashManifestBytes,
   parseArtifactDigest,
 } from './hash.ts';
+import type { JournalRetainedV1Dto, LogicalJournalV1Dto } from './journal-types.ts';
 import { readPortableLockSource } from './lock.ts';
 import { normalizeManifestDocument, readManifestSource } from './manifest.ts';
 
@@ -64,6 +65,15 @@ export interface DecodedRetainedArtifactPreimageV1 {
   readonly encoded: Uint8Array;
   readonly repositoryDigest: ArtifactDigest;
   readonly contentDigest: ArtifactDigest;
+}
+
+export interface RetainedArtifactJournalAuthorityV1 {
+  readonly operationId: string;
+  readonly groupId: string;
+  readonly role: RetainedArtifactRoleV1;
+  readonly path: string;
+  readonly afterDigest: ArtifactDigest;
+  readonly retained: Extract<JournalRetainedV1Dto, { readonly role: 'backup' }>;
 }
 
 export type RetainedArtifactPreimageCodecErrorReason =
@@ -329,4 +339,108 @@ export const decodeRetainedArtifactPreimageV1 = (
     return err(codecError('expectation-mismatch'));
   }
   return encoded;
+};
+
+const actualDigest = (
+  role: RetainedArtifactRoleV1,
+  actual: LogicalJournalV1Dto['actual']['before'][number],
+): ArtifactDigest | null => {
+  if (role === 'manifest') {
+    return actual.role === 'manifest' && actual.state === 'present' ? actual.byteHash : null;
+  }
+  return actual.role === 'lock' && actual.state === 'present' ? actual.canonicalHash : null;
+};
+
+const actualPath = (
+  role: RetainedArtifactRoleV1,
+  actual: LogicalJournalV1Dto['actual']['before'][number],
+): string | null =>
+  actual.role === role && actual.location.kind === 'machine-bound' ? actual.location.path : null;
+
+/**
+ * Recover the exact private-envelope authority already signed by one forward artifact carrier.
+ * This is intentionally narrower than the journal codec: other pair-null artifact journals are
+ * valid history, but they are not update-retention authorities.
+ */
+export const retainedArtifactJournalAuthorityV1 = (
+  journal: LogicalJournalV1Dto,
+): RetainedArtifactJournalAuthorityV1 | null => {
+  const role: RetainedArtifactRoleV1 | null =
+    journal.intent.kind === 'write-manifest'
+      ? 'manifest'
+      : journal.intent.kind === 'write-lock'
+        ? 'lock'
+        : null;
+  if (
+    role === null ||
+    journal.disposition !== 'forward' ||
+    journal.intent.pairId !== null ||
+    journal.intent.skill !== null ||
+    journal.intent.source !== null ||
+    journal.intent.tool !== null ||
+    journal.intent.scope !== null ||
+    journal.intent.reversibility.kind !== 'conditional' ||
+    journal.intent.reversibility.retentionResourceIds.length !== 1 ||
+    journal.actual.before.length !== 1 ||
+    journal.actual.after.length !== 1 ||
+    journal.actual.retained.length !== 1
+  ) {
+    return null;
+  }
+  const beforeImage = journal.intent.before;
+  const afterImage = journal.intent.after;
+  const path =
+    beforeImage.kind === role && beforeImage.location.kind === 'machine-bound'
+      ? beforeImage.location.path
+      : null;
+  const afterPath =
+    afterImage.kind === role && afterImage.location.kind === 'machine-bound'
+      ? afterImage.location.path
+      : null;
+  const beforeDigest =
+    role === 'manifest' && beforeImage.kind === 'manifest'
+      ? beforeImage.byteHash
+      : role === 'lock' && beforeImage.kind === 'lock'
+        ? beforeImage.canonicalHash
+        : null;
+  const afterDigest =
+    role === 'manifest' && afterImage.kind === 'manifest'
+      ? afterImage.byteHash
+      : role === 'lock' && afterImage.kind === 'lock'
+        ? afterImage.canonicalHash
+        : null;
+  const actualBefore = journal.actual.before[0];
+  const actualAfter = journal.actual.after[0];
+  const retained = journal.actual.retained[0];
+  const retentionResourceId = journal.intent.reversibility.retentionResourceIds[0];
+  if (
+    path === null ||
+    path !== afterPath ||
+    beforeDigest === null ||
+    afterDigest === null ||
+    actualBefore === undefined ||
+    actualAfter === undefined ||
+    retained === undefined ||
+    retentionResourceId === undefined ||
+    actualPath(role, actualBefore) !== path ||
+    actualPath(role, actualAfter) !== path ||
+    actualDigest(role, actualBefore) !== beforeDigest ||
+    actualDigest(role, actualAfter) !== afterDigest ||
+    retained.role !== 'backup' ||
+    retained.sourceRole !== role ||
+    retained.resourceId !== retentionResourceId ||
+    retained.repositoryRevision.kind !== 'resource' ||
+    basename(dirname(retained.path)) !== `.skillsmith-artifact-${journal.transactionId}` ||
+    basename(retained.path) !== `${role}.backup`
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    operationId: journal.intent.operationId,
+    groupId: journal.intent.groupId,
+    role,
+    path,
+    afterDigest,
+    retained,
+  });
 };

@@ -6,6 +6,10 @@ import { unsignedUtf16Compare } from './codec.ts';
 import type { LogicalJournalV1Dto } from './journal-types.ts';
 import type { LedgerModel } from './ledger-types.ts';
 import { logicalJournalPairIdentity } from './registry.ts';
+import {
+  decodeRetainedArtifactPreimageV1,
+  retainedArtifactJournalAuthorityV1,
+} from './retained-preimage-codec.ts';
 
 export type LegacyJournalOperation = NonNullable<
   import('./ledger-types.ts').LedgerPairV1Dto['journal']
@@ -28,6 +32,7 @@ const sameFreshRollbackIntent = (
       ...parent.intent,
       operationId: child.intent.operationId,
       groupId: child.intent.groupId,
+      pairId: child.intent.pairId,
     },
     child.intent,
   );
@@ -85,6 +90,20 @@ export const freshRollbackShadowOperations = (
             ? PROMOTE_SHADOW_OPERATIONS
             : null
         : null;
+    case 'update':
+      return before === 'managed' && after === 'managed' ? PROMOTE_SHADOW_OPERATIONS : null;
+    case 'repair': {
+      const retained = parent.actual.retained[0];
+      return before === 'managed' &&
+        after === 'managed' &&
+        parent.intent.reversibility.kind === 'conditional' &&
+        parent.intent.reversibility.retentionResourceIds.length === 1 &&
+        parent.actual.retained.length === 1 &&
+        retained?.role === 'store' &&
+        retained.resourceId === parent.intent.reversibility.retentionResourceIds[0]
+        ? PROMOTE_SHADOW_OPERATIONS
+        : null;
+    }
     case 'remove':
       return after === 'absent'
         ? before === 'dev'
@@ -97,6 +116,23 @@ export const freshRollbackShadowOperations = (
       return null;
   }
 };
+
+export const freshArtifactRollbackParentMatches = (
+  child: LogicalJournalV1Dto,
+  parent: LogicalJournalV1Dto,
+): boolean =>
+  parent.intent.pairId === null &&
+  child.intent.pairId === null &&
+  parent.intent.skill === null &&
+  parent.intent.source === null &&
+  parent.intent.tool === null &&
+  parent.intent.scope === null &&
+  child.intent.skill === null &&
+  child.intent.source === null &&
+  child.intent.tool === null &&
+  child.intent.scope === null &&
+  (parent.intent.kind === 'write-manifest' || parent.intent.kind === 'write-lock') &&
+  child.intent.kind === parent.intent.kind;
 
 const freshRollbackPhaseMatchesParent = (
   child: LogicalJournalV1Dto,
@@ -138,7 +174,8 @@ export const resolveFreshRollbackLineage = (
         parent !== undefined &&
         !consumedParentTransactionIds.has(parent.transactionId) &&
         freshRollbackParentMatches(child, parent) &&
-        freshRollbackShadowOperations(parent) !== null &&
+        (freshRollbackShadowOperations(parent) !== null ||
+          freshArtifactRollbackParentMatches(child, parent)) &&
         freshRollbackPhaseMatchesParent(child, parent)
       ) {
         return parent;
@@ -836,8 +873,16 @@ export const cleanupHistoryVictim = async (
   }
 
   const backupsByPath = new Map<string, LogicalJournalV1Dto['actual']['retained'][number]>();
+  const excludedByTransactionId = new Map(
+    excludedJournals.map((candidate) => [candidate.transactionId, candidate] as const),
+  );
   const present: Array<
-    Readonly<{ readonly path: string; readonly identity: string; readonly parentIdentity: string }>
+    Readonly<{
+      readonly path: string;
+      readonly identity: string;
+      readonly parentIdentity: string;
+      readonly privateEnvelope: boolean;
+    }>
   > = [];
   for (const backup of backups) {
     const directory = dirname(backup.path);
@@ -845,13 +890,27 @@ export const cleanupHistoryVictim = async (
     const ownerTransactionId = directoryName.startsWith('.skillsmith-artifact-')
       ? directoryName.slice('.skillsmith-artifact-'.length)
       : '';
+    const owner = excludedByTransactionId.get(ownerTransactionId);
+    const artifactAuthority =
+      backup.sourceRole === 'manifest' || backup.sourceRole === 'lock'
+        ? owner === undefined
+          ? null
+          : retainedArtifactJournalAuthorityV1(owner)
+        : null;
+    const artifactEnvelope = backup.sourceRole === 'manifest' || backup.sourceRole === 'lock';
     const duplicate = backupsByPath.get(backup.path);
     if (
       backup.path !== resolve(backup.path) ||
       !excludedTransactionIds.has(ownerTransactionId) ||
       basename(backup.path) !== `${backup.sourceRole}.backup` ||
       dirname(backup.path) === backup.path ||
-      backup.repositoryRevision.digest !== backup.contentHash ||
+      (artifactEnvelope
+        ? artifactAuthority === null ||
+          artifactAuthority.retained.path !== backup.path ||
+          artifactAuthority.retained.repositoryRevision.digest !==
+            backup.repositoryRevision.digest ||
+          artifactAuthority.retained.contentHash !== backup.contentHash
+        : backup.repositoryRevision.digest !== backup.contentHash) ||
       (duplicate !== undefined &&
         (duplicate.role !== 'backup' ||
           duplicate.sourceRole !== backup.sourceRole ||
@@ -871,13 +930,37 @@ export const cleanupHistoryVictim = async (
     if (before.kind === 'absent' && before.identity === null && before.linkCount === 0) {
       continue;
     }
-    if (before.kind !== 'file' || before.identity === null || before.linkCount !== 1) {
+    if (
+      before.kind !== 'file' ||
+      before.identity === null ||
+      before.linkCount !== 1 ||
+      (artifactEnvelope && before.mode !== 0o600)
+    ) {
       return err({ code: 'victim-mismatch', transactionId: options.transactionId });
     }
     const bytes = await ports.readBytes(backup.path);
-    const digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
-    if (digest !== backup.repositoryRevision.digest || digest !== backup.contentHash) {
-      return err({ code: 'victim-mismatch', transactionId: options.transactionId });
+    if (artifactEnvelope) {
+      if (artifactAuthority === null) {
+        return err({ code: 'victim-mismatch', transactionId: options.transactionId });
+      }
+      const decoded = decodeRetainedArtifactPreimageV1(bytes, {
+        operationId: artifactAuthority.operationId,
+        role: artifactAuthority.role,
+        path: artifactAuthority.path,
+      });
+      if (
+        !decoded.ok ||
+        decoded.value.model.after.digest !== artifactAuthority.afterDigest ||
+        decoded.value.repositoryDigest !== backup.repositoryRevision.digest ||
+        decoded.value.contentDigest !== backup.contentHash
+      ) {
+        return err({ code: 'victim-mismatch', transactionId: options.transactionId });
+      }
+    } else {
+      const digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+      if (digest !== backup.repositoryRevision.digest || digest !== backup.contentHash) {
+        return err({ code: 'victim-mismatch', transactionId: options.transactionId });
+      }
     }
     const after = await ports.readFileMetadata(backup.path);
     const parentAfter = await ports.readFileMetadata(directory);
@@ -885,13 +968,19 @@ export const cleanupHistoryVictim = async (
       after.kind !== 'file' ||
       after.identity !== before.identity ||
       after.linkCount !== 1 ||
+      (artifactEnvelope && after.mode !== 0o600) ||
       parentAfter.kind !== 'dir' ||
       parentAfter.identity !== parent.identity ||
       parentAfter.mode !== 0o700
     ) {
       return err({ code: 'victim-mismatch', transactionId: options.transactionId });
     }
-    present.push({ path: backup.path, identity: before.identity, parentIdentity: parent.identity });
+    present.push({
+      path: backup.path,
+      identity: before.identity,
+      parentIdentity: parent.identity,
+      privateEnvelope: artifactEnvelope,
+    });
   }
 
   for (const backup of present) {
@@ -903,7 +992,8 @@ export const cleanupHistoryVictim = async (
       parent.mode !== 0o700 ||
       current.kind !== 'file' ||
       current.identity !== backup.identity ||
-      current.linkCount !== 1
+      current.linkCount !== 1 ||
+      (backup.privateEnvelope && current.mode !== 0o600)
     ) {
       return err({ code: 'victim-mismatch', transactionId: options.transactionId });
     }

@@ -1535,6 +1535,7 @@ describe('createPlacementPlan', () => {
           ...journal.intent,
           operationId: inverseOperationId,
           groupId: inverseOperation.groupId,
+          pairId: inverseOperation.pairId,
         },
         context: {
           ...journal.context,

@@ -208,6 +208,107 @@ describe('undo@1 report codec', () => {
     expect(undoV1Codec.validate(actionableReport('execute'))).toMatchObject({ ok: true });
   });
 
+  test('preserves a group-level artifact failure while the live pair remains not-run', () => {
+    const report = actionableReport('execute');
+    const live = report.operations[0];
+    const group = report.groups[0];
+    const pair = group?.pairs[0];
+    if (live === undefined || group === undefined || pair === undefined) {
+      throw new Error('actionable undo fixture omitted its canonical operation');
+    }
+    const lockLocation = { kind: 'machine-bound' as const, path: '/fixture/skillsmith.lock' };
+    const lockValue = {
+      version: 1 as const,
+      hashSchemaVersion: 1 as const,
+      manifestHash: `sha256:${'c'.repeat(64)}` as const,
+      skills: [],
+    };
+    const artifact: UndoReportV1Dto['operations'][number] = {
+      ...live,
+      operationId: 'operation:v1:undo-review-lock',
+      pairId: null,
+      kind: 'write-lock',
+      skill: null,
+      source: null,
+      tool: null,
+      scope: null,
+      before: {
+        kind: 'lock',
+        location: lockLocation,
+        version: 1,
+        canonicalHash: `sha256:${'d'.repeat(64)}`,
+        value: lockValue,
+      },
+      after: {
+        kind: 'lock',
+        location: lockLocation,
+        version: 1,
+        canonicalHash: `sha256:${'e'.repeat(64)}`,
+        value: lockValue,
+      },
+      reason: { code: 'rollback-artifact-inverse', message: 'Restore the retained lock.' },
+      reversibility: {
+        kind: 'conditional',
+        retentionResourceIds: ['update-artifact-retention:v1:fixture'],
+      },
+      mutates: { live: false, manifest: false, lock: true, ledger: true },
+    };
+    const failed = {
+      operationId: artifact.operationId,
+      outcome: 'failed' as const,
+      error: {
+        code: 'undo-artifact-restore-failed',
+        message: 'retained lock restore failed',
+        remediation: 'retry',
+      },
+    };
+    const skipped = {
+      operationId: live.operationId,
+      outcome: 'skipped-after-failure' as const,
+      error: null,
+    };
+    const artifactFailure: UndoReportV1Dto = {
+      ...report,
+      state: 'partial',
+      groups: [
+        {
+          ...group,
+          operations: [artifact.operationId, live.operationId],
+          outcome: 'failed',
+          failure: { code: failed.error.code, message: failed.error.message },
+          pairs: [{ ...pair, outcome: 'not-run', failure: null }],
+        },
+      ],
+      operations: [artifact, live],
+      results: [failed, skipped],
+      effects: [
+        {
+          role: 'ledger',
+          action: artifact.kind,
+          operationId: artifact.operationId,
+          groupId: artifact.groupId,
+          outcome: 'failed',
+        },
+        ...report.effects.map((effect) => ({ ...effect, outcome: 'not-run' as const })),
+      ],
+      summary: {
+        ...emptySummary(),
+        selected: 1,
+        actionable: 1,
+        failed: 1,
+        effects: 3,
+      },
+    };
+
+    expect(undoV1Codec.validate(artifactFailure)).toMatchObject({ ok: true });
+    expect(
+      undoV1Codec.validate({
+        ...artifactFailure,
+        groups: [{ ...artifactFailure.groups[0], outcome: 'not-run', failure: null }],
+      }),
+    ).toMatchObject({ ok: false });
+  });
+
   test('rejects every non-canonical effect omission, duplication, order, and field drift', () => {
     const report = actionableReport('dry-run');
     const ledger = report.effects[0];

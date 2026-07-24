@@ -119,6 +119,8 @@ export interface AcquisitionArtifactTransitionGroupV1 {
 export interface AcquisitionArtifactTransitionEnvelopeV1 {
   readonly initial: Readonly<{
     readonly manifest: ManifestImageV1 | AbsentManifestImageV1;
+    /** Resource-domain revision from the snapshot; manifest.byteHash is role-domain. */
+    readonly manifestResourceRevision?: OperationDigest;
     readonly lock: LockImageV1 | AbsentLockImageV1;
   }>;
   readonly groups: readonly AcquisitionArtifactTransitionGroupV1[];
@@ -376,6 +378,7 @@ const validateLockImage = (image: LockImageV1): void => {
 const validateInitialArtifactImage = (
   image: ManifestImageV1 | AbsentManifestImageV1,
   observation: ObservedComponentV1<NormalizedManifestV1>,
+  resourceRevision?: OperationDigest,
 ): void => {
   const location = imageLocation(image);
   const targetIdentity = location.kind === 'machine-bound' ? location.path : null;
@@ -396,7 +399,7 @@ const validateInitialArtifactImage = (
     observation.revision.state !== 'present' ||
     observation.revision.targetIdentity !== targetIdentity ||
     observation.value === null ||
-    observation.revision.byteRevision !== image.byteHash ||
+    observation.revision.byteRevision !== (resourceRevision ?? image.byteHash) ||
     observation.revision.semanticRevision !== image.semanticHash ||
     canonicalPlanningString(operationManifestSnapshot(observation.value)) !==
       canonicalPlanningString(image.value)
@@ -1378,7 +1381,11 @@ const createArtifactTransitionOperations = (
   const lockLocation = artifactLocation(snapshot.artifact.pair.lockfile.path);
   requireArtifactLocation(transition.initial.manifest, manifestLocation);
   requireArtifactLocation(transition.initial.lock, lockLocation);
-  validateInitialArtifactImage(transition.initial.manifest, snapshot.artifact.manifest);
+  validateInitialArtifactImage(
+    transition.initial.manifest,
+    snapshot.artifact.manifest,
+    transition.initial.manifestResourceRevision,
+  );
   validateInitialLockImage(transition.initial.lock, snapshot.artifact.lock);
   let currentManifest = transition.initial.manifest;
   let currentLock = transition.initial.lock;

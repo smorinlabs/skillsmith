@@ -99,6 +99,7 @@ import type {
   JournalPhase,
   PairRecord,
   PlacementPorts,
+  SwapCtx,
   SwapExecutionResult,
   SwapOutcome,
   SwapPlan,
@@ -1140,7 +1141,26 @@ export const executePlacementOperationPlan = async (
     (operation, index) => {
       const binding = placementBindings[index];
       if (binding === undefined) throw new Error('prepared operation binding is missing');
-      if (binding.kind === 'external') return binding.binding;
+      if (binding.kind === 'external') {
+        if (!operation.mutates.ledger || operation.reason.code !== 'rollback-artifact-inverse')
+          return binding.binding;
+        const external = binding.binding;
+        return Object.freeze({
+          ...external,
+          execute: async (
+            validatedBinding: ValidatedExecutionBinding,
+            observation?: ObservationBundle,
+          ) => {
+            const result = await lifecycle.execute(operation, [], () =>
+              external.execute(validatedBinding, observation),
+            );
+            const reread = await readLedgerState(input.env, input.ledgerPath);
+            if (!reread.ok) throw reread.error;
+            executionLedger = ledgerModelForMutation(reread.value, input.modelNow());
+            return result;
+          },
+        });
+      }
       if (binding.kind === 'migrate-ledger') {
         const migrationInput = {
           env: input.env,
@@ -1292,6 +1312,8 @@ export interface PlacementExecutionInput {
   readonly journalNow: () => string;
   readonly newTransactionId: (ledger: LedgerModel) => string;
   readonly logicalOperation?: ExecutableOperation;
+  readonly retainedPlacementBefore?: SwapCtx['retainedPlacementBefore'];
+  readonly logicalPlacementBefore?: SwapCtx['logicalPlacementBefore'];
   readonly pauseAt?: JournalPhase;
   readonly signal?: AbortSignal;
   readonly firstPersistenceGuard?: PlacementFirstPersistenceGuard;
@@ -1333,6 +1355,12 @@ export const createPlacementSwapRequest = (input: PlacementExecutionInput): Swap
     context: Object.freeze({
       env: input.env,
       ...(input.logicalOperation === undefined ? {} : { logicalOperation: input.logicalOperation }),
+      ...(input.retainedPlacementBefore === undefined
+        ? {}
+        : { retainedPlacementBefore: input.retainedPlacementBefore }),
+      ...(input.logicalPlacementBefore === undefined
+        ? {}
+        : { logicalPlacementBefore: input.logicalPlacementBefore }),
       ...(input.pauseAt === undefined ? {} : { pauseAt: input.pauseAt }),
       ...(input.signal === undefined ? {} : { signal: input.signal }),
     }),

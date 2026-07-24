@@ -284,6 +284,45 @@ describe('undo planning projection', () => {
     },
   );
 
+  test('group reduction preserves a pair-null artifact failure while pairs stay live-only', () => {
+    const live = operation('review', 'codex');
+    const artifact = {
+      ...live,
+      operationId: 'operation:undo:review:lock',
+      pairId: null,
+      kind: 'write-lock' as const,
+      skill: null,
+      source: null,
+      tool: null,
+      scope: null,
+      mutates: { live: false, manifest: false, lock: true, ledger: true },
+    };
+    const selectedPlan = plan([artifact, live]);
+    const groups = createUndoPlanGroups(observation([candidate('review', 'codex')]), selectedPlan);
+    const reduced = reduceUndoPlanGroups(groups, [
+      {
+        operationId: artifact.operationId,
+        outcome: 'failed',
+        error: {
+          code: 'undo-artifact-restore-failed',
+          message: 'retained lock restore failed',
+          remediation: 'retry',
+        },
+      } as OperationExecutionResult,
+      result('review', 'codex', 'skipped-after-failure'),
+    ]);
+
+    expect(reduced[0]).toMatchObject({
+      operationIds: [artifact.operationId, live.operationId],
+      outcome: 'failed',
+      failure: {
+        code: 'undo-artifact-restore-failed',
+        message: 'retained lock restore failed',
+      },
+      pairs: [{ operationIds: [live.operationId], outcome: 'not-run', failure: null }],
+    });
+  });
+
   test('uses first failed operation and exact group precedence across ordered pairs', () => {
     const claude = candidate('review', 'claude-code');
     const codex = candidate('review', 'codex');

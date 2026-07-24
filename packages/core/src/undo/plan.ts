@@ -131,17 +131,6 @@ const planPair = (candidate: UndoCandidate, plan: OperationPlan<'undo'>): UndoPl
   };
 };
 
-const concatenatePairOperations = (pairs: readonly UndoPlanPair[]) => {
-  const seen = new Set<string>();
-  return pairs.flatMap((pair) =>
-    pair.operations.filter((operation) => {
-      if (seen.has(operation.operationId)) return false;
-      seen.add(operation.operationId);
-      return true;
-    }),
-  );
-};
-
 export const createUndoPlanGroups = (
   observation: UndoObservation,
   plan: OperationPlan<'undo'>,
@@ -162,32 +151,49 @@ export const createUndoPlanGroups = (
       scope: candidate.scope,
     });
   }
+  const operationGroupOrder = new Map<string, number>();
+  for (const operation of plan.operations) {
+    if (!operationGroupOrder.has(operation.groupId)) {
+      operationGroupOrder.set(operation.groupId, operationGroupOrder.size);
+    }
+  }
   return deepFreeze(
-    [...grouped.entries()].map(([key, unorderedPairs]) => {
-      const group = facts.get(key);
-      if (group === undefined) throw new TypeError('undo group facts are missing');
-      const pairs = [...unorderedPairs].sort(
+    [...grouped.entries()]
+      .map(([key, unorderedPairs]) => {
+        const group = facts.get(key);
+        if (group === undefined) throw new TypeError('undo group facts are missing');
+        const pairs = [...unorderedPairs].sort(
+          (left, right) =>
+            toolOrder(left.tool) - toolOrder(right.tool) || left.path.localeCompare(right.path),
+        );
+        const pairGroupIds = new Set(
+          pairs.flatMap((pair) => pair.operations.map(({ groupId }) => groupId)),
+        );
+        const operations = plan.operations.filter(
+          (operation) => operation.kind !== 'migrate-ledger' && pairGroupIds.has(operation.groupId),
+        );
+        const operationGroupIds = [...new Set(operations.map(({ groupId }) => groupId))];
+        if (operationGroupIds.length > 1) {
+          throw new TypeError('undo canonical group operations have inconsistent identities');
+        }
+        return {
+          groupId: operationGroupIds[0] ?? group.groupId,
+          name: group.name,
+          scope: group.scope,
+          pairs,
+          operationIds: operations.map(({ operationId }) => operationId),
+          operations,
+          outcome: pairs.every(({ outcome }) => outcome === 'already-reversed')
+            ? ('already-reversed' as const)
+            : ('planned' as const),
+          failure: null,
+        };
+      })
+      .sort(
         (left, right) =>
-          toolOrder(left.tool) - toolOrder(right.tool) || left.path.localeCompare(right.path),
-      );
-      const operations = concatenatePairOperations(pairs);
-      const operationGroupIds = [...new Set(operations.map(({ groupId }) => groupId))];
-      if (operationGroupIds.length > 1) {
-        throw new TypeError('undo canonical group operations have inconsistent identities');
-      }
-      return {
-        groupId: operationGroupIds[0] ?? group.groupId,
-        name: group.name,
-        scope: group.scope,
-        pairs,
-        operationIds: operations.map(({ operationId }) => operationId),
-        operations,
-        outcome: pairs.every(({ outcome }) => outcome === 'already-reversed')
-          ? ('already-reversed' as const)
-          : ('planned' as const),
-        failure: null,
-      };
-    }),
+          (operationGroupOrder.get(left.groupId) ?? Number.MAX_SAFE_INTEGER) -
+          (operationGroupOrder.get(right.groupId) ?? Number.MAX_SAFE_INTEGER),
+      ),
   );
 };
 
@@ -303,6 +309,36 @@ const aggregateOutcome = (pairs: readonly UndoPlanPair[]): UndoPlanOutcome =>
     'already-reversed',
   );
 
+const reduceGroup = (
+  group: UndoPlanGroup,
+  pairs: readonly UndoPlanPair[],
+  results: ReadonlyMap<string, OperationExecutionResult>,
+): Pick<UndoPlanGroup, 'outcome' | 'failure'> => {
+  const own = group.operationIds.map((operationId) => results.get(operationId));
+  const failed = own.find(
+    (result): result is OperationExecutionResult => result?.outcome === 'failed',
+  );
+  if (failed !== undefined) {
+    return {
+      outcome: 'failed',
+      failure: {
+        code: failed.error?.code ?? 'undo-execution-failed',
+        message: failed.error?.message ?? 'undo execution failed',
+      },
+    };
+  }
+  if (own.some((result) => result?.outcome === 'cancelled')) {
+    return { outcome: 'cancelled', failure: null };
+  }
+  if (
+    own.length > 0 &&
+    own.some((result) => result === undefined || result.outcome === 'skipped-after-failure')
+  ) {
+    return { outcome: 'not-run', failure: null };
+  }
+  return { outcome: aggregateOutcome(pairs), failure: null };
+};
+
 /** Exact deterministic pair/group reduction shared by direct undo and rollback aliases. */
 export const reduceUndoPlanGroups = (
   groups: readonly UndoPlanGroup[],
@@ -312,8 +348,7 @@ export const reduceUndoPlanGroups = (
   return deepFreeze(
     groups.map((group) => {
       const pairs = group.pairs.map((pair) => reducePair(pair, results));
-      const failure = pairs.find((pair) => pair.outcome === 'failed')?.failure ?? null;
-      return { ...group, pairs, outcome: aggregateOutcome(pairs), failure };
+      return { ...group, pairs, ...reduceGroup(group, pairs, results) };
     }),
   );
 };

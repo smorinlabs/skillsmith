@@ -22,6 +22,7 @@ import {
   type LegacyJournalOperation,
   PROMOTE_SHADOW_OPERATIONS,
   UNINSTALL_SHADOW_OPERATIONS,
+  freshArtifactRollbackParentMatches,
   freshRollbackParentMatches,
   freshRollbackShadowOperations,
   resolveFreshRollbackLineage,
@@ -501,16 +502,17 @@ const exactFreshRollbackRetention = (
   contentHash: string,
 ): boolean => {
   const pairId = logical.intent.pairId;
+  const retentionResourceId = logical.intent.reversibility.retentionResourceIds[0];
   const retained = logical.actual.retained[0];
   return (
     pairId !== null &&
     logical.intent.reversibility.kind === 'conditional' &&
     logical.intent.reversibility.retentionResourceIds.length === 1 &&
-    logical.intent.reversibility.retentionResourceIds[0] === pairId &&
+    retentionResourceId !== undefined &&
     logical.actual.retained.length === 1 &&
     retained !== undefined &&
     retained.role === 'store' &&
-    retained.resourceId === pairId &&
+    retained.resourceId === retentionResourceId &&
     retained.path === path &&
     retained.contentHash === contentHash &&
     retained.repositoryRevision.kind === 'resource' &&
@@ -604,7 +606,7 @@ export const committedFreshRollbackTerminalMembershipMatches = (
     live.liveKind !== (terminal.representation === 'symlink' ? 'symlink' : 'directory') ||
     pair.mode !== 'pinned' ||
     pair.pinned == null ||
-    pair.pinned.contentHash !== terminal.contentHash ||
+    pair.pinned.contentHash !== live.contentHash ||
     pair.pinned.placement !== terminal.representation ||
     !exactFreshRollbackRetention(logical, pair.pinned.storePath, terminal.contentHash)
   ) {
@@ -745,9 +747,11 @@ const validateLedgerCrossReferences = (
       : shadowOperations(logical);
     const identity = logicalJournalPairIdentity(logical);
     const fresh = freshRollbackParentMatches(logical, parent);
-    if (fresh && (operations === null || identity === null)) {
+    const freshArtifact = parent !== null && freshArtifactRollbackParentMatches(logical, parent);
+    if (fresh && !freshArtifact && (operations === null || identity === null)) {
       return err(codecError('invalid-shape', ['transactions', logical.transactionId], 2));
     }
+    if (freshArtifact) continue;
     if (operations === null || identity === null) continue;
     const legacy = legacyById.get(logical.transactionId);
     if (

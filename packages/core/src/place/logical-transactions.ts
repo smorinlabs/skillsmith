@@ -62,6 +62,7 @@ export interface BeginCommittedLogicalTransactionReversalRequest {
   readonly transactionId: string;
   readonly operationId: string;
   readonly groupId: string;
+  readonly pairId: string | null;
   readonly command: string;
   readonly workflow: string;
   readonly startedAt: string;
@@ -648,6 +649,7 @@ const sameForwardIntentOrientation = (
       ...source.intent,
       operationId: rollback.intent.operationId,
       groupId: rollback.intent.groupId,
+      pairId: rollback.intent.pairId,
     },
     rollback.intent,
   );
@@ -687,7 +689,7 @@ export const logicalRollbackExecutionMode = (
     !sameForwardIntentOrientation(source, journal) ||
     !same(source.actual.after, journal.actual.before) ||
     !same(source.actual.retained, journal.actual.retained) ||
-    inverseLegacyOperation(journal, source) === null ||
+    (journal.intent.pairId !== null && inverseLegacyOperation(journal, source) === null) ||
     (journal.phase === 'live' || journal.phase === 'committed'
       ? !same(source.actual.before, journal.actual.after)
       : journal.actual.after.length !== 0)
@@ -732,7 +734,16 @@ export const beginCommittedLogicalTransactionReversal = (
     source === null ||
     source.phase !== 'committed' ||
     source.disposition !== 'forward' ||
-    !new Set(['install', 'remove', 'link-dev', 'promote']).has(source.intent.kind)
+    !new Set([
+      'install',
+      'remove',
+      'link-dev',
+      'promote',
+      'update',
+      'repair',
+      'write-manifest',
+      'write-lock',
+    ]).has(source.intent.kind)
   ) {
     return err(
       failure('identity-conflict', 'reversal has no eligible committed forward transaction'),
@@ -742,6 +753,8 @@ export const beginCommittedLogicalTransactionReversal = (
     request.transactionId.length === 0 ||
     request.operationId.length === 0 ||
     request.groupId.length === 0 ||
+    (request.pairId !== null && request.pairId.length === 0) ||
+    (source.intent.pairId === null) !== (request.pairId === null) ||
     request.command.length === 0 ||
     request.workflow.length === 0 ||
     request.startedAt.length === 0 ||
@@ -762,6 +775,7 @@ export const beginCommittedLogicalTransactionReversal = (
       ...source.intent,
       operationId: request.operationId,
       groupId: request.groupId,
+      pairId: request.pairId,
     },
     context: {
       parentOperationId: source.intent.operationId,

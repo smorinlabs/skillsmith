@@ -1,4 +1,5 @@
 import type { FLIP_TOOLS } from '../agents/registry.ts';
+import type { JournalRetainedV1Dto } from '../artifacts/journal-types.ts';
 import type { LedgerModel } from '../artifacts/ledger-types.ts';
 import type { SkillSmithError } from '../errors.ts';
 import type { FlipAction } from '../planning/legacy-action.ts';
@@ -142,6 +143,13 @@ export interface Provenance {
 export interface SwapCtx {
   readonly env: SwapPorts;
   readonly logicalOperation?: ExecutableOperation;
+  /** Exact pre-operation store authority retained across an internal copy bridge. */
+  readonly retainedPlacementBefore?: Extract<JournalRetainedV1Dto, { readonly role: 'store' }>;
+  /** Exact managed before-image retained across an internal copy bridge. */
+  readonly logicalPlacementBefore?: Extract<
+    ExecutableOperation['before'],
+    { readonly kind: 'placement' }
+  >;
   readonly pauseAt?: JournalPhase | undefined; // test seam, see swap.ts
   readonly signal?: AbortSignal | undefined;
 }
@@ -181,7 +189,14 @@ export interface SwapPlan {
   placementPath: string; // join(skillsRoot, skill)
   scopeKey?: string | null; // realpath project key; null/undefined = user-scope `skills` tree
   // promote: the store entry to materialize; dev: the literal symlink target to restore
-  promote?: { storePath: string; contentHash: string; pinned: PinnedRecord; devRecord: DevRecord };
+  promote?: {
+    storePath: string;
+    contentHash: string;
+    pinned: PinnedRecord;
+    devRecord: DevRecord | null;
+    /** Fresh pinned-to-pinned reversal replaces portable provenance; ordinary promote preserves it. */
+    origin?: OriginRecord | null;
+  };
   dev?: { sourcePath: string; devRecord: DevRecord };
   install?: {
     build: 'symlink' | 'copy';

@@ -49,25 +49,35 @@ describe('EWP-WF13', () => {
       const plan = (
         command: CurrentMutatorCommand,
         batchPolicy: OperationPlan['batchPolicy'],
-      ): OperationPlan => ({
-        domain: 'skillsmith.operation-plan',
-        schemaVersion: 1,
-        command,
-        selection: {
-          source: 'explicit-all',
-          outcome: 'selected',
-          targets: [],
-          all: true,
-          skills: ['factor-scan'],
-          tools: ['claude-code', 'codex'],
-          scopes: ['project'],
-          groupIds: [...new Set(operations.map(({ groupId }) => groupId))],
-        },
-        batchPolicy,
-        operations,
-        checks: [],
-        diagnostics: [],
-      });
+      ): OperationPlan => {
+        const commandOperations = operations.map((operation) =>
+          command === 'update' || operation.pairId !== null
+            ? operation
+            : {
+                ...operation,
+                reversibility: { kind: 'none' as const, retentionResourceIds: [] },
+              },
+        );
+        return {
+          domain: 'skillsmith.operation-plan',
+          schemaVersion: 1,
+          command,
+          selection: {
+            source: 'explicit-all',
+            outcome: 'selected',
+            targets: [],
+            all: true,
+            skills: ['factor-scan'],
+            tools: ['claude-code', 'codex'],
+            scopes: ['project'],
+            groupIds: [...new Set(commandOperations.map(({ groupId }) => groupId))],
+          },
+          batchPolicy,
+          operations: commandOperations,
+          checks: [],
+          diagnostics: [],
+        };
+      };
       const bindings = (failingTool: (typeof directions)[number] | null) =>
         operations.map((operation) => ({
           operationId: operation.operationId,
