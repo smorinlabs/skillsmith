@@ -7629,12 +7629,16 @@
           ]
         },
         "impacted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G5-05.md#adversarial-correction-implementation-and-impacted-green-at-e778e6b"
+          ]
         },
         "refactor": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G5-05.md#adversarial-correction-refactor-gate-at-e778e6b"
+          ]
         },
         "adversarial-review": {
           "status": "pending",
@@ -7668,7 +7672,9 @@
         "projects/p17/evidence/P17-G5-05.md#independent-adversarial-review-no-go-at-a5a0897",
         "projects/p17/evidence/P17-G5-05.md#adversarial-correction-amendment",
         "projects/p17/evidence/P17-G5-05.md#adversarial-correction-amendment-review-at-78ba654",
-        "projects/p17/evidence/P17-G5-05.md#adversarial-correction-test-first-evidence-at-23eb290"
+        "projects/p17/evidence/P17-G5-05.md#adversarial-correction-test-first-evidence-at-23eb290",
+        "projects/p17/evidence/P17-G5-05.md#adversarial-correction-implementation-and-impacted-green-at-e778e6b",
+        "projects/p17/evidence/P17-G5-05.md#adversarial-correction-refactor-gate-at-e778e6b"
       ]
     },
     {
@@ -26687,14 +26693,15 @@
       "designStatus": "retained",
       "stateModel": "coverage",
       "primaryGroup": "P17-G5-05",
-      "status": "mapped",
+      "status": "validated",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G5-05",
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G5-05.md#mapping-and-prerequisites",
         "projects/p17/evidence/P17-G5-05.md#minimal-implementation-and-targeted-green-at-86fd011",
-        "projects/p17/evidence/P17-G5-05.md#impacted-green-at-c33a75f"
+        "projects/p17/evidence/P17-G5-05.md#impacted-green-at-c33a75f",
+        "projects/p17/evidence/P17-G5-05.md#adversarial-correction-implementation-and-impacted-green-at-e778e6b"
       ],
       "secondaryGroups": [],
       "implements": [],
