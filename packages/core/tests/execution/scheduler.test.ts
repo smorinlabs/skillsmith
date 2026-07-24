@@ -632,6 +632,82 @@ describe('G3B-02 operation scheduler', () => {
     expect(legacyCalls).toEqual([]);
   });
 
+  test('admits one conditional retained artifact only for update and undo manifest/lock writes', async () => {
+    const live = operationFor({ skill: 'retained-artifact' });
+    const manifest = artifactOperationFor({
+      kind: 'write-manifest',
+      groupId: live.groupId,
+    });
+    const retainedManifest: ExecutableOperation = {
+      ...manifest,
+      reversibility: {
+        kind: 'conditional',
+        retentionResourceIds: ['update-artifact-retention:v1:fixture'],
+      },
+    };
+    const dependent: ExecutableOperation = {
+      ...live,
+      dependencyMetadata: {
+        ...live.dependencyMetadata,
+        operationIds: [manifest.operationId],
+      },
+    };
+    const base = structuralPlanFor([retainedManifest, dependent], 'fail-fast');
+    for (const command of ['update', 'undo'] as const) {
+      const selected = { ...base, command } as CurrentMutatorOperationPlan;
+      const calls: string[] = [];
+      const results = await requireScheduler()(
+        selected,
+        selected.operations.map((operation) => bindingFor(operation, calls)) as never,
+      );
+      expect(calls, command).toEqual(selected.operations.map(({ operationId }) => operationId));
+      expect(
+        results.every(({ outcome }) => outcome === 'succeeded'),
+        command,
+      ).toBeTrue();
+    }
+
+    const invalid = [
+      { ...base, command: 'install' },
+      {
+        ...base,
+        command: 'update',
+        operations: [
+          {
+            ...retainedManifest,
+            reversibility: {
+              kind: 'conditional',
+              retentionResourceIds: ['retention:one', 'retention:two'],
+            },
+          },
+          dependent,
+        ],
+      },
+      {
+        ...base,
+        command: 'update',
+        operations: [
+          {
+            ...artifactOperationFor({ kind: 'migrate-ledger' }),
+            reversibility: {
+              kind: 'conditional',
+              retentionResourceIds: ['retention:ledger'],
+            },
+          },
+          live,
+        ],
+      },
+    ] as CurrentMutatorOperationPlan[];
+    for (const selected of invalid) {
+      await expect(
+        requireScheduler()(
+          selected,
+          selected.operations.map((operation) => bindingFor(operation, [])) as never,
+        ),
+      ).rejects.toThrow(/artifact.*reversibility/i);
+    }
+  });
+
   test('admits the exact init opaque replacement conflict and no other command', async () => {
     const seed = artifactOperationFor({ kind: 'write-manifest' });
     const machineLocation = { kind: 'machine-bound' as const, path: '/work/skillsmith.toml' };

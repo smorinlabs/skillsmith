@@ -262,14 +262,24 @@ const requirePlan = (result: ReturnType<typeof createUpdateExecutionPlanV1>) => 
 
 describe('update execution planning', () => {
   test('derives deterministic group identity from exact skill, source, and scope', () => {
+    const fixture = baseFor(['review']);
+    const transition = fixture.base.update.transitions[0];
+    if (transition === undefined) throw new TypeError('fixture transition is missing');
     const exact = source('review', 'a', digest('a'));
     if (exact.kind !== 'portable') throw new TypeError('fixture source must be portable');
-    const first = updateGroupIdV1({ skill: 'review' }, exact, 'project');
-    expect(updateGroupIdV1({ skill: 'review' }, exact, 'project')).toBe(first);
-    expect(updateGroupIdV1({ skill: 'other' }, exact, 'project')).not.toBe(first);
-    expect(updateGroupIdV1({ skill: 'review' }, exact, 'user')).not.toBe(first);
+    const first = updateGroupIdV1(transition, exact, 'project');
+    expect(updateGroupIdV1(transition, exact, 'project')).toBe(first);
+    expect(updateGroupIdV1({ ...transition, skill: 'other' }, exact, 'project')).not.toBe(first);
+    expect(updateGroupIdV1(transition, exact, 'user')).not.toBe(first);
     expect(
-      updateGroupIdV1({ skill: 'review' }, { ...exact, resolvedSha: 'b'.repeat(40) }, 'project'),
+      updateGroupIdV1(transition, { ...exact, resolvedSha: 'b'.repeat(40) }, 'project'),
+    ).not.toBe(first);
+    expect(
+      updateGroupIdV1(
+        { ...transition, manifestBeforeBytes: new TextEncoder().encode('version = 1\n# trivia\n') },
+        exact,
+        'project',
+      ),
     ).not.toBe(first);
   });
 
@@ -296,6 +306,7 @@ describe('update execution planning', () => {
     }
     expect(lockOperation).toMatchObject({
       kind: 'write-lock',
+      reversibility: { kind: 'conditional', retentionResourceIds: [expect.any(String)] },
       preconditionIds: [
         'precondition:capability',
         'precondition:resource',

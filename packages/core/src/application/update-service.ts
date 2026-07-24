@@ -16,6 +16,7 @@ import type {
 import { updateV1Codec } from '../contracts/v1/update.ts';
 import { safeErrorCode } from '../errors.ts';
 import type { SkillSmithError } from '../errors.ts';
+import { createOperationGroupId } from '../planning/create.ts';
 import { canonicalPlanningString } from '../planning/order.ts';
 import type {
   OperationDigest,
@@ -30,11 +31,7 @@ import { selectUpdateDeclarationsV1 } from '../update/candidates.ts';
 import { executePreparedUpdatePlanV1 } from '../update/execute.ts';
 import { prepareUpdateObservationV1 } from '../update/observe.ts';
 import type { PreparedUpdateObservationV1, UpdateObservedSelectionV1 } from '../update/observe.ts';
-import {
-  createUpdateExecutionPlanV1,
-  prepareUpdatePlanBaseV1,
-  updateGroupIdV1,
-} from '../update/plan.ts';
+import { createUpdateExecutionPlanV1, prepareUpdatePlanBaseV1 } from '../update/plan.ts';
 import type { PreparedUpdateExecutionPlanV1, PreparedUpdatePlanBaseV1 } from '../update/plan.ts';
 import type {
   UpdateApplicationRequestV1,
@@ -178,7 +175,11 @@ type VerificationByPair = ReadonlyMap<string, UpdateVerificationOutcome<BuiltInT
 
 const verificationKey = (skill: string, tool: string): string => `${skill}\0${tool}`;
 
-const groupIdFor = (prepared: UpdateObservedSelectionV1): string => {
+const groupIdFor = (prepared: UpdateObservedSelectionV1, plan: OperationPlan<'update'>): string => {
+  const planned = plan.operations.find(
+    (operation) => operation.skill === prepared.selected.declaration.name,
+  );
+  if (planned !== undefined) return planned.groupId;
   const source =
     prepared.source?.source ??
     ({
@@ -189,15 +190,22 @@ const groupIdFor = (prepared: UpdateObservedSelectionV1): string => {
       sourcePath: prepared.currentLock.sourcePath,
       contentHash: prepared.currentLock.contentHash as OperationDigest,
     } as const);
-  const transition = { skill: prepared.selected.declaration.name };
-  return updateGroupIdV1(transition, source, prepared.selected.declaration.scope);
+  return createOperationGroupId({
+    domain: 'skillsmith.operation-group-identity',
+    schemaVersion: 1,
+    command: 'update',
+    skill: prepared.selected.declaration.name,
+    source,
+    scope: prepared.selected.declaration.scope,
+    target: null,
+  });
 };
 
 const operationsFor = (
   plan: OperationPlan<'update'>,
   prepared: UpdateObservedSelectionV1,
 ): readonly OperationPlan<'update'>['operations'][number][] => {
-  const groupId = groupIdFor(prepared);
+  const groupId = groupIdFor(prepared, plan);
   return plan.operations.filter((operation) => operation.groupId === groupId);
 };
 
@@ -216,7 +224,7 @@ const candidateDto = (
         ? 'available'
         : 'current';
   return Object.freeze({
-    groupId: groupIdFor(prepared),
+    groupId: groupIdFor(prepared, plan),
     skill: prepared.selected.declaration.name,
     current: Object.freeze({
       requestedRef: prepared.selected.declaration.ref,
@@ -987,7 +995,7 @@ export const runUpdateApplication: ApplicationService<
         verified.value.get(verificationKey(selection.selected.declaration.name, tool)),
       );
       if (selectedOutcomes.length > 0 && selectedOutcomes.every((outcome) => outcome?.blocked)) {
-        blockedGroups.add(groupIdFor(selection));
+        blockedGroups.add(groupIdFor(selection, planned.value.plan));
       }
       for (const tool of selection.selected.tools) {
         if (

@@ -433,6 +433,7 @@ describe('reconciliation execution binding dispatch', () => {
       ['update', placementOperation('update', 'update')],
       ['remove', placementOperation('remove', 'remove')],
       ['repair', placementOperation('repair', 'repair')],
+      ['write-manifest', artifactOperation('write-manifest')],
       ['write-lock', artifactOperation('write-lock')],
       ['migrate-project-config', artifactOperation('migrate-project-config')],
       ['migrate-ledger', artifactOperation('migrate-ledger')],
@@ -517,7 +518,6 @@ describe('reconciliation execution binding dispatch', () => {
       placementOperation('link-dev', 'dev'),
       placementOperation('promote', 'promote'),
       placementOperation('adapt', 'adapt'),
-      artifactOperation('write-manifest'),
     ];
     for (const operation of unsupported) {
       const calls: string[] = [];

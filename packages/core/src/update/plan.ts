@@ -445,19 +445,55 @@ const lockSnapshot = (lock: PortableLockV1) => ({
 });
 
 export const updateGroupIdV1 = (
-  transition: Pick<UpdateArtifactTransitionV1, 'skill'>,
+  transition: UpdateArtifactTransitionV1,
   source: Extract<ExecutableOperation['source'], { readonly kind: 'portable' }>,
   scope: 'user' | 'project',
-): string =>
-  createOperationGroupId({
+): string => {
+  const lockBefore = hashPortableLock(transition.lockBefore);
+  const lockAfter = hashPortableLock(transition.lockAfter);
+  if (!lockBefore.ok || !lockAfter.ok) {
+    throw new TypeError('update transition lock identity is invalid');
+  }
+  const transitionDigest = hashCanonicalInput(
+    'resource',
+    1,
+    JSON.stringify([
+      'skillsmith-update-artifact-transition',
+      1,
+      {
+        manifest: {
+          beforeBytes: hashManifestBytes(transition.manifestBeforeBytes),
+          beforeSemantic: hashManifestSemantics(transition.manifestBefore),
+          afterBytes: hashManifestBytes(transition.manifestAfterBytes),
+          afterSemantic: hashManifestSemantics(transition.manifestAfter),
+        },
+        lock: { before: lockBefore.value, after: lockAfter.value },
+      },
+    ]),
+  );
+  if (!transitionDigest.ok) {
+    throw new TypeError('update transition identity could not be hashed');
+  }
+  return createOperationGroupId({
     domain: 'skillsmith.operation-group-identity',
     schemaVersion: 1,
     command: 'update',
     skill: transition.skill,
     source,
     scope,
-    target: null,
+    target: `artifact-transition:v1:${transitionDigest.value.slice('sha256:'.length)}`,
   });
+};
+
+const updateArtifactRetentionResourceId = (groupId: string, role: 'manifest' | 'lock'): string => {
+  const hashed = hashCanonicalInput(
+    'resource',
+    1,
+    JSON.stringify(['skillsmith-update-artifact-retention', 1, groupId, role]),
+  );
+  if (!hashed.ok) throw new TypeError('update artifact retention identity could not be hashed');
+  return `update-artifact-retention:v1:${hashed.value.slice('sha256:'.length)}`;
+};
 
 const manifestOperation = (
   transition: UpdateArtifactTransitionV1,
@@ -515,7 +551,10 @@ const manifestOperation = (
     selectionSource,
     preconditionIds: Object.freeze([...preconditionIds]),
     requiredCheckIds: [],
-    reversibility: { kind: 'none', retentionResourceIds: [] },
+    reversibility: {
+      kind: 'conditional',
+      retentionResourceIds: [updateArtifactRetentionResourceId(groupId, 'manifest')],
+    },
     mutates: { live: false, manifest: true, lock: false, ledger: false },
     conflict: null,
   };
@@ -577,7 +616,10 @@ const lockOperation = (
     selectionSource,
     preconditionIds: Object.freeze([...preconditionIds]),
     requiredCheckIds: [],
-    reversibility: { kind: 'none', retentionResourceIds: [] },
+    reversibility: {
+      kind: 'conditional',
+      retentionResourceIds: [updateArtifactRetentionResourceId(groupId, 'lock')],
+    },
     mutates: { live: false, manifest: false, lock: true, ledger: false },
     conflict: null,
   };

@@ -121,11 +121,17 @@ const validateArtifactPrerequisite = (
   ) {
     fail(`artifact prerequisite ${operation.operationId} requires null pair identity fields`);
   }
+  const retainedUpdateArtifact =
+    (command === 'update' || command === 'undo') &&
+    (kind === 'write-manifest' || kind === 'write-lock') &&
+    operation.reversibility.kind === 'conditional' &&
+    operation.reversibility.retentionResourceIds.length === 1;
   if (
-    operation.reversibility.kind !== 'none' ||
-    operation.reversibility.retentionResourceIds.length !== 0
+    !retainedUpdateArtifact &&
+    (operation.reversibility.kind !== 'none' ||
+      operation.reversibility.retentionResourceIds.length !== 0)
   ) {
-    fail(`artifact prerequisite ${operation.operationId} must be non-reversible`);
+    fail(`artifact prerequisite ${operation.operationId} has invalid reversibility`);
   }
   const initReplacement =
     command === 'init' &&

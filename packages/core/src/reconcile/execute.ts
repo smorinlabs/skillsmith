@@ -236,6 +236,7 @@ const placementKinds = new Set<ExecutableOperation['kind']>([
 ]);
 
 const artifactKinds = new Set<ExecutableOperation['kind']>([
+  'write-manifest',
   'write-lock',
   'migrate-project-config',
 ]);
