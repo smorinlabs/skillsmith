@@ -7472,7 +7472,7 @@
       "phase": "5",
       "title": "Shared bulk approval, fail-fast/continue scheduling, cancellation, exits, and final artifact-option closure",
       "dependsOn": ["P17-G5-01", "P17-G5-02", "P17-G5-03"],
-      "status": "mapped",
+      "status": "ready",
       "owner": "root-goal",
       "ownedFiles": [
         "docs/architecture.md",
@@ -7596,8 +7596,11 @@
           "evidence": ["projects/p17/evidence/P17-G5-05.md#mapping-and-prerequisites"]
         },
         "ready": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G5-05.md#final-ready-review-at-b779a87",
+            "projects/p17/evidence/P17-G5-05.md#accepted-ready-result"
+          ]
         },
         "test-first": {
           "status": "pending",
@@ -7637,7 +7640,11 @@
         "projects/p17/evidence/P17-G5-05.md#mapping-and-prerequisites",
         "projects/p17/evidence/P17-G5-05.md#existing-implementation-and-gap-audit",
         "projects/p17/evidence/P17-G5-05.md#signed-dependency-characterization",
-        "projects/p17/evidence/P17-G5-05.md#mapping-result"
+        "projects/p17/evidence/P17-G5-05.md#mapping-result",
+        "projects/p17/evidence/P17-G5-05.md#ready-review-at-e7405cc",
+        "projects/p17/evidence/P17-G5-05.md#ready-rerun-at-d13d907",
+        "projects/p17/evidence/P17-G5-05.md#final-ready-review-at-b779a87",
+        "projects/p17/evidence/P17-G5-05.md#accepted-ready-result"
       ]
     },
     {
