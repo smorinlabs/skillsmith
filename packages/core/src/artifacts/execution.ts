@@ -21,7 +21,7 @@ import {
   withArtifactGroupLock,
 } from './coordinator.ts';
 import { artifactMutationError, ownDataErrorCode } from './file-state.ts';
-import { hashCanonicalInput, hashManifestSemantics } from './hash.ts';
+import { hashManifestBytes, hashManifestSemantics } from './hash.ts';
 import { hashPortableLock, readPortableLockSource, serializePortableLock } from './lock.ts';
 import { editManifestBytes } from './manifest-edit.ts';
 import { normalizeManifestDocument, readManifestSource } from './manifest.ts';
@@ -125,12 +125,6 @@ const resource = (role: 'manifest' | 'lock', path: string) =>
     ? Object.freeze({ kind: 'manifest-bytes' as const, location: location(path) })
     : Object.freeze({ kind: 'lock' as const, location: location(path) });
 
-const resourceDigest = (bytes: Uint8Array): OperationDigest => {
-  const digest = hashCanonicalInput('resource', 1, bytes);
-  if (!digest.ok) return controllerFail('artifact byte digest could not be computed');
-  return digest.value as OperationDigest;
-};
-
 const manifestValue = (value: NormalizedManifestV1) => ({
   version: 1 as const,
   defaults:
@@ -164,7 +158,7 @@ export const artifactManifestImageFromBytesV1 = (
     location: location(path),
     shape: document.value.shape,
     version: 1,
-    byteHash: resourceDigest(bytes),
+    byteHash: hashManifestBytes(bytes) as OperationDigest,
     semanticHash: hashManifestSemantics(normalized.value) as OperationDigest,
     value: manifestValue(normalized.value),
   });

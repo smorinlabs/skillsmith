@@ -1,4 +1,4 @@
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import type { LogicalJournalV1Dto } from '../artifacts/journal-types.ts';
 import { resolveFreshRollbackParent } from '../artifacts/ledger-history.ts';
 import type {
@@ -390,14 +390,89 @@ const physicalShadow = (
   };
 };
 
-const sameTransactionIdentity = (left: LogicalJournalV1Dto, right: LogicalJournalV1Dto): boolean =>
+const sameTransactionCoreIdentity = (
+  left: LogicalJournalV1Dto,
+  right: LogicalJournalV1Dto,
+): boolean =>
   left.transactionId === right.transactionId &&
   same(left.intent, right.intent) &&
   left.disposition === right.disposition &&
   left.context.attempt === right.context.attempt &&
   left.context.startedAt === right.context.startedAt &&
-  same(left.actual.before, right.actual.before) &&
-  same(left.actual.retained, right.actual.retained);
+  same(left.actual.before, right.actual.before);
+
+const exactPreparedArtifactRetentionEnrichment = (
+  previous: LogicalJournalV1Dto,
+  next: LogicalJournalV1Dto,
+): boolean => {
+  const role =
+    previous.intent.kind === 'write-manifest'
+      ? ('manifest' as const)
+      : previous.intent.kind === 'write-lock'
+        ? ('lock' as const)
+        : null;
+  if (
+    role === null ||
+    previous.phase !== 'prepared' ||
+    next.phase !== 'staged' ||
+    previous.disposition !== 'forward' ||
+    previous.intent.pairId !== null ||
+    previous.intent.skill !== null ||
+    previous.intent.source !== null ||
+    previous.intent.tool !== null ||
+    previous.intent.scope !== null ||
+    previous.context.command !== 'update' ||
+    previous.context.workflow !== 'update-artifact-history' ||
+    previous.context.parentOperationId !== previous.intent.operationId ||
+    previous.intent.reversibility.kind !== 'conditional' ||
+    previous.intent.reversibility.retentionResourceIds.length !== 1 ||
+    previous.actual.retained.length !== 0 ||
+    next.actual.retained.length !== 1
+  ) {
+    return false;
+  }
+  const retained = next.actual.retained[0];
+  const before = previous.intent.before;
+  const after = previous.intent.after;
+  const location =
+    role === 'manifest' && before.kind === 'manifest' && after.kind === 'manifest'
+      ? before.location
+      : role === 'lock' && before.kind === 'lock' && after.kind === 'lock'
+        ? before.location
+        : null;
+  const afterLocation =
+    role === 'manifest' && after.kind === 'manifest'
+      ? after.location
+      : role === 'lock' && after.kind === 'lock'
+        ? after.location
+        : null;
+  const beforeDigest =
+    role === 'manifest' && before.kind === 'manifest'
+      ? before.byteHash
+      : role === 'lock' && before.kind === 'lock'
+        ? before.canonicalHash
+        : null;
+  return (
+    location?.kind === 'machine-bound' &&
+    afterLocation?.kind === 'machine-bound' &&
+    location.path === afterLocation.path &&
+    retained !== undefined &&
+    retained.role === 'backup' &&
+    retained.sourceRole === role &&
+    retained.resourceId === previous.intent.reversibility.retentionResourceIds[0] &&
+    retained.repositoryRevision.kind === 'resource' &&
+    retained.repositoryRevision.digest !== retained.contentHash &&
+    retained.contentHash === beforeDigest &&
+    retained.retainUntil === null &&
+    basename(dirname(retained.path)) === `.skillsmith-artifact-${previous.transactionId}` &&
+    basename(retained.path) === `${role}.backup`
+  );
+};
+
+const sameTransactionIdentity = (left: LogicalJournalV1Dto, right: LogicalJournalV1Dto): boolean =>
+  sameTransactionCoreIdentity(left, right) &&
+  (same(left.actual.retained, right.actual.retained) ||
+    exactPreparedArtifactRetentionEnrichment(left, right));
 
 const pairFromJournal = (
   journal: LogicalJournalV1Dto,
