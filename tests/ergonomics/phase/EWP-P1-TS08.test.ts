@@ -539,6 +539,8 @@ describe('EWP-P1-TS08', () => {
       // Parses injected timestamps for journal canonicalization; neither module reads now.
       'packages/core/src/acquire/run.ts',
       'packages/core/src/acquire/uninstall.ts',
+      'packages/core/src/application/gc-service.ts',
+      'packages/core/src/gc/execute.ts',
       'packages/core/src/place/execute.ts',
       'packages/core/src/place/run.ts',
       'packages/core/src/place/ledger-migration.ts',

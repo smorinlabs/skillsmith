@@ -61,6 +61,7 @@ type _FileWritePort = Assert<
     | 'rename'
     | 'copyTree'
     | 'removeTree'
+    | 'removeEmptyDirectory'
     | 'fsyncFile'
     | 'fsyncDir'
   >

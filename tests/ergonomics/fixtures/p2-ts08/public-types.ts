@@ -135,6 +135,7 @@ type _V1RuntimeClosed = Assert<
     | 'createVerifyV1Codec'
     | 'errorV1Codec'
     | 'exportV1Codec'
+    | 'gcV1Codec'
     | 'healthV1Codec'
     | 'initV1Codec'
     | 'installV1Codec'
