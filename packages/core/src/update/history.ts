@@ -10,6 +10,7 @@ import type {
   JournalRetainedV1Dto,
   LogicalJournalV1Dto,
 } from '../artifacts/journal-types.ts';
+import type { LedgerModel } from '../artifacts/ledger-types.ts';
 import { validateJournalV1DtoShape } from '../artifacts/registry.ts';
 import {
   type DecodedRetainedArtifactPreimageV1,
@@ -21,6 +22,7 @@ import { createLedgerPersistenceGateway } from '../place/ledger-persistence.ts';
 import { ledgerModelForMutation, readLedgerState } from '../place/ledger.ts';
 import {
   advanceLogicalTransaction,
+  beginPendingUpdateArtifactRetentionCleanup,
   commitLogicalTransaction,
 } from '../place/logical-transactions.ts';
 import type { PlacementPorts } from '../place/types.ts';
@@ -65,6 +67,13 @@ export interface BindForwardUpdateArtifactHistoryRequestV1 {
 }
 
 type ArtifactRole = 'manifest' | 'lock';
+type ArtifactHistoryImage = OperationImage | LogicalJournalV1Dto['intent']['before'];
+
+interface PrivateEnvelopeObservation {
+  readonly bytes: Uint8Array;
+  readonly identity: string;
+  readonly parentIdentity: string;
+}
 
 const failure = (
   reason: ForwardUpdateArtifactHistoryErrorV1['reason'],
@@ -87,7 +96,7 @@ const roleOf = (operation: ExecutableOperation): ArtifactRole | null =>
       ? 'lock'
       : null;
 
-const imagePath = (role: ArtifactRole, image: OperationImage): string | null => {
+const imagePath = (role: ArtifactRole, image: ArtifactHistoryImage): string | null => {
   const location =
     role === 'manifest' && image.kind === 'manifest'
       ? image.location
@@ -97,11 +106,11 @@ const imagePath = (role: ArtifactRole, image: OperationImage): string | null => 
   return location?.kind === 'machine-bound' ? location.path : null;
 };
 
-const imageDigest = (role: ArtifactRole, image: OperationImage): OperationDigest | null =>
+const imageDigest = (role: ArtifactRole, image: ArtifactHistoryImage): OperationDigest | null =>
   role === 'manifest' && image.kind === 'manifest'
-    ? image.byteHash
+    ? (image.byteHash as OperationDigest)
     : role === 'lock' && image.kind === 'lock'
-      ? image.canonicalHash
+      ? (image.canonicalHash as OperationDigest)
       : null;
 
 const actualResourceId = (role: ArtifactRole, path: string): string => {
@@ -116,7 +125,7 @@ const actualResourceId = (role: ArtifactRole, path: string): string => {
 
 const actualFor = (
   role: ArtifactRole,
-  image: OperationImage,
+  image: ArtifactHistoryImage,
 ): JournalResourceActualV1Dto | null => {
   const path = imagePath(role, image);
   const digest = imageDigest(role, image);
@@ -294,7 +303,7 @@ export const createForwardUpdateArtifactJournalSequenceV1 = (
   );
 };
 
-const sameImage = (left: OperationImage, right: OperationImage): boolean =>
+const sameImage = (left: unknown, right: unknown): boolean =>
   canonicalPlanningString(left) === canonicalPlanningString(right);
 
 const observePhysicalArtifact = async (
@@ -331,10 +340,10 @@ const observePhysicalArtifact = async (
   });
 };
 
-const readPrivateEnvelope = async (
+const observePrivateEnvelope = async (
   ports: ArtifactCoordinatorPorts,
   path: string,
-): Promise<Uint8Array> => {
+): Promise<PrivateEnvelopeObservation> => {
   const directory = dirname(path);
   const parentBefore = await ports.observe(directory);
   const before = await ports.observe(path);
@@ -365,8 +374,17 @@ const readPrivateEnvelope = async (
   ) {
     throw new TypeError('retained update artifact envelope identity changed while reading');
   }
-  return bytes;
+  return Object.freeze({
+    bytes,
+    identity: before.identity,
+    parentIdentity: parentBefore.identity,
+  });
 };
+
+const readPrivateEnvelope = async (
+  ports: ArtifactCoordinatorPorts,
+  path: string,
+): Promise<Uint8Array> => (await observePrivateEnvelope(ports, path)).bytes;
 
 const equalBytes = (left: Uint8Array, right: Uint8Array): boolean =>
   left.byteLength === right.byteLength && left.every((byte, index) => byte === right[index]);
@@ -397,6 +415,509 @@ const ensurePrivateEnvelope = async (
     throw new TypeError('retained update artifact envelope conflicts with observed preimage');
   }
   return adopted;
+};
+
+interface PendingUpdateArtifactAuthority {
+  readonly journal: LogicalJournalV1Dto;
+  readonly role: ArtifactRole;
+  readonly path: string;
+  readonly afterDigest: ArtifactDigest;
+  readonly retainedPath: string;
+  readonly retained: JournalRetainedV1Dto | null;
+}
+
+interface PendingUpdateArtifactCleanupAuthority {
+  readonly journal: LogicalJournalV1Dto;
+  readonly role: ArtifactRole;
+  readonly path: string;
+  readonly afterDigest: ArtifactDigest;
+  readonly retainedPath: string;
+}
+
+const isUpdateArtifactWorkflow = (journal: LogicalJournalV1Dto): boolean =>
+  journal.context.workflow === 'update-artifact-history' ||
+  journal.context.workflow === 'update-artifact-orphan-cleanup';
+
+const pendingUpdateArtifactAuthority = (
+  journal: LogicalJournalV1Dto,
+  ledgerPath: string,
+): PendingUpdateArtifactAuthority | null => {
+  const role: ArtifactRole | null =
+    journal.intent.kind === 'write-manifest'
+      ? 'manifest'
+      : journal.intent.kind === 'write-lock'
+        ? 'lock'
+        : null;
+  if (
+    role === null ||
+    journal.phase === 'committed' ||
+    journal.disposition !== 'forward' ||
+    journal.intent.pairId !== null ||
+    journal.intent.skill !== null ||
+    journal.intent.source !== null ||
+    journal.intent.tool !== null ||
+    journal.intent.scope !== null ||
+    journal.context.command !== 'update' ||
+    journal.context.workflow !== 'update-artifact-history' ||
+    journal.context.parentOperationId !== journal.intent.operationId ||
+    journal.intent.reversibility.kind !== 'conditional' ||
+    journal.intent.reversibility.retentionResourceIds.length !== 1
+  ) {
+    return null;
+  }
+  const path = imagePath(role, journal.intent.before);
+  const afterPath = imagePath(role, journal.intent.after);
+  const afterDigest = imageDigest(role, journal.intent.after);
+  const beforeActual = actualFor(role, journal.intent.before);
+  const afterActual = actualFor(role, journal.intent.after);
+  if (
+    path === null ||
+    afterPath !== path ||
+    afterDigest === null ||
+    beforeActual === null ||
+    afterActual === null ||
+    canonicalPlanningString(journal.actual.before) !== canonicalPlanningString([beforeActual]) ||
+    canonicalPlanningString(journal.actual.after) !==
+      canonicalPlanningString(journal.phase === 'live' ? [afterActual] : [])
+  ) {
+    return null;
+  }
+  const retainedPath = join(
+    dirname(ledgerPath),
+    `.skillsmith-artifact-${journal.transactionId}`,
+    `${role}.backup`,
+  );
+  const retained = journal.actual.retained[0] ?? null;
+  if (
+    (journal.phase === 'prepared' && journal.actual.retained.length !== 0) ||
+    (journal.phase !== 'prepared' &&
+      (journal.actual.retained.length !== 1 ||
+        retained?.role !== 'backup' ||
+        retained.sourceRole !== role ||
+        retained.resourceId !== journal.intent.reversibility.retentionResourceIds[0] ||
+        retained.path !== retainedPath ||
+        retained.repositoryRevision.kind !== 'resource' ||
+        retained.retainUntil !== null))
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    journal,
+    role,
+    path,
+    afterDigest: afterDigest as ArtifactDigest,
+    retainedPath,
+    retained,
+  });
+};
+
+const pendingUpdateArtifactCleanupAuthority = (
+  journal: LogicalJournalV1Dto,
+  ledgerPath: string,
+): PendingUpdateArtifactCleanupAuthority | null => {
+  const role: ArtifactRole | null =
+    journal.intent.kind === 'write-manifest'
+      ? 'manifest'
+      : journal.intent.kind === 'write-lock'
+        ? 'lock'
+        : null;
+  if (
+    role === null ||
+    journal.phase === 'committed' ||
+    journal.disposition !== 'rollback' ||
+    journal.intent.pairId !== null ||
+    journal.intent.skill !== null ||
+    journal.intent.source !== null ||
+    journal.intent.tool !== null ||
+    journal.intent.scope !== null ||
+    journal.context.command !== 'update' ||
+    journal.context.workflow !== 'update-artifact-orphan-cleanup' ||
+    journal.context.parentOperationId !== journal.intent.operationId ||
+    journal.context.attempt < 2 ||
+    journal.intent.reversibility.kind !== 'conditional' ||
+    journal.intent.reversibility.retentionResourceIds.length !== 1 ||
+    journal.actual.retained.length !== 0 ||
+    journal.completedAt !== null
+  ) {
+    return null;
+  }
+  const path = imagePath(role, journal.intent.before);
+  const afterPath = imagePath(role, journal.intent.after);
+  const afterDigest = imageDigest(role, journal.intent.after);
+  const beforeActual = actualFor(role, journal.intent.before);
+  if (
+    path === null ||
+    afterPath !== path ||
+    afterDigest === null ||
+    beforeActual === null ||
+    canonicalPlanningString(journal.actual.before) !== canonicalPlanningString([beforeActual]) ||
+    canonicalPlanningString(journal.actual.after) !==
+      canonicalPlanningString(journal.phase === 'live' ? [beforeActual] : [])
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    journal,
+    role,
+    path,
+    afterDigest: afterDigest as ArtifactDigest,
+    retainedPath: join(
+      dirname(ledgerPath),
+      `.skillsmith-artifact-${journal.transactionId}`,
+      `${role}.backup`,
+    ),
+  });
+};
+
+type OptionalPrivateEnvelope =
+  | Readonly<{
+      readonly state: 'absent';
+      readonly directoryIdentity: string | null;
+    }>
+  | Readonly<{
+      readonly state: 'present';
+      readonly value: PrivateEnvelopeObservation;
+    }>;
+
+const observeOptionalPrivateEnvelope = async (
+  ports: ArtifactCoordinatorPorts,
+  path: string,
+): Promise<OptionalPrivateEnvelope> => {
+  const directory = dirname(path);
+  const file = await ports.observe(path);
+  if (file.kind !== 'absent') {
+    return Object.freeze({ state: 'present', value: await observePrivateEnvelope(ports, path) });
+  }
+  const parent = await ports.observe(directory);
+  if (parent.kind === 'absent') {
+    return Object.freeze({ state: 'absent', directoryIdentity: null });
+  }
+  if (
+    parent.kind !== 'directory' ||
+    parent.identity === null ||
+    parent.mode !== 0o700 ||
+    file.parent.state !== 'present' ||
+    file.parent.identity !== parent.identity
+  ) {
+    throw new TypeError('prepared update artifact orphan directory is not owner-private');
+  }
+  return Object.freeze({ state: 'absent', directoryIdentity: parent.identity });
+};
+
+const removePrivateEnvelope = async (
+  ports: ArtifactCoordinatorPorts,
+  path: string,
+  observation: OptionalPrivateEnvelope,
+): Promise<void> => {
+  const directory = dirname(path);
+  const expectedDirectoryIdentity =
+    observation.state === 'present'
+      ? observation.value.parentIdentity
+      : observation.directoryIdentity;
+  if (observation.state === 'present') {
+    const parent = await ports.observe(directory);
+    const file = await ports.observe(path);
+    if (
+      parent.kind !== 'directory' ||
+      parent.identity !== observation.value.parentIdentity ||
+      parent.mode !== 0o700 ||
+      file.kind !== 'file' ||
+      file.identity !== observation.value.identity ||
+      file.mode !== 0o600 ||
+      file.linkCount !== 1 ||
+      file.parent.state !== 'present' ||
+      file.parent.identity !== parent.identity
+    ) {
+      throw new TypeError('prepared update artifact orphan changed before cleanup');
+    }
+    await ports.removeFile(path);
+    await ports.fsyncDirectory(directory);
+  }
+  if (expectedDirectoryIdentity === null) return;
+  const directoryBefore = await ports.observe(directory);
+  if (
+    directoryBefore.kind !== 'directory' ||
+    directoryBefore.identity !== expectedDirectoryIdentity ||
+    directoryBefore.mode !== 0o700
+  ) {
+    throw new TypeError('prepared update artifact orphan directory changed before cleanup');
+  }
+  await ports.removeEmptyDirectory(directory);
+  await ports.fsyncDirectory(dirname(directory));
+};
+
+const beginPendingArtifactAbortProjection = (
+  model: LedgerModel,
+  authority: PendingUpdateArtifactAuthority,
+  retainedObservation: PrivateEnvelopeObservation | null,
+  updatedAt: string,
+): LedgerModel => {
+  const retainedResources =
+    authority.retained === null
+      ? []
+      : [
+          {
+            resourceId: authority.retained.resourceId,
+            path: authority.retained.path,
+            repositoryRevision: authority.retained.repositoryRevision,
+            contentHash: authority.retained.contentHash,
+            state: 'present' as const,
+            owned: true,
+            kind: 'file' as const,
+            beforeIdentity: retainedObservation?.identity ?? null,
+            afterIdentity: retainedObservation?.identity ?? null,
+          },
+        ];
+  const aborted = beginPendingUpdateArtifactRetentionCleanup(model, {
+    transactionId: authority.journal.transactionId,
+    pairId: null,
+    command: 'update',
+    workflow: 'update-artifact-orphan-cleanup',
+    updatedAt,
+    retainedResources,
+  });
+  if (!aborted.ok) throw new TypeError(aborted.error.message);
+  return aborted.value;
+};
+
+const completePendingArtifactAbortProjection = (
+  model: LedgerModel,
+  transactionId: string,
+  updatedAt: string,
+): LedgerModel => {
+  let next = model;
+  let rollback = next.transactions[transactionId];
+  if (rollback === undefined) throw new TypeError('artifact orphan rollback was not projected');
+  const phases = ['prepared', 'staged', 'backed-up', 'live'] as const;
+  const start = phases.indexOf(rollback.phase as (typeof phases)[number]);
+  if (
+    start < 0 ||
+    rollback.disposition !== 'rollback' ||
+    rollback.context.command !== 'update' ||
+    rollback.context.workflow !== 'update-artifact-orphan-cleanup' ||
+    rollback.context.parentOperationId !== rollback.intent.operationId ||
+    rollback.intent.pairId !== null ||
+    (rollback.intent.kind !== 'write-manifest' && rollback.intent.kind !== 'write-lock') ||
+    rollback.actual.retained.length !== 0
+  ) {
+    throw new TypeError('artifact orphan rollback marker is invalid');
+  }
+  for (const phase of phases.slice(start + 1)) {
+    const journal: LogicalJournalV1Dto = {
+      ...rollback,
+      phase,
+      actual: {
+        ...rollback.actual,
+        after: phase === 'live' ? rollback.actual.before : [],
+      },
+      updatedAt,
+      completedAt: null,
+    };
+    const advanced = advanceLogicalTransaction(next, journal);
+    if (!advanced.ok) throw new TypeError(advanced.error.message);
+    next = advanced.value;
+    rollback = next.transactions[transactionId];
+    if (rollback === undefined) throw new TypeError('artifact orphan rollback phase was lost');
+  }
+  const committed = commitLogicalTransaction(next, {
+    ...rollback,
+    phase: 'committed',
+    completedAt: updatedAt,
+    updatedAt,
+  });
+  if (!committed.ok) throw new TypeError(committed.error.message);
+  return committed.value;
+};
+
+const recoverPendingArtifactCleanupMarkers = async (
+  model: LedgerModel,
+  request: BindForwardUpdateArtifactHistoryRequestV1,
+  persist: (next: LedgerModel) => Promise<LedgerModel>,
+): Promise<LedgerModel> => {
+  let next = model;
+  const markers = Object.values(next.transactions)
+    .filter((journal) => journal.context.workflow === 'update-artifact-orphan-cleanup')
+    .map((journal) => {
+      const authority = pendingUpdateArtifactCleanupAuthority(journal, request.ledgerPath);
+      if (authority === null) {
+        throw new TypeError('pending update artifact cleanup marker is invalid');
+      }
+      return authority;
+    })
+    .sort((left, right) => left.journal.transactionId.localeCompare(right.journal.transactionId));
+  for (const authority of markers) {
+    if (request.signal?.aborted) throw new TypeError('update artifact orphan cleanup cancelled');
+    const physical = await observePhysicalArtifact(
+      request.artifactCoordinator,
+      authority.role,
+      authority.path,
+    );
+    const envelope = await observeOptionalPrivateEnvelope(
+      request.artifactCoordinator,
+      authority.retainedPath,
+    );
+    const decoded =
+      envelope.state === 'present'
+        ? decodeRetainedArtifactPreimageV1(envelope.value.bytes, {
+            operationId: authority.journal.intent.operationId,
+            role: authority.role,
+            path: authority.path,
+          })
+        : null;
+    if (decoded !== null && !decoded.ok) throw new TypeError(decoded.error.message);
+    if (
+      decoded?.ok &&
+      (decoded.value.model.after.digest !== authority.afterDigest ||
+        !sameImage(physical.image, authority.journal.intent.before) ||
+        physical.mode !== decoded.value.model.before.mode ||
+        !equalBytes(physical.bytes, decoded.value.model.before.bytes))
+    ) {
+      throw new TypeError('pending update artifact cleanup authority changed before recovery');
+    }
+    if (!sameImage(physical.image, authority.journal.intent.before)) {
+      throw new TypeError('pending update artifact cleanup physical preimage changed');
+    }
+    await removePrivateEnvelope(request.artifactCoordinator, authority.retainedPath, envelope);
+    next = await persist(
+      completePendingArtifactAbortProjection(
+        next,
+        authority.journal.transactionId,
+        request.ports.wallNowIso(),
+      ),
+    );
+  }
+  return next;
+};
+
+const finalizePendingArtifactProjection = (
+  model: LedgerModel,
+  authority: PendingUpdateArtifactAuthority,
+  updatedAt: string,
+): LedgerModel => {
+  let next = model;
+  let pending = authority.journal;
+  if (pending.phase === 'backed-up') {
+    const after = actualFor(authority.role, pending.intent.after);
+    if (after === null) throw new TypeError('pending artifact terminal image is invalid');
+    const live: LogicalJournalV1Dto = {
+      ...pending,
+      phase: 'live',
+      actual: { ...pending.actual, after: [after] },
+      updatedAt,
+      completedAt: null,
+    };
+    const advanced = advanceLogicalTransaction(next, live);
+    if (!advanced.ok) throw new TypeError(advanced.error.message);
+    next = advanced.value;
+    pending = live;
+  }
+  if (pending.phase !== 'live') {
+    throw new TypeError('pending artifact cannot be finalized from its durable phase');
+  }
+  const committed = commitLogicalTransaction(next, {
+    ...pending,
+    phase: 'committed',
+    updatedAt,
+    completedAt: updatedAt,
+  });
+  if (!committed.ok) throw new TypeError(committed.error.message);
+  return committed.value;
+};
+
+const recoverSupersededArtifactHistory = async (
+  model: LedgerModel,
+  request: BindForwardUpdateArtifactHistoryRequestV1,
+  persist: (next: LedgerModel) => Promise<LedgerModel>,
+): Promise<LedgerModel> => {
+  for (const journal of Object.values(model.transactions).filter(isUpdateArtifactWorkflow)) {
+    const valid =
+      journal.context.workflow === 'update-artifact-history'
+        ? pendingUpdateArtifactAuthority(journal, request.ledgerPath) !== null
+        : pendingUpdateArtifactCleanupAuthority(journal, request.ledgerPath) !== null;
+    if (!valid) throw new TypeError('pending update artifact recovery authority is invalid');
+  }
+  let next = await recoverPendingArtifactCleanupMarkers(model, request, persist);
+  const superseded = Object.values(next.transactions)
+    .filter((journal) => journal.context.workflow === 'update-artifact-history')
+    .map((journal) => {
+      const authority = pendingUpdateArtifactAuthority(journal, request.ledgerPath);
+      if (authority === null) {
+        throw new TypeError('pending update artifact history journal is invalid');
+      }
+      return authority;
+    })
+    .filter((authority) => authority.journal.intent.operationId !== request.operation.operationId)
+    .sort((left, right) => left.journal.transactionId.localeCompare(right.journal.transactionId));
+  for (const authority of superseded) {
+    if (request.signal?.aborted) throw new TypeError('update artifact orphan cleanup cancelled');
+    const physical = await observePhysicalArtifact(
+      request.artifactCoordinator,
+      authority.role,
+      authority.path,
+    );
+    const envelope = await observeOptionalPrivateEnvelope(
+      request.artifactCoordinator,
+      authority.retainedPath,
+    );
+    const decoded =
+      envelope.state === 'present'
+        ? decodeRetainedArtifactPreimageV1(envelope.value.bytes, {
+            operationId: authority.journal.intent.operationId,
+            role: authority.role,
+            path: authority.path,
+          })
+        : null;
+    if (decoded !== null && !decoded.ok) throw new TypeError(decoded.error.message);
+    if (
+      decoded?.ok &&
+      (decoded.value.model.after.digest !== authority.afterDigest ||
+        (authority.retained !== null &&
+          (decoded.value.repositoryDigest !== authority.retained.repositoryRevision.digest ||
+            decoded.value.contentDigest !== authority.retained.contentHash)))
+    ) {
+      throw new TypeError('pending update artifact envelope differs from journal authority');
+    }
+    if (authority.retained !== null && (envelope.state !== 'present' || !decoded?.ok)) {
+      throw new TypeError('pending update artifact retained envelope is missing');
+    }
+    const physicalBefore =
+      sameImage(physical.image, authority.journal.intent.before) &&
+      (decoded?.ok ? physical.mode === decoded.value.model.before.mode : true) &&
+      (decoded?.ok ? equalBytes(physical.bytes, decoded.value.model.before.bytes) : true);
+    const physicalAfter =
+      decoded?.ok === true &&
+      sameImage(physical.image, authority.journal.intent.after) &&
+      physical.mode === decoded.value.model.after.mode;
+    const canAbort =
+      physicalBefore &&
+      (authority.journal.phase === 'prepared' ||
+        authority.journal.phase === 'staged' ||
+        authority.journal.phase === 'backed-up');
+    const canFinalize =
+      physicalAfter &&
+      (authority.journal.phase === 'backed-up' || authority.journal.phase === 'live');
+    if (!canAbort && !canFinalize) {
+      throw new TypeError('pending update artifact cannot be recovered for the next invocation');
+    }
+    const updatedAt = request.ports.wallNowIso();
+    if (canFinalize) {
+      next = await persist(finalizePendingArtifactProjection(next, authority, updatedAt));
+      continue;
+    }
+    next = await persist(
+      beginPendingArtifactAbortProjection(
+        next,
+        authority,
+        envelope.state === 'present' ? envelope.value : null,
+        updatedAt,
+      ),
+    );
+    await removePrivateEnvelope(request.artifactCoordinator, authority.retainedPath, envelope);
+    next = await persist(
+      completePendingArtifactAbortProjection(next, authority.journal.transactionId, updatedAt),
+    );
+  }
+  return next;
 };
 
 const historyFailureResult = (
@@ -449,6 +970,16 @@ export const bindForwardUpdateArtifactHistoryV1 = (
         const state = await readLedgerState(request.ports, request.ledgerPath);
         if (!state.ok) throw state.error;
         let model = ledgerModelForMutation(state.value, request.ports.wallNowIso());
+        const persistence = createLedgerPersistenceGateway(
+          request.ports,
+          request.ledgerPath,
+          request.signal,
+        );
+        model = await recoverSupersededArtifactHistory(model, request, async (next) => {
+          const persisted = await persistence.persist(next);
+          if (!persisted.ok) throw persisted.error;
+          return persisted.value.model;
+        });
         const candidates = Object.values(model.transactions).filter(
           (journal) =>
             journal.intent.operationId === request.operation.operationId &&
@@ -528,11 +1059,6 @@ export const bindForwardUpdateArtifactHistoryV1 = (
           throw new TypeError('pending update artifact history differs from approved authority');
         }
 
-        const persistence = createLedgerPersistenceGateway(
-          request.ports,
-          request.ledgerPath,
-          request.signal,
-        );
         const persist = async (journal: LogicalJournalV1Dto, terminal = false): Promise<void> => {
           const advanced = terminal
             ? commitLogicalTransaction(model, journal)

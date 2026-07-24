@@ -297,7 +297,13 @@ describe('artifact rollback history lineage', () => {
       groupId,
       '/fixture/occurrence/review',
     );
-    const unrelated = Array.from({ length: 255 }, (_, index) =>
+    const secondPlacement = updatePlacement(
+      'artifact-occurrence-second-placement',
+      groupId,
+      '/fixture/occurrence/claude/review',
+      'claude-code',
+    );
+    const unrelated = Array.from({ length: 254 }, (_, index) =>
       updatePlacement(
         `unrelated-placement-${index.toString().padStart(3, '0')}`,
         `group:v1:unrelated-${index.toString().padStart(3, '0')}`,
@@ -306,7 +312,7 @@ describe('artifact rollback history lineage', () => {
     );
     const selected = selectBoundedHistory({
       ...emptyLedgerModel('2026-07-23T00:00:00.000Z'),
-      history: [carrier, placement, ...unrelated],
+      history: [carrier, placement, secondPlacement, ...unrelated],
     });
 
     expect(selected.ok).toBeTrue();
@@ -316,6 +322,43 @@ describe('artifact rollback history lineage', () => {
     expect(selected.value.history.map(({ transactionId }) => transactionId)).toContain(
       carrier.transactionId,
     );
+    expect(selected.value.history.map(({ transactionId }) => transactionId)).toContain(
+      secondPlacement.transactionId,
+    );
+  });
+
+  test('lets a pending artifact child protect every placement in its source occurrence', () => {
+    const groupId = 'group:v1:pending-occurrence';
+    const carrier = retainedCarrier('pending-occurrence-carrier', groupId);
+    const placement = updatePlacement(
+      'pending-occurrence-placement',
+      groupId,
+      '/fixture/pending-occurrence/review',
+    );
+    const pendingChild = {
+      ...artifactChild(carrier, 'pending-occurrence-child'),
+      phase: 'live' as const,
+      completedAt: null,
+    };
+    const unrelated = Array.from({ length: 256 }, (_, index) =>
+      updatePlacement(
+        `pending-unrelated-${index.toString().padStart(3, '0')}`,
+        `group:v1:pending-unrelated-${index.toString().padStart(3, '0')}`,
+        `/fixture/pending/unrelated/${index.toString().padStart(3, '0')}/review`,
+      ),
+    );
+    const selected = selectBoundedHistory({
+      ...emptyLedgerModel('2026-07-23T00:00:00.000Z'),
+      transactions: { [pendingChild.transactionId]: pendingChild },
+      history: [carrier, placement, ...unrelated],
+    });
+
+    expect(selected.ok).toBeTrue();
+    if (!selected.ok) return;
+    const retained = selected.value.history.map(({ transactionId }) => transactionId);
+    expect(retained).toContain(carrier.transactionId);
+    expect(retained).toContain(placement.transactionId);
+    expect(selected.value.cleanupVictim?.transactionId).not.toBe(carrier.transactionId);
   });
 
   test('keeps exact repeated transition groups as separate commit-order occurrences', () => {

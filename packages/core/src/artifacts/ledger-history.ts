@@ -417,8 +417,88 @@ export const ledgerJournalAnchors = (
 interface LedgerHistoryDependencies {
   readonly parentByChildIndex: ReadonlyMap<number, number>;
   readonly childrenByParentIndex: ReadonlyMap<number, readonly number[]>;
+  readonly occurrenceSiblingsByIndex: ReadonlyMap<number, readonly number[]>;
   readonly pendingParentIndexes: readonly number[];
 }
+
+interface UpdateOccurrenceBuilder {
+  readonly indexes: number[];
+  readonly artifactRoles: Set<'manifest' | 'lock'>;
+  readonly placementOperationIds: Set<string>;
+  hasPlacement: boolean;
+}
+
+const updateArtifactRole = (journal: LogicalJournalV1Dto): 'manifest' | 'lock' | null => {
+  const authority = retainedArtifactJournalAuthorityV1(journal);
+  return journal.phase === 'committed' &&
+    journal.context.command === 'update' &&
+    journal.context.workflow === 'update-artifact-history' &&
+    journal.context.parentOperationId === journal.intent.operationId
+    ? (authority?.role ?? null)
+    : null;
+};
+
+const updatePlacementJournal = (journal: LogicalJournalV1Dto): boolean =>
+  journal.phase === 'committed' &&
+  journal.disposition === 'forward' &&
+  journal.intent.pairId !== null &&
+  (journal.intent.kind === 'update' || journal.intent.kind === 'repair') &&
+  journal.context.parentOperationId === journal.intent.operationId;
+
+/**
+ * Partition deterministic update group identities into physical commit-order occurrences. Exact
+ * transitions may repeat and therefore reuse operation/group identities; a new carrier role after
+ * placements (or a repeated role) starts the next occurrence instead of joining by group alone.
+ */
+const updateOccurrenceSiblings = (
+  history: readonly LogicalJournalV1Dto[],
+): ReadonlyMap<number, readonly number[]> => {
+  const activeByGroup = new Map<string, UpdateOccurrenceBuilder>();
+  const occurrences: UpdateOccurrenceBuilder[] = [];
+  const begin = (groupId: string): UpdateOccurrenceBuilder => {
+    const occurrence: UpdateOccurrenceBuilder = {
+      indexes: [],
+      artifactRoles: new Set(),
+      placementOperationIds: new Set(),
+      hasPlacement: false,
+    };
+    activeByGroup.set(groupId, occurrence);
+    occurrences.push(occurrence);
+    return occurrence;
+  };
+  for (const [index, journal] of history.entries()) {
+    const role = updateArtifactRole(journal);
+    if (role !== null) {
+      const active = activeByGroup.get(journal.intent.groupId);
+      const occurrence =
+        active === undefined || active.hasPlacement || active.artifactRoles.has(role)
+          ? begin(journal.intent.groupId)
+          : active;
+      occurrence.indexes.push(index);
+      occurrence.artifactRoles.add(role);
+      continue;
+    }
+    if (!updatePlacementJournal(journal)) continue;
+    const active = activeByGroup.get(journal.intent.groupId);
+    if (active === undefined) continue;
+    if (active.placementOperationIds.has(journal.intent.operationId)) {
+      // A repeated deterministic placement without a new carrier belongs to a later no-carrier
+      // occurrence and must not retain an older artifact preimage by group identity alone.
+      begin(journal.intent.groupId);
+      continue;
+    }
+    active.indexes.push(index);
+    active.placementOperationIds.add(journal.intent.operationId);
+    active.hasPlacement = true;
+  }
+  const siblings = new Map<number, readonly number[]>();
+  for (const occurrence of occurrences) {
+    if (occurrence.artifactRoles.size === 0 || occurrence.indexes.length < 2) continue;
+    const indexes = Object.freeze([...occurrence.indexes]);
+    for (const index of indexes) siblings.set(index, indexes);
+  }
+  return siblings;
+};
 
 const historyDependencies = (
   model: LedgerModel,
@@ -467,6 +547,7 @@ const historyDependencies = (
   return ok({
     parentByChildIndex,
     childrenByParentIndex,
+    occurrenceSiblingsByIndex: updateOccurrenceSiblings(model.history),
     pendingParentIndexes: Object.freeze([...new Set(pendingParentIndexes)].sort((a, b) => a - b)),
   });
 };
@@ -479,6 +560,7 @@ const addDependencyUnit = (indexes: Set<number>, dependencies: LedgerHistoryDepe
     const candidates = [
       dependencies.parentByChildIndex.get(index),
       ...(dependencies.childrenByParentIndex.get(index) ?? []),
+      ...(dependencies.occurrenceSiblingsByIndex.get(index) ?? []),
     ];
     for (const candidate of candidates) {
       if (candidate === undefined || indexes.has(candidate)) continue;
@@ -501,6 +583,7 @@ const excludedDependencyClosure = (
     const candidates = [
       dependencies.parentByChildIndex.get(index),
       ...(dependencies.childrenByParentIndex.get(index) ?? []),
+      ...(dependencies.occurrenceSiblingsByIndex.get(index) ?? []),
     ];
     for (const candidate of candidates) {
       if (candidate === undefined || !excluded.has(candidate) || closure.has(candidate)) continue;

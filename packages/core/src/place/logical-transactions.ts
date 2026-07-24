@@ -1069,11 +1069,14 @@ const retainedResourcesValid = (
   if (expected.length !== actual.length) return false;
   return expected.every((resource) => {
     const observation = actual.find((candidate) => candidate.resourceId === resource.resourceId);
+    const artifactEnvelope =
+      resource.role === 'backup' &&
+      (resource.sourceRole === 'manifest' || resource.sourceRole === 'lock');
     return (
       observation !== undefined &&
       observation.state === 'present' &&
       observation.owned &&
-      observation.kind === 'dir' &&
+      observation.kind === (artifactEnvelope ? 'file' : 'dir') &&
       observation.beforeIdentity !== null &&
       observation.beforeIdentity === observation.afterIdentity &&
       observation.path === resource.path &&
@@ -1144,6 +1147,7 @@ const abortPendingLogicalTransactionInternal = (
   model: LedgerModel,
   request: AbortPendingLogicalTransactionRequest,
   attempt: 'increment' | 'preserve',
+  releaseArtifactRetention = false,
 ): Result<LedgerModel, LogicalTransactionError> => {
   if (request.signal?.aborted)
     return err(failure('cancelled', 'logical transaction abort cancelled'));
@@ -1160,6 +1164,20 @@ const abortPendingLogicalTransactionInternal = (
   if (!retainedResourcesValid(pending, request.retainedResources)) {
     return err(failure('retention-conflict', 'retained resource validation failed'));
   }
+  if (
+    releaseArtifactRetention &&
+    (pending.intent.pairId !== null ||
+      (pending.intent.kind !== 'write-manifest' && pending.intent.kind !== 'write-lock') ||
+      pending.context.command !== 'update' ||
+      pending.context.workflow !== 'update-artifact-history' ||
+      pending.actual.retained.some(
+        (resource) =>
+          resource.role !== 'backup' ||
+          (resource.sourceRole !== 'manifest' && resource.sourceRole !== 'lock'),
+      ))
+  ) {
+    return err(failure('retention-conflict', 'artifact retention release is not authorized'));
+  }
   const rollback: LogicalJournalV1Dto = {
     ...pending,
     context: {
@@ -1171,7 +1189,11 @@ const abortPendingLogicalTransactionInternal = (
     },
     disposition: 'rollback',
     phase: 'prepared',
-    actual: { ...pending.actual, after: [] },
+    actual: {
+      ...pending.actual,
+      after: [],
+      retained: releaseArtifactRetention ? [] : pending.actual.retained,
+    },
     updatedAt: request.updatedAt,
     completedAt: null,
   };
@@ -1206,6 +1228,17 @@ export const abortPendingLogicalTransactionAfterRecoveryAttempt = (
   request: AbortPendingLogicalTransactionRequest,
 ): Result<LedgerModel, LogicalTransactionError> =>
   abortPendingLogicalTransactionInternal(model, request, 'preserve');
+
+/**
+ * Narrow pair-null update-history abort after the caller authenticated its private retained
+ * envelope. The resulting rollback marker releases retention authority before physical cleanup.
+ * This is intentionally not re-exported from the package root.
+ */
+export const beginPendingUpdateArtifactRetentionCleanup = (
+  model: LedgerModel,
+  request: AbortPendingLogicalTransactionRequest,
+): Result<LedgerModel, LogicalTransactionError> =>
+  abortPendingLogicalTransactionInternal(model, request, 'increment', true);
 
 export const collapseLogicalTransactionShadows = (
   model: LedgerModel,

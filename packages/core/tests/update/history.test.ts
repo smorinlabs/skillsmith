@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
-import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -32,6 +32,7 @@ const operationFor = (
   role: 'manifest' | 'lock',
   directory = '/workspace',
   variant = 'v2',
+  beforeVariant: string | null = null,
 ): Readonly<{
   operation: ExecutableOperation;
   beforeBytes: Uint8Array;
@@ -41,13 +42,15 @@ const operationFor = (
   const beforeBytes =
     role === 'manifest'
       ? encoder.encode(
-          'version = 1\n\n[[skills]]\nname = "review"\nsource = "acme/review"\ntools = ["codex"]\nscope = "user"\n',
+          `version = 1\n\n[[skills]]\nname = "review"\nsource = "acme/review"\n${beforeVariant === null ? '' : `ref = "${beforeVariant}"\n`}tools = ["codex"]\nscope = "user"\n`,
         )
       : (() => {
           const serialized = serializePortableLock({
             version: 1,
             hashSchemaVersion: 1,
-            manifestHash: `sha256:${'a'.repeat(64)}` as ArtifactDigest,
+            manifestHash: `sha256:${(
+              beforeVariant === null ? 'a' : beforeVariant === 'v2' ? 'b' : 'c'
+            ).repeat(64)}` as ArtifactDigest,
             skills: [],
           });
           if (!serialized.ok) throw new TypeError('lock fixture is invalid');
@@ -83,7 +86,7 @@ const operationFor = (
     skill: 'review',
     source: null,
     scope: 'user',
-    target: `fixture-${role}-${variant}`,
+    target: `fixture-${role}-${beforeVariant ?? 'initial'}-${variant}`,
   });
   const kind = role === 'manifest' ? 'write-manifest' : 'write-lock';
   const operationId = createOperationId({
@@ -334,6 +337,363 @@ describe('forward update artifact history', () => {
       if (!durable.ok || durable.value.state !== 'present') return;
       expect(durable.value.model.transactions[oldTransactionId]).toBeUndefined();
       expect(existsSync(retainedPath)).toBeFalse();
+    },
+    30_000,
+  );
+
+  test.each([false, true])(
+    'completes a durable artifact cleanup marker after restart (envelope present=%s)',
+    async (envelopePresent) => {
+      const root = await mkdtemp(join(tmpdir(), 'skillsmith-update-history-cleanup-restart-'));
+      roots.push(root);
+      const ledgerPath = join(root, 'placements.json');
+      const oldFixture = operationFor('manifest', root, 'v2');
+      const oldAfter = oldFixture.operation.after;
+      if (oldAfter.kind !== 'manifest') throw new TypeError('old fixture is not a manifest write');
+      const oldEnvelope = encodeRetainedArtifactPreimageV1({
+        operationId: oldFixture.operation.operationId,
+        role: 'manifest',
+        path: join(root, 'skillsmith.toml'),
+        before: { bytes: oldFixture.beforeBytes, mode: 0o640 },
+        after: { digest: oldAfter.byteHash, mode: 0o640 },
+      });
+      if (!oldEnvelope.ok) throw new TypeError(oldEnvelope.error.message);
+      const oldTransactionId = `transaction:v1:cleanup-restart-${envelopePresent}`;
+      const retainedPath = join(
+        root,
+        `.skillsmith-artifact-${oldTransactionId}`,
+        'manifest.backup',
+      );
+      const oldSequence = createForwardUpdateArtifactJournalSequenceV1({
+        operation: oldFixture.operation,
+        transactionId: oldTransactionId,
+        startedAt,
+        retainedPath,
+        retainedBytes: oldEnvelope.value.encoded,
+        expectedAfterMode: 0o640,
+      });
+      if (!oldSequence.ok) throw new TypeError(oldSequence.error.message);
+      const cleanupMarker = {
+        ...oldSequence.value.staged,
+        context: {
+          ...oldSequence.value.staged.context,
+          command: 'update',
+          workflow: 'update-artifact-orphan-cleanup',
+          attempt: oldSequence.value.staged.context.attempt + 1,
+        },
+        disposition: 'rollback' as const,
+        phase: 'prepared' as const,
+        actual: {
+          ...oldSequence.value.staged.actual,
+          after: [],
+          retained: [],
+        },
+        updatedAt: '2026-07-23T00:01:00.000Z',
+        completedAt: null,
+      };
+      const writer = await createTestNodeLedgerWriter(ledgerPath, {});
+      const seeded = await writer.replace({
+        model: {
+          ...emptyLedgerModel(startedAt),
+          transactions: { [oldTransactionId]: cleanupMarker },
+        },
+        expectedByteRevision: null,
+      });
+      if (!seeded.ok) throw new TypeError(JSON.stringify(seeded.error));
+      await writeFile(join(root, 'skillsmith.toml'), oldFixture.beforeBytes);
+      await chmod(join(root, 'skillsmith.toml'), 0o640);
+      if (envelopePresent) {
+        await mkdir(join(root, `.skillsmith-artifact-${oldTransactionId}`), { mode: 0o700 });
+        await writeFile(retainedPath, oldEnvelope.value.encoded);
+        await chmod(retainedPath, 0o600);
+      }
+
+      const nextFixture = operationFor('manifest', root, 'v3');
+      const ports = await defaultRuntimePorts();
+      const artifactCoordinator = await createTestNodeArtifactCoordinatorPorts(
+        join(root, 'coordination'),
+      );
+      let physicalExecutions = 0;
+      const physicalBinding = {
+        operationId: nextFixture.operation.operationId,
+        groupId: nextFixture.operation.groupId,
+        pairId: null,
+        unstartedForce: null,
+        observeActualBefore: async () => nextFixture.operation.before,
+        execute: async () => {
+          physicalExecutions += 1;
+          await writeFile(join(root, 'skillsmith.toml'), nextFixture.afterBytes);
+          await chmod(join(root, 'skillsmith.toml'), 0o640);
+          return {
+            operationId: nextFixture.operation.operationId,
+            outcome: 'succeeded' as const,
+            actualBefore: nextFixture.operation.before,
+            actualAfter: nextFixture.operation.after,
+            force: null,
+            error: null,
+          };
+        },
+      };
+      const binding = bindForwardUpdateArtifactHistoryV1({
+        operation: nextFixture.operation,
+        binding: physicalBinding,
+        artifactCoordinator,
+        ports,
+        ledgerPath,
+      });
+      const executed = await binding.execute({
+        operationId: nextFixture.operation.operationId,
+        groupId: nextFixture.operation.groupId,
+        pairId: null,
+        actualBefore: nextFixture.operation.before,
+        unstartedForce: null,
+        execute: physicalBinding.execute,
+      });
+      const durable = await readLedgerState(ports, ledgerPath);
+
+      expect(executed).toMatchObject({ outcome: 'succeeded', error: null });
+      expect(physicalExecutions).toBe(1);
+      expect(durable.ok).toBeTrue();
+      if (!durable.ok || durable.value.state !== 'present') return;
+      expect(durable.value.model.transactions[oldTransactionId]).toBeUndefined();
+      expect(
+        durable.value.model.history.find(({ transactionId }) => transactionId === oldTransactionId),
+      ).toMatchObject({
+        disposition: 'rollback',
+        phase: 'committed',
+        context: { command: 'update', workflow: 'update-artifact-orphan-cleanup' },
+        actual: { retained: [] },
+      });
+      expect(existsSync(retainedPath)).toBeFalse();
+    },
+    30_000,
+  );
+
+  test.each(['envelope', 'journal'] as const)(
+    'refuses corrupted superseded %s authority before physical execution',
+    async (corruption) => {
+      const root = await mkdtemp(join(tmpdir(), 'skillsmith-update-history-corrupt-orphan-'));
+      roots.push(root);
+      const ledgerPath = join(root, 'placements.json');
+      const oldFixture = operationFor('manifest', root, 'v2');
+      const oldAfter = oldFixture.operation.after;
+      if (oldAfter.kind !== 'manifest') throw new TypeError('old fixture is not a manifest write');
+      const oldEnvelope = encodeRetainedArtifactPreimageV1({
+        operationId: oldFixture.operation.operationId,
+        role: 'manifest',
+        path: join(root, 'skillsmith.toml'),
+        before: { bytes: oldFixture.beforeBytes, mode: 0o640 },
+        after: { digest: oldAfter.byteHash, mode: 0o640 },
+      });
+      if (!oldEnvelope.ok) throw new TypeError(oldEnvelope.error.message);
+      const oldTransactionId = 'transaction:v1:corrupt-superseded-envelope';
+      const retainedPath = join(
+        root,
+        `.skillsmith-artifact-${oldTransactionId}`,
+        'manifest.backup',
+      );
+      const oldSequence = createForwardUpdateArtifactJournalSequenceV1({
+        operation: oldFixture.operation,
+        transactionId: oldTransactionId,
+        startedAt,
+        retainedPath,
+        retainedBytes: oldEnvelope.value.encoded,
+        expectedAfterMode: 0o640,
+      });
+      if (!oldSequence.ok) throw new TypeError(oldSequence.error.message);
+      const writer = await createTestNodeLedgerWriter(ledgerPath, {});
+      const pending =
+        corruption === 'journal'
+          ? {
+              ...oldSequence.value.staged,
+              context: { ...oldSequence.value.staged.context, command: 'wrong-update-command' },
+            }
+          : oldSequence.value.staged;
+      const seeded = await writer.replace({
+        model: {
+          ...emptyLedgerModel(startedAt),
+          transactions: { [oldTransactionId]: pending },
+        },
+        expectedByteRevision: null,
+      });
+      if (!seeded.ok) throw new TypeError(JSON.stringify(seeded.error));
+      await writeFile(join(root, 'skillsmith.toml'), oldFixture.beforeBytes);
+      await chmod(join(root, 'skillsmith.toml'), 0o640);
+      await mkdir(join(root, `.skillsmith-artifact-${oldTransactionId}`), { mode: 0o700 });
+      await writeFile(
+        retainedPath,
+        corruption === 'envelope'
+          ? encoder.encode('corrupt retained envelope')
+          : oldEnvelope.value.encoded,
+      );
+      await chmod(retainedPath, 0o600);
+
+      const nextFixture = operationFor('manifest', root, 'v3');
+      const ports = await defaultRuntimePorts();
+      const artifactCoordinator = await createTestNodeArtifactCoordinatorPorts(
+        join(root, 'coordination'),
+      );
+      let physicalExecutions = 0;
+      const physicalBinding = {
+        operationId: nextFixture.operation.operationId,
+        groupId: nextFixture.operation.groupId,
+        pairId: null,
+        unstartedForce: null,
+        observeActualBefore: async () => nextFixture.operation.before,
+        execute: async () => {
+          physicalExecutions += 1;
+          throw new TypeError('physical execution must not run');
+        },
+      };
+      const binding = bindForwardUpdateArtifactHistoryV1({
+        operation: nextFixture.operation,
+        binding: physicalBinding,
+        artifactCoordinator,
+        ports,
+        ledgerPath,
+      });
+      const executed = await binding.execute({
+        operationId: nextFixture.operation.operationId,
+        groupId: nextFixture.operation.groupId,
+        pairId: null,
+        actualBefore: nextFixture.operation.before,
+        unstartedForce: null,
+        execute: physicalBinding.execute,
+      });
+      const durable = await readLedgerState(ports, ledgerPath);
+
+      expect(executed).toMatchObject({
+        outcome: 'failed',
+        error: { code: 'update-artifact-history-failed' },
+      });
+      expect(physicalExecutions).toBe(0);
+      expect([...new Uint8Array(await readFile(join(root, 'skillsmith.toml')))]).toEqual([
+        ...oldFixture.beforeBytes,
+      ]);
+      expect(durable.ok).toBeTrue();
+      if (!durable.ok || durable.value.state !== 'present') return;
+      expect(durable.value.model.transactions[oldTransactionId]).toEqual(pending);
+      expect(existsSync(retainedPath)).toBeTrue();
+    },
+    30_000,
+  );
+
+  test.each([
+    ['staged', 'before', 'rollback'],
+    ['backed-up', 'before', 'rollback'],
+    ['backed-up', 'after', 'forward'],
+    ['live', 'after', 'forward'],
+  ] as const)(
+    'recovers a superseded %s carrier from its authenticated physical %s image',
+    async (phase, physicalState, expectedDisposition) => {
+      const root = await mkdtemp(join(tmpdir(), 'skillsmith-update-history-phase-'));
+      roots.push(root);
+      const ledgerPath = join(root, 'placements.json');
+      const oldFixture = operationFor('manifest', root, 'v2');
+      const oldAfter = oldFixture.operation.after;
+      if (oldAfter.kind !== 'manifest') throw new TypeError('old fixture is not a manifest write');
+      const oldEnvelope = encodeRetainedArtifactPreimageV1({
+        operationId: oldFixture.operation.operationId,
+        role: 'manifest',
+        path: join(root, 'skillsmith.toml'),
+        before: { bytes: oldFixture.beforeBytes, mode: 0o640 },
+        after: { digest: oldAfter.byteHash, mode: 0o640 },
+      });
+      if (!oldEnvelope.ok) throw new TypeError(oldEnvelope.error.message);
+      const oldTransactionId = `transaction:v1:superseded-${phase}-${physicalState}`;
+      const retainedPath = join(
+        root,
+        `.skillsmith-artifact-${oldTransactionId}`,
+        'manifest.backup',
+      );
+      const oldSequence = createForwardUpdateArtifactJournalSequenceV1({
+        operation: oldFixture.operation,
+        transactionId: oldTransactionId,
+        startedAt,
+        retainedPath,
+        retainedBytes: oldEnvelope.value.encoded,
+        expectedAfterMode: 0o640,
+      });
+      if (!oldSequence.ok) throw new TypeError(oldSequence.error.message);
+      const pending =
+        phase === 'staged'
+          ? oldSequence.value.staged
+          : phase === 'backed-up'
+            ? oldSequence.value.backedUp
+            : oldSequence.value.live;
+      const writer = await createTestNodeLedgerWriter(ledgerPath, {});
+      const seeded = await writer.replace({
+        model: {
+          ...emptyLedgerModel(startedAt),
+          transactions: { [oldTransactionId]: pending },
+        },
+        expectedByteRevision: null,
+      });
+      if (!seeded.ok) throw new TypeError(JSON.stringify(seeded.error));
+      await writeFile(
+        join(root, 'skillsmith.toml'),
+        physicalState === 'before' ? oldFixture.beforeBytes : oldFixture.afterBytes,
+      );
+      await chmod(join(root, 'skillsmith.toml'), 0o640);
+      await mkdir(join(root, `.skillsmith-artifact-${oldTransactionId}`), { mode: 0o700 });
+      await writeFile(retainedPath, oldEnvelope.value.encoded);
+      await chmod(retainedPath, 0o600);
+
+      const nextFixture = operationFor(
+        'manifest',
+        root,
+        'v3',
+        physicalState === 'after' ? 'v2' : null,
+      );
+      const ports = await defaultRuntimePorts();
+      const artifactCoordinator = await createTestNodeArtifactCoordinatorPorts(
+        join(root, 'coordination'),
+      );
+      const physicalBinding = {
+        operationId: nextFixture.operation.operationId,
+        groupId: nextFixture.operation.groupId,
+        pairId: null,
+        unstartedForce: null,
+        observeActualBefore: async () => nextFixture.operation.before,
+        execute: async () => {
+          await writeFile(join(root, 'skillsmith.toml'), nextFixture.afterBytes);
+          await chmod(join(root, 'skillsmith.toml'), 0o640);
+          return {
+            operationId: nextFixture.operation.operationId,
+            outcome: 'succeeded' as const,
+            actualBefore: nextFixture.operation.before,
+            actualAfter: nextFixture.operation.after,
+            force: null,
+            error: null,
+          };
+        },
+      };
+      const binding = bindForwardUpdateArtifactHistoryV1({
+        operation: nextFixture.operation,
+        binding: physicalBinding,
+        artifactCoordinator,
+        ports,
+        ledgerPath,
+      });
+      const executed = await binding.execute({
+        operationId: nextFixture.operation.operationId,
+        groupId: nextFixture.operation.groupId,
+        pairId: null,
+        actualBefore: nextFixture.operation.before,
+        unstartedForce: null,
+        execute: physicalBinding.execute,
+      });
+      const durable = await readLedgerState(ports, ledgerPath);
+
+      expect(executed).toMatchObject({ outcome: 'succeeded', error: null });
+      expect(durable.ok).toBeTrue();
+      if (!durable.ok || durable.value.state !== 'present') return;
+      expect(durable.value.model.transactions[oldTransactionId]).toBeUndefined();
+      expect(
+        durable.value.model.history.find(({ transactionId }) => transactionId === oldTransactionId)
+          ?.disposition,
+      ).toBe(expectedDisposition);
+      expect(existsSync(retainedPath)).toBe(expectedDisposition === 'forward');
     },
     30_000,
   );
