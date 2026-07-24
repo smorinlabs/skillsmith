@@ -434,9 +434,17 @@ interface PendingUpdateArtifactCleanupAuthority {
   readonly retainedPath: string;
 }
 
-const isUpdateArtifactWorkflow = (journal: LogicalJournalV1Dto): boolean =>
-  journal.context.workflow === 'update-artifact-history' ||
-  journal.context.workflow === 'update-artifact-orphan-cleanup';
+const pendingPairNullArtifactRole = (journal: LogicalJournalV1Dto): ArtifactRole | null => {
+  const role: ArtifactRole | null =
+    journal.intent.kind === 'write-manifest'
+      ? 'manifest'
+      : journal.intent.kind === 'write-lock'
+        ? 'lock'
+        : null;
+  return role !== null && journal.phase !== 'committed' && journal.intent.pairId === null
+    ? role
+    : null;
+};
 
 const pendingUpdateArtifactAuthority = (
   journal: LogicalJournalV1Dto,
@@ -829,12 +837,18 @@ const recoverSupersededArtifactHistory = async (
   request: BindForwardUpdateArtifactHistoryRequestV1,
   persist: (next: LedgerModel) => Promise<LedgerModel>,
 ): Promise<LedgerModel> => {
-  for (const journal of Object.values(model.transactions).filter(isUpdateArtifactWorkflow)) {
-    const valid =
-      journal.context.workflow === 'update-artifact-history'
-        ? pendingUpdateArtifactAuthority(journal, request.ledgerPath) !== null
-        : pendingUpdateArtifactCleanupAuthority(journal, request.ledgerPath) !== null;
-    if (!valid) throw new TypeError('pending update artifact recovery authority is invalid');
+  for (const journal of Object.values(model.transactions)) {
+    if (pendingPairNullArtifactRole(journal) === null) continue;
+    const forward = pendingUpdateArtifactAuthority(journal, request.ledgerPath);
+    const cleanup = pendingUpdateArtifactCleanupAuthority(journal, request.ledgerPath);
+    if (forward !== null || cleanup !== null) continue;
+    if (
+      journal.disposition === 'rollback' &&
+      journal.context.workflow === 'undo-artifact-history'
+    ) {
+      throw new TypeError('pending undo artifact history must recover before update');
+    }
+    throw new TypeError('pending update artifact recovery authority is invalid');
   }
   let next = await recoverPendingArtifactCleanupMarkers(model, request, persist);
   const superseded = Object.values(next.transactions)
