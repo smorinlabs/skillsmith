@@ -29,8 +29,9 @@ catalog.json --validated/rendered--> CHECKLIST.md
              phase/final sign-off
 ```
 
-The catalog tracks 425 entities: 34 P0-P3 recommendations, 65 phase tasks, 61 phase tests, 157
-command tests, 10 option gates, 16 holistic workflows, 23 commands, 43 accepted findings, and 16
+The catalog tracks 426 entities after the approved 2026-07-23 G5-04 amendment: 34 P0-P3
+recommendations, 65 phase tasks, 61 phase tests, 157 command tests, 10 option gates, 16 holistic
+workflows, 23 commands, 44 accepted findings, and 16
 decisions. The 34 recommendations are included explicitly even though the earlier 391-entity
 summary omitted them; this prevents the original P0-P3 source inventory from disappearing behind
 later phase tasks.

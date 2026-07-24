@@ -493,7 +493,7 @@ const prepOpenable =
   prepStatus === 'pr-openable' && requiredPrepChecked && reviewClosed && summaryComplete;
 
 const catalog = JSON.parse(text('projects/p17/catalog.json')) as Catalog;
-if (catalog.counts?.total !== 425) fail(`catalog total is ${catalog.counts?.total}, expected 425`);
+if (catalog.counts?.total !== 426) fail(`catalog total is ${catalog.counts?.total}, expected 426`);
 if (catalog.groups?.length !== 45) {
   fail(`catalog group count is ${catalog.groups?.length}, expected 45`);
 }

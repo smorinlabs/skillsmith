@@ -89,7 +89,7 @@ update, structural validation, adversarial review, and user approval before impl
 
 ## Inventory invariants
 
-The baseline catalog contains 425 entities:
+The approved baseline plus the 2026-07-23 G5-04 contract amendment contains 426 entities:
 
 - 34 original P0-P3 recommendations;
 - 65 phase tasks;
@@ -98,7 +98,7 @@ The baseline catalog contains 425 entities:
 - 10 option-consistency gates;
 - 16 holistic workflows;
 - 23 commands;
-- 43 accepted findings;
+- 44 accepted findings;
 - 16 accepted decisions.
 
 These prose counts are navigation, not proof. Recompute them from the consolidated plan and require

@@ -1,7 +1,7 @@
 # Skillsmith Ergonomics and Workflow — Consolidated Plan
 
 > **Status:** Approved design and implementation baseline as of 2026-07-11. All D-001 through
-> D-016 decisions and EWP-CF-001 through EWP-CF-043 findings are recorded and manually closed at
+> D-016 decisions and EWP-CF-001 through EWP-CF-044 findings are recorded and manually closed at
 > the design-review level. Phase 0's documentation-drift ledger, structural validator,
 > machine-readable verification catalog, generated checklist, executable ownership, and five group
 > sign-offs are complete. Whole-Phase-0 adversarial review, catalog recording of the standing
@@ -14,7 +14,7 @@
 >
 > **Current coverage (2026-07-11):** 34 unique P0-P3 recommendations and matching before/after
 > rows; 16 resolved product decisions and records; 16 holistic workflows; 65 named phase tasks;
-> 61 named phase tests; 157 unique per-command test slices; 10 option-registry gates; and 43 accepted
+> 61 named phase tests; 157 unique per-command test slices; 10 option-registry gates; and 44 accepted
 > consistency findings including this status scrub. Structural validation and `git diff --check`
 > must pass after every amendment.
 
@@ -959,7 +959,9 @@ default respects pin policy, execution updates lock and placements, old store st
 Reclaims only store entries unreachable from live placements, the local ledger, journals, backups,
 adapted overlays, and undo/age retention. It never crawls for portable lockfiles. Missing recorded
 projects remain protected until explicitly forgotten by exact path. Dry-run, age policy, byte
-totals, confirmation.
+totals, confirmation. Candidate discovery is bounded to the fixed local store root and to
+adapter-registered disposable overlay inventories; the ledger is authoritative for protection
+edges, not a complete inventory of orphaned local objects.
 
 ### P2-04 Completion
 
@@ -1074,8 +1076,9 @@ Zero-target and bulk-selection contract:
 
 - Read-only status and whole-artifact plan/apply use their bounded selected context when no target
   is supplied. Sync likewise uses all source entries because its mandatory from/to endpoints bound
-  the set; delete remains separately explicit. GC evaluates all locally registered store objects
-  under retention and approval rules.
+  the set; delete remains separately explicit. GC evaluates strict object leaves below the one
+  configured local store root under ledger-authoritative reachability, retention, and approval
+  rules.
 - Dev, promote, mutating or dry-run update, and undo require at least one positional target or
   explicit `--all`. Empty globs never become all. `--all` conflicts positional targets.
 - `update --check` without targets checks every eligible declaration in the one selected manifest;
@@ -1094,7 +1097,7 @@ Zero-target and bulk-selection contract:
 | 0 | Successful, unchanged, or completed no-op |
 | 1 | Execution, verification, health, or integrity failure |
 | 2 | Usage error, unsafe refusal, unresolved choice, or missing approval |
-| 3 | Invalid or unreadable config, manifest, lock, ledger, or saved-plan state |
+| 3 | Invalid or unreadable local/portable state, including config, manifest, lock, ledger, saved plan, store inventory, or recovery record |
 | 4 | Requested tool or required capability unavailable |
 | 5 | Source, network, reference, or resolution failure |
 | 6 | Permission or filesystem-access failure |
@@ -1109,6 +1112,8 @@ Rules:
 - Successful `--dry-run` returns 0 even when it previews changes.
 - A stale saved plan or missing/stale/incomplete state under `--locked` returns 3.
 - Conflicting options and approval/choice refusals return 2.
+- For GC, invalid/unsafe observed store layout, identity, measurement, or recovery state returns 3;
+  unsafe request grammar and approval/choice refusal remain 2.
 - Cancellation always wins with 130. Otherwise any actual batch error 1-6 takes precedence over
   drift 7; drift is returned only when no actual error occurred. One centralized selector defines
   deterministic precedence within 1-6 and replaces unrestricted numeric maximum.
@@ -1334,8 +1339,162 @@ exact absent, non-current project with no pending journal; it removes local ledg
 then recalculates reachability. No filesystem project crawl and no force-delete of reachable entries.
 Tests: EWP-CMD-GC-TS01..08.
 
-No target is required because the ledger is the bounded default set. Plain GC evaluates every
-registered store object but still applies reachability/retention and exact approval before deletion.
+No target is required because the configured local store root is the bounded candidate set and the
+ledger is the authoritative protection graph. Plain GC evaluates every strict local store object but
+still applies reachability/retention and exact approval before deletion.
+
+GC's exact local-maintenance contract is:
+
+- Candidate discovery is bounded to strict immutable leaves below the configured local store root.
+  An absent root is an empty inventory. A present root and every traversed ancestor must be a stable
+  lstat-observed real directory with no symlink component and canonical containment. The only
+  recognized object relative path has exactly three filesystem components:
+  `<namespace>/<repository-name>@<revision>/<skill>`. Namespace is a nonempty publisher-sanitized
+  `[A-Za-z0-9._-]+` component other than `.`/`..`. Parse the middle component at its final recognized
+  `@revision` suffix: revision is exactly 12 lowercase hexadecimal characters, `dirty-` plus 12
+  lowercase hex, or `content-` plus 12 lowercase hex. The repository-name prefix is the exact
+  current-publisher basename and may contain spaces, Unicode, or additional `@`; the complete middle
+  component must round-trip as one nonempty platform path component with no NUL or separator. This
+  intentionally recognizes local/no-remote snapshots such as `my repo@content-<hash12>` and
+  `acme@tools@<sha12>` instead of retroactively requiring remote-name sanitization. Skill satisfies
+  the canonical manifest-name grammar. The exact
+  `.staging` child remains existing lifecycle recovery state and is ignored. The exact
+  `.gc-tombstones` child is reserved for GC recovery below. Any other depth, component, root kind,
+  symlinked ancestor/object root, or special node is unknown unsafe layout and refuses the whole
+  invocation before approval or writes. Paths outside the root are never candidates. Safe empty
+  `repository@revision` and namespace parents may be pruned only after a successful leaf detach with
+  stable identity/containment revalidation and parent flushes.
+- Ledger pairs, live placements reached only through registered placement paths, pending
+  transactions, legacy journals, retained store resources, committed undo windows, missing/other
+  project registrations, and age policy supply protection edges. No project, home, manifest, lock,
+  saved-plan, or data-directory sibling such as `.fetch` is crawled. This is the exact meaning of the
+  bounded default: one fixed local store inventory with ledger-authoritative reachability, not a
+  claim that the ledger is a complete inventory of orphaned objects.
+- Omitting `--older-than` applies no additional age floor after reachability and retention. When
+  present, duration is exactly one positive base-10 safe integer followed immediately by `s`, `m`,
+  `h`, `d`, or `w`. Zero, signs, fractions, whitespace, missing/unknown units, and millisecond
+  overflow are usage errors before discovery. The injected clock and the immutable object-root
+  modification time are the only age authorities. An object is old enough only when
+  `modifiedAt < now - duration`; equality remains protected.
+- Exact byte totals are deterministic logical payload bytes: regular-file byte lengths plus the
+  UTF-8 byte lengths of literal internal symlink targets; directories contribute zero and symlinks
+  are never followed. A regular file or symlink with lstat link count other than one is an unsafe
+  hard-link case; directory link counts need only remain stable. Unsupported/special nodes, path
+  escape, unstable kind/identity/link count/bytes, unsafe hard links, read failure, or safe-integer
+  overflow makes the entire invocation state-refused (exit 3) before approval or any GC write. Human
+  and JSON identify every offending path/reason, expose no executable action or eligible total, and
+  never silently exclude an unsafe object while reclaiming siblings. Per-object and aggregate
+  item/byte totals use the same safe observation for dry-run, approval, and execution.
+- `projectRegistrations` remains a derived mirror of `projects`. Forget therefore removes the exact
+  matching `projects[root]` local subtree and re-derives registrations while preserving transactions
+  and history. A missing input cannot be realpathed: resolve it lexically against effective cwd to
+  an absolute normalized path, deduplicate normalized repeats, then require an exact ledger-key
+  match. Unregistered aliases refuse. Any current, filesystem-present (including symlink), or
+  pending logical/legacy-journal root refuses the whole forget set. Historical retained references
+  remain and may continue to protect objects. No portable project artifact is opened or edited.
+- The immutable command-local GC plan has the closed action kinds `migrate-ledger`,
+  `forget-project`, and `reclaim-store`, in that order. Every action carries a stable ID, exact local
+  resource before/after image, selection source, preconditions, and mutation target. The first is a
+  projection of the shared ledger migration operation; the latter two are local maintenance actions
+  and are never serialized in `skillsmith.plan`, emitted by `skillsmith plan`, or accepted by saved
+  `apply`. One combined plan is previewed and approved; execution revalidates that exact plan under
+  the canonical ledger lock and never silently replans.
+- After approval and before migration, forget, or reclaim writes, GC publishes an owner-only
+  version-1 recovery record at
+  `<data-dir>/.gc-recovery/v1/<plan-id>.json`. Plan and action IDs are exactly 64 lowercase
+  hexadecimal SHA-256 digest characters; a recovery record byte revision is the same closed digest
+  grammar, and a generated CAS ID is exactly 16 unique lowercase hex characters. The configured
+  data directory must be a stable lstat-observed real directory owned by the effective user and not
+  group/world writable. GC creates or validates `.gc-recovery` and `v1` one component at a time as
+  mode-0700, effective-user-owned, stable real directories with no symlink component and canonical
+  containment; live/temp records are mode-0600 regular files with link count one and stable identity.
+  Any owner, mode, type, identity, containment, filename, extra-entry, or version violation is state
+  exit 3 before mutation.
+- The focused runtime boundary adds effective-user identity, optional UID/GID on lstat metadata, and
+  exclusive directory/text-file creation with caller-supplied initial modes. The default adapter
+  implements exclusive directory creation without recursion and exclusive file creation without
+  overwrite; GC requests 0700/0600 and re-reads ownership/mode/identity before use. The legacy
+  ScanEnv compatibility facade accepts this focused port as an explicit supplement so compatibility
+  and focused execution use the same real implementation; omission exposes unavailable/null rather
+  than emulating exclusivity with recursive mkdir or overwriting writes. No GC domain module imports
+  ambient process or Node filesystem APIs.
+- Recovery publication uses one exact private temp/CAS protocol. Canonical live name is
+  `<plan-id>.json`; initial temp is
+  `.<plan-id>.create-<new-revision>-<cas-id>.tmp`; replacement temp is
+  `.<plan-id>.cas-<expected-revision>-<new-revision>-<cas-id>.tmp`. GC exclusively creates the temp,
+  writes canonical bytes, fsyncs, reads back its exact identity/schema/revision, and flushes the
+  directory before a guarded same-directory rename. Initial publication rechecks that live is
+  absent; replacement re-reads live at exactly the expected revision and accepts only the next
+  monotonic recorded phase before rename-over-live; every rename is followed by directory fsync and
+  exact readback. Discovery completes one valid initial temp when live is absent, completes one
+  valid successor temp when live is at its named expected revision, or removes the temp when live is
+  already at its named new revision. An incomplete/malformed temp is non-authoritative staging
+  metadata and is identity-checked, removed, and flushed; malformed live state, multiple valid
+  competing temps, impossible revision/phase combinations, symlinks, hard links, or unexpected
+  entries refuse. Thus a crash at open/write/fsync/rename/flush leaves either the prior valid live
+  record, one convergent temp plus that record, or no authoritative initial record and no GC
+  mutation—never a malformed live authority.
+- Preparation and dry-run use a separate strict read-only recovery observation: they do not create
+  data/recovery directories, acquire the ledger lock, create/remove a lock path, publish/replace a
+  record, or clean a temp. An absent recovery path is an empty observation; a valid live/temp state
+  is reported with exact pending remediation, while unsafe/malformed state refuses without writes.
+  Only an approved execution acquires the canonical ledger lock, repeats discovery, verifies that
+  the approved observation is still exact, and performs the temp convergence rules above. Any
+  between-observation change stales/refuses execution before a GC state mutation.
+- The strict live schema records `skillsmith.gc-recovery`, schema 1, plan/request digest, sanitized
+  exact retry argv, approval mode/time, source byte/semantic and expected post-forget semantic ledger
+  revisions, normalized
+  forget roots, and every action's ID, ownership token, original relative/absolute path, content
+  hash, mtime, logical bytes, action-container/payload paths and identity, and phase. The request
+  digest excludes output/interaction spelling but includes every semantic selector. Recorded phases
+  advance only through approved, planned migration/forget completion, action-container prepared,
+  detached, cleaned or conservatively protected-skipped, and complete in deterministic action order;
+  absent action kinds are the only permitted skips. A pending record blocks a different GC request
+  with state exit 3 and exact retry remediation. The matching semantic execution request resumes the
+  stored approved plan without replanning or prompting; dry-run only reports pending recovery
+  through the read-only observation above.
+- A matching retry phase-aware revalidates every durable boundary not yet proven. Before an
+  uncommitted forget it requires the exact recorded ledger byte/semantic revision, key, and subtree
+  and again requires
+  the root absent including dangling symlink, non-current, and free of pending logical/legacy
+  journal state. If the ledger already equals the exact recorded post-forget semantic digest after a
+  crash before the phase update, retry records that boundary idempotently and binds the observed byte
+  revision; any reappeared/current root or
+  other ledger mismatch refuses with the recovery record retained. Before reclaim, retry recomputes
+  protection and may conservatively skip a now-protected approved leaf, but never adds an action.
+  The record is removed and its parent flushed only after every action converges. This is GC-specific
+  local recovery state and does not change ledger v2, journal v1, or saved plans.
+- Approved forget is durably committed only after that recovery record and before any object made
+  eligible by it can be reclaimed. The `.gc-tombstones`, `v1`, and plan directories are
+  mode-0700/effective-user-owned stable real directories with no symlink component and exact
+  containment. Only after the live recovery record exists, GC exclusively creates the plan
+  directory; retry may adopt an exact empty record-named plan directory after owner/mode/identity
+  validation, while any unplanned entry refuses. For each action GC exclusively creates a mode-0700
+  owner-bound container
+  `<store>/.gc-tombstones/v1/<plan-id>/<action-id>`, writes/fsyncs a sole mode-0600 `owner.json`
+  containing `skillsmith.gc-tombstone-owner`, schema 1, plan/action IDs, and the record's 64-hex
+  ownership token, flushes parent directories, then records the stable container identity. A crash
+  before that phase is recorded may adopt a matching owner marker or remove/recreate only an empty
+  or owner-marker-only container; an unexpected entry or identity/token mismatch refuses.
+- Reclaim revalidates the source and container immediately before an ordinary same-filesystem atomic
+  rename into the exact absent payload
+  `<store>/.gc-tombstones/v1/<plan-id>/<action-id>/payload`. No unavailable rename-no-replace
+  primitive is assumed: exclusive owner-only container creation and the absent private payload slot
+  provide collision isolation, while any preexisting payload refuses rather than being replaced.
+  After rename GC asserts the original absent and payload identity exact, flushes both parents,
+  advances recovery, removes only that record-bound payload, asserts absence, flushes again, and
+  finally removes the marker/container. If a crash occurs after rename but before phase update,
+  matching retry may adopt the payload only when source is absent and every recorded identity/hash/
+  mtime/byte fact matches; source plus payload, mismatch, or an unbound/planted container refuses.
+  Detach and cleanup remain one approved `reclaim-store` action with the original logical bytes and
+  no double-counting. A new object at the original path has a different identity and remains
+  untouched. Deleting before recovery/forget, direct recursive deletion of the live leaf,
+  repair-in-place, and deletion of any reachable or unverifiable object are forbidden.
+- Adaptation remains deferred. GC accepts disposable adapted-overlay candidates only from a
+  registered adapter-owned inventory that supplies the same immutable identity/containment/byte
+  facts; there is no current producer and GC does not invent an overlay root or classify unknown
+  trees as disposable. The pure inventory/reachability tests keep this future branch closed without
+  implementing adaptation.
 
 ### 8.19 `commands`, `completion`, `version`, `help`
 
@@ -1425,7 +1584,7 @@ project root or home. No command may recompute those bases independently.
 | `sync` | `sync [skill...]` | **N** mandatory `--from <scope\|path>`, mandatory `--to <scope\|path>`, tool, `-f, --force`, `--delete`, `--save`, artifact selector, dry-run, yes, batch, JSON | No targets means every source entry between bounded endpoints; targets narrow. From/to differ. Force/delete/batch remain meaningful in dry-run, while yes conflicts it. Force never implies yes/delete. Artifact selectors require save. Additive default; delete opt-in; source read-only | EWP-CMD-SYNC-TS01..10 |
 | `update` | `update <skill...> \| --all`; safe exception `update --check` | **N** `--all`, artifact selector, tool, `--check`, dry-run, `--ref <git-ref>`, `--pin`, strict, yes, batch, JSON | Mutation/dry-run require targets or all; check without targets checks selected manifest and all-check is equivalent. Check conflicts dry-run/yes but may evaluate ref/pin/strict/batch; all conflicts targets; ref requires exactly one; pin needs moving/explicit ref; check 0/7 | EWP-CMD-UPDATE-TS01..10 |
 | `undo` | `undo <skill...> \| --all` | **N** `--all`, tool, scope plus user/project sugar, dry-run, yes, batch, JSON | Targets or all required; never guesses latest. Scope follows CF-024. Each history target is one group; default fail-fast, batch continues; yes conflicts dry-run. Pending abort precedes committed reversal; bulk approval; no recover/abort subverb | EWP-CMD-UNDO-TS01..09 |
-| `gc` | `gc` | **N** `--dry-run`, `--older-than <duration>`, repeatable `--forget-project <path>`, yes, JSON | Ledger is bounded default set. Forget requires exact absent non-current root without pending journal and recalculates protection. Retention still applies; yes conflicts dry-run; no force; exact execution approval required | EWP-CMD-GC-TS01..08 |
+| `gc` | `gc` | **N** `--dry-run`, `--older-than <duration>`, repeatable `--forget-project <path>`, yes, JSON | Fixed configured store root is the bounded candidate set; ledger/live/journal/history state is authoritative protection. Forget requires exact absent non-current root without pending journal and recalculates protection. Retention still applies; yes conflicts dry-run; no force; exact execution approval and recovery apply | EWP-CMD-GC-TS01..08 |
 
 #### 8.20.5 Parser consistency gates
 
@@ -1657,6 +1816,16 @@ Executable operation kinds:
 install, update, remove, link-dev, promote, move-scope, adapt, repair,
 write-manifest, write-lock, migrate-project-config, migrate-ledger
 ```
+
+This remains the closed desired-state/placement operation vocabulary and the only operation-kind
+union serializable in `skillsmith.plan`. Machine-local GC does not broaden that portable saved-plan
+schema. Its versioned command-local maintenance plan instead has exactly `migrate-ledger`,
+`forget-project`, and `reclaim-store`: migration projects the shared operation, while forget and
+reclaim use GC-specific local resource images and execution. The same immutable-observation, pure
+planning, stable identity, exact precondition, approval, result, and redaction rules apply. Neither
+GC-only action is generated by `skillsmith plan` or accepted by saved-plan `apply`. The exact
+approved local plan is crash-authoritative only through the owner-only GC recovery-v1 record in
+Section 8.18; it is never inferred from a post-forget ledger or an unbound tombstone.
 
 Every operation carries:
 
@@ -2496,8 +2665,9 @@ delete; dry-run and execution select the same eligible entries; normal GC warns 
 missing recorded project using version-2 project registrations rather than a filesystem crawl;
 explicit forget changes only its local ledger registration, refuses
 current/existing/journaled roots, and deletes only content made eligible after full recalculation.
-Plain GC uses the ledger as its bounded-default set but still protects reachability/retention and
-requires exact approval; filter-to-zero is an explained exit-0 no-op.
+Plain GC uses the fixed configured store root as its bounded candidate set and the ledger/live/
+journal/history graph as authoritative protection; it still requires exact approval, and
+filter-to-zero is an explained exit-0 no-op.
 
 ### EWP-WF13 Multi-tool partial failure
 
@@ -3102,6 +3272,7 @@ Do not mark this plan implementation-ready until all checks pass.
 | EWP-CF-041 | Breaking precedent | Init executed before the shared operation model and could force-replace a manifest without preview | Phase-2 artifact foundation plus Phase-4A planned init execution and dry-run | accepted |
 | EWP-CF-042 | Breaking precedent | Saved-plan apply accepted dry-run/check without defining whether they reject, replan, validate, or which exits win | Exact non-mutating saved-plan validation modes and closed option conflicts | accepted |
 | EWP-CF-043 | Breaking precedent | Preview/check modes could silently accept meaningless approval or contradictory output/exit modes | One non-mutating mode rule with meaningful shaping options and early conflicts | accepted |
+| EWP-CF-044 | New pattern introduced | GC had no exact object inventory, age/byte boundary, command-local action vocabulary, or crash-safe reclamation protocol | Fixed-root candidates, ledger-authoritative protection, closed duration/byte semantics, local maintenance actions, and recovery-bound forget-first atomic tombstones | accepted |
 
 #### 13.0.1 Accepted-finding detail and traceability rule
 
@@ -3113,9 +3284,9 @@ alternatives and extended exploration are optional historical context, not compl
 requirements. No accepted behavior, example, or validation may remain only in conversational
 history. EWP-P0A-T10 and EWP-P0A-TS07 enforce this rule.
 
-**Backfill audit baseline (2026-07-11):** EWP-CF-001 through EWP-CF-043 each retain an accepted
+**Backfill audit baseline (2026-07-23):** EWP-CF-001 through EWP-CF-044 each retain an accepted
 go-forward resolution, saved example, affected normative contracts, named validation, and recorded
-date. The current mechanical audit reported `audited=43 failures=0`. Historical evidence,
+date. The current mechanical audit reported `audited=44 failures=0`. Historical evidence,
 precedent analysis, and rejected alternatives may remain in older records but are not required for
 later findings; a traceability-table summary alone is not sufficient.
 
@@ -3164,6 +3335,7 @@ later findings; a traceability-table summary alone is not sufficient.
 | EWP-CF-041 | Design principles, Phase 2, and Phase 4A init contract | Force dry-run renders one replace-manifest operation; execution matches and leaves lock/live/ledger unchanged | EWP-P2-TS05, EWP-P4A-TS04, EWP-WF03, EWP-CMD-INIT-TS01..05 |
 | EWP-CF-042 | Sections 2.3, 8.14, 8.20, and saved-plan apply boundary | Saved dry-run returns 0, saved check returns 7 for valid work, stale returns 3, and no mode replans | EWP-OPT-TS09, EWP-WF07..08, EWP-WF15, EWP-CMD-APPLY-TS06/07/12 |
 | EWP-CF-043 | Section 8.20 non-mutating mode families and Section 13.2 | Install dry-run rejects yes; sync force+delete dry-run stays meaningful; plan check cannot write out | EWP-OPT-TS10, EWP-WF08..10, EWP-WF15, and affected command mode tests |
+| EWP-CF-044 | P2-03, Sections 8.1/8.18/9, D-012, and EWP-CF-016 | Approved recovery is durable before missing-project forget and atomic tombstone rename; equality age boundary stays protected; portable artifacts and unknown trees are never crawled/deleted | EWP-CMD-GC-TS01..08, EWP-P5-TS04, EWP-WF12 |
 
 #### EWP-CF-001 — Correct phase dependencies before extending command-specific orchestration
 
@@ -4026,7 +4198,8 @@ later findings; a traceability-table summary alone is not sufficient.
   empty/unmatched targets never widen. Targetless update-check safely covers all eligible
   declarations in the one selected manifest, with all-check equivalent. Status uses its selected
   readable context; plan/fresh apply use the selected manifest; sync uses all source entries between
-  mandatory endpoints; GC uses registered ledger objects. Those are named bounded defaults, not
+  mandatory endpoints; GC uses strict leaves below one configured store root with ledger-authoritative
+  protection. Those are named bounded defaults, not
   implicit global all. Delete/prune remain separately explicit. Filters reducing a valid selection
   to zero produce an explained exit-0 no-op. Human/JSON records explicit-targets, explicit-all, or
   bounded-default; help shows target-or-all grammar and completion never injects all. No command or
@@ -4034,8 +4207,9 @@ later findings; a traceability-table summary alone is not sufficient.
 - **Saved before/after scenario:** Plain `update` exits 2 and recommends a skill or all, while
   `update --check` checks the selected manifest without mutation. Plain undo exits 2 instead of
   guessing the latest operation. Targetless sync reconciles every source entry only because from/to
-  bound the set and never implies delete. Plain GC evaluates its ledger-bounded set but still applies
-  retention and approval. EWP-WF05, EWP-WF09..12, EWP-WF14, and EWP-WF15 retain the complete matrix.
+  bound the set and never implies delete. Plain GC evaluates its fixed-root candidate set but still
+  applies ledger/live/journal/history protection, retention, and approval. EWP-WF05,
+  EWP-WF09..12, EWP-WF14, and EWP-WF15 retain the complete matrix.
 - **Affected contracts:** Sections 8.4, 8.8, 8.13..8.18, 8.20, 9, 13.1, 13.2, and 13.4;
   selection metadata/help grammar; status, dev, promote, plan, apply, sync, update, undo, and GC.
 - **Validation:** EWP-OPT-TS06; EWP-CMD-STATUS-TS05; EWP-CMD-DEV-TS02/04;
@@ -4405,6 +4579,76 @@ later findings; a traceability-table summary alone is not sufficient.
   change, human/JSON usage errors, and generated help/completion parity.
 - **Recorded:** 2026-07-11
 
+#### EWP-CF-044 — Close GC inventory, measurement, action, and crash semantics
+
+- **Evidence:** The accepted GC contract named reachability, age, exact bytes, explicit project
+  forget, and crash convergence, but the ledger is a protection graph rather than a complete object
+  inventory; `--older-than` had no grammar/default/boundary; adapted overlays had no producer or
+  physical layout; and the portable desired-state operation vocabulary had no truthful store-delete
+  or registration-forget kind. A direct recursive delete after a hypothetical forget could also
+  destroy content while the durable ledger still protected it if the process crashed in between.
+- **Precedent assessed:** Store snapshots are immutable leaf directories below one configured local
+  root and publishers use same-filesystem staging/rename. Ledger v2 derives registrations from
+  project subtrees, owns pending/history retention, and already has one canonical lock/migration
+  writer. Saved plans are portable desired-state authorization and must not acquire machine-local
+  cache deletion semantics. History cleanup already demonstrates identity-bound deletion under the
+  ledger lock, parent validation, absence assertion, and parent flush.
+- **Accepted resolution:** Enumerate only exact three-component
+  `<namespace>/<repository-name>@<revision>/<skill>` leaves below a stable non-symlink fixed store
+  root, parsing the final recognized revision suffix while accepting current local/no-remote
+  publisher basenames with spaces, Unicode, or additional `@`; use the ledger plus
+  registered live placements/journals/history as the complete protection graph. Unknown layout or
+  unsafe/unmeasurable objects refuse the whole invocation before approval/writes.
+  Omitted older-than means no extra age floor; supplied durations use positive safe integers with
+  `s|m|h|d|w`, strict `modifiedAt < cutoff`, and equality protection. Exact totals are deterministic
+  logical file bytes plus literal internal-symlink-target UTF-8 bytes, with directories zero and
+  unsafe/unstable/overflowing objects refused. Forget removes the exact local project subtree and
+  re-derives registrations. GC uses a versioned command-local
+  `migrate-ledger|forget-project|reclaim-store` action union rather than widening `skillsmith.plan`.
+  After approval it publishes the exact plan/action/approval/resource identity through the strict
+  private temp/CAS recovery protocol into owner-only
+  `<data-dir>/.gc-recovery/v1/<plan-id>.json`, then commits forget before reclamation. Matching retry
+  revalidates every not-yet-committed forget and may only adopt an exact recorded post-forget result.
+  Reclamation exclusively creates and record-binds an owner-only action container at
+  `<store>/.gc-tombstones/v1/<plan-id>/<action-id>`, then atomically renames a revalidated leaf into
+  its verified absent `payload` slot, flushes both parents, and removes only that payload. A matching
+  semantic request resumes the stored approved plan; mismatched requests, invalid recovery
+  live/temp state, and planted/colliding containers or payloads refuse. Adapted overlays enter only
+  through a future registered adapter-owned inventory and unknown trees are never inferred
+  disposable.
+- **Saved before/after scenario:** A missing registered project is the last current edge to store
+  leaf `sha256:abc`; another unreachable leaf is exactly 30 days old and a third is one millisecond
+  older. Before, GC could crawl arbitrary files, treat equality inconsistently, delete before the
+  forget was durable, or serialize an invented deletion kind into a portable plan. After, ordinary
+  GC protects `sha256:abc`; forget dry-run shows one registration action and the recalculated object
+  set; the equality leaf stays protected while the older leaf is eligible; approval covers those
+  exact IDs/bytes; execution durably records approval, commits forget, and renames only revalidated
+  eligible leaves into bound action-container payloads. A crash/retry uses that exact record and
+  leaves either the original object or one auditable detached payload; a planted/colliding
+  container or payload refuses. A
+  manifest, lock, saved plan, unknown store layout, and replacement at the original path remain
+  byte-identical.
+- **Rejected alternatives:** Ledger-only candidate enumeration cannot find unreferenced orphan
+  leaves. Home/project crawling is incomplete and private. A default grace period would invent
+  policy not selected by the operator. Filesystem allocated blocks are not portable exact bytes.
+  Reusing `repair` contradicts D-012; widening saved-plan operation kinds gives portable apply local
+  cache-deletion authority; an unrecorded “retry” cannot prove the approved pre-forget plan;
+  delete-before-recovery/forget and direct recursive live-leaf deletion violate crash safety;
+  inventing an overlay directory prematurely implements deferred adaptation.
+- **Affected contracts:** P2-03; Sections 2.4, 2.5, 8.1, 8.18, 8.20, 9, and 13.2; D-012;
+  EWP-CF-016/028/031/035/037/043; `COMMAND:gc`; GC human/JSON reports and approval; local ledger
+  migration/project registration; GC recovery v1; store inventory/identity/tombstones; retention and
+  live-placement projection. No command or option is added, ledger v2 and journal v1 remain
+  unchanged, and `skillsmith.plan` keeps its existing operation vocabulary.
+- **Validation:** EWP-CMD-GC-TS01..08, EWP-P5-TS04, and EWP-WF12; fixed-root/no-crawl canaries,
+  v1 byte-identity/migration, exact project removal and re-derivation, pending/history/live/missing
+  protection, duration grammar and equality boundary, exact logical bytes and symlink escape,
+  dry-run/execution identity, whole-invocation unsafe-object refusal, durable recovery-before-forget
+  ordering, phase-aware forget retry, recovery temp/CAS physical boundaries, exact owner-container/
+  payload grammar and collision, atomic rename crash points, replacement-race isolation, local/
+  no-remote repository basenames, and zero reachable deletion.
+- **Recorded:** 2026-07-23
+
 ### 13.1 Current-program drift
 
 **Status:** planning-level ledger closed by EWP-CF-023. The current side below is derived from
@@ -4492,7 +4736,7 @@ Section 8.20; this table owns introduction phase and validation, not a duplicate
 | `sync [skill...]` | Direct from/to reconciliation; targetless endpoints bound all source entries; force, delete, optional save/artifacts, preview, approval, batch, JSON | Phase 5 | EWP-CMD-SYNC-TS01..10, EWP-WF10 |
 | `update [skill...]` | Mutation target-or-all; targetless check-only bounded default; artifacts/tool/ref/pin/strict/approval/batch/JSON | Phase 5 | EWP-CMD-UPDATE-TS01..10, EWP-WF09 |
 | `undo [skill...]` | Required target-or-all abort/reversal; never guess latest; tool/user-project scope/preview/approval/batch/JSON | Phase 5 | EWP-CMD-UNDO-TS01..09, EWP-WF11, EWP-WF14 |
-| `gc` | Ledger-bounded store cleanup; dry-run, age, repeatable forget-project, approval, JSON | Phase 5 | EWP-CMD-GC-TS01..08, EWP-WF12 |
+| `gc` | Fixed-store-root cleanup with ledger-authoritative protection; dry-run, age, repeatable forget-project, approval/recovery, JSON | Phase 5 | EWP-CMD-GC-TS01..08, EWP-WF12 |
 
 #### 13.1.4 Closed-ledger gates
 
@@ -4513,8 +4757,9 @@ EWP-CF-025 closes force authority, EWP-CF-026 closes batch scheduling, EWP-CF-03
 zero-target/bounded-default behavior and selection provenance, and EWP-CF-040 closes uniform
 manifest/lock override availability, EWP-CF-041 closes init preview/operation consistency,
 EWP-CF-042 closes saved-plan preview/check modes, and EWP-CF-043 closes the shared non-mutating
-mode matrix. Artifact write/lock, migration, portability, and redaction proof is completed by
-closed Section 13.3.
+mode matrix. EWP-CF-044 closes GC's local inventory, measurement, command-local action, and crash
+semantics without widening saved plans. Artifact write/lock, migration, portability, and redaction
+proof is completed by closed Section 13.3.
 
 | Axis | Shared go-forward contract | Explicit command-specific distinction | Closure evidence |
 |---|---|---|---|
@@ -4532,9 +4777,9 @@ closed Section 13.3.
 | Batch | Deterministic groups/pairs, fail-fast default, explicit later-group continuation, nonzero failure preserved | Saved-plan apply rejects continuation; single-group commands omit the flag | EWP-CF-026, EWP-WF13 |
 | Artifact pair | File selects a sibling lock by default; advanced lockfile requires explicit file, is never persisted, and every pair consumer reports/reuses the same explicit context | Init is manifest-only; no-save and unsaved sync reject selectors; saved-plan apply uses its recorded pair | EWP-CF-003, EWP-CF-040, EWP-OPT-TS08, EWP-WF04 |
 | Artifact writers | One selected pair and shared coordinator prevent command-local write engines | Exact manifest/lock atomicity, hashing, and recovery proof is Section 13.3 work | EWP-CF-001, EWP-CF-003, EWP-CF-005, EWP-CF-012; Section 9 |
-| Undo/GC retention | Undo eligibility and GC reachability use the same retained before-state/journal/store references | GC forget removes local registration only and recalculates; it never invokes undo | EWP-CF-016, EWP-WF11, EWP-WF12 |
+| Undo/GC retention | Undo eligibility and GC reachability use the same retained before-state/journal/store references | GC forget removes local registration only, commits before tombstoning, and recalculates; it never invokes undo | EWP-CF-016, EWP-CF-044, EWP-WF11, EWP-WF12 |
 
-No additional cross-command recommendation remains after CF-043 and this matrix. Any later
+No additional cross-command recommendation remains after CF-044 and this matrix. Any later
 contradiction found while closing complexity or architecture reopens this section explicitly and
 receives a new finding.
 
@@ -4638,17 +4883,18 @@ amend this plan before implementation.
 ### 13.6 Whole-plan design-review closeout
 
 **Status:** the conversational decision review, accepted-finding backfill, and manual plan-integrity
-audit were closed and approved on 2026-07-11. No product decision or finding remains open. At that
+audit were closed and approved on 2026-07-11, with the approved G5-04 CF-044 amendment added and
+re-audited on 2026-07-23. No product decision or finding remains open. At the original
 design closeout, the Phase 0 executable gates were still open. As of 2026-07-12, documentation
 drift, the structural validator, catalog/checklist, executable ownership, and G0-01..G0-05 sign-offs
 are closed. Whole-phase adversarial review, catalog recording of standing approval, and exit passed
 on 2026-07-12.
 
-- Finding completeness: EWP-CF-001..043 each has one register row, one traceability row, accepted
-  go-forward behavior, saved example, affected contracts, validation, and date; `audited=43` and
+- Finding completeness: EWP-CF-001..044 each has one register row, one traceability row, accepted
+  go-forward behavior, saved example, affected contracts, validation, and date; `audited=44` and
   `failures=0`.
 - Identifier integrity: 65 phase tasks, 61 phase tests, 157 command tests, 10 option gates, 16
-  workflows, 16 decisions, and 43 findings have no duplicate definitions, undefined references, or
+  workflows, 16 decisions, and 44 findings have no duplicate definitions, undefined references, or
   malformed IDs.
 - Command closure: 23 normative commands equal 23 five-group help entries and partition exactly
   into 14 live commands plus 9 new commands. Every command-test family exists.
@@ -5030,8 +5276,8 @@ tests pass, the relevant holistic workflow passes, and the repo's full gate pass
 
 ### `gc`
 
-- **EWP-CMD-GC-TS01:** reachability from live placement and ledger as the bounded-default set with
-  explicit selection-source reporting.
+- **EWP-CMD-GC-TS01:** fixed configured store-root candidates with live/ledger-authoritative
+  reachability protection and explicit bounded-default selection-source reporting.
 - **EWP-CMD-GC-TS02:** version-2 project-registration/no-crawl ledger authority, missing-project
   protection, version-1 migration behavior, and proof arbitrary portable locks/saved plans are not
   local store leases.
@@ -5039,10 +5285,12 @@ tests pass, the relevant holistic workflow passes, and the repo's full gate pass
 - **EWP-CMD-GC-TS04:** age threshold and boundary timestamps.
 - **EWP-CMD-GC-TS05:** exact byte accounting and store/adapted overlays.
 - **EWP-CMD-GC-TS06:** dry-run/execution eligible-set equality, yes conflict before ledger reads,
-  no-prompt assertion, and explained filter-to-zero no-op.
+  no-prompt assertion, explained filter-to-zero no-op, and read-only pending-recovery reporting with
+  zero directory, ledger-lock/lock-path, record, or temp writes.
 - **EWP-CMD-GC-TS07:** forget-project exact-path/current/existing/journal refusals plus
   confirmation/noninteractive/JSON contracts.
 - **EWP-CMD-GC-TS08:** crash/idempotence and zero reachable deletion invariant.
+  Coverage includes every recovery temp/CAS and action-container/payload physical boundary.
 
 ### `commands`
 

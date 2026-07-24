@@ -53,9 +53,11 @@ rewriting this record. The user creates the persistent goal manually in a new th
   command-surface complexity, architecture/quality, documentation drift, final structure/approval.
 - [x] **P17-PREP-C06:** Reconcile every plan statement that currently says no planning or
   documentation gate remains open.
-- [x] **P17-PREP-C07:** Preserve the accepted counts and verify them from the updated plan: 34
+- [x] **P17-PREP-C07:** Preserve the original Phase-0 baseline counts and verify them from the updated plan: 34
   recommendations, 65 phase tasks, 61 phase tests, 157 command tests, 23 commands, 43 findings, 16
   decisions, 10 option gates, and 16 holistic workflows; 425 total tracked entities.
+  The approved 2026-07-23 G5-04 amendment adds EWP-CF-044, making the current catalog 426 total and
+  44 findings without changing this historical preparation receipt.
 - [x] **P17-PREP-C08:** Confirm Phase 7 remains deferred and P14 remains blocked until P17 Phase 6.
 
 ## P17-PREP-D — Execution decomposition

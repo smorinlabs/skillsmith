@@ -224,11 +224,11 @@ describe('P17 immutable catalog and traceability baseline', () => {
     const deferredEntities = catalog.entities.filter((entity) => entity.tier === 'deferred');
     const validations = catalog.entities.filter((entity) => entity.stateModel === 'validation');
 
-    expect(catalog.entities).toHaveLength(425);
-    expect(new Set(catalog.entities.map((entity) => entity.id)).size).toBe(425);
-    expect(checklistIds).toHaveLength(425);
-    expect(new Set(checklistIds).size).toBe(425);
-    expect(requiredEntities).toHaveLength(418);
+    expect(catalog.entities).toHaveLength(426);
+    expect(new Set(catalog.entities.map((entity) => entity.id)).size).toBe(426);
+    expect(checklistIds).toHaveLength(426);
+    expect(new Set(checklistIds).size).toBe(426);
+    expect(requiredEntities).toHaveLength(419);
     expect(deferredEntities).toHaveLength(7);
     expect(validations).toHaveLength(244);
     expect(
@@ -736,6 +736,7 @@ describe('P17 immutable catalog and traceability baseline', () => {
         'uninstall',
         'update',
       ],
+      'EWP-CF-044': ['gc'],
     };
     for (const [id, commands] of Object.entries(shorthand)) {
       expect(contracts(id)).toEqual(commands.map((command) => `COMMAND:${command}`));

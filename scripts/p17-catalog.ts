@@ -138,9 +138,9 @@ const expectedCounts: Record<Kind | 'total', number> = {
   'option-gate': 10,
   workflow: 16,
   command: 23,
-  finding: 43,
+  finding: 44,
   decision: 16,
-  total: 425,
+  total: 426,
 };
 
 const gateNames = [
@@ -452,6 +452,7 @@ const findingGroups = [
   'G4A-03',
   'G4B-02',
   'G1-02A',
+  'G5-04',
 ];
 findingGroups.forEach((group, index) =>
   map(group, [`EWP-CF-${String(index + 1).padStart(3, '0')}`]),
@@ -1021,6 +1022,7 @@ const shorthandFindingCommands: Record<string, string[]> = {
     'undo',
     'gc',
   ],
+  'EWP-CF-044': ['gc'],
 };
 
 function findingTraceability(): Map<string, FindingRelation> {
