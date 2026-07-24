@@ -2,6 +2,7 @@ import { createNodeArtifactCoordinatorPorts } from '../artifacts/node-coordinato
 import { VERSION } from '../version.ts';
 import { runApplyApplication } from './apply-service.ts';
 import { runExportApplication } from './export-service.ts';
+import { runGcApplication } from './gc-service.ts';
 import { runInitApplication } from './init-service.ts';
 import { LIFECYCLE_APPLICATION_SERVICES } from './lifecycle-services.ts';
 import { runPlanApplication } from './plan-service.ts';
@@ -10,6 +11,7 @@ import { runSyncApplication } from './sync-service.ts';
 import { runUndoApplication } from './undo-service.ts';
 import { runUpdateApplication } from './update-service.ts';
 export { runExportApplication } from './export-service.ts';
+export { runGcApplication } from './gc-service.ts';
 export { runInitApplication } from './init-service.ts';
 export { runPlanApplication } from './plan-service.ts';
 export { runApplyApplication } from './apply-service.ts';
@@ -106,6 +108,7 @@ export const CURRENT_APPLICATION_SERVICES: Readonly<Record<string, AnyCurrentApp
     completion: runCompletionApplication as AnyCurrentApplicationService,
     help: runHelpApplication as AnyCurrentApplicationService,
     export: runExportApplication as AnyCurrentApplicationService,
+    gc: runGcApplication as AnyCurrentApplicationService,
     init: runInitApplication as AnyCurrentApplicationService,
     plan: runPlanApplication as AnyCurrentApplicationService,
     apply: runApplyApplication as AnyCurrentApplicationService,

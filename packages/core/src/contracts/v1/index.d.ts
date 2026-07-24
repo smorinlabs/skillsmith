@@ -1351,6 +1351,103 @@ export interface UpdateReportV1Dto {
 
 export declare const updateV1Codec: WireCodec<'update', 1, UpdateReportV1Dto>;
 
+export interface GcProjectV1Dto {
+  readonly root: string;
+  readonly current: boolean;
+  readonly existing: boolean;
+  readonly registered: boolean;
+  readonly requested: boolean;
+  readonly action: 'none' | 'forget-project';
+  readonly outcome: 'protected' | 'planned' | 'forgotten' | 'refused';
+  readonly reason: string | null;
+}
+
+export interface GcObjectV1Dto {
+  readonly id: string;
+  readonly kind: 'store' | 'adapted-overlay';
+  readonly path: string;
+  readonly contentHash: string;
+  readonly modifiedAt: number;
+  readonly logicalBytes: number;
+  readonly protection: readonly Readonly<{ readonly kind: string; readonly sourceId: string }>[];
+  readonly ageEligible: boolean;
+  readonly outcome: 'protected' | 'age-filtered' | 'eligible' | 'reclaimed' | 'refused';
+  readonly reason: string | null;
+}
+
+export interface GcActionV1Dto {
+  readonly actionId: string;
+  readonly kind: 'migrate-ledger' | 'forget-project' | 'reclaim-store';
+  readonly target: string;
+  readonly logicalBytes: number;
+  readonly dependencyIds: readonly string[];
+  readonly outcome: 'planned' | 'succeeded' | 'failed' | 'protected-skip';
+  readonly reason: string | null;
+}
+
+export interface GcSummaryV1Dto {
+  readonly observedItems: number;
+  readonly protectedItems: number;
+  readonly ageFilteredItems: number;
+  readonly eligibleItems: number | null;
+  readonly eligibleBytes: number | null;
+  readonly forgottenProjects: number;
+  readonly reclaimedItems: number;
+  readonly reclaimedBytes: number;
+  readonly refusedItems: number;
+  readonly failedItems: number;
+}
+
+export interface GcReportV1Dto {
+  readonly schemaVersion: 1;
+  readonly kind: 'skillsmith.gc';
+  readonly command: 'gc';
+  readonly mode: 'dry-run' | 'execute';
+  readonly state: 'planned' | 'no-op' | 'refused' | 'completed' | 'partial';
+  readonly planId: string | null;
+  readonly selectionSource: 'bounded-default';
+  readonly project: {
+    readonly effectiveCwd: string;
+    readonly root: string;
+    readonly identity: string;
+  };
+  readonly migration: {
+    readonly sourceVersion: 1 | 2 | null;
+    readonly action: 'none' | 'migrate-ledger';
+    readonly outcome: 'not-required' | 'planned' | 'succeeded';
+  };
+  readonly olderThan: null | {
+    readonly input: string;
+    readonly milliseconds: number;
+    readonly cutoff: number;
+  };
+  readonly approval: {
+    readonly required: boolean;
+    readonly outcome: 'not-required' | 'pending' | 'approved' | 'refused' | 'cancelled';
+  };
+  readonly recovery: {
+    readonly state: 'none' | 'pending' | 'completed' | 'refused';
+    readonly phase: string | null;
+  };
+  readonly projects: readonly GcProjectV1Dto[];
+  readonly objects: readonly GcObjectV1Dto[];
+  readonly actions: readonly GcActionV1Dto[];
+  readonly results: readonly GcActionV1Dto[];
+  readonly checks: readonly Readonly<{
+    readonly code: string;
+    readonly outcome: 'passed' | 'failed';
+    readonly message: string;
+  }>[];
+  readonly diagnostics: readonly Readonly<{
+    readonly code: string;
+    readonly message: string;
+    readonly path: string | null;
+  }>[];
+  readonly summary: GcSummaryV1Dto;
+}
+
+export declare const gcV1Codec: WireCodec<'gc', 1, GcReportV1Dto>;
+
 export interface UndoSelectionV1Dto {
   readonly source: 'explicit-targets' | 'explicit-all';
   readonly outcome: 'selected' | 'filter-zero';

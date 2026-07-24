@@ -1,11 +1,14 @@
 import { describe, expect, test } from 'bun:test';
+import type { ArtifactDigest } from '../../src/artifacts/hash.ts';
 import type { LedgerModel } from '../../src/artifacts/ledger-types.ts';
 import { deriveLedgerProjectRegistrations } from '../../src/artifacts/registry.ts';
 import {
+  buildGcPlan,
   normalizeGcForgetRoots,
   parseGcDuration,
   withoutLedgerProjectAt,
 } from '../../src/gc/plan.ts';
+import type { GcObjectObservation } from '../../src/gc/types.ts';
 import { emptyLedgerModel } from '../../src/place/ledger.ts';
 
 describe('GC pure request and ledger planning', () => {
@@ -80,5 +83,91 @@ describe('GC pure request and ledger planning', () => {
       ok: false,
       error: { code: 'invalid-forget' },
     });
+  });
+
+  test('builds deterministic dependency-ordered actions and an immutable public preview', () => {
+    const model = emptyLedgerModel('2026-07-23T00:00:00.000Z');
+    const sourceLedger = Object.freeze({
+      state: 'present' as const,
+      sourceVersion: 1 as const,
+      bytes: new Uint8Array([1]),
+      byteRevision: `sha256:${'a'.repeat(64)}` as ArtifactDigest,
+      semanticRevision: `sha256:${'b'.repeat(64)}` as ArtifactDigest,
+      model,
+    });
+    const object = Object.freeze({
+      id: 'fixture/repo@0123456789ab/review',
+      kind: 'store' as const,
+      path: '/data/store/fixture/repo@0123456789ab/review',
+      relativePath: 'fixture/repo@0123456789ab/review',
+      namespace: 'fixture',
+      repository: 'repo',
+      revision: '0123456789ab',
+      skill: 'review',
+      contentHash: `sha256:${'c'.repeat(64)}` as ArtifactDigest,
+      modifiedAt: 1,
+      logicalBytes: 6,
+      rootIdentity: 'root',
+      namespaceIdentity: 'namespace',
+      repositoryIdentity: 'repository',
+      directoryIdentity: 'directory',
+      directoryLinkCount: 2,
+      entries: [],
+    }) satisfies GcObjectObservation;
+    const input = {
+      sourceLedger,
+      model,
+      postForgetModel: model,
+      inventory: {
+        state: 'ok' as const,
+        root: '/data/store',
+        rootIdentity: 'root',
+        objects: [object],
+        issues: [] as const,
+      },
+      classifications: [
+        { object, protection: [], ageEligible: true, outcome: 'eligible' as const },
+      ],
+      duration: null,
+      nowMilliseconds: 100,
+      projects: [
+        {
+          root: '/retired',
+          current: false,
+          existing: false,
+          registered: true,
+          requested: true,
+          action: 'forget-project' as const,
+          outcome: 'planned' as const,
+          reason: null,
+        },
+      ],
+      dataDir: '/data',
+      storeRoot: '/data/store',
+      ledgerPath: '/data/placements.json',
+      project: { effectiveCwd: '/workspace', root: '/workspace', identity: 'workspace' },
+      retryArguments: ['gc', '--forget-project', '/retired', '--yes'],
+    };
+    const first = buildGcPlan(input);
+    const second = buildGcPlan(structuredClone(input));
+    const migrationAction = first.actions[0];
+    const forgetAction = first.actions[1];
+    if (migrationAction === undefined || forgetAction === undefined) {
+      throw new Error('expected migration and forget actions');
+    }
+    expect(second).toEqual(first);
+    expect(first.actions.map(({ kind }) => kind)).toEqual([
+      'migrate-ledger',
+      'forget-project',
+      'reclaim-store',
+    ]);
+    expect(first.actions[1]?.dependencyIds).toEqual([migrationAction.actionId]);
+    expect(first.actions[2]?.dependencyIds).toEqual([
+      migrationAction.actionId,
+      forgetAction.actionId,
+    ]);
+    expect(first.report.summary).toMatchObject({ eligibleItems: 1, eligibleBytes: 6 });
+    expect(Object.isFrozen(first.report)).toBeTrue();
+    expect(Object.isFrozen(first.report.actions)).toBeTrue();
   });
 });

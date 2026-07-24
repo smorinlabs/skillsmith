@@ -91,6 +91,12 @@ const PROFILE: Readonly<
     capability: 'export',
     application: 'export',
   },
+  'skillsmith gc': {
+    group: 'maintain',
+    question: 'Which unreachable local store objects can be reclaimed safely?',
+    capability: 'gc',
+    application: 'gc',
+  },
   'skillsmith init': {
     group: 'declarative',
     question: 'How do I create or migrate the desired-state file?',
@@ -196,6 +202,7 @@ const DESCRIPTION: Readonly<Record<string, string>> = {
   'skillsmith status': 'Correlate desired, locked, ledger, and live skill state',
   'skillsmith doctor': 'Diagnose SkillSmith and target-tool readiness',
   'skillsmith export': 'Capture portable live skill state in a manifest and lockfile',
+  'skillsmith gc': 'Reclaim unreachable local store objects under exact safety guards',
   'skillsmith init': 'Create or safely migrate one desired-state manifest',
   'skillsmith plan': 'Preview desired/current convergence without changing selected state',
   'skillsmith apply': 'Converge live skill state from a manifest or exact reviewed saved plan',
@@ -274,6 +281,11 @@ const EXAMPLES: Readonly<Record<string, readonly string[]>> = {
     'skillsmith export',
     'skillsmith export --project --file ./skillsmith.toml',
     'skillsmith export --tool claude-code --strict --dry-run',
+  ],
+  'skillsmith gc': [
+    'skillsmith gc --dry-run',
+    'skillsmith gc --older-than 30d --dry-run --json',
+    'skillsmith gc --forget-project /workspace/retired --yes',
   ],
   'skillsmith init': [
     'skillsmith init',
@@ -360,6 +372,14 @@ const EXIT_CODES: Readonly<Record<string, readonly CommandExitCodeSpec[]>> = {
     [3, 'artifact or ledger state is invalid or stale'],
     [4, 'required readable tool capability is unavailable'],
     [6, 'artifact or ledger permission denied'],
+    [130, 'cancelled by SIGINT'],
+  ),
+  'skillsmith gc': exitCodes(
+    [0, 'GC was previewed, completed, or already converged'],
+    [1, 'one or more approved GC actions failed'],
+    [2, 'invalid duration, forget request, option, or approval policy'],
+    [3, 'ledger, inventory, recovery, tombstone, or execution state is unsafe'],
+    [6, 'a selected state path is permission denied'],
     [130, 'cancelled by SIGINT'],
   ),
   'skillsmith init': exitCodes(
@@ -593,6 +613,7 @@ export const CURRENT_COMMAND_SPECS: readonly CommandSpec[] = commandPaths.map((p
     ...(path === 'skillsmith sync' ? { reportKind: 'sync' } : {}),
     ...(path === 'skillsmith update' ? { reportKind: 'update' } : {}),
     ...(path === 'skillsmith undo' ? { reportKind: 'undo' } : {}),
+    ...(path === 'skillsmith gc' ? { reportKind: 'gc' } : {}),
   });
 });
 
@@ -690,6 +711,11 @@ const requiredCurrentOptionRelations = (): readonly OptionRelationSpec[] => [
   ...scopeRelations('skillsmith config unset', ['user', 'project', 'system']),
   conflicts('skillsmith doctor', '--all-tools', '--tool'),
   conflicts('skillsmith doctor', '--yes', '--dry-run'),
+  conflicts('skillsmith gc', '--yes', '--dry-run'),
+  singularOption('skillsmith gc', '--dry-run'),
+  singularOption('skillsmith gc', '--older-than'),
+  singularOption('skillsmith gc', '--yes'),
+  singularOption('skillsmith gc', '--json'),
   {
     id: 'skillsmith.doctor.dry-run.requires.fix',
     command: 'skillsmith doctor',

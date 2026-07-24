@@ -114,6 +114,14 @@ export interface ExactUndoApprovalPreviewRequest {
   }>[];
 }
 
+/** Exact immutable GC plan and action order presented before execution. */
+export interface ExactGcApprovalPreviewRequest {
+  readonly kind: 'exact-gc-preview';
+  readonly command: 'gc';
+  readonly planId: string;
+  readonly operationIds: readonly string[];
+}
+
 /** Structured confirmation facts; adapters own presentation and interactive defaults. */
 export interface InteractionConfirmationRequest {
   readonly id: string;
@@ -122,7 +130,8 @@ export interface InteractionConfirmationRequest {
     | ExactApprovalPreviewRequest
     | ExactSyncApprovalPreviewRequest
     | ExactUpdateApprovalPreviewRequest
-    | ExactUndoApprovalPreviewRequest;
+    | ExactUndoApprovalPreviewRequest
+    | ExactGcApprovalPreviewRequest;
 }
 
 /** Parser-normalized sync request; endpoint resolution and I/O remain behind SyncApplicationPort. */

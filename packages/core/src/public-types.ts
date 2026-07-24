@@ -56,6 +56,7 @@ export type {
   ExactSyncApprovalPreviewRequest,
   ExactUpdateApprovalPreviewRequest,
   ExactUndoApprovalPreviewRequest,
+  ExactGcApprovalPreviewRequest,
   MutationSummary,
   PreparedSyncApplication,
   SyncApplicationPort,
@@ -72,6 +73,7 @@ export type { ApplyApplicationReport } from './application/apply-service.ts';
 export type { SyncApplicationReport } from './application/sync-service.ts';
 export type { UpdateApplicationReport } from './application/update-service.ts';
 export type { UndoApplicationReport } from './application/undo-service.ts';
+export type { GcApplicationReport } from './application/gc-service.ts';
 export type {
   PreparedUndoPlan,
   UndoAction,

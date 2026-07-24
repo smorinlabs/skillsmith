@@ -13,6 +13,7 @@ import {
   type DevApplicationReport,
   type ExportReport,
   type FlipReport,
+  type GcApplicationReport,
   type HealthReport,
   type InitReport,
   type InstallApplicationReport,
@@ -52,6 +53,8 @@ import { renderExportHuman } from '../output/export-human.ts';
 import { renderExportJson } from '../output/export-json.ts';
 import { renderFlipHuman } from '../output/flip-human.ts';
 import { renderFlipJson } from '../output/flip-json.ts';
+import { renderGcHuman } from '../output/gc-human.ts';
+import { renderGcJson } from '../output/gc-json.ts';
 import { renderInitHuman } from '../output/init-human.ts';
 import { renderInitJson } from '../output/init-json.ts';
 import {
@@ -387,6 +390,20 @@ export const createCurrentRendererRegistry = (root: Command): RendererRegistry =
         return value === null
           ? (errorOutput(outcome, 'json') ?? '')
           : withDiagnostics(outcome, renderUndoJson(value, currentWireCodecs.undo));
+      },
+    },
+    gc: {
+      human: (outcome) => {
+        const value = report<GcApplicationReport>(outcome).result;
+        return value === null
+          ? (errorOutput(outcome, 'human') ?? '')
+          : withDiagnostics(outcome, renderGcHuman(value));
+      },
+      json: (outcome) => {
+        const value = report<GcApplicationReport>(outcome).result;
+        return value === null
+          ? (errorOutput(outcome, 'json') ?? '')
+          : withDiagnostics(outcome, renderGcJson(value, currentWireCodecs.gc));
       },
     },
     configGet: guarded<ConfigGetReport>(

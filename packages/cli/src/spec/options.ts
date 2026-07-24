@@ -115,6 +115,12 @@ const OPTION_DESCRIPTIONS: Readonly<Record<string, string>> = {
   'skillsmith export:--force': 'Resolve only bounded selected declaration conflicts',
   'skillsmith export:--dry-run': 'Preview artifact effects without locking or writing',
   'skillsmith export:--json': 'Emit the strict export@1 report',
+  'skillsmith gc:--dry-run': 'Preview the exact GC plan without locks or writes',
+  'skillsmith gc:--older-than': 'Select only objects strictly older than this duration',
+  'skillsmith gc:--forget-project':
+    'Forget one exact missing registered project before reachability analysis; repeatable',
+  'skillsmith gc:--yes': 'Approve the exact changing GC plan without prompting',
+  'skillsmith gc:--json': 'Emit the strict gc@1 report',
   'skillsmith init:--file': 'Initialize one explicit desired-state manifest',
   'skillsmith init:--tool': 'Persist a writable tool default; repeatable',
   'skillsmith init:--scope': 'Persist user or project scope and select its default destination',

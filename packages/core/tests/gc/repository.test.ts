@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inventoryGcStore } from '../../src/gc/inventory.ts';
-import { reclaimGcStoreObject } from '../../src/gc/repository.ts';
+import { observeGcTombstones, reclaimGcStoreObject } from '../../src/gc/repository.ts';
 import { defaultRuntimePorts } from '../../src/ports/default.ts';
 
 const id = (character: string): string => character.repeat(64);
@@ -90,6 +90,24 @@ describe('GC owner-bound store repository', () => {
       expect(result).toMatchObject({ state: 'refused' });
       expect(await ports.pathKind(path)).toBe('dir');
       expect(await ports.pathKind(join(root, '.gc-tombstones'))).toBe('absent');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('accepts empty completed plan namespaces and refuses planted action state', async () => {
+    const ports = await defaultRuntimePorts();
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-gc-tombstone-observe-'));
+    try {
+      const completed = join(root, '.gc-tombstones', 'v1', id('a'));
+      await mkdir(completed, { recursive: true, mode: 0o700 });
+      expect(await observeGcTombstones(ports, root)).toMatchObject({ state: 'safe' });
+      const planted = join(root, '.gc-tombstones', 'v1', 'planted');
+      await mkdir(planted, { mode: 0o700 });
+      expect(await observeGcTombstones(ports, root)).toMatchObject({
+        state: 'refused',
+        reason: expect.stringContaining('unexpected'),
+      });
     } finally {
       await rm(root, { recursive: true, force: true });
     }

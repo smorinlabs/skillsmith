@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "kind": "skillsmith.gc",
+  "command": "gc",
+  "mode": "execute",
+  "state": "no-op",
+  "planId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "selectionSource": "bounded-default",
+  "project": {
+    "effectiveCwd": "/fixture/project",
+    "root": "/fixture/project",
+    "identity": "/fixture/project"
+  },
+  "migration": {
+    "sourceVersion": 2,
+    "action": "none",
+    "outcome": "not-required"
+  },
+  "olderThan": null,
+  "approval": {
+    "required": false,
+    "outcome": "not-required"
+  },
+  "recovery": {
+    "state": "none",
+    "phase": null
+  },
+  "projects": [],
+  "objects": [],
+  "actions": [],
+  "results": [],
+  "checks": [
+    {
+      "code": "inventory-safe",
+      "outcome": "passed",
+      "message": "configured store inventory is safe"
+    },
+    {
+      "code": "ledger-readable",
+      "outcome": "passed",
+      "message": "placement ledger is readable"
+    }
+  ],
+  "diagnostics": [],
+  "summary": {
+    "observedItems": 0,
+    "protectedItems": 0,
+    "ageFilteredItems": 0,
+    "eligibleItems": 0,
+    "eligibleBytes": 0,
+    "forgottenProjects": 0,
+    "reclaimedItems": 0,
+    "reclaimedBytes": 0,
+    "refusedItems": 0,
+    "failedItems": 0
+  }
+}

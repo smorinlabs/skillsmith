@@ -341,7 +341,6 @@ export const pinnedPair = (placementPath: string, object: GcStoreObject): Unknow
     verify: 'passed',
     placement: 'symlink',
   },
-  origin: null,
   journal: null,
 });
 

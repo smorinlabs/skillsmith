@@ -1,5 +1,6 @@
 import type {
   ApplyReportV1Dto,
+  GcReportV1Dto,
   PlanV1Dto,
   StatusV1Dto,
   SyncReportV1Dto,
@@ -1042,6 +1043,46 @@ export const UPDATE_REPORT_FIXTURE = {
   },
 } satisfies UpdateReportV1Dto;
 
+export const GC_REPORT_FIXTURE = {
+  schemaVersion: 1,
+  kind: 'skillsmith.gc',
+  command: 'gc',
+  mode: 'execute',
+  state: 'no-op',
+  planId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  selectionSource: 'bounded-default',
+  project: {
+    effectiveCwd: '/fixture/project',
+    root: '/fixture/project',
+    identity: '/fixture/project',
+  },
+  migration: { sourceVersion: 2, action: 'none', outcome: 'not-required' },
+  olderThan: null,
+  approval: { required: false, outcome: 'not-required' },
+  recovery: { state: 'none', phase: null },
+  projects: [],
+  objects: [],
+  actions: [],
+  results: [],
+  checks: [
+    { code: 'inventory-safe', outcome: 'passed', message: 'configured store inventory is safe' },
+    { code: 'ledger-readable', outcome: 'passed', message: 'placement ledger is readable' },
+  ],
+  diagnostics: [],
+  summary: {
+    observedItems: 0,
+    protectedItems: 0,
+    ageFilteredItems: 0,
+    eligibleItems: 0,
+    eligibleBytes: 0,
+    forgottenProjects: 0,
+    reclaimedItems: 0,
+    reclaimedBytes: 0,
+    refusedItems: 0,
+    failedItems: 0,
+  },
+} satisfies GcReportV1Dto;
+
 export const REPORT_FIXTURES = {
   agents: AGENTS_REPORT_FIXTURE,
   apply: APPLY_REPORT_FIXTURE,
@@ -1068,6 +1109,7 @@ export const REPORT_FIXTURES = {
   error: ERROR_FIXTURE,
   export: EXPORT_REPORT_FIXTURE,
   init: INIT_REPORT_FIXTURE,
+  gc: GC_REPORT_FIXTURE,
 } as const;
 
 /** Report values in the shape consumed by the shared current renderer registry. */
@@ -1094,6 +1136,7 @@ export const CURRENT_RENDERER_REPORTS = {
   verify: { result: REPORT_FIXTURES.verify },
   export: REPORT_FIXTURES.export,
   init: REPORT_FIXTURES.init,
+  gc: { result: REPORT_FIXTURES.gc },
 } as const;
 
 /**
@@ -1431,6 +1474,7 @@ export const CURRENT_JSON_GOLDENS = {
   uninstall: CURRENT_LIFECYCLE_V2_GOLDENS.uninstall,
   export: `${JSON.stringify(EXPORT_REPORT_FIXTURE, null, 2)}\n`,
   init: `${JSON.stringify(INIT_REPORT_FIXTURE, null, 2)}\n`,
+  gc: `${JSON.stringify(GC_REPORT_FIXTURE, null, 2)}\n`,
 } as const;
 
 export const GOLDEN_TERMINAL_LF = {
@@ -1457,4 +1501,5 @@ export const GOLDEN_TERMINAL_LF = {
   error: true,
   export: true,
   init: true,
+  gc: true,
 } as const;

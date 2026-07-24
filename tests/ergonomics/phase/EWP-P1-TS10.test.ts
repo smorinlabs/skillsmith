@@ -64,6 +64,7 @@ const EXPECTED_PATHS = [
   'skillsmith dev',
   'skillsmith doctor',
   'skillsmith export',
+  'skillsmith gc',
   'skillsmith init',
   'skillsmith install',
   'skillsmith list',
@@ -89,6 +90,7 @@ const EXPECTED_MAPPINGS = [
   ['skillsmith dev', 'flip', 4],
   ['skillsmith doctor', 'health', 2],
   ['skillsmith export', 'export', 1],
+  ['skillsmith gc', 'gc', 1],
   ['skillsmith init', 'init', 1],
   ['skillsmith install', 'install', 2],
   ['skillsmith list', 'list', 3],
@@ -117,6 +119,7 @@ const EXPECTED_CODECS = [
   ['flip', 2],
   ['flip', 3],
   ['flip', 4],
+  ['gc', 1],
   ['install', 1],
   ['init', 1],
   ['install', 2],
@@ -194,6 +197,12 @@ const EXPECTED_DESCRIPTOR_POLICY: Readonly<
     embeddedVersion: 'schemaVersion',
     indent: 2,
     terminalLf: false,
+  },
+  'gc@1': {
+    wireKind: 'skillsmith.gc',
+    embeddedVersion: 'schemaVersion',
+    indent: 2,
+    terminalLf: true,
   },
   'install@1': {
     wireKind: 'skillsmith.install',
@@ -307,6 +316,7 @@ const GOLDEN_FILES = {
   error: 'error.stdout',
   export: 'export.stdout',
   init: 'init.stdout',
+  gc: 'gc.stdout',
 } as const;
 
 const DESCRIPTOR_KEYS = [
@@ -333,6 +343,7 @@ const V1_RUNTIME_EXPORTS = [
   'createVerifyV1Codec',
   'errorV1Codec',
   'exportV1Codec',
+  'gcV1Codec',
   'healthV1Codec',
   'initV1Codec',
   'installV1Codec',
@@ -597,6 +608,7 @@ const renderedCurrentBytes = (): CurrentBytes => {
     verify: render('verify', CURRENT_RENDERER_REPORTS.verify),
     export: render('export', CURRENT_RENDERER_REPORTS.export),
     init: render('init', CURRENT_RENDERER_REPORTS.init),
+    gc: render('gc', CURRENT_RENDERER_REPORTS.gc),
     error: renderCliError(REPORT_FIXTURES.error, 'json'),
   };
 };
@@ -657,7 +669,7 @@ const typescriptFiles = async (root: string): Promise<readonly string[]> => {
 };
 
 describe('EWP-P1-TS10', () => {
-  test('family 1: characterizes exactly the twenty-two live JSON-selectable command paths', () => {
+  test('family 1: characterizes exactly the twenty-three live JSON-selectable command paths', () => {
     const paths = CURRENT_COMMAND_SPECS.filter((spec) =>
       spec.options.some(
         (option) =>
@@ -666,7 +678,7 @@ describe('EWP-P1-TS10', () => {
       ),
     ).map((spec) => spec.path);
     expect(paths).toEqual([...EXPECTED_PATHS]);
-    expect(new Set(paths).size).toBe(22);
+    expect(new Set(paths).size).toBe(23);
     for (const excluded of ['skillsmith version', 'skillsmith completion', 'skillsmith help'])
       expect(paths).not.toContain(excluded);
   });
@@ -700,6 +712,7 @@ describe('EWP-P1-TS10', () => {
       ['dev', 'skillsmith dev'],
       ['doctor', 'skillsmith doctor'],
       ['export', 'skillsmith export'],
+      ['gc', 'skillsmith gc'],
       ['install', 'skillsmith install'],
       ['init', 'skillsmith init'],
       ['list', 'skillsmith list'],
@@ -2362,6 +2375,7 @@ describe('EWP-P1-TS10', () => {
       ['error', 1, CURRENT_JSON_GOLDENS.error],
       ['export', 1, CURRENT_JSON_GOLDENS.export],
       ['init', 1, CURRENT_JSON_GOLDENS.init],
+      ['gc', 1, CURRENT_JSON_GOLDENS.gc],
     ] as const;
     for (const [id, version, bytes] of fixtures) {
       const codec = registry.get(id, version);

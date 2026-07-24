@@ -7,7 +7,7 @@ import type {
   FileWritePort,
 } from '../ports/types.ts';
 import { inventoryGcStore } from './inventory.ts';
-import type { GcReclaimRequest, GcReclaimResult } from './types.ts';
+import type { GcReclaimRequest, GcReclaimResult, GcTombstoneObservation } from './types.ts';
 
 type RepositoryPorts = EffectiveUserPort &
   ExclusiveCreatePort &
@@ -45,6 +45,48 @@ const ensurePrivateDirectory = async (ports: RepositoryPorts, path: string): Pro
     await ports.makeDirExclusive(path, 0o700).catch(() => {});
   }
   return secureDirectory(ports, path);
+};
+
+/** Completed runs may leave only empty, owner-only plan namespaces. */
+export const observeGcTombstones = async (
+  ports: RepositoryPorts,
+  storeRoot: string,
+): Promise<GcTombstoneObservation> => {
+  const tombstones = join(storeRoot, '.gc-tombstones');
+  if ((await ports.pathKind(tombstones)) === 'absent') {
+    return Object.freeze({ state: 'safe', root: tombstones });
+  }
+  const version = join(tombstones, 'v1');
+  if (
+    !(await secureDirectory(ports, tombstones)) ||
+    (await ports.listDir(tombstones)).some((name) => name !== 'v1') ||
+    (await ports.pathKind(version)) !== 'dir' ||
+    !(await secureDirectory(ports, version))
+  ) {
+    return Object.freeze({
+      state: 'refused',
+      root: tombstones,
+      reason: 'GC tombstone namespace ownership, mode, or version is unsafe',
+    });
+  }
+  for (const name of await ports.listDir(version)) {
+    const plan = join(version, name);
+    if (!HEX64.test(name) || !(await secureDirectory(ports, plan))) {
+      return Object.freeze({
+        state: 'refused',
+        root: tombstones,
+        reason: 'GC tombstone plan namespace is unexpected or unsafe',
+      });
+    }
+    if ((await ports.listDir(plan)).length !== 0) {
+      return Object.freeze({
+        state: 'refused',
+        root: tombstones,
+        reason: 'GC tombstone action state exists without matching recovery ownership',
+      });
+    }
+  }
+  return Object.freeze({ state: 'safe', root: tombstones });
 };
 
 export const reclaimGcStoreObject = async (

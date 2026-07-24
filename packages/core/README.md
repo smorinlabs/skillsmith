@@ -139,6 +139,7 @@ Versioned wire contracts use dedicated entry points so DTO authority does not mi
 import { createWireContractRegistry } from '@skillsmith/core/contracts';
 import {
   agentsV1Codec,
+  gcV1Codec,
   initV1Codec,
   statusV1Codec,
   type InitV1Dto,
@@ -159,7 +160,7 @@ import { listV3Codec, toListV3Dto } from '@skillsmith/core/contracts/v3';
 ```
 
 The current codec IDs are `agents`, `health`, `commands`, `config-get`, `config-list`, `config-set`,
-`config-unset`, `flip`, `init`, `install`, `list`, `status`, `uninstall`, `verify`, `error`, and
+`config-unset`, `flip`, `init`, `install`, `list`, `status`, `gc`, `uninstall`, `verify`, `error`, and
 `capability-snapshot`. Codecs recursively reject unknown object fields, validate before encoding,
 preserve their declared JSON framing, and return sanitized `Result` errors rather than throwing for
 untrusted input. Explicit `to*Dto` mappers keep domain-only fields out of public wire shapes. See
@@ -169,6 +170,12 @@ Current inventory output uses `agents@2`, `commands@2`, and `list@3`. Their mapp
 registry/scope/name/path ordering, recursively redact public string fields, and preserve complete
 machine output independently of human verbosity. Historical `agents@1`, `commands@1`, and
 `list@2` codecs remain available from their original versioned entry points.
+
+The GC domain inventories only the configured store and derives exact path-plus-hash protection
+from ledger and recovery authority. `runGcApplication` exposes read-only planning, strict age and
+missing-project forget policy, exact approval, canonical ledger migration, owner-only `gc@1`
+reports, and private recovery/tombstone repositories. Unsafe layout, links, ownership, recovery,
+or concurrent state refuses the complete invocation rather than widening deletion authority.
 
 ## Persisted artifact contracts
 

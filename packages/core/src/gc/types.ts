@@ -1,5 +1,6 @@
 import type { ArtifactDigest } from '../artifacts/hash.ts';
 import type { LedgerModel, LedgerReadState } from '../artifacts/ledger-types.ts';
+import type { GcReportV1Dto } from '../contracts/v1/gc.ts';
 
 export type GcObjectKind = 'store' | 'adapted-overlay';
 
@@ -198,3 +199,43 @@ export type GcReclaimResult =
   | Readonly<{ readonly state: 'cleaned'; readonly logicalBytes: number }>
   | Readonly<{ readonly state: 'already-absent'; readonly logicalBytes: 0 }>
   | Readonly<{ readonly state: 'refused'; readonly logicalBytes: 0; readonly reason: string }>;
+
+export type GcTombstoneObservation =
+  | Readonly<{ readonly state: 'safe'; readonly root: string }>
+  | Readonly<{ readonly state: 'refused'; readonly root: string; readonly reason: string }>;
+
+export type GcPreparedAction =
+  | Readonly<{
+      readonly actionId: string;
+      readonly kind: 'migrate-ledger';
+      readonly target: string;
+      readonly dependencyIds: readonly string[];
+    }>
+  | Readonly<{
+      readonly actionId: string;
+      readonly kind: 'forget-project';
+      readonly target: string;
+      readonly dependencyIds: readonly string[];
+    }>
+  | Readonly<{
+      readonly actionId: string;
+      readonly kind: 'reclaim-store';
+      readonly target: string;
+      readonly dependencyIds: readonly string[];
+      readonly object: GcObjectObservation;
+      readonly ownershipToken: string;
+    }>;
+
+export interface PreparedGcPlan {
+  readonly planId: string;
+  readonly requestDigest: string;
+  readonly sourceLedger: LedgerReadState;
+  readonly model: LedgerModel;
+  readonly postForgetModel: LedgerModel;
+  readonly actions: readonly GcPreparedAction[];
+  readonly report: GcReportV1Dto;
+  readonly dataDir: string;
+  readonly storeRoot: string;
+  readonly ledgerPath: string;
+  readonly retryArguments: readonly string[];
+}

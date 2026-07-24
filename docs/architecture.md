@@ -20,6 +20,7 @@ packages/
       detect/        path scanners, install-method classification, detect-types
       doctor/        diagnostic checks and execution
       env/           ScanEnv, platform/XDG resolution, logger, subprocess exec
+      gc/            bounded store inventory, reachability, and private recovery
       ports/         focused capabilities, safe adapter errors, real adapter composition
       place/         dev/promote placement transactions
       scan/          orchestrator: detectAll / detectTool
@@ -143,6 +144,14 @@ refusal or cancellation runs no verifier and writes nothing. Adapter policy sele
 static gate and Codex's static-plus-deep gate. Human output and strict `update@1` JSON are two views
 of the same report.
 
+`runGcApplication` owns bounded local store reclamation. It inventories only the configured store,
+classifies exact path-plus-hash reachability from ledger, registration, journal, and history
+evidence, and emits one immutable `gc@1` preview. Dry runs do not lock or write. Execution requires
+approval, commits any v1 migration or exact missing-project forget before reclaim, revalidates each
+object, and uses owner-only recovery records plus owner-bound tombstones for crash-safe cleanup.
+Unknown layout, unsafe links, corrupt or newer ledgers, ambiguous recovery, and planted tombstones
+refuse the whole invocation without deleting reachable state.
+
 ## Result-based error handling
 
 Every fallible function in core returns `Result<T, SkillSmithError>`:
@@ -265,7 +274,7 @@ or define a second public schema.
 The current registry contains `agents@1`, `agents@2`, `health@1`, `health@2`, `commands@1`,
 `commands@2`, `config-get@1`, `config-list@1`, `config-set@1`, `config-unset@1`, `flip@2`,
 `flip@3`, `flip@4`, `install@1`, `install@2`, `list@2`, `list@3`, `status@1`, `uninstall@1`,
-`init@1`, `plan-report@1`, `apply-report@1`, `sync@1`, `update@1`, `undo@1`, `uninstall@2`, `verify@1`, `error@1`, and
+`init@1`, `plan-report@1`, `apply-report@1`, `sync@1`, `update@1`, `undo@1`, `gc@1`, `uninstall@2`, `verify@1`, `error@1`, and
 `capability-snapshot@1`. Each descriptor fixes recursive
 unknown-field rejection, embedded kind and version policy, JSON indentation, terminal framing, and
 conservative compatibility. Current codecs declare no migrations. Lifecycle v2 contracts are

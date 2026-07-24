@@ -16,6 +16,7 @@ import {
   type ConfigSetV1Dto,
   type ConfigUnsetV1Dto,
   type ErrorV1Dto,
+  type GcReportV1Dto,
   type HealthV1Dto,
   type InitV1Dto,
   type InstallV1Dto,
@@ -36,6 +37,7 @@ import {
   configUnsetV1Codec,
   createVerifyV1Codec,
   errorV1Codec,
+  type gcV1Codec,
   healthV1Codec,
   initV1Codec,
   installV1Codec,
@@ -163,6 +165,7 @@ type _V1RuntimeClosure = Assert<
     | 'applyV1Codec'
     | 'toAgentsV1Dto'
     | 'healthV1Codec'
+    | 'gcV1Codec'
     | 'toHealthV1Dto'
     | 'commandsV1Codec'
     | 'toCommandsV1Dto'
@@ -228,6 +231,9 @@ type _UpdateCodecDto = Assert<
 >;
 type _UndoCodecDto = Assert<
   Equal<ReturnType<typeof undoV1Codec.validate>, ExpectedWireResult<UndoReportV1Dto>>
+>;
+type _GcCodecDto = Assert<
+  Equal<ReturnType<typeof gcV1Codec.validate>, ExpectedWireResult<GcReportV1Dto>>
 >;
 type _V2RuntimeClosure = Assert<
   Equal<
