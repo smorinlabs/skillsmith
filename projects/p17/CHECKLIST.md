@@ -143,7 +143,7 @@ Tracked entities: **426** across **45** change groups.
 | P1-01 | P17-G3A-02 | signed-off | required-pr |
 | P1-02 | P17-G3A-01 | signed-off | required-pr |
 | P1-03 | P17-G3A-02 | signed-off | required-pr |
-| P1-04 | P17-G5-05 | planned | required-pr |
+| P1-04 | P17-G5-05 | mapped | required-pr |
 | P1-05 | P17-G4A-03 | signed-off | required-pr |
 | P1-06 | P17-G4A-02 | signed-off | required-pr |
 | P1-07 | P17-G4B-01 | signed-off | required-pr |
@@ -1483,13 +1483,13 @@ Downstream coverage obligations: none.
 
 ## P17-G5-05 — Shared bulk approval, fail-fast/continue scheduling, cancellation, exits, and final artifact-option closure
 
-Phase: 5; status: **planned**; dependencies: P17-G5-01, P17-G5-02, P17-G5-03.
+Phase: 5; status: **mapped**; dependencies: P17-G5-01, P17-G5-02, P17-G5-03.
 Required-now validations: EWP-CMD-APPLY-TS09, EWP-CMD-APPLY-TS11, EWP-CMD-APPLY-TS13, EWP-CMD-SYNC-TS09, EWP-CMD-UNDO-TS03, EWP-CMD-UPDATE-TS06, EWP-CMD-UPDATE-TS07, EWP-CMD-UPDATE-TS08, EWP-CMD-UPDATE-TS09, EWP-OPT-TS08, EWP-P4A-TS02, EWP-P5-TS05, EWP-WF09, EWP-WF13.
 Downstream coverage obligations: none.
 
 ### Group gates
 
-- [ ] P17-G5-05:mapped _(pending)_
+- [x] P17-G5-05:mapped _(passed)_
 - [ ] P17-G5-05:ready _(pending)_
 - [ ] P17-G5-05:test-first _(pending)_
 - [ ] P17-G5-05:minimal-implementation _(pending)_
@@ -1508,7 +1508,7 @@ Downstream coverage obligations: none.
 - [ ] **EWP-P5-TS05** — Bulk confirmation/noninteractive safety plus fail-fast/continue scheduling _(phase-test; planned)_
 - [ ] **EWP-WF09** — Update lifecycle _(workflow; planned)_
 - [ ] **EWP-WF13** — Multi-tool partial failure _(workflow; planned)_
-- [ ] **P1-04** — Safe bulk mutation _(recommendation; planned)_
+- [ ] **P1-04** — Safe bulk mutation _(recommendation; mapped)_
 
 ## P17-G6-01 — Native assets, checksums, Homebrew/npm distribution, and clean installs
 
