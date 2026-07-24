@@ -7265,7 +7265,7 @@
       "phase": "5",
       "title": "Ledger-authoritative reachability, retention, explicit forget, and safe GC",
       "dependsOn": ["P17-G4B-03"],
-      "status": "active",
+      "status": "signed-off",
       "owner": "root-goal",
       "ownedFiles": [
         "README.md",
@@ -7401,7 +7401,7 @@
         "bun test tests/ergonomics/workflows/EWP-WF12.test.ts --test-name-pattern EWP-WF12"
       ],
       "implementers": ["root-codex-goal"],
-      "reviewer": null,
+      "reviewer": "/root/g5_04_final_review",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -7419,32 +7419,36 @@
           "evidence": ["projects/p17/evidence/P17-G5-04.md#test-first-evidence"]
         },
         "minimal-implementation": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G5-04.md#minimal-implementation-and-recovery-hardening"
+          ]
         },
         "targeted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G5-04.md#corrected-focused-validation"]
         },
         "impacted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G5-04.md#full-terminal-gate"]
         },
         "refactor": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G5-04.md#second-correction-amendment"]
         },
         "adversarial-review": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G5-04.md#full-terminal-discovery-and-compatibility-correction"
+          ]
         },
         "traceability-closure": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G5-04.md#traceability-and-sign-off"]
         },
         "signed-off": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G5-04.md#traceability-and-sign-off"]
         }
       },
       "evidence": [
@@ -7454,7 +7458,13 @@
         "projects/p17/evidence/P17-G5-04.md#accepted-amendment-result",
         "projects/p17/evidence/P17-G5-04.md#ready-review",
         "projects/p17/evidence/P17-G5-04.md#accepted-ready-result",
-        "projects/p17/evidence/P17-G5-04.md#test-first-evidence"
+        "projects/p17/evidence/P17-G5-04.md#test-first-evidence",
+        "projects/p17/evidence/P17-G5-04.md#minimal-implementation-and-recovery-hardening",
+        "projects/p17/evidence/P17-G5-04.md#corrected-focused-validation",
+        "projects/p17/evidence/P17-G5-04.md#second-correction-amendment",
+        "projects/p17/evidence/P17-G5-04.md#full-terminal-discovery-and-compatibility-correction",
+        "projects/p17/evidence/P17-G5-04.md#full-terminal-gate",
+        "projects/p17/evidence/P17-G5-04.md#traceability-and-sign-off"
       ]
     },
     {
@@ -8433,11 +8443,15 @@
       "title": "Maintain — Which unreachable local store objects can be reclaimed?",
       "stateModel": "coverage",
       "primaryGroup": "P17-G5-04",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "surface:gc",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G5-04.md#minimal-implementation-and-recovery-hardening",
+        "projects/p17/evidence/P17-G5-04.md#corrected-focused-validation",
+        "projects/p17/evidence/P17-G5-04.md#traceability-and-sign-off"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": [
@@ -9618,11 +9632,15 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G5-04",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G5-04",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G5-04.md#minimal-implementation-and-recovery-hardening",
+        "projects/p17/evidence/P17-G5-04.md#corrected-focused-validation",
+        "projects/p17/evidence/P17-G5-04.md#traceability-and-sign-off"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": [
@@ -10435,11 +10453,15 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G5-04",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G5-04",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G5-04.md#minimal-implementation-and-recovery-hardening",
+        "projects/p17/evidence/P17-G5-04.md#corrected-focused-validation",
+        "projects/p17/evidence/P17-G5-04.md#traceability-and-sign-off"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": [
@@ -12457,11 +12479,15 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G5-04",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G5-04",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G5-04.md#contract-amendment-ewp-cf-044",
+        "projects/p17/evidence/P17-G5-04.md#second-correction-amendment",
+        "projects/p17/evidence/P17-G5-04.md#traceability-and-sign-off"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": [
@@ -15048,11 +15074,22 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-04",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-04:packages/cli/tests/contracts/gc.test.ts#EWP-CMD-GC-TS01",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/gc.test.ts",
+        "selector": "EWP-CMD-GC-TS01",
+        "command": "bun test packages/cli/tests/contracts/gc.test.ts --test-name-pattern EWP-CMD-GC-TS01"
+      },
+      "evidence": [
+        "projects/p17/evidence/P17-G5-04.md#test-first-evidence",
+        "projects/p17/evidence/P17-G5-04.md#second-correction-amendment",
+        "projects/p17/evidence/P17-G5-04.md#green-execution-receipt-ewp-cmd-gc-ts01",
+        "projects/p17/evidence/P17-G5-04.md#full-terminal-gate",
+        "projects/p17/evidence/P17-G5-04.md#traceability-and-sign-off"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-GC-TS01"],
@@ -15069,8 +15106,13 @@
         "EWP-WF12"
       ],
       "affectedContracts": ["COMMAND:gc", "D-012", "EWP-CF-016", "EWP-CF-044", "P2-03"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/gc.test.ts --test-name-pattern EWP-CMD-GC-TS01"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/gc.test.ts",
+        "tests/ergonomics/fixtures/p5-gc/fleet.ts"
+      ]
     },
     {
       "id": "EWP-CMD-GC-TS02",
@@ -15078,11 +15120,22 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-04",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-04:packages/cli/tests/contracts/gc.test.ts#EWP-CMD-GC-TS02",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/gc.test.ts",
+        "selector": "EWP-CMD-GC-TS02",
+        "command": "bun test packages/cli/tests/contracts/gc.test.ts --test-name-pattern EWP-CMD-GC-TS02"
+      },
+      "evidence": [
+        "projects/p17/evidence/P17-G5-04.md#test-first-evidence",
+        "projects/p17/evidence/P17-G5-04.md#second-correction-amendment",
+        "projects/p17/evidence/P17-G5-04.md#green-execution-receipt-ewp-cmd-gc-ts02",
+        "projects/p17/evidence/P17-G5-04.md#full-terminal-gate",
+        "projects/p17/evidence/P17-G5-04.md#traceability-and-sign-off"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-GC-TS02"],
@@ -15099,8 +15152,13 @@
         "EWP-WF12"
       ],
       "affectedContracts": ["COMMAND:gc", "D-012", "EWP-CF-016", "EWP-CF-044", "P2-03"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/gc.test.ts --test-name-pattern EWP-CMD-GC-TS02"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/gc.test.ts",
+        "tests/ergonomics/fixtures/p5-gc/fleet.ts"
+      ]
     },
     {
       "id": "EWP-CMD-GC-TS03",
@@ -15108,11 +15166,22 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-04",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-04:packages/cli/tests/contracts/gc.test.ts#EWP-CMD-GC-TS03",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/gc.test.ts",
+        "selector": "EWP-CMD-GC-TS03",
+        "command": "bun test packages/cli/tests/contracts/gc.test.ts --test-name-pattern EWP-CMD-GC-TS03"
+      },
+      "evidence": [
+        "projects/p17/evidence/P17-G5-04.md#test-first-evidence",
+        "projects/p17/evidence/P17-G5-04.md#second-correction-amendment",
+        "projects/p17/evidence/P17-G5-04.md#green-execution-receipt-ewp-cmd-gc-ts03",
+        "projects/p17/evidence/P17-G5-04.md#full-terminal-gate",
+        "projects/p17/evidence/P17-G5-04.md#traceability-and-sign-off"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-GC-TS03"],
@@ -15129,8 +15198,13 @@
         "EWP-WF12"
       ],
       "affectedContracts": ["COMMAND:gc", "D-012", "EWP-CF-016", "EWP-CF-044", "P2-03"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/gc.test.ts --test-name-pattern EWP-CMD-GC-TS03"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/gc.test.ts",
+        "tests/ergonomics/fixtures/p5-gc/fleet.ts"
+      ]
     },
     {
       "id": "EWP-CMD-GC-TS04",
@@ -15138,11 +15212,22 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-04",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-04:packages/cli/tests/contracts/gc.test.ts#EWP-CMD-GC-TS04",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/gc.test.ts",
+        "selector": "EWP-CMD-GC-TS04",
+        "command": "bun test packages/cli/tests/contracts/gc.test.ts --test-name-pattern EWP-CMD-GC-TS04"
+      },
+      "evidence": [
+        "projects/p17/evidence/P17-G5-04.md#test-first-evidence",
+        "projects/p17/evidence/P17-G5-04.md#second-correction-amendment",
+        "projects/p17/evidence/P17-G5-04.md#green-execution-receipt-ewp-cmd-gc-ts04",
+        "projects/p17/evidence/P17-G5-04.md#full-terminal-gate",
+        "projects/p17/evidence/P17-G5-04.md#traceability-and-sign-off"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-GC-TS04"],
@@ -15159,8 +15244,13 @@
         "EWP-WF12"
       ],
       "affectedContracts": ["COMMAND:gc", "D-012", "EWP-CF-016", "EWP-CF-044", "P2-03"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/gc.test.ts --test-name-pattern EWP-CMD-GC-TS04"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/gc.test.ts",
+        "tests/ergonomics/fixtures/p5-gc/fleet.ts"
+      ]
     },
     {
       "id": "EWP-CMD-GC-TS05",
@@ -15168,11 +15258,22 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-04",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-04:packages/cli/tests/contracts/gc.test.ts#EWP-CMD-GC-TS05",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/gc.test.ts",
+        "selector": "EWP-CMD-GC-TS05",
+        "command": "bun test packages/cli/tests/contracts/gc.test.ts --test-name-pattern EWP-CMD-GC-TS05"
+      },
+      "evidence": [
+        "projects/p17/evidence/P17-G5-04.md#test-first-evidence",
+        "projects/p17/evidence/P17-G5-04.md#second-correction-amendment",
+        "projects/p17/evidence/P17-G5-04.md#green-execution-receipt-ewp-cmd-gc-ts05",
+        "projects/p17/evidence/P17-G5-04.md#full-terminal-gate",
+        "projects/p17/evidence/P17-G5-04.md#traceability-and-sign-off"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-GC-TS05"],
@@ -15189,8 +15290,13 @@
         "EWP-WF12"
       ],
       "affectedContracts": ["COMMAND:gc", "D-012", "EWP-CF-016", "EWP-CF-044", "P2-03"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/gc.test.ts --test-name-pattern EWP-CMD-GC-TS05"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/gc.test.ts",
+        "tests/ergonomics/fixtures/p5-gc/fleet.ts"
+      ]
     },
     {
       "id": "EWP-CMD-GC-TS06",
@@ -15198,11 +15304,22 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-04",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-04:packages/cli/tests/contracts/gc.test.ts#EWP-CMD-GC-TS06",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/gc.test.ts",
+        "selector": "EWP-CMD-GC-TS06",
+        "command": "bun test packages/cli/tests/contracts/gc.test.ts --test-name-pattern EWP-CMD-GC-TS06"
+      },
+      "evidence": [
+        "projects/p17/evidence/P17-G5-04.md#test-first-evidence",
+        "projects/p17/evidence/P17-G5-04.md#second-correction-amendment",
+        "projects/p17/evidence/P17-G5-04.md#green-execution-receipt-ewp-cmd-gc-ts06",
+        "projects/p17/evidence/P17-G5-04.md#full-terminal-gate",
+        "projects/p17/evidence/P17-G5-04.md#traceability-and-sign-off"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-GC-TS06"],
@@ -15219,8 +15336,13 @@
         "EWP-WF12"
       ],
       "affectedContracts": ["COMMAND:gc", "D-012", "EWP-CF-016", "EWP-CF-044", "P2-03"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/gc.test.ts --test-name-pattern EWP-CMD-GC-TS06"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/gc.test.ts",
+        "tests/ergonomics/fixtures/p5-gc/fleet.ts"
+      ]
     },
     {
       "id": "EWP-CMD-GC-TS07",
@@ -15228,11 +15350,22 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-04",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-04:packages/cli/tests/contracts/gc.test.ts#EWP-CMD-GC-TS07",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/gc.test.ts",
+        "selector": "EWP-CMD-GC-TS07",
+        "command": "bun test packages/cli/tests/contracts/gc.test.ts --test-name-pattern EWP-CMD-GC-TS07"
+      },
+      "evidence": [
+        "projects/p17/evidence/P17-G5-04.md#test-first-evidence",
+        "projects/p17/evidence/P17-G5-04.md#second-correction-amendment",
+        "projects/p17/evidence/P17-G5-04.md#green-execution-receipt-ewp-cmd-gc-ts07",
+        "projects/p17/evidence/P17-G5-04.md#full-terminal-gate",
+        "projects/p17/evidence/P17-G5-04.md#traceability-and-sign-off"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-GC-TS07"],
@@ -15249,8 +15382,13 @@
         "EWP-WF12"
       ],
       "affectedContracts": ["COMMAND:gc", "D-012", "EWP-CF-016", "EWP-CF-044", "P2-03"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/gc.test.ts --test-name-pattern EWP-CMD-GC-TS07"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/gc.test.ts",
+        "tests/ergonomics/fixtures/p5-gc/fleet.ts"
+      ]
     },
     {
       "id": "EWP-CMD-GC-TS08",
@@ -15258,11 +15396,22 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-04",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-04:packages/cli/tests/contracts/gc.test.ts#EWP-CMD-GC-TS08",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/gc.test.ts",
+        "selector": "EWP-CMD-GC-TS08",
+        "command": "bun test packages/cli/tests/contracts/gc.test.ts --test-name-pattern EWP-CMD-GC-TS08"
+      },
+      "evidence": [
+        "projects/p17/evidence/P17-G5-04.md#test-first-evidence",
+        "projects/p17/evidence/P17-G5-04.md#second-correction-amendment",
+        "projects/p17/evidence/P17-G5-04.md#green-execution-receipt-ewp-cmd-gc-ts08",
+        "projects/p17/evidence/P17-G5-04.md#full-terminal-gate",
+        "projects/p17/evidence/P17-G5-04.md#traceability-and-sign-off"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-GC-TS08"],
@@ -15279,8 +15428,13 @@
         "EWP-WF12"
       ],
       "affectedContracts": ["COMMAND:gc", "D-012", "EWP-CF-016", "EWP-CF-044", "P2-03"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/gc.test.ts --test-name-pattern EWP-CMD-GC-TS08"
+      ],
+      "ownedFiles": [
+        "packages/cli/tests/contracts/gc.test.ts",
+        "tests/ergonomics/fixtures/p5-gc/fleet.ts"
+      ]
     },
     {
       "id": "EWP-CMD-HELP-TS01",
@@ -24674,14 +24828,19 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G5-04",
-      "status": "ready",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-04",
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G5-04.md#mapping-and-prerequisite-audit",
         "projects/p17/evidence/P17-G5-04.md#ready-review",
-        "projects/p17/evidence/P17-G5-04.md#accepted-ready-result"
+        "projects/p17/evidence/P17-G5-04.md#accepted-ready-result",
+        "projects/p17/evidence/P17-G5-04.md#test-first-evidence",
+        "projects/p17/evidence/P17-G5-04.md#minimal-implementation-and-recovery-hardening",
+        "projects/p17/evidence/P17-G5-04.md#corrected-focused-validation",
+        "projects/p17/evidence/P17-G5-04.md#full-terminal-gate",
+        "projects/p17/evidence/P17-G5-04.md#traceability-and-sign-off"
       ],
       "secondaryGroups": [],
       "implements": ["COMMAND:gc", "D-012", "EWP-CF-016", "EWP-CF-044", "P2-03"],
@@ -24854,11 +25013,22 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-04",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-04:tests/ergonomics/phase/EWP-P5-TS04.test.ts#EWP-P5-TS04",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P5-TS04.test.ts",
+        "selector": "EWP-P5-TS04",
+        "command": "bun test tests/ergonomics/phase/EWP-P5-TS04.test.ts --test-name-pattern EWP-P5-TS04"
+      },
+      "evidence": [
+        "projects/p17/evidence/P17-G5-04.md#test-first-evidence",
+        "projects/p17/evidence/P17-G5-04.md#second-correction-amendment",
+        "projects/p17/evidence/P17-G5-04.md#green-execution-receipt-ewp-p5-ts04",
+        "projects/p17/evidence/P17-G5-04.md#full-terminal-gate",
+        "projects/p17/evidence/P17-G5-04.md#traceability-and-sign-off"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P5-TS04"],
@@ -24875,8 +25045,13 @@
         "EWP-WF12"
       ],
       "affectedContracts": ["COMMAND:gc", "D-012", "EWP-CF-016", "EWP-CF-044", "P2-03"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P5-TS04.test.ts --test-name-pattern EWP-P5-TS04"
+      ],
+      "ownedFiles": [
+        "tests/ergonomics/phase/EWP-P5-TS04.test.ts",
+        "tests/ergonomics/fixtures/p5-gc/fleet.ts"
+      ]
     },
     {
       "id": "EWP-P5-TS05",
@@ -25771,11 +25946,22 @@
       "kind": "workflow",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-04",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-04:tests/ergonomics/workflows/EWP-WF12.test.ts#EWP-WF12",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/workflows/EWP-WF12.test.ts",
+        "selector": "EWP-WF12",
+        "command": "bun test tests/ergonomics/workflows/EWP-WF12.test.ts --test-name-pattern EWP-WF12"
+      },
+      "evidence": [
+        "projects/p17/evidence/P17-G5-04.md#test-first-evidence",
+        "projects/p17/evidence/P17-G5-04.md#second-correction-amendment",
+        "projects/p17/evidence/P17-G5-04.md#green-execution-receipt-ewp-wf12",
+        "projects/p17/evidence/P17-G5-04.md#full-terminal-gate",
+        "projects/p17/evidence/P17-G5-04.md#traceability-and-sign-off"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-WF12"],
@@ -25792,8 +25978,13 @@
         "EWP-WF12"
       ],
       "affectedContracts": ["COMMAND:gc", "D-012", "EWP-CF-016", "EWP-CF-044", "P2-03"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/workflows/EWP-WF12.test.ts --test-name-pattern EWP-WF12"
+      ],
+      "ownedFiles": [
+        "tests/ergonomics/workflows/EWP-WF12.test.ts",
+        "tests/ergonomics/fixtures/p5-gc/fleet.ts"
+      ]
     },
     {
       "id": "EWP-WF13",
@@ -26806,11 +26997,15 @@
       "designStatus": "retained",
       "stateModel": "coverage",
       "primaryGroup": "P17-G5-04",
-      "status": "planned",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G5-04",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G5-04.md#minimal-implementation-and-recovery-hardening",
+        "projects/p17/evidence/P17-G5-04.md#corrected-focused-validation",
+        "projects/p17/evidence/P17-G5-04.md#traceability-and-sign-off"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": [
