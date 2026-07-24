@@ -22,6 +22,11 @@ import {
   writeLedgerV2,
 } from '../../../../tests/ergonomics/fixtures/p5-gc/fleet.ts';
 import { CURRENT_APPLICATION_SERVICES } from '../../../core/src/application/current-services.ts';
+import { executeGcPlan } from '../../../core/src/gc/execute.ts';
+import { inventoryGcStore } from '../../../core/src/gc/inventory.ts';
+import { buildGcPlan } from '../../../core/src/gc/plan.ts';
+import { readLedgerState } from '../../../core/src/place/ledger.ts';
+import { defaultRuntimePorts } from '../../../core/src/ports/default.ts';
 import { CURRENT_COMMAND_SPECS } from '../../src/spec/index.ts';
 
 setDefaultTimeout(90_000);
@@ -259,6 +264,73 @@ describe('gc command contract', () => {
     const noOp = requireGcReport(await runGcCli(selected, ['gc', '--json']));
     expect(noOp).toMatchObject({ state: 'no-op', summary: { eligibleItems: 0 } });
 
+    const retryObject = await createStoreObject(selected, {
+      revision: '898989898988',
+      skill: 'retry',
+    });
+    const ports = await defaultRuntimePorts();
+    const inventory = await inventoryGcStore(ports, selected.store);
+    const ledger = await readLedgerState(ports, selected.ledger);
+    if (
+      inventory.state !== 'ok' ||
+      inventory.objects[0] === undefined ||
+      !ledger.ok ||
+      ledger.value.state !== 'present'
+    ) {
+      throw new Error('recovery fixture observation failed');
+    }
+    const retryPlan = buildGcPlan({
+      sourceLedger: ledger.value,
+      model: ledger.value.model,
+      postForgetModel: ledger.value.model,
+      inventory,
+      classifications: inventory.objects.map((candidate) => ({
+        object: candidate,
+        protection: [],
+        ageEligible: true,
+        outcome: 'eligible' as const,
+      })),
+      duration: null,
+      nowMilliseconds: Date.now(),
+      projects: [],
+      dataDir: selected.data,
+      storeRoot: selected.store,
+      ledgerPath: selected.ledger,
+      project: {
+        effectiveCwd: selected.cwd,
+        root: selected.cwd,
+        identity: selected.cwd,
+      },
+      retryArguments: ['gc', '--yes'],
+      normalizedForgetRoots: [],
+    });
+    let interruptedDetach = false;
+    const crashPorts = Object.assign(Object.create(ports) as typeof ports, {
+      rename: async (from: string, to: string) => {
+        await ports.rename(from, to);
+        if (!interruptedDetach && to.endsWith('/payload')) {
+          interruptedDetach = true;
+          throw new Error('simulated process loss after detach');
+        }
+      },
+    });
+    expect((await executeGcPlan(crashPorts, retryPlan)).ok).toBeFalse();
+    const retryState = await snapshotGcState(selected);
+    const mismatch = await runGcCli(selected, ['gc', '--older-than', '1s', '--yes', '--json']);
+    expect(mismatch.exitCode).toBe(3);
+    expect(await snapshotGcState(selected)).toEqual(retryState);
+    const pendingPreview = requireGcReport(await runGcCli(selected, ['gc', '--dry-run', '--json']));
+    expect(pendingPreview).toMatchObject({
+      mode: 'dry-run',
+      state: 'partial',
+      planId: retryPlan.planId,
+      recovery: { state: 'pending' },
+    });
+    expect(await snapshotGcState(selected)).toEqual(retryState);
+    const resumed = requireGcReport(await runGcCli(selected, ['gc', '--yes', '--json']));
+    expect(resumed).toMatchObject({ state: 'completed', planId: retryPlan.planId });
+    expect(await pathExists(retryObject.path)).toBeFalse();
+
     const interrupted = await createStoreObject(selected, {
       revision: '898989898989',
       skill: 'interrupted',
@@ -297,6 +369,20 @@ describe('gc command contract', () => {
     const pair = pinnedPair(placementPath, object);
     const fields = projectLedgerFields(selected.projects.retired, 'retired', 'codex', pair, object);
     await writeLedgerV2(selected, fields);
+    expect(
+      (await runGcCli(selected, ['gc', '--forget-project', selected.projects.retired, '--yes']))
+        .exitCode,
+    ).toBe(2);
+    expect(
+      (await runGcCli(selected, ['gc', '--forget-project', selected.projects.missing, '--yes']))
+        .exitCode,
+    ).toBe(2);
+    await symlink(selected.projects.retired, selected.projects.missing);
+    expect(
+      (await runGcCli(selected, ['gc', '--forget-project', selected.projects.missing, '--yes']))
+        .exitCode,
+    ).toBe(2);
+    await rm(selected.projects.missing);
     await removeRetiredProject(selected);
     await Promise.all([
       writeFile(join(selected.cwd, 'skillsmith.toml'), 'version = 1\n'),

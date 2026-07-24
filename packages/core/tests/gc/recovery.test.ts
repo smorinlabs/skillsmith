@@ -35,7 +35,7 @@ const approvedReport = (root: string): GcReportV1Dto => ({
   projects: [],
   objects: [
     {
-      id: 'object',
+      id: id('f'),
       kind: 'store',
       path: join(root, 'store', 'fixture', 'repo@0123456789ab', 'review'),
       contentHash: `sha256:${id('d')}`,
@@ -68,6 +68,7 @@ const approvedReport = (root: string): GcReportV1Dto => ({
     eligibleItems: 1,
     eligibleBytes: 10,
     forgottenProjects: 0,
+    alreadyAbsentItems: 0,
     reclaimedItems: 0,
     reclaimedBytes: 0,
     refusedItems: 0,
@@ -78,7 +79,7 @@ const approvedReport = (root: string): GcReportV1Dto => ({
 const record = (root: string, phase: GcRecoveryRecordV1['phase']): GcRecoveryRecordV1 => {
   const objectPath = join(root, 'store', 'fixture', 'repo@0123456789ab', 'review');
   const object = {
-    id: 'object',
+    id: id('f'),
     kind: 'store' as const,
     path: objectPath,
     relativePath: 'fixture/repo@0123456789ab/review',

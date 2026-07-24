@@ -28,6 +28,7 @@ const report = (): GcReportV1Dto => ({
     eligibleItems: 0,
     eligibleBytes: 0,
     forgottenProjects: 0,
+    alreadyAbsentItems: 0,
     reclaimedItems: 0,
     reclaimedBytes: 0,
     refusedItems: 0,
@@ -57,6 +58,34 @@ describe('gc@1 wire contract', () => {
       gcV1Codec.validate({
         ...report(),
         summary: { ...report().summary, observedItems: -1 },
+      }),
+    ).toMatchObject({ ok: false });
+    expect(gcV1Codec.validate({ ...report(), planId: 'not-a-plan-id' })).toMatchObject({
+      ok: false,
+    });
+    expect(
+      gcV1Codec.validate({
+        ...report(),
+        recovery: { state: 'pending', phase: 'future-phase' },
+      }),
+    ).toMatchObject({ ok: false });
+    expect(
+      gcV1Codec.validate({
+        ...report(),
+        objects: [
+          {
+            id: 'f'.repeat(64),
+            kind: 'store',
+            path: '/store/review',
+            contentHash: 'not-a-digest',
+            modifiedAt: 1,
+            logicalBytes: 1,
+            protection: [{ kind: 'future-protection', sourceId: 'source' }],
+            ageEligible: true,
+            outcome: 'eligible',
+            reason: null,
+          },
+        ],
       }),
     ).toMatchObject({ ok: false });
   });

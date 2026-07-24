@@ -185,7 +185,14 @@ export interface GcRecoveryActionV1 {
   readonly payloadPath: string;
   readonly containerIdentity: string | null;
   readonly payloadIdentity: string | null;
-  readonly outcome: 'pending' | 'prepared' | 'detached' | 'cleaned' | 'protected-skip';
+  readonly outcome:
+    | 'pending'
+    | 'prepared'
+    | 'detached'
+    | 'cleanup-started'
+    | 'cleaned'
+    | 'already-absent'
+    | 'protected-skip';
 }
 
 export interface GcRecoveryRecordV1 {
@@ -263,6 +270,18 @@ export type GcReclaimResult =
       readonly logicalBytes: number;
       readonly containerIdentity: string;
       readonly payloadIdentity: string;
+    }>
+  | Readonly<{
+      readonly state: 'cleanup-started';
+      readonly logicalBytes: 0;
+      readonly containerIdentity: string;
+      readonly payloadIdentity: string;
+    }>
+  | Readonly<{
+      readonly state: 'already-absent';
+      readonly logicalBytes: 0;
+      readonly containerIdentity: null;
+      readonly payloadIdentity: null;
     }>
   | Readonly<{ readonly state: 'refused'; readonly logicalBytes: 0; readonly reason: string }>;
 

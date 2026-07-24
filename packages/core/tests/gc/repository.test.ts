@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { inventoryGcStore } from '../../src/gc/inventory.ts';
 import {
   finalizeGcStoreReclaim,
@@ -59,20 +59,41 @@ describe('GC owner-bound store repository', () => {
       });
       expect(detached).toMatchObject({ state: 'detached' });
       if (detached.state !== 'detached') throw new Error('detach failed');
-      const cleaned = await reclaimGcStoreObject(ports, {
+      const cleanupStarted = await reclaimGcStoreObject(ports, {
         ...request,
         ...detached,
         outcome: detached.state,
       });
+      expect(cleanupStarted).toMatchObject({ state: 'cleanup-started' });
+      if (cleanupStarted.state !== 'cleanup-started') throw new Error('cleanup start failed');
+      const cleaned = await reclaimGcStoreObject(ports, {
+        ...request,
+        ...cleanupStarted,
+        outcome: cleanupStarted.state,
+      });
       expect(cleaned).toMatchObject({ state: 'cleaned', logicalBytes: selected.logicalBytes });
       if (cleaned.state !== 'cleaned') throw new Error('cleanup failed');
+      const repositoryPath = dirname(path);
+      const concurrent = join(repositoryPath, 'concurrent');
+      let raced = false;
+      const racePorts = Object.assign(Object.create(ports) as typeof ports, {
+        removeEmptyDirectory: async (target: string) => {
+          if (!raced && target === repositoryPath) {
+            raced = true;
+            await mkdir(concurrent);
+            await writeFile(join(concurrent, 'keep'), 'keep');
+          }
+          await ports.removeEmptyDirectory?.(target);
+        },
+      });
       expect(
-        await finalizeGcStoreReclaim(ports, {
+        await finalizeGcStoreReclaim(racePorts, {
           ...request,
           ...cleaned,
           outcome: cleaned.state,
         }),
       ).toBeTrue();
+      expect(await ports.readText(join(concurrent, 'keep'))).toBe('keep');
       expect(await ports.pathKind(path)).toBe('absent');
       expect(await ports.pathKind(join(root, '.gc-tombstones', 'v1', id('a'), id('b')))).toBe(
         'absent',
@@ -94,6 +115,7 @@ describe('GC owner-bound store repository', () => {
       }
       const planted = join(root, '.gc-tombstones', 'v1', id('a'), id('b'));
       await mkdir(planted, { recursive: true, mode: 0o700 });
+      await writeFile(join(planted, 'planted'), 'unsafe');
       const result = await reclaimGcStoreObject(ports, requestFor(root, inventory.objects[0]));
       expect(result).toMatchObject({ state: 'refused' });
       expect(await ports.pathKind(path)).toBe('dir');
@@ -116,6 +138,29 @@ describe('GC owner-bound store repository', () => {
       expect(result).toMatchObject({ state: 'refused' });
       expect(await ports.pathKind(path)).toBe('dir');
       expect(await ports.pathKind(join(root, '.gc-tombstones'))).toBe('absent');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('recreates an exact empty pre-identity action container after interrupted owner publish', async () => {
+    const ports = await defaultRuntimePorts();
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-gc-empty-action-'));
+    try {
+      await seed(root);
+      const inventory = await inventoryGcStore(ports, root);
+      if (inventory.state !== 'ok' || inventory.objects[0] === undefined) {
+        throw new Error('fixture inventory failed');
+      }
+      const request = requestFor(root, inventory.objects[0]);
+      await mkdir(join(root, '.gc-tombstones'), { mode: 0o700 });
+      await mkdir(join(root, '.gc-tombstones', 'v1'), { mode: 0o700 });
+      await mkdir(join(root, '.gc-tombstones', 'v1', id('a')), { mode: 0o700 });
+      await mkdir(request.containerPath, { mode: 0o700 });
+      const prepared = await reclaimGcStoreObject(ports, request);
+      expect(prepared).toMatchObject({ state: 'prepared' });
+      if (prepared.state !== 'prepared') throw new Error('empty action adoption failed');
+      expect(await ports.listDir(request.containerPath)).toEqual(['owner.json']);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

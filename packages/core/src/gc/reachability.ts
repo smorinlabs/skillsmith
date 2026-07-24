@@ -94,14 +94,30 @@ export const observeGcLiveTargets = async (
     let kindB: Awaited<ReturnType<typeof ports.pathKind>>;
     try {
       kindA = await ports.pathKind(placementPath);
-      if (kindA !== 'symlink') continue;
+      if (kindA !== 'symlink') {
+        kindB = await ports.pathKind(placementPath);
+        if (kindB !== kindA) throw new Error('unstable');
+        continue;
+      }
       const targetA = await ports.readLink(placementPath);
       const targetB = await ports.readLink(placementPath);
       kindB = await ports.pathKind(placementPath);
       if (kindB !== kindA || targetA !== targetB) throw new Error('unstable');
       const lexicalTarget = resolve(dirname(placementPath), targetA);
-      const canonicalTarget = await ports.realpath(lexicalTarget).catch(() => null);
-      if (canonicalTarget === null) continue;
+      const targetKindA = await ports.pathKind(lexicalTarget);
+      if (targetKindA === 'absent') {
+        const targetKindB = await ports.pathKind(lexicalTarget);
+        const targetC = await ports.readLink(placementPath);
+        const kindC = await ports.pathKind(placementPath);
+        if (targetKindB !== 'absent' || targetC !== targetA || kindC !== 'symlink') {
+          throw new Error('unstable');
+        }
+        continue;
+      }
+      const canonicalTarget = await ports.realpath(lexicalTarget);
+      const targetC = await ports.readLink(placementPath);
+      const kindC = await ports.pathKind(placementPath);
+      if (targetC !== targetA || kindC !== 'symlink') throw new Error('unstable');
       const object = byPath.get(canonicalTarget);
       if (object === undefined) continue;
       targets.push(

@@ -79,6 +79,8 @@ export interface FileWritePort {
   rename(from: string, to: string): Promise<void>;
   copyTree(from: string, to: string): Promise<void>;
   removeTree(path: string): Promise<void>;
+  /** Atomically removes only an empty directory; must fail when any child exists. */
+  removeEmptyDirectory?(path: string): Promise<void>;
   fsyncFile(path: string): Promise<void>;
   fsyncDir(path: string): Promise<void>;
 }

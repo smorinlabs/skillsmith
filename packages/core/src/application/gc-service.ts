@@ -175,6 +175,7 @@ const refusalReport = (
     eligibleItems: null,
     eligibleBytes: null,
     forgottenProjects: 0,
+    alreadyAbsentItems: 0,
     reclaimedItems: 0,
     reclaimedBytes: 0,
     refusedItems: 1,
@@ -183,7 +184,7 @@ const refusalReport = (
 });
 
 const refuse = (
-  exitClass: 'usage' | 'state' | 'cancelled',
+  exitClass: 'failure' | 'usage' | 'state' | 'permission' | 'cancelled',
   code: string,
   message: string,
   report: GcReportV1Dto | null = null,
@@ -194,6 +195,19 @@ const refuse = (
   mutation: NO_MUTATION,
   deprecations: [],
 });
+
+const gcExecutionExitClass = (
+  reason: string,
+  signal?: AbortSignal,
+): 'failure' | 'state' | 'permission' | 'cancelled' => {
+  if (signal?.aborted) return 'cancelled';
+  if (/permission denied|ownership|mode is unsafe/u.test(reason)) return 'permission';
+  return /changed|drift|unsafe|unreadable|mismatch|different|could not acquire|precondition/u.test(
+    reason,
+  )
+    ? 'state'
+    : 'failure';
+};
 
 const visitPairs = (model: LedgerModel, root: string): readonly LedgerPairV1Dto[] =>
   Object.values(model.projects[root]?.skills ?? {}).flatMap(({ tools }) => Object.values(tools));
@@ -332,10 +346,16 @@ export const runGcApplication: ApplicationService<
       storeRoot,
       ledgerPath,
       recovery: observed.recovery,
+      ...(context.signal === undefined ? {} : { signal: context.signal }),
     });
     return resumed.ok
       ? success(resumed.report, false)
-      : refuse('state', 'gc-execution', resumed.reason, resumed.report);
+      : refuse(
+          gcExecutionExitClass(resumed.reason, context.signal),
+          context.signal?.aborted ? 'gc-cancelled' : 'gc-execution',
+          resumed.reason,
+          resumed.report,
+        );
   }
   if (observed.recovery.state === 'incomplete') {
     const message = 'GC has incomplete non-authoritative initial recovery staging';
@@ -343,7 +363,7 @@ export const runGcApplication: ApplicationService<
       ...refusalReport(project, message, { sourceVersion: observed.ledger.sourceVersion }),
       mode: normalized.value.dryRun ? 'dry-run' : 'execute',
       state: 'partial',
-      recovery: { state: 'pending' as const, phase: 'initial-staging' },
+      recovery: { state: 'pending' as const, phase: 'initial-staging' as const },
     });
     if (normalized.value.dryRun) {
       return refuse('state', 'gc-recovery-incomplete', message, report);
@@ -352,10 +372,16 @@ export const runGcApplication: ApplicationService<
       dataDir,
       ledgerPath,
       recovery: observed.recovery,
+      ...(context.signal === undefined ? {} : { signal: context.signal }),
     });
     return cleared
       ? runGcApplication(rawRequest, context)
-      : refuse('state', 'gc-recovery-incomplete', `${message}; cleanup failed`, report);
+      : refuse(
+          context.signal?.aborted ? 'cancelled' : 'state',
+          context.signal?.aborted ? 'gc-cancelled' : 'gc-recovery-incomplete',
+          context.signal?.aborted ? 'GC execution was cancelled' : `${message}; cleanup failed`,
+          report,
+        );
   }
   if (observed.inventory.state === 'refused') {
     const message = 'GC store inventory is unsafe; no action was selected';
@@ -473,8 +499,13 @@ export const runGcApplication: ApplicationService<
       );
     }
   }
-  const executed = await executeGcPlan(context.ports, plan);
+  const executed = await executeGcPlan(context.ports, plan, context.signal);
   return executed.ok
     ? success(executed.report, false)
-    : refuse('state', 'gc-execution', executed.reason, executed.report);
+    : refuse(
+        gcExecutionExitClass(executed.reason, context.signal),
+        context.signal?.aborted ? 'gc-cancelled' : 'gc-execution',
+        executed.reason,
+        executed.report,
+      );
 };

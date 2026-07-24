@@ -1369,9 +1369,25 @@ export interface GcObjectV1Dto {
   readonly contentHash: string;
   readonly modifiedAt: number;
   readonly logicalBytes: number;
-  readonly protection: readonly Readonly<{ readonly kind: string; readonly sourceId: string }>[];
+  readonly protection: readonly Readonly<{
+    readonly kind:
+      | 'ledger'
+      | 'project-registration'
+      | 'live-placement'
+      | 'logical-transaction'
+      | 'legacy-journal'
+      | 'history'
+      | 'adapted-overlay';
+    readonly sourceId: string;
+  }>[];
   readonly ageEligible: boolean;
-  readonly outcome: 'protected' | 'age-filtered' | 'eligible' | 'reclaimed' | 'refused';
+  readonly outcome:
+    | 'protected'
+    | 'age-filtered'
+    | 'eligible'
+    | 'reclaimed'
+    | 'already-absent'
+    | 'refused';
   readonly reason: string | null;
 }
 
@@ -1392,6 +1408,7 @@ export interface GcSummaryV1Dto {
   readonly eligibleItems: number | null;
   readonly eligibleBytes: number | null;
   readonly forgottenProjects: number;
+  readonly alreadyAbsentItems: number;
   readonly reclaimedItems: number;
   readonly reclaimedBytes: number;
   readonly refusedItems: number;
@@ -1427,7 +1444,14 @@ export interface GcReportV1Dto {
   };
   readonly recovery: {
     readonly state: 'none' | 'pending' | 'completed' | 'refused';
-    readonly phase: string | null;
+    readonly phase:
+      | 'approved'
+      | 'migration-complete'
+      | 'forget-complete'
+      | 'reclaiming'
+      | 'complete'
+      | 'initial-staging'
+      | null;
   };
   readonly projects: readonly GcProjectV1Dto[];
   readonly objects: readonly GcObjectV1Dto[];

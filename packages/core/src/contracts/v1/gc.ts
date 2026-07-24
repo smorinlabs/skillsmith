@@ -20,9 +20,25 @@ export interface GcObjectV1Dto {
   readonly contentHash: string;
   readonly modifiedAt: number;
   readonly logicalBytes: number;
-  readonly protection: readonly Readonly<{ readonly kind: string; readonly sourceId: string }>[];
+  readonly protection: readonly Readonly<{
+    readonly kind:
+      | 'ledger'
+      | 'project-registration'
+      | 'live-placement'
+      | 'logical-transaction'
+      | 'legacy-journal'
+      | 'history'
+      | 'adapted-overlay';
+    readonly sourceId: string;
+  }>[];
   readonly ageEligible: boolean;
-  readonly outcome: 'protected' | 'age-filtered' | 'eligible' | 'reclaimed' | 'refused';
+  readonly outcome:
+    | 'protected'
+    | 'age-filtered'
+    | 'eligible'
+    | 'reclaimed'
+    | 'already-absent'
+    | 'refused';
   readonly reason: string | null;
 }
 
@@ -43,6 +59,7 @@ export interface GcSummaryV1Dto {
   readonly eligibleItems: number | null;
   readonly eligibleBytes: number | null;
   readonly forgottenProjects: number;
+  readonly alreadyAbsentItems: number;
   readonly reclaimedItems: number;
   readonly reclaimedBytes: number;
   readonly refusedItems: number;
@@ -78,7 +95,14 @@ export interface GcReportV1Dto {
   };
   readonly recovery: {
     readonly state: 'none' | 'pending' | 'completed' | 'refused';
-    readonly phase: string | null;
+    readonly phase:
+      | 'approved'
+      | 'migration-complete'
+      | 'forget-complete'
+      | 'reclaiming'
+      | 'complete'
+      | 'initial-staging'
+      | null;
   };
   readonly projects: readonly GcProjectV1Dto[];
   readonly objects: readonly GcObjectV1Dto[];
@@ -99,6 +123,17 @@ export interface GcReportV1Dto {
 
 const Count = z.number().int().nonnegative();
 const Id = z.string().min(1);
+const HexId = z.string().regex(/^[0-9a-f]{64}$/u);
+const Digest = z.string().regex(/^sha256:[0-9a-f]{64}$/u);
+const ProtectionKind = z.enum([
+  'ledger',
+  'project-registration',
+  'live-placement',
+  'logical-transaction',
+  'legacy-journal',
+  'history',
+  'adapted-overlay',
+]);
 const ProjectSchema = z
   .object({
     root: Id,
@@ -113,21 +148,28 @@ const ProjectSchema = z
   .strict();
 const ObjectSchema = z
   .object({
-    id: Id,
+    id: HexId,
     kind: z.enum(['store', 'adapted-overlay']),
     path: Id,
-    contentHash: Id,
+    contentHash: Digest,
     modifiedAt: z.number().finite(),
     logicalBytes: Count,
-    protection: z.array(z.object({ kind: Id, sourceId: Id }).strict()),
+    protection: z.array(z.object({ kind: ProtectionKind, sourceId: Id }).strict()),
     ageEligible: z.boolean(),
-    outcome: z.enum(['protected', 'age-filtered', 'eligible', 'reclaimed', 'refused']),
+    outcome: z.enum([
+      'protected',
+      'age-filtered',
+      'eligible',
+      'reclaimed',
+      'already-absent',
+      'refused',
+    ]),
     reason: z.string().nullable(),
   })
   .strict();
 const ActionSchema = z
   .object({
-    actionId: Id,
+    actionId: HexId,
     kind: z.enum(['migrate-ledger', 'forget-project', 'reclaim-store']),
     target: Id,
     logicalBytes: Count,
@@ -144,6 +186,7 @@ const SummarySchema = z
     eligibleItems: Count.nullable(),
     eligibleBytes: Count.nullable(),
     forgottenProjects: Count,
+    alreadyAbsentItems: Count,
     reclaimedItems: Count,
     reclaimedBytes: Count,
     refusedItems: Count,
@@ -157,7 +200,7 @@ const GcReportSchema = z
     command: z.literal('gc'),
     mode: z.enum(['dry-run', 'execute']),
     state: z.enum(['planned', 'no-op', 'refused', 'completed', 'partial']),
-    planId: Id.nullable(),
+    planId: HexId.nullable(),
     selectionSource: z.literal('bounded-default'),
     project: z.object({ effectiveCwd: Id, root: Id, identity: Id }).strict(),
     migration: z
@@ -180,7 +223,16 @@ const GcReportSchema = z
     recovery: z
       .object({
         state: z.enum(['none', 'pending', 'completed', 'refused']),
-        phase: z.string().nullable(),
+        phase: z
+          .enum([
+            'approved',
+            'migration-complete',
+            'forget-complete',
+            'reclaiming',
+            'complete',
+            'initial-staging',
+          ])
+          .nullable(),
       })
       .strict(),
     projects: z.array(ProjectSchema),

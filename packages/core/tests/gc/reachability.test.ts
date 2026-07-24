@@ -144,6 +144,8 @@ describe('GC reachability and retention graph', () => {
     const expired = object('expired', digest('d'), Date.parse('2026-07-22T00:00:00.000Z'));
     const retained = object('retained', digest('e'), Date.parse('2026-07-22T00:00:00.000Z'));
     const equality = object('equality', digest('f'), Date.parse('2026-07-23T00:00:00.000Z'));
+    const minusOne = object('minus-one', digest('7'), Date.parse('2026-07-22T23:59:59.999Z'));
+    const plusOne = object('plus-one', digest('8'), Date.parse('2026-07-23T00:00:00.001Z'));
     const base = emptyLedgerModel('2026-07-23T00:00:00.000Z');
     const model: LedgerModel = {
       ...base,
@@ -154,7 +156,7 @@ describe('GC reachability and retention graph', () => {
     };
     const result = classifyGcReachability({
       model,
-      objects: [expired, retained, equality],
+      objects: [expired, retained, equality, minusOne, plusOne],
       nowMilliseconds: Date.parse('2026-07-23T01:00:00.000Z'),
       olderThanMilliseconds: 3_600_000,
     });
@@ -163,6 +165,8 @@ describe('GC reachability and retention graph', () => {
     expect(result.classifications.map(({ object, outcome }) => [object.skill, outcome])).toEqual([
       ['equality', 'age-filtered'],
       ['expired', 'eligible'],
+      ['minus-one', 'eligible'],
+      ['plus-one', 'age-filtered'],
       ['retained', 'protected'],
     ]);
     expect(Object.isFrozen(result.classifications)).toBeTrue();

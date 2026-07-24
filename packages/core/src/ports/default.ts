@@ -13,6 +13,7 @@ import {
   readdir,
   readlink,
   rm,
+  rmdir,
   stat,
   symlink,
   writeFile,
@@ -222,6 +223,10 @@ const createFileWritePort = (): FileWritePort & FileModeWritePort => ({
   removeTree: (path) =>
     fileOperation('file-write', 'removeTree', { path }, async () => {
       await rm(path, { recursive: true, force: true });
+    }),
+  removeEmptyDirectory: (path) =>
+    fileOperation('file-write', 'removeEmptyDirectory', { path }, async () => {
+      await rmdir(path);
     }),
   fsyncFile: (path) => fsyncPath(path),
   fsyncDir: (path) => fsyncPath(path),

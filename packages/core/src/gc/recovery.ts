@@ -70,7 +70,15 @@ const ActionSchema = z
     payloadPath: z.string().min(1),
     containerIdentity: z.string().min(1).nullable(),
     payloadIdentity: z.string().min(1).nullable(),
-    outcome: z.enum(['pending', 'prepared', 'detached', 'cleaned', 'protected-skip']),
+    outcome: z.enum([
+      'pending',
+      'prepared',
+      'detached',
+      'cleanup-started',
+      'cleaned',
+      'already-absent',
+      'protected-skip',
+    ]),
   })
   .strict();
 const SourceLedgerSchema = z.discriminatedUnion('state', [
@@ -213,7 +221,9 @@ const parseRecord = (source: string): GcRecoveryRecordV1 | null => {
     const outcomesValid = parsed.data.actions.every((action) => {
       const publicAction = reportActions.get(action.actionId);
       const identityValid =
-        action.outcome === 'pending' || action.outcome === 'protected-skip'
+        action.outcome === 'pending' ||
+        action.outcome === 'already-absent' ||
+        action.outcome === 'protected-skip'
           ? action.containerIdentity === null && action.payloadIdentity === null
           : action.outcome === 'prepared'
             ? action.containerIdentity !== null && action.payloadIdentity === null
@@ -242,7 +252,8 @@ const parseRecord = (source: string): GcRecoveryRecordV1 | null => {
     const phaseValid =
       parsed.data.phase === 'complete'
         ? parsed.data.actions.every(
-            ({ outcome }) => outcome === 'cleaned' || outcome === 'protected-skip',
+            ({ outcome }) =>
+              outcome === 'cleaned' || outcome === 'already-absent' || outcome === 'protected-skip',
           )
         : parsed.data.phase === 'approved' || parsed.data.phase === 'migration-complete'
           ? parsed.data.actions.every(({ outcome }) => outcome === 'pending')
@@ -537,6 +548,7 @@ const ensureDirectory = async (
 ): Promise<boolean> => {
   if ((await ports.pathKind(path)) === 'absent') {
     await ports.makeDirExclusive(path, mode).catch(() => {});
+    await ports.fsyncDir(dirname(path));
   }
   return secureDirectory(ports, path, mode);
 };
@@ -616,6 +628,7 @@ export const createGcRecoveryRecord = async (
     await ports.fsyncDir(root);
   } catch {
     await ports.removeTree(temp).catch(() => {});
+    await ports.fsyncDir(root).catch(() => {});
     return Object.freeze({
       state: 'refused',
       record: null,
@@ -660,7 +673,7 @@ const actionTransition = (
     return true;
   }
   if (current.outcome === 'pending') {
-    return next.outcome === 'protected-skip'
+    return next.outcome === 'protected-skip' || next.outcome === 'already-absent'
       ? next.containerIdentity === null && next.payloadIdentity === null
       : next.outcome === 'prepared' &&
           next.containerIdentity !== null &&
@@ -673,8 +686,15 @@ const actionTransition = (
       next.payloadIdentity !== null
     );
   }
+  if (current.outcome === 'detached') {
+    return (
+      next.outcome === 'cleanup-started' &&
+      next.containerIdentity === current.containerIdentity &&
+      next.payloadIdentity === current.payloadIdentity
+    );
+  }
   return (
-    current.outcome === 'detached' &&
+    current.outcome === 'cleanup-started' &&
     next.outcome === 'cleaned' &&
     next.containerIdentity === current.containerIdentity &&
     next.payloadIdentity === current.payloadIdentity
@@ -742,6 +762,7 @@ export const replaceGcRecoveryRecord = async (
     await ports.fsyncDir(root);
   } catch {
     await ports.removeTree(temp).catch(() => {});
+    await ports.fsyncDir(root).catch(() => {});
     return Object.freeze({
       state: 'refused',
       record: null,

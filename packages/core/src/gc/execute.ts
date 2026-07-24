@@ -115,7 +115,8 @@ const failureReport = (report: GcReportV1Dto, reason: string): GcReportV1Dto => 
   mode: 'execute',
   state: 'partial',
   approval: { required: true, outcome: 'approved' },
-  recovery: { state: 'pending', phase: report.recovery.phase },
+  recovery:
+    report.recovery.state === 'pending' ? report.recovery : { state: 'none' as const, phase: null },
   diagnostics: [{ code: 'gc-execution', message: reason, path: null }],
   summary: { ...report.summary, failedItems: 1 },
 });
@@ -349,7 +350,12 @@ const executionReport = (record: GcRecoveryRecordV1): GcReportV1Dto => {
     return {
       ...action,
       outcome: outcome === 'protected-skip' ? ('protected-skip' as const) : ('succeeded' as const),
-      reason: outcome === 'protected-skip' ? 'protection changed after ledger commit' : null,
+      reason:
+        outcome === 'protected-skip'
+          ? 'protection changed after ledger commit'
+          : outcome === 'already-absent'
+            ? 'already absent before detach'
+            : null,
     };
   });
   const cleaned = new Set(
@@ -358,6 +364,11 @@ const executionReport = (record: GcRecoveryRecordV1): GcReportV1Dto => {
   const skipped = new Set(
     record.actions
       .filter(({ outcome }) => outcome === 'protected-skip')
+      .map(({ actionId }) => actionId),
+  );
+  const alreadyAbsent = new Set(
+    record.actions
+      .filter(({ outcome }) => outcome === 'already-absent')
       .map(({ actionId }) => actionId),
   );
   const reclaimedItems = record.actions.filter(({ outcome }) => outcome === 'cleaned').length;
@@ -385,7 +396,7 @@ const executionReport = (record: GcRecoveryRecordV1): GcReportV1Dto => {
           ? ('approved' as const)
           : ('not-required' as const),
     },
-    recovery: { state: 'completed' as const, phase: 'complete' },
+    recovery: { state: 'completed' as const, phase: 'complete' as const },
     projects: record.approvedReport.projects.map((project) =>
       project.action === 'forget-project' ? { ...project, outcome: 'forgotten' as const } : project,
     ),
@@ -395,19 +406,26 @@ const executionReport = (record: GcRecoveryRecordV1): GcReportV1Dto => {
       );
       return action !== undefined && cleaned.has(action.actionId)
         ? { ...object, outcome: 'reclaimed' as const }
-        : action !== undefined && skipped.has(action.actionId)
+        : action !== undefined && alreadyAbsent.has(action.actionId)
           ? {
               ...object,
-              outcome: 'protected' as const,
-              reason: 'protection changed after ledger commit',
+              outcome: 'already-absent' as const,
+              reason: 'already absent before detach',
             }
-          : object;
+          : action !== undefined && skipped.has(action.actionId)
+            ? {
+                ...object,
+                outcome: 'protected' as const,
+                reason: 'protection changed after ledger commit',
+              }
+            : object;
     }),
     results,
     summary: {
       ...record.approvedReport.summary,
       protectedItems: record.approvedReport.summary.protectedItems + skipped.size,
       forgottenProjects,
+      alreadyAbsentItems: alreadyAbsent.size,
       reclaimedItems,
       reclaimedBytes,
       failedItems: 0,
@@ -421,7 +439,9 @@ const runPendingLocked = async (
   storeRoot: string,
   ledgerPath: string,
   approved: Extract<GcRecoveryObservation, { readonly state: 'pending' }>,
+  signal?: AbortSignal,
 ): Promise<GcExecutionResult> => {
+  if (signal?.aborted) return fail(approved.record, 'GC execution was cancelled');
   const observed = await observeGcRecovery(ports, dataDir);
   if (
     observed.state !== 'pending' ||
@@ -437,47 +457,65 @@ const runPendingLocked = async (
   const boundaries = await commitLedgerBoundaries(ports, ledgerPath, converged);
   if (!boundaries.ok) return boundaries.result;
   let recovery = boundaries.recovery;
-
-  const inventory = await inventoryGcStore(ports, storeRoot);
-  if (inventory.state !== 'ok')
-    return fail(recovery.record, 'GC committed store inventory is unsafe');
-  const liveTargets = await observeGcLiveTargets(ports, boundaries.model, inventory.objects);
-  if (liveTargets.state !== 'ok') return fail(recovery.record, liveTargets.reason);
-  const classified = classifyGcReachability({
-    model: boundaries.model,
-    objects: inventory.objects,
-    nowMilliseconds: recovery.record.nowMilliseconds,
-    olderThanMilliseconds: recovery.record.olderThanMilliseconds,
-    liveTargets: liveTargets.targets,
-  });
-  if (classified.state !== 'ok')
-    return fail(recovery.record, 'GC committed reachability revalidation failed');
-  const eligible = new Set(
-    classified.classifications
-      .filter(({ outcome }) => outcome === 'eligible')
-      .map(({ object }) => object.id),
-  );
+  if (signal?.aborted) return fail(recovery.record, 'GC execution was cancelled');
 
   for (const initialAction of recovery.record.actions) {
+    if (signal?.aborted) return fail(recovery.record, 'GC execution was cancelled');
     let action = recovery.record.actions.find(
       ({ actionId }) => actionId === initialAction.actionId,
     );
     if (action === undefined) return fail(recovery.record, 'GC recovery action disappeared');
-    if (action.outcome === 'pending' && !eligible.has(action.object.id)) {
-      const actions = recovery.record.actions.map((candidate) =>
-        candidate.actionId === action?.actionId
-          ? { ...candidate, outcome: 'protected-skip' as const }
-          : candidate,
-      );
-      const advanced = await replace(ports, recovery, { phase: 'reclaiming', actions });
-      if (advanced === null) return fail(recovery.record, 'GC protected-skip recovery CAS failed');
-      recovery = advanced;
-      continue;
+    if (action.outcome === 'pending') {
+      const inventory = await inventoryGcStore(ports, storeRoot);
+      if (inventory.state !== 'ok') {
+        return fail(recovery.record, 'GC committed store inventory is unsafe');
+      }
+      const current = inventory.objects.find(({ path }) => path === action?.object.path);
+      const sourceAbsent =
+        current === undefined && (await ports.pathKind(action.object.path)) === 'absent';
+      if (current !== undefined && current.id !== action.object.id) {
+        return fail(recovery.record, 'GC approved candidate changed before reclaim');
+      }
+      if (current === undefined && !sourceAbsent) {
+        return fail(recovery.record, 'GC approved candidate became unsafe before reclaim');
+      }
+      const liveTargets = await observeGcLiveTargets(ports, boundaries.model, inventory.objects);
+      if (liveTargets.state !== 'ok') return fail(recovery.record, liveTargets.reason);
+      const classified = classifyGcReachability({
+        model: boundaries.model,
+        objects: inventory.objects,
+        nowMilliseconds: recovery.record.nowMilliseconds,
+        olderThanMilliseconds: recovery.record.olderThanMilliseconds,
+        liveTargets: liveTargets.targets,
+      });
+      if (classified.state !== 'ok') {
+        return fail(recovery.record, 'GC committed reachability revalidation failed');
+      }
+      const stillEligible =
+        sourceAbsent ||
+        classified.classifications.some(
+          ({ object, outcome }) => object.id === action?.object.id && outcome === 'eligible',
+        );
+      if (stillEligible) {
+        // Continue into the record-bound prepare/detach/cleanup state machine below.
+      } else {
+        const actions = recovery.record.actions.map((candidate) =>
+          candidate.actionId === action?.actionId
+            ? { ...candidate, outcome: 'protected-skip' as const }
+            : candidate,
+        );
+        const advanced = await replace(ports, recovery, { phase: 'reclaiming', actions });
+        if (advanced === null)
+          return fail(recovery.record, 'GC protected-skip recovery CAS failed');
+        recovery = advanced;
+        continue;
+      }
     }
     while (
       action.outcome === 'pending' ||
       action.outcome === 'prepared' ||
-      action.outcome === 'detached'
+      action.outcome === 'detached' ||
+      action.outcome === 'cleanup-started'
     ) {
       const advancedAction = await reclaimGcStoreObject(
         ports,
@@ -499,6 +537,7 @@ const runPendingLocked = async (
       recovery = advanced;
       action = recovery.record.actions.find(({ actionId }) => actionId === initialAction.actionId);
       if (action === undefined) return fail(recovery.record, 'GC recovery action disappeared');
+      if (signal?.aborted) return fail(recovery.record, 'GC execution was cancelled');
     }
     if (
       action.outcome === 'cleaned' &&
@@ -530,6 +569,7 @@ export const resumeGcRecovery = async (
     readonly storeRoot: string;
     readonly ledgerPath: string;
     readonly recovery: Extract<GcRecoveryObservation, { readonly state: 'pending' }>;
+    readonly signal?: AbortSignal;
   }>,
 ): Promise<GcExecutionResult> => {
   if (
@@ -543,7 +583,14 @@ export const resumeGcRecovery = async (
     );
   }
   const locked = await withLedgerLock(ports, input.ledgerPath, () =>
-    runPendingLocked(ports, input.dataDir, input.storeRoot, input.ledgerPath, input.recovery),
+    runPendingLocked(
+      ports,
+      input.dataDir,
+      input.storeRoot,
+      input.ledgerPath,
+      input.recovery,
+      input.signal,
+    ),
   );
   if (!locked.ok)
     return fail(input.recovery.record, 'GC could not acquire the placement ledger lock');
@@ -556,8 +603,10 @@ export const clearIncompleteGcRecovery = async (
     readonly dataDir: string;
     readonly ledgerPath: string;
     readonly recovery: Extract<GcRecoveryObservation, { readonly state: 'incomplete' }>;
+    readonly signal?: AbortSignal;
   }>,
 ): Promise<boolean> => {
+  if (input.signal?.aborted) return false;
   const locked = await withLedgerLock(ports, input.ledgerPath, () =>
     removeIncompleteGcRecovery(ports, input.dataDir, input.recovery),
   );
@@ -567,8 +616,13 @@ export const clearIncompleteGcRecovery = async (
 export const executeGcPlan = async (
   ports: ExecutePorts,
   plan: PreparedGcPlan,
+  signal?: AbortSignal,
 ): Promise<GcExecutionResult> => {
   const locked = await withLedgerLock(ports, plan.ledgerPath, async () => {
+    if (signal?.aborted) {
+      const reason = 'GC execution was cancelled';
+      return Object.freeze({ ok: false, report: failureReport(plan.report, reason), reason });
+    }
     const currentLedger = await readLedgerState(ports, plan.ledgerPath);
     if (
       !currentLedger.ok ||
@@ -621,7 +675,7 @@ export const executeGcPlan = async (
         recovery.state === 'refused' ? recovery.reason : 'GC recovery record was not published';
       return Object.freeze({ ok: false, report: failureReport(plan.report, reason), reason });
     }
-    return runPendingLocked(ports, plan.dataDir, plan.storeRoot, plan.ledgerPath, recovery);
+    return runPendingLocked(ports, plan.dataDir, plan.storeRoot, plan.ledgerPath, recovery, signal);
   });
   if (!locked.ok) {
     const reason = 'GC could not acquire the placement ledger lock';

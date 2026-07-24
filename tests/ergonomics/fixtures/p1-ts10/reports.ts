@@ -1076,6 +1076,7 @@ export const GC_REPORT_FIXTURE = {
     eligibleItems: 0,
     eligibleBytes: 0,
     forgottenProjects: 0,
+    alreadyAbsentItems: 0,
     reclaimedItems: 0,
     reclaimedBytes: 0,
     refusedItems: 0,

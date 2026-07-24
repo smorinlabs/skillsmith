@@ -1,4 +1,5 @@
 import { dirname, join } from 'node:path';
+import { safeErrorCode } from '../errors.ts';
 import type {
   EffectiveUserPort,
   ExclusiveCreatePort,
@@ -28,7 +29,7 @@ type RepositoryPorts = EffectiveUserPort &
     | 'readText'
     | 'realpath'
   > &
-  Pick<FileWritePort, 'fsyncDir' | 'fsyncFile' | 'removeTree' | 'rename'>;
+  Pick<FileWritePort, 'fsyncDir' | 'fsyncFile' | 'removeEmptyDirectory' | 'removeTree' | 'rename'>;
 
 const HEX64 = /^[0-9a-f]{64}$/u;
 
@@ -48,6 +49,7 @@ const secureDirectory = async (ports: RepositoryPorts, path: string): Promise<bo
 const ensurePrivateDirectory = async (ports: RepositoryPorts, path: string): Promise<boolean> => {
   if ((await ports.pathKind(path)) === 'absent') {
     await ports.makeDirExclusive(path, 0o700).catch(() => {});
+    await ports.fsyncDir(dirname(path));
   }
   return secureDirectory(ports, path);
 };
@@ -165,6 +167,13 @@ export const observeGcTombstones = async (
       const entries = [...(await ports.listDir(actionPath))].sort();
       const hasPayload = entries.includes('payload');
       if (
+        entries.length === 0 &&
+        recorded.outcome === 'pending' &&
+        recorded.containerIdentity === null
+      ) {
+        continue;
+      }
+      if (
         !entries.every((entry) => entry === 'owner.json' || entry === 'payload') ||
         entries.length === 0 ||
         !(await secureOwner(
@@ -189,7 +198,8 @@ export const observeGcTombstones = async (
         if (
           (recorded.payloadIdentity !== null &&
             payloadMetadata?.identity !== recorded.payloadIdentity) ||
-          !(await validateGcObjectAt(ports, recorded.payloadPath, recorded.object))
+          (recorded.outcome !== 'cleanup-started' &&
+            !(await validateGcObjectAt(ports, recorded.payloadPath, recorded.object)))
         ) {
           return Object.freeze({
             state: 'refused',
@@ -226,6 +236,17 @@ export const reclaimGcStoreObject = async (
   const payload = request.payloadPath;
   try {
     if (request.outcome === 'pending') {
+      if (
+        (await ports.pathKind(request.object.path)) === 'absent' &&
+        (await ports.pathKind(action)) === 'absent'
+      ) {
+        return Object.freeze({
+          state: 'already-absent',
+          logicalBytes: 0,
+          containerIdentity: null,
+          payloadIdentity: null,
+        });
+      }
       if (!(await validateGcObjectAt(ports, request.object.path, request.object))) {
         throw new Error('source');
       }
@@ -239,16 +260,30 @@ export const reclaimGcStoreObject = async (
       if ((await ports.pathKind(action)) === 'absent') {
         await ports.makeDirExclusive(action, 0o700);
         if (!(await secureDirectory(ports, action))) throw new Error('container');
+        await ports.fsyncDir(plan);
         await ports.writeTextFileExclusive(owner, ownerSource(request), 0o600);
         await ports.fsyncFile(owner);
         await ports.fsyncDir(action);
         await ports.fsyncDir(plan);
-      } else if (
-        !(await secureDirectory(ports, action)) ||
-        !(await secureOwner(ports, owner, ownerSource(request))) ||
-        (await ports.pathKind(payload)) !== 'absent'
-      ) {
-        throw new Error('collision');
+      } else {
+        if (!(await secureDirectory(ports, action))) throw new Error('collision');
+        const entries = await ports.listDir(action);
+        if (entries.length === 0) {
+          if (ports.removeEmptyDirectory === undefined) throw new Error('atomic-rmdir');
+          await ports.removeEmptyDirectory(action);
+          await ports.fsyncDir(plan);
+          await ports.makeDirExclusive(action, 0o700);
+          await ports.fsyncDir(plan);
+          await ports.writeTextFileExclusive(owner, ownerSource(request), 0o600);
+          await ports.fsyncFile(owner);
+          await ports.fsyncDir(action);
+        } else if (
+          !(await secureOwner(ports, owner, ownerSource(request))) ||
+          (await ports.pathKind(payload)) !== 'absent' ||
+          entries.some((entry) => entry !== 'owner.json')
+        ) {
+          throw new Error('collision');
+        }
       }
       const metadata = await ports.readFileMetadata(action);
       if (metadata.identity === null) throw new Error('identity');
@@ -300,6 +335,24 @@ export const reclaimGcStoreObject = async (
         ) {
           throw new Error('payload');
         }
+      } else if ((await ports.pathKind(payload)) !== 'absent') {
+        throw new Error('payload');
+      }
+      return Object.freeze({
+        state: 'cleanup-started',
+        logicalBytes: 0,
+        containerIdentity: request.containerIdentity as string,
+        payloadIdentity: request.payloadIdentity as string,
+      });
+    }
+    if (request.outcome === 'cleanup-started') {
+      if (!(await exactContainer(ports, request))) throw new Error('container');
+      if ((await ports.pathKind(request.object.path)) !== 'absent') throw new Error('source');
+      if ((await ports.pathKind(payload)) === 'dir') {
+        const metadata = await ports.readFileMetadata(payload);
+        if (request.payloadIdentity === null || metadata.identity !== request.payloadIdentity) {
+          throw new Error('payload');
+        }
         await ports.removeTree(payload);
         await ports.fsyncDir(action);
       } else if ((await ports.pathKind(payload)) !== 'absent') {
@@ -313,11 +366,15 @@ export const reclaimGcStoreObject = async (
       });
     }
     throw new Error('phase');
-  } catch {
+  } catch (error) {
+    const code = safeErrorCode(error);
     return Object.freeze({
       state: 'refused',
       logicalBytes: 0,
-      reason: 'GC atomic detach or owner-bound cleanup failed',
+      reason:
+        code === 'EACCES' || code === 'EPERM'
+          ? 'GC permission denied during atomic detach or owner-bound cleanup'
+          : 'GC atomic detach or owner-bound cleanup failed',
     });
   }
 };
@@ -331,12 +388,12 @@ const pruneIfExactEmpty = async (
   if (
     metadata?.kind !== 'dir' ||
     metadata.identity !== identity ||
-    (await ports.listDir(path).catch(() => ['unsafe'])).length !== 0
+    ports.removeEmptyDirectory === undefined
   ) {
     return;
   }
-  await ports.removeTree(path);
-  await ports.fsyncDir(dirname(path));
+  await ports.removeEmptyDirectory(path).catch(() => {});
+  if ((await ports.pathKind(path)) === 'absent') await ports.fsyncDir(dirname(path));
 };
 
 /** Removes only cleanup metadata already made authoritative by a `cleaned` record transition. */
@@ -355,7 +412,10 @@ export const finalizeGcStoreReclaim = async (
       return false;
     }
     await ports.removeTree(join(request.containerPath, 'owner.json'));
-    await ports.removeTree(request.containerPath);
+    await ports.fsyncDir(request.containerPath);
+    if (ports.removeEmptyDirectory === undefined) return false;
+    await ports.removeEmptyDirectory(request.containerPath).catch(() => {});
+    if ((await ports.pathKind(request.containerPath)) !== 'absent') return false;
     await ports.fsyncDir(dirname(request.containerPath));
   }
   const repositoryPath = dirname(request.object.path);

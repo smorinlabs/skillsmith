@@ -252,6 +252,7 @@ export const buildGcPlan = (input: BuildGcPlanInput): PreparedGcPlan => {
       eligibleItems: eligible.length,
       eligibleBytes: eligible.reduce((sum, { object }) => sum + object.logicalBytes, 0),
       forgottenProjects: 0,
+      alreadyAbsentItems: 0,
       reclaimedItems: 0,
       reclaimedBytes: 0,
       refusedItems: 0,

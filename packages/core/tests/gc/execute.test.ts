@@ -58,6 +58,12 @@ describe('GC execution transaction', () => {
         retryArguments: ['gc', '--yes'],
         normalizedForgetRoots: [],
       });
+      const controller = new AbortController();
+      controller.abort();
+      const cancelled = await executeGcPlan(ports, plan, controller.signal);
+      expect(cancelled).toMatchObject({ ok: false, reason: expect.stringContaining('cancelled') });
+      expect(await ports.pathKind(objectPath)).toBe('dir');
+      expect(await observeGcRecovery(ports, dataDir)).toMatchObject({ state: 'none' });
       const result = await executeGcPlan(ports, plan);
       expect(result.ok).toBeTrue();
       expect(result.report.actions).toEqual(plan.report.actions);
@@ -67,6 +73,16 @@ describe('GC execution transaction', () => {
       expect(result.report.summary).toMatchObject({ reclaimedItems: 1 });
       expect(await ports.pathKind(objectPath)).toBe('absent');
       expect(await observeGcRecovery(ports, dataDir)).toMatchObject({ state: 'none' });
+      const alreadyAbsent = await executeGcPlan(ports, plan);
+      expect(alreadyAbsent.ok).toBeTrue();
+      expect(alreadyAbsent.report.summary).toMatchObject({
+        alreadyAbsentItems: 1,
+        reclaimedItems: 0,
+        reclaimedBytes: 0,
+      });
+      expect(alreadyAbsent.report.objects).toContainEqual(
+        expect.objectContaining({ path: objectPath, outcome: 'already-absent' }),
+      );
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -210,6 +226,79 @@ describe('GC execution transaction', () => {
       );
       expect(result.report.summary).toMatchObject({ reclaimedItems: 0, protectedItems: 1 });
       expect(await ports.pathKind(objectPath)).toBe('dir');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('resumes owner-authorized cleanup after recursive payload removal was interrupted', async () => {
+    const ports = await defaultRuntimePorts();
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-gc-cleanup-resume-'));
+    try {
+      const dataDir = join(root, 'data');
+      const storeRoot = join(dataDir, 'store');
+      const objectPath = join(storeRoot, 'fixture', 'repo@0123456789ab', 'review');
+      await mkdir(objectPath, { recursive: true });
+      await chmod(dataDir, 0o700);
+      await writeFile(join(objectPath, 'SKILL.md'), 'review');
+      await writeFile(join(objectPath, 'second'), 'second');
+      const inventory = await inventoryGcStore(ports, storeRoot);
+      if (inventory.state !== 'ok' || inventory.objects[0] === undefined) {
+        throw new Error('fixture inventory failed');
+      }
+      const model = emptyLedgerModel('2026-07-23T00:00:00.000Z');
+      const plan = buildGcPlan({
+        sourceLedger: {
+          state: 'absent',
+          sourceVersion: null,
+          bytes: null,
+          byteRevision: null,
+          semanticRevision: null,
+          model: null,
+        },
+        model,
+        postForgetModel: model,
+        inventory,
+        classifications: [
+          { object: inventory.objects[0], protection: [], ageEligible: true, outcome: 'eligible' },
+        ],
+        duration: null,
+        nowMilliseconds: 1,
+        projects: [],
+        dataDir,
+        storeRoot,
+        ledgerPath: join(dataDir, 'placements.json'),
+        project: { effectiveCwd: root, root, identity: root },
+        retryArguments: ['gc', '--yes'],
+        normalizedForgetRoots: [],
+      });
+      let crashed = false;
+      const crashPorts = Object.assign(Object.create(ports) as typeof ports, {
+        removeTree: async (path: string) => {
+          if (!crashed && path.endsWith('/payload')) {
+            crashed = true;
+            await ports.removeTree(join(path, 'SKILL.md'));
+            throw new Error('simulated crash during recursive cleanup');
+          }
+          await ports.removeTree(path);
+        },
+      });
+      expect((await executeGcPlan(crashPorts, plan)).ok).toBeFalse();
+      const recovery = await observeGcRecovery(ports, dataDir);
+      expect(recovery).toMatchObject({
+        state: 'pending',
+        record: { actions: [{ outcome: 'cleanup-started' }] },
+      });
+      if (recovery.state !== 'pending') throw new Error('cleanup recovery not found');
+      const resumed = await resumeGcRecovery(ports, {
+        dataDir,
+        storeRoot,
+        ledgerPath: plan.ledgerPath,
+        recovery,
+      });
+      expect(resumed.ok).toBeTrue();
+      expect(resumed.report.summary).toMatchObject({ reclaimedItems: 1, reclaimedBytes: 12 });
+      expect(await ports.pathKind(objectPath)).toBe('absent');
     } finally {
       await rm(root, { recursive: true, force: true });
     }

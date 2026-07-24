@@ -23,7 +23,7 @@ export const renderGcHuman = (report: GcReportV1Dto): string => {
     ...value.actions.map((action) => `action: ${fact(action)}`),
     ...value.results.map((result) => `result: ${fact(result)}`),
     ...value.diagnostics.map((diagnostic) => `diagnostic: ${fact(diagnostic)}`),
-    `Summary: ${value.summary.observedItems} observed, ${value.summary.protectedItems} protected, ${value.summary.ageFilteredItems} age-filtered, ${value.summary.eligibleItems ?? 'unknown'} eligible, ${value.summary.reclaimedItems} reclaimed, ${value.summary.forgottenProjects} forgotten`,
+    `Summary: ${value.summary.observedItems} observed, ${value.summary.protectedItems} protected, ${value.summary.ageFilteredItems} age-filtered, ${value.summary.eligibleItems ?? 'unknown'} eligible, ${value.summary.alreadyAbsentItems} already-absent, ${value.summary.reclaimedItems} reclaimed, ${value.summary.forgottenProjects} forgotten`,
     `Summary exact: ${fact(value.summary)}`,
   ];
   return `${lines.join('\n')}\n`;
