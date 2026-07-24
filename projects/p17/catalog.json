@@ -7614,12 +7614,16 @@
           "evidence": ["projects/p17/evidence/P17-G5-05.md#test-first-evidence"]
         },
         "minimal-implementation": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G5-05.md#minimal-implementation-and-targeted-green-at-86fd011"
+          ]
         },
         "targeted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G5-05.md#minimal-implementation-and-targeted-green-at-86fd011"
+          ]
         },
         "impacted-green": {
           "status": "pending",
@@ -7654,7 +7658,8 @@
         "projects/p17/evidence/P17-G5-05.md#accepted-ready-result",
         "projects/p17/evidence/P17-G5-05.md#test-first-evidence",
         "projects/p17/evidence/P17-G5-05.md#approved-implementation-compatibility-amendment",
-        "projects/p17/evidence/P17-G5-05.md#implementation-amendment-review-at-b901bb8"
+        "projects/p17/evidence/P17-G5-05.md#implementation-amendment-review-at-b901bb8",
+        "projects/p17/evidence/P17-G5-05.md#minimal-implementation-and-targeted-green-at-86fd011"
       ]
     },
     {
@@ -18312,7 +18317,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-05",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-05:packages/cli/tests/contracts/undo.test.ts#EWP-CMD-UNDO-TS03",
       "target": {
@@ -18321,7 +18326,10 @@
         "selector": "EWP-CMD-UNDO-TS03",
         "command": "bun test packages/cli/tests/contracts/undo.test.ts --test-name-pattern EWP-CMD-UNDO-TS03"
       },
-      "evidence": ["projects/p17/evidence/P17-G5-05.md#red-execution-receipt-ewp-cmd-undo-ts03"],
+      "evidence": [
+        "projects/p17/evidence/P17-G5-05.md#green-execution-receipt-ewp-cmd-undo-ts03",
+        "projects/p17/evidence/P17-G5-05.md#red-execution-receipt-ewp-cmd-undo-ts03"
+      ],
       "secondaryGroups": ["P17-G5-02", "P17-G5-03", "P17-G3B-03", "P17-G3B-02", "P17-G1-01"],
       "implements": [],
       "validatedBy": ["EWP-CMD-UNDO-TS03"],
@@ -19220,7 +19228,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-05",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-05:packages/cli/tests/contracts/update.test.ts#EWP-CMD-UPDATE-TS07",
       "target": {
@@ -19229,7 +19237,10 @@
         "selector": "EWP-CMD-UPDATE-TS07",
         "command": "bun test packages/cli/tests/contracts/update.test.ts --test-name-pattern EWP-CMD-UPDATE-TS07"
       },
-      "evidence": ["projects/p17/evidence/P17-G5-05.md#red-execution-receipt-ewp-cmd-update-ts07"],
+      "evidence": [
+        "projects/p17/evidence/P17-G5-05.md#green-execution-receipt-ewp-cmd-update-ts07",
+        "projects/p17/evidence/P17-G5-05.md#red-execution-receipt-ewp-cmd-update-ts07"
+      ],
       "secondaryGroups": ["P17-G5-02", "P17-G5-03", "P17-G3B-03", "P17-G3B-02", "P17-G1-01"],
       "implements": [],
       "validatedBy": ["EWP-CMD-UPDATE-TS07"],
@@ -19730,11 +19741,18 @@
       "kind": "option-gate",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-05",
-      "status": "planned",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-05:packages/cli/tests/contracts/options.test.ts#EWP-OPT-TS08",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/options.test.ts",
+        "selector": "EWP-OPT-TS08",
+        "command": "bun test packages/cli/tests/contracts/options.test.ts --test-name-pattern EWP-OPT-TS08"
+      },
+      "evidence": [
+        "projects/p17/evidence/P17-G5-05.md#green-execution-receipt-ewp-opt-ts08"
+      ],
       "secondaryGroups": [
         "P17-G4B-02",
         "P17-G1-02B",
@@ -19764,8 +19782,10 @@
         "EWP-CF-003",
         "EWP-CF-040"
       ],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/options.test.ts --test-name-pattern EWP-OPT-TS08"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/options.test.ts"]
     },
     {
       "id": "EWP-OPT-TS09",
@@ -25180,7 +25200,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-05",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-05:tests/ergonomics/phase/EWP-P5-TS05.test.ts#EWP-P5-TS05",
       "target": {
@@ -25189,7 +25209,10 @@
         "selector": "EWP-P5-TS05",
         "command": "bun test tests/ergonomics/phase/EWP-P5-TS05.test.ts --test-name-pattern EWP-P5-TS05"
       },
-      "evidence": ["projects/p17/evidence/P17-G5-05.md#red-execution-receipt-ewp-p5-ts05"],
+      "evidence": [
+        "projects/p17/evidence/P17-G5-05.md#green-execution-receipt-ewp-p5-ts05",
+        "projects/p17/evidence/P17-G5-05.md#red-execution-receipt-ewp-p5-ts05"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P5-TS05"],
@@ -25930,7 +25953,7 @@
       "kind": "workflow",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-05",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-05:tests/ergonomics/workflows/EWP-WF09.test.ts#EWP-WF09",
       "target": {
@@ -25939,7 +25962,10 @@
         "selector": "EWP-WF09",
         "command": "bun test tests/ergonomics/workflows/EWP-WF09.test.ts --test-name-pattern EWP-WF09"
       },
-      "evidence": ["projects/p17/evidence/P17-G5-05.md#red-execution-receipt-ewp-wf09"],
+      "evidence": [
+        "projects/p17/evidence/P17-G5-05.md#green-execution-receipt-ewp-wf09",
+        "projects/p17/evidence/P17-G5-05.md#red-execution-receipt-ewp-wf09"
+      ],
       "secondaryGroups": [
         "P17-G5-02",
         "P17-G5-03",
@@ -26133,11 +26159,18 @@
       "kind": "workflow",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-05",
-      "status": "planned",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-05:tests/ergonomics/workflows/EWP-WF13.test.ts#EWP-WF13",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/workflows/EWP-WF13.test.ts",
+        "selector": "EWP-WF13",
+        "command": "bun test tests/ergonomics/workflows/EWP-WF13.test.ts --test-name-pattern EWP-WF13"
+      },
+      "evidence": [
+        "projects/p17/evidence/P17-G5-05.md#green-execution-receipt-ewp-wf13"
+      ],
       "secondaryGroups": ["P17-G4A-04", "P17-G4B-02", "P17-G5-01", "P17-G5-02"],
       "implements": [],
       "validatedBy": ["EWP-WF13"],
@@ -26153,8 +26186,13 @@
         "EWP-WF13"
       ],
       "affectedContracts": ["P1-04"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/workflows/EWP-WF13.test.ts --test-name-pattern EWP-WF13"
+      ],
+      "ownedFiles": [
+        "tests/ergonomics/workflows/EWP-WF13.test.ts",
+        "tests/ergonomics/fixtures/p5-batch/fleet.ts"
+      ]
     },
     {
       "id": "EWP-WF14",
@@ -26644,7 +26682,10 @@
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G5-05",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G5-05.md#mapping-and-prerequisites"],
+      "evidence": [
+        "projects/p17/evidence/P17-G5-05.md#mapping-and-prerequisites",
+        "projects/p17/evidence/P17-G5-05.md#minimal-implementation-and-targeted-green-at-86fd011"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P5-TS05"],
