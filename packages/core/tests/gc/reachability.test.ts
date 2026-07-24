@@ -183,4 +183,36 @@ describe('GC reachability and retention graph', () => {
     });
     expect(result).toMatchObject({ state: 'refused', classifications: [] });
   });
+
+  test('keeps the deferred adapter-owned overlay branch closed and purely injectable', () => {
+    const retainedOverlay = {
+      ...object('overlay-retained', digest('4')),
+      kind: 'adapted-overlay' as const,
+    };
+    const disposableOverlay = {
+      ...object('overlay-disposable', digest('5')),
+      kind: 'adapted-overlay' as const,
+    };
+    const result = classifyGcReachability({
+      model: emptyLedgerModel('2026-07-23T00:00:00.000Z'),
+      objects: [retainedOverlay, disposableOverlay],
+      liveTargets: [
+        {
+          sourceId: 'adapter:retained-overlay',
+          path: retainedOverlay.path,
+          contentHash: retainedOverlay.contentHash,
+        },
+      ],
+      nowMilliseconds: Date.parse('2026-07-23T01:00:00.000Z'),
+      olderThanMilliseconds: null,
+    });
+    expect(result.state).toBe('ok');
+    if (result.state !== 'ok') throw new Error(result.reason);
+    expect(
+      result.classifications.map(({ object: candidate, outcome }) => [candidate.skill, outcome]),
+    ).toEqual([
+      ['overlay-disposable', 'eligible'],
+      ['overlay-retained', 'protected'],
+    ]);
+  });
 });
