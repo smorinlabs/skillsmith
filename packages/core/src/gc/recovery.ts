@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { dirname, isAbsolute, join, relative } from 'node:path';
 import { z } from 'zod';
 import { gcV1Codec } from '../contracts/v1/gc.ts';
+import { safeErrorCode } from '../errors.ts';
 import type {
   EffectiveUserPort,
   ExclusiveCreatePort,
@@ -24,6 +25,16 @@ const HEX64 = /^[0-9a-f]{64}$/u;
 const HEX16 = /^[0-9a-f]{16}$/u;
 const IdSchema = z.string().regex(HEX64);
 const DigestSchema = z.string().regex(/^sha256:[0-9a-f]{64}$/u);
+
+const compare = (left: string, right: string): number =>
+  Buffer.from(left).compare(Buffer.from(right));
+
+const publicationFailure = (error: unknown, operation: string): string => {
+  const code = safeErrorCode(error);
+  return code === 'EACCES' || code === 'EPERM'
+    ? `GC permission denied during ${operation}`
+    : `GC ${operation} failed`;
+};
 const EntrySchema = z
   .object({
     path: z.string().min(1),
@@ -249,15 +260,35 @@ const parseRecord = (source: string): GcRecoveryRecordV1 | null => {
         publicAction.logicalBytes === action.logicalBytes
       );
     });
+    let prefixClosed = true;
+    let reachedNonterminal = false;
+    let activeActions = 0;
+    for (const action of parsed.data.actions) {
+      const terminal =
+        action.outcome === 'cleaned' ||
+        action.outcome === 'already-absent' ||
+        action.outcome === 'protected-skip';
+      if (terminal) {
+        if (reachedNonterminal) prefixClosed = false;
+      } else if (action.outcome === 'pending') {
+        reachedNonterminal = true;
+      } else {
+        if (reachedNonterminal) prefixClosed = false;
+        reachedNonterminal = true;
+        activeActions += 1;
+      }
+    }
+    const allPending = parsed.data.actions.every(({ outcome }) => outcome === 'pending');
+    const allTerminal = parsed.data.actions.every(
+      ({ outcome }) =>
+        outcome === 'cleaned' || outcome === 'already-absent' || outcome === 'protected-skip',
+    );
     const phaseValid =
       parsed.data.phase === 'complete'
-        ? parsed.data.actions.every(
-            ({ outcome }) =>
-              outcome === 'cleaned' || outcome === 'already-absent' || outcome === 'protected-skip',
-          )
-        : parsed.data.phase === 'approved' || parsed.data.phase === 'migration-complete'
-          ? parsed.data.actions.every(({ outcome }) => outcome === 'pending')
-          : true;
+        ? allTerminal
+        : parsed.data.phase === 'reclaiming'
+          ? prefixClosed && activeActions <= 1 && !allPending
+          : allPending;
     const retryArguments = [
       'gc',
       ...(report.ok && report.value.olderThan !== null
@@ -286,11 +317,15 @@ const parseRecord = (source: string): GcRecoveryRecordV1 | null => {
       JSON.stringify(reportForgetRoots) === JSON.stringify(parsed.data.normalizedForgetRoots) &&
       actionIds.size === parsed.data.actions.length &&
       reportActions.size === parsed.data.actions.length &&
+      JSON.stringify(parsed.data.actions.map(({ actionId }) => actionId)) ===
+        JSON.stringify([...reportActions.keys()]) &&
       outcomesValid &&
       phaseValid &&
       [parsed.data.dataDir, parsed.data.storeRoot, parsed.data.ledgerPath].every(isAbsolute) &&
       new Set(parsed.data.normalizedForgetRoots).size ===
         parsed.data.normalizedForgetRoots.length &&
+      JSON.stringify(parsed.data.normalizedForgetRoots) ===
+        JSON.stringify([...parsed.data.normalizedForgetRoots].sort(compare)) &&
       parsed.data.normalizedForgetRoots.every(isAbsolute) &&
       revision === gcRecoveryRevision(seed)
       ? (parsed.data as unknown as GcRecoveryRecordV1)
@@ -508,12 +543,21 @@ export const convergeGcRecovery = async (
       await ports.rename(expected.path, live);
     }
     await ports.fsyncDir(root);
-  } catch {
+  } catch (error) {
+    const reason = publicationFailure(error, 'recovery staging convergence');
+    const converged = await observeGcRecovery(ports, dataDir);
+    if (
+      converged.state === 'pending' &&
+      converged.staging === undefined &&
+      converged.record.revision === expected.record.revision
+    ) {
+      return Object.freeze({ ...converged, publicationFailure: reason });
+    }
     return Object.freeze({
       state: 'refused',
       record: null,
       path: expected.path,
-      reason: 'GC recovery staging convergence failed',
+      reason,
     });
   }
   const converged = await observeGcRecovery(ports, dataDir);
@@ -626,14 +670,23 @@ export const createGcRecoveryRecord = async (
     if ((await ports.pathKind(live)) !== 'absent') throw new Error();
     await ports.rename(temp, live);
     await ports.fsyncDir(root);
-  } catch {
+  } catch (error) {
     await ports.removeTree(temp).catch(() => {});
     await ports.fsyncDir(root).catch(() => {});
+    const reason = publicationFailure(error, 'recovery record publication');
+    const observed = await observeGcRecovery(ports, dataDir);
+    if (
+      observed.state === 'pending' &&
+      observed.staging === undefined &&
+      observed.record.revision === record.revision
+    ) {
+      return Object.freeze({ ...observed, publicationFailure: reason });
+    }
     return Object.freeze({
       state: 'refused',
       record: null,
       path: live,
-      reason: 'GC recovery record publication failed',
+      reason,
     });
   }
   return Object.freeze({ state: 'pending', record: Object.freeze(record), path: live });
@@ -760,14 +813,23 @@ export const replaceGcRecoveryRecord = async (
     if ((await ports.readText(observation.path)) !== canonical(current)) throw new Error();
     await ports.rename(temp, observation.path);
     await ports.fsyncDir(root);
-  } catch {
+  } catch (error) {
     await ports.removeTree(temp).catch(() => {});
     await ports.fsyncDir(root).catch(() => {});
+    const reason = publicationFailure(error, 'recovery CAS replacement');
+    const observed = await observeGcRecovery(ports, dirname(dirname(root)));
+    if (
+      observed.state === 'pending' &&
+      observed.staging === undefined &&
+      observed.record.revision === next.revision
+    ) {
+      return Object.freeze({ ...observed, publicationFailure: reason });
+    }
     return Object.freeze({
       state: 'refused',
       record: null,
       path: observation.path,
-      reason: 'GC recovery CAS replacement failed',
+      reason,
     });
   }
   return Object.freeze({ state: 'pending', record: Object.freeze(next), path: observation.path });

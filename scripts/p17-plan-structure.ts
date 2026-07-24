@@ -14,7 +14,7 @@ const expectedCounts = {
   'option-gate': 10,
   workflow: 16,
   command: 23,
-  finding: 43,
+  finding: 44,
   decision: 16,
 } as const;
 
@@ -103,7 +103,7 @@ const expectedIds: Record<Kind, string[]> = {
     'version',
     'help',
   ].map((command) => `COMMAND:${command}`),
-  finding: numbered('EWP-CF-', 43, 3),
+  finding: numbered('EWP-CF-', 44, 3),
   decision: numbered('D-', 16, 3),
 };
 
@@ -180,7 +180,10 @@ const canonicalDecisionDetailSha256 =
   '10b330175f5f8880c65c78c749ba73e4eb12ff19ac3ab03831a4ce049819014a';
 
 const expectedFindingRecordedDates = new Map(
-  numbered('EWP-CF-', 43, 3).map((id, index) => [id, index < 15 ? '2026-07-10' : '2026-07-11']),
+  numbered('EWP-CF-', 44, 3).map((id, index) => [
+    id,
+    index < 15 ? '2026-07-10' : index < 43 ? '2026-07-11' : '2026-07-23',
+  ]),
 );
 
 function definitions(plan: string): Definition[] {
@@ -637,7 +640,7 @@ function validateTs07(plan: string, items: Definition[]): string[] {
   for (const id of detail.keys()) {
     if (!expectedFindings.has(id)) diagnostics.push(`${id} unexpected detailed finding section`);
   }
-  for (const id of numbered('EWP-CF-', 43, 3)) {
+  for (const id of numbered('EWP-CF-', 44, 3)) {
     const indexes = indexRows.get(id) ?? [];
     const traces = traceRows.get(id) ?? [];
     const index = indexes[0];

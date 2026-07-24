@@ -225,6 +225,8 @@ export type GcRecoveryObservation =
       readonly record: GcRecoveryRecordV1;
       readonly path: string;
       readonly staging?: 'initial' | 'successor' | 'redundant';
+      /** The exact live record exists, but its publishing durability call failed. */
+      readonly publicationFailure?: string;
     }>
   | Readonly<{
       readonly state: 'incomplete';
@@ -284,6 +286,10 @@ export type GcReclaimResult =
       readonly payloadIdentity: null;
     }>
   | Readonly<{ readonly state: 'refused'; readonly logicalBytes: 0; readonly reason: string }>;
+
+export type GcFinalizeResult =
+  | Readonly<{ readonly ok: true }>
+  | Readonly<{ readonly ok: false; readonly reason: string }>;
 
 export type GcTombstoneObservation =
   | Readonly<{ readonly state: 'safe'; readonly root: string }>

@@ -57,6 +57,7 @@ export const normalizeGcForgetRoots = (
       normalized.push(selected);
     }
   }
+  normalized.sort((left, right) => Buffer.from(left).compare(Buffer.from(right)));
   return ok(Object.freeze(normalized));
 };
 
@@ -90,7 +91,9 @@ export const gcRequestDigest = (
 ): string =>
   digest({
     olderThanMilliseconds: duration?.milliseconds ?? null,
-    forget: normalizedForgetRoots,
+    forget: [...normalizedForgetRoots].sort((left, right) =>
+      Buffer.from(left).compare(Buffer.from(right)),
+    ),
   });
 
 const compare = (left: string, right: string): number =>

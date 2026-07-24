@@ -432,6 +432,11 @@ export const withLedgerLock = async <T>(
     if (code === 'cancelled' || code === 'ABORT_ERR' || code === 'AbortError') {
       return err(cancelledError('ledger lock wait cancelled'));
     }
+    if (isPermError(e)) {
+      return err(
+        permissionDeniedError(`cannot acquire ledger lock: ${errorMessage(e)}`, ledgerPath),
+      );
+    }
     return err(flipFailedError(`another skillsmith operation is running: ${errorMessage(e)}`));
   }
 };

@@ -10,6 +10,17 @@ const plan = readFileSync(
   'utf8',
 );
 
+const findingEndOf = (id: string, findingStart: number): number => {
+  const nextFinding = Number(id.slice(-3)) + 1;
+  const nextHeader = plan.indexOf(
+    `#### EWP-CF-${String(nextFinding).padStart(3, '0')} —`,
+    findingStart,
+  );
+  return nextHeader >= 0
+    ? nextHeader
+    : plan.indexOf('\n### 13.1 Current-program drift', findingStart);
+};
+
 describe('EWP-P0A-TS07 accepted-finding traceability validation', () => {
   test('EWP-P0A-TS07 accepts all canonical finding records', () => {
     expect(validatePlanStructure(plan, ['EWP-P0A-TS07'])).toEqual([]);
@@ -166,15 +177,11 @@ describe('EWP-P0A-TS07 accepted-finding traceability validation', () => {
     );
   });
 
-  test.each(['EWP-CF-001', 'EWP-CF-015', 'EWP-CF-016', 'EWP-CF-043'])(
+  test.each(['EWP-CF-001', 'EWP-CF-015', 'EWP-CF-016', 'EWP-CF-043', 'EWP-CF-044'])(
     'EWP-P0A-TS07 rejects a duplicate recorded date for %s',
     (id) => {
       const findingStart = plan.indexOf(`#### ${id} —`);
-      const nextFinding = Number(id.slice(-3)) + 1;
-      const findingEnd =
-        id === 'EWP-CF-043'
-          ? plan.indexOf('\n### 13.1 Current-program drift', findingStart)
-          : plan.indexOf(`#### EWP-CF-${String(nextFinding).padStart(3, '0')} —`, findingStart);
+      const findingEnd = findingEndOf(id, findingStart);
       const mutated = `${plan.slice(0, findingEnd)}\n- **Recorded:** 2099-12-31${plan.slice(findingEnd)}`;
       expect(validatePlanStructure(mutated, ['EWP-P0A-TS07'])).toContain(
         `${id} has duplicate recorded dates`,
@@ -187,28 +194,29 @@ describe('EWP-P0A-TS07 accepted-finding traceability validation', () => {
     ['EWP-CF-015', 'not-a-date'],
     ['EWP-CF-016', '2099-1-1'],
     ['EWP-CF-043', '<!-- forged -->'],
+    ['EWP-CF-044', 'not-a-date'],
   ])('EWP-P0A-TS07 rejects a malformed duplicate recorded date for %s', (id, value) => {
     const findingStart = plan.indexOf(`#### ${id} —`);
-    const nextFinding = Number(id.slice(-3)) + 1;
-    const findingEnd =
-      id === 'EWP-CF-043'
-        ? plan.indexOf('\n### 13.1 Current-program drift', findingStart)
-        : plan.indexOf(`#### EWP-CF-${String(nextFinding).padStart(3, '0')} —`, findingStart);
+    const findingEnd = findingEndOf(id, findingStart);
     const mutated = `${plan.slice(0, findingEnd)}\n- **Recorded:** ${value}${plan.slice(findingEnd)}`;
     expect(validatePlanStructure(mutated, ['EWP-P0A-TS07'])).toContain(
       `${id} has duplicate recorded dates`,
     );
   });
 
-  test.each(['EWP-CF-001', 'EWP-CF-015', 'EWP-CF-016', 'EWP-CF-043'])(
+  test.each(['EWP-CF-001', 'EWP-CF-015', 'EWP-CF-016', 'EWP-CF-043', 'EWP-CF-044'])(
     'EWP-P0A-TS07 rejects recorded-date continuation content for %s',
     (id) => {
       const findingStart = plan.indexOf(`#### ${id} —`);
       const recorded = plan.indexOf('- **Recorded:**', findingStart);
       const lineEnd = plan.indexOf('\n', recorded);
+      const recordedDate = /- \*\*Recorded:\*\* (\d{4}-\d{2}-\d{2})/u.exec(
+        plan.slice(recorded, lineEnd),
+      )?.[1];
+      if (recordedDate === undefined) throw new Error(`${id} recorded date fixture missing`);
       const mutated = `${plan.slice(0, lineEnd)}\n  forged extra value${plan.slice(lineEnd)}`;
       expect(validatePlanStructure(mutated, ['EWP-P0A-TS07'])).toContain(
-        `${id} recorded date ${id === 'EWP-CF-001' || id === 'EWP-CF-015' ? '2026-07-10 forged extra value does not match 2026-07-10' : '2026-07-11 forged extra value does not match 2026-07-11'}`,
+        `${id} recorded date ${recordedDate} forged extra value does not match ${recordedDate}`,
       );
     },
   );

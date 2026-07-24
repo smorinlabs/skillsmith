@@ -9,6 +9,7 @@ import type {
 } from '../ports/types.ts';
 import { validateGcObjectAt } from './inventory.ts';
 import type {
+  GcFinalizeResult,
   GcReclaimRequest,
   GcReclaimResult,
   GcRecoveryObservation,
@@ -44,6 +45,15 @@ const secureDirectory = async (ports: RepositoryPorts, path: string): Promise<bo
     metadata.uid === effective.uid &&
     (effective.gid === null || metadata.gid === effective.gid)
   );
+};
+
+const exactDirectory = async (
+  ports: RepositoryPorts,
+  path: string,
+  identity: string,
+): Promise<boolean> => {
+  const metadata = await ports.readFileMetadata(path);
+  return (await secureDirectory(ports, path)) && metadata.identity === identity;
 };
 
 const ensurePrivateDirectory = async (ports: RepositoryPorts, path: string): Promise<boolean> => {
@@ -154,6 +164,7 @@ export const observeGcTombstones = async (
         recorded.containerPath !== actionPath ||
         recorded.payloadPath !== join(actionPath, 'payload') ||
         recorded.outcome === 'protected-skip' ||
+        recorded.outcome === 'already-absent' ||
         !(await secureDirectory(ports, actionPath)) ||
         (recorded.containerIdentity !== null &&
           actionMetadata?.identity !== recorded.containerIdentity)
@@ -170,6 +181,13 @@ export const observeGcTombstones = async (
         entries.length === 0 &&
         recorded.outcome === 'pending' &&
         recorded.containerIdentity === null
+      ) {
+        continue;
+      }
+      if (
+        entries.length === 0 &&
+        recorded.outcome === 'cleaned' &&
+        recorded.containerIdentity !== null
       ) {
         continue;
       }
@@ -400,27 +418,51 @@ const pruneIfExactEmpty = async (
 export const finalizeGcStoreReclaim = async (
   ports: RepositoryPorts,
   request: GcReclaimRequest,
-): Promise<boolean> => {
-  if (request.outcome !== 'cleaned' || (await ports.pathKind(request.object.path)) !== 'absent') {
-    return false;
-  }
-  if ((await ports.pathKind(request.containerPath)) !== 'absent') {
-    if (
-      !(await exactContainer(ports, request)) ||
-      (await ports.pathKind(request.payloadPath)) !== 'absent'
-    ) {
-      return false;
+): Promise<GcFinalizeResult> => {
+  try {
+    if (request.outcome !== 'cleaned' || (await ports.pathKind(request.object.path)) !== 'absent') {
+      return Object.freeze({ ok: false, reason: 'GC cleaned reclaim state is invalid' });
     }
-    await ports.removeTree(join(request.containerPath, 'owner.json'));
-    await ports.fsyncDir(request.containerPath);
-    if (ports.removeEmptyDirectory === undefined) return false;
-    await ports.removeEmptyDirectory(request.containerPath).catch(() => {});
-    if ((await ports.pathKind(request.containerPath)) !== 'absent') return false;
-    await ports.fsyncDir(dirname(request.containerPath));
+    if ((await ports.pathKind(request.containerPath)) !== 'absent') {
+      const entries = [...(await ports.listDir(request.containerPath))].sort();
+      if (
+        request.containerIdentity === null ||
+        !(await exactDirectory(ports, request.containerPath, request.containerIdentity)) ||
+        (await ports.pathKind(request.payloadPath)) !== 'absent'
+      ) {
+        return Object.freeze({ ok: false, reason: 'GC cleaned tombstone identity is invalid' });
+      }
+      if (entries.length === 1 && entries[0] === 'owner.json') {
+        if (!(await exactContainer(ports, request))) {
+          return Object.freeze({ ok: false, reason: 'GC cleaned tombstone owner is invalid' });
+        }
+        await ports.removeTree(join(request.containerPath, 'owner.json'));
+        await ports.fsyncDir(request.containerPath);
+      } else if (entries.length !== 0) {
+        return Object.freeze({ ok: false, reason: 'GC cleaned tombstone contains planted state' });
+      }
+      if (ports.removeEmptyDirectory === undefined) {
+        return Object.freeze({ ok: false, reason: 'GC atomic tombstone removal is unavailable' });
+      }
+      await ports.removeEmptyDirectory(request.containerPath);
+      if ((await ports.pathKind(request.containerPath)) !== 'absent') {
+        return Object.freeze({ ok: false, reason: 'GC tombstone metadata cleanup failed' });
+      }
+      await ports.fsyncDir(dirname(request.containerPath));
+    }
+    const repositoryPath = dirname(request.object.path);
+    const namespacePath = dirname(repositoryPath);
+    await pruneIfExactEmpty(ports, repositoryPath, request.object.repositoryIdentity);
+    await pruneIfExactEmpty(ports, namespacePath, request.object.namespaceIdentity);
+    return Object.freeze({ ok: true });
+  } catch (error) {
+    const code = safeErrorCode(error);
+    return Object.freeze({
+      ok: false,
+      reason:
+        code === 'EACCES' || code === 'EPERM'
+          ? 'GC permission denied during tombstone metadata cleanup'
+          : 'GC tombstone metadata cleanup failed',
+    });
   }
-  const repositoryPath = dirname(request.object.path);
-  const namespacePath = dirname(repositoryPath);
-  await pruneIfExactEmpty(ports, repositoryPath, request.object.repositoryIdentity);
-  await pruneIfExactEmpty(ports, namespacePath, request.object.namespaceIdentity);
-  return true;
 };

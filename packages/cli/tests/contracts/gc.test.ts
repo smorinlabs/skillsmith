@@ -5,6 +5,7 @@ import {
   GC_SECRET_CANARIES,
   type GcCliProduct,
   type GcFleet,
+  type GcStoreObject,
   createGcFleet,
   createStoreObject,
   destroyGcFleet,
@@ -22,10 +23,15 @@ import {
   writeLedgerV2,
 } from '../../../../tests/ergonomics/fixtures/p5-gc/fleet.ts';
 import { CURRENT_APPLICATION_SERVICES } from '../../../core/src/application/current-services.ts';
+import type { ArtifactDigest } from '../../../core/src/artifacts/hash.ts';
+import type { LogicalJournalV1Dto } from '../../../core/src/artifacts/journal-types.ts';
+import { validateLedgerV2Dto } from '../../../core/src/artifacts/ledger-codec.ts';
 import { executeGcPlan } from '../../../core/src/gc/execute.ts';
 import { inventoryGcStore } from '../../../core/src/gc/inventory.ts';
 import { buildGcPlan } from '../../../core/src/gc/plan.ts';
-import { readLedgerState } from '../../../core/src/place/ledger.ts';
+import { classifyGcReachability } from '../../../core/src/gc/reachability.ts';
+import type { GcObjectObservation } from '../../../core/src/gc/types.ts';
+import { emptyLedgerModel, readLedgerState } from '../../../core/src/place/ledger.ts';
 import { defaultRuntimePorts } from '../../../core/src/ports/default.ts';
 import { CURRENT_COMMAND_SPECS } from '../../src/spec/index.ts';
 
@@ -60,6 +66,102 @@ const isRecord = (value: unknown): value is UnknownRecord =>
 
 const records = (value: unknown): readonly UnknownRecord[] =>
   Array.isArray(value) ? value.filter(isRecord) : [];
+
+const retainedJournal = (
+  transactionId: string,
+  object: GcStoreObject,
+  retainUntil: string | null,
+  phase: LogicalJournalV1Dto['phase'] = 'committed',
+): LogicalJournalV1Dto => ({
+  schemaVersion: 1,
+  kind: 'skillsmith.transaction-journal',
+  transactionId,
+  intent: {
+    operationId: `operation:${transactionId}`,
+    groupId: `group:${transactionId}`,
+    pairId: null,
+    kind: 'migrate-ledger',
+    skill: null,
+    source: null,
+    tool: null,
+    scope: null,
+    before: {
+      kind: 'ledger',
+      projectRoot: null,
+      schemaVersion: 1,
+      byteHash: `sha256:${'1'.repeat(64)}` as ArtifactDigest,
+      semanticHash: `sha256:${'2'.repeat(64)}` as ArtifactDigest,
+    },
+    after: {
+      kind: 'ledger',
+      projectRoot: null,
+      schemaVersion: 2,
+      byteHash: `sha256:${'3'.repeat(64)}` as ArtifactDigest,
+      semanticHash: `sha256:${'2'.repeat(64)}` as ArtifactDigest,
+    },
+    mutates: { live: false, manifest: false, lock: false, ledger: true },
+    reversibility: {
+      kind: 'conditional',
+      retentionResourceIds: [`resource:${transactionId}`],
+    },
+    conflict: null,
+  },
+  context: {
+    parentOperationId: null,
+    command: 'skillsmith:gc-selector',
+    workflow: 'gc-selector',
+    attempt: 1,
+    startedAt: '2026-07-23T00:00:00.000Z',
+  },
+  disposition: 'forward',
+  phase,
+  actual: {
+    before: [
+      {
+        resourceId: `resource:${transactionId}:ledger`,
+        role: 'ledger',
+        state: 'present',
+        repositoryRevision: {
+          kind: 'artifact-bytes',
+          digest: `sha256:${'1'.repeat(64)}` as ArtifactDigest,
+        },
+        schemaVersion: 1,
+        semanticHash: `sha256:${'2'.repeat(64)}` as ArtifactDigest,
+      },
+    ],
+    after:
+      phase === 'prepared' || phase === 'staged' || phase === 'backed-up'
+        ? []
+        : [
+            {
+              resourceId: `resource:${transactionId}:ledger`,
+              role: 'ledger',
+              state: 'present',
+              repositoryRevision: {
+                kind: 'artifact-bytes',
+                digest: `sha256:${'3'.repeat(64)}` as ArtifactDigest,
+              },
+              schemaVersion: 2,
+              semanticHash: `sha256:${'2'.repeat(64)}` as ArtifactDigest,
+            },
+          ],
+    retained: [
+      {
+        resourceId: `resource:${transactionId}`,
+        role: 'store',
+        path: object.path,
+        repositoryRevision: {
+          kind: 'resource',
+          digest: object.contentHash as ArtifactDigest,
+        },
+        contentHash: object.contentHash as ArtifactDigest,
+        retainUntil,
+      },
+    ],
+  },
+  updatedAt: '2026-07-23T00:00:00.000Z',
+  completedAt: phase === 'committed' ? '2026-07-23T00:00:00.000Z' : null,
+});
 
 const requireGcReport = (product: GcCliProduct, expectedExit = 0): UnknownRecord => {
   expect(product.exitCode, `${product.stderr}\n${product.stdout}`).toBe(expectedExit);
@@ -166,13 +268,45 @@ describe('gc command contract', () => {
       revision: '444444444444',
       skill: 'policy',
     });
+    const logicalObject = await createStoreObject(selected, {
+      revision: '444444444445',
+      skill: 'logical-retained',
+    });
+    const historyObject = await createStoreObject(selected, {
+      revision: '444444444446',
+      skill: 'history-retained',
+    });
     const placementPath = join(selected.projects.current, '.claude', 'skills', 'policy');
-    const pair = pinnedPair(placementPath, protectedObject);
+    const pair = {
+      ...pinnedPair(placementPath, protectedObject),
+      journal: {
+        op: 'install',
+        txId: 'legacy:policy',
+        phase: 'live',
+        startedAt: '2026-07-23T00:00:00.000Z',
+        completedAt: null,
+        before: {
+          mode: 'pinned',
+          storePath: protectedObject.path,
+          contentHash: protectedObject.contentHash,
+        },
+        stagingPath: join(selected.cwd, '.legacy-staging-policy'),
+        backupPath: join(selected.cwd, '.legacy-backup-policy'),
+      },
+    };
+    const logical = retainedJournal('logical-retained', logicalObject, null, 'live');
+    const historical = retainedJournal(
+      'history-retained',
+      historyObject,
+      '2099-01-01T00:00:00.000Z',
+    );
     await writeLedgerV2(selected, {
       skills: { policy: { tools: { 'claude-code': pair } } },
-      transactions: {},
-      history: [],
+      transactions: { [logical.transactionId]: logical },
+      history: [historical],
     });
+    const plantedLedger = validateLedgerV2Dto(JSON.parse(await readLedgerText(selected)));
+    if (!plantedLedger.ok) throw new Error(JSON.stringify(plantedLedger.error));
 
     const report = requireGcReport(
       await runGcCli(selected, ['gc', '--dry-run', '--older-than', '1s', '--json']),
@@ -181,8 +315,27 @@ describe('gc command contract', () => {
       expect.objectContaining({
         path: protectedObject.path,
         outcome: 'protected',
-        protection: expect.arrayContaining([expect.objectContaining({ kind: 'ledger' })]),
+        protection: expect.arrayContaining([
+          expect.objectContaining({ kind: 'ledger' }),
+          expect.objectContaining({ kind: 'legacy-journal' }),
+        ]),
       }),
+    );
+    expect(records(report.objects)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: logicalObject.path,
+          outcome: 'protected',
+          protection: expect.arrayContaining([
+            expect.objectContaining({ kind: 'logical-transaction' }),
+          ]),
+        }),
+        expect.objectContaining({
+          path: historyObject.path,
+          outcome: 'protected',
+          protection: expect.arrayContaining([expect.objectContaining({ kind: 'history' })]),
+        }),
+      ]),
     );
     expect(report.summary).toMatchObject({ eligibleItems: 0, eligibleBytes: 0 });
   });
@@ -216,6 +369,32 @@ describe('gc command contract', () => {
         expect.objectContaining({ path: recent.path, outcome: 'age-filtered' }),
       ]),
     );
+    const ports = await defaultRuntimePorts();
+    const inventory = await inventoryGcStore(ports, selected.store);
+    if (inventory.state !== 'ok' || inventory.objects[0] === undefined) {
+      throw new Error('age boundary inventory failed');
+    }
+    const template = inventory.objects[0];
+    const nowMilliseconds = Date.parse('2026-07-23T01:00:00.000Z');
+    const cutoff = nowMilliseconds - 60_000;
+    const ageObjects: readonly GcObjectObservation[] = [
+      { ...template, id: '1'.repeat(64), path: '/synthetic/equality', modifiedAt: cutoff },
+      { ...template, id: '2'.repeat(64), path: '/synthetic/minus-one', modifiedAt: cutoff - 1 },
+      { ...template, id: '3'.repeat(64), path: '/synthetic/plus-one', modifiedAt: cutoff + 1 },
+    ];
+    const exact = classifyGcReachability({
+      model: emptyLedgerModel('2026-07-23T00:00:00.000Z'),
+      objects: ageObjects,
+      nowMilliseconds,
+      olderThanMilliseconds: 60_000,
+    });
+    expect(exact.state).toBe('ok');
+    if (exact.state !== 'ok') throw new Error(exact.reason);
+    expect(exact.classifications.map(({ object, outcome }) => [object.path, outcome])).toEqual([
+      ['/synthetic/equality', 'age-filtered'],
+      ['/synthetic/minus-one', 'eligible'],
+      ['/synthetic/plus-one', 'age-filtered'],
+    ]);
   });
 
   test('EWP-CMD-GC-TS05 — logical bytes and whole-invocation unsafe measurement refusal', async () => {
@@ -232,6 +411,58 @@ describe('gc command contract', () => {
       expect.objectContaining({ path: safe.path, logicalBytes: safe.logicalBytes }),
     );
     expect(preview.summary).toMatchObject({ eligibleBytes: safe.logicalBytes });
+
+    const ports = await defaultRuntimePorts();
+    const observed = await inventoryGcStore(ports, selected.store);
+    if (observed.state !== 'ok' || observed.objects[0] === undefined) {
+      throw new Error('measurement fixture inventory failed');
+    }
+    let modifiedReads = 0;
+    const unstablePorts = Object.assign(Object.create(ports) as typeof ports, {
+      modifiedAt: async (path: string) => {
+        const value = await ports.modifiedAt(path);
+        if (path !== safe.path) return value;
+        modifiedReads += 1;
+        return modifiedReads === 1 || value === null ? value : value + 1;
+      },
+    });
+    expect(await inventoryGcStore(unstablePorts, selected.store)).toMatchObject({
+      state: 'refused',
+      issues: expect.arrayContaining([expect.objectContaining({ code: 'unstable-observation' })]),
+    });
+
+    const overlayTemplate = observed.objects[0];
+    const retainedOverlay: GcObjectObservation = {
+      ...overlayTemplate,
+      id: '4'.repeat(64),
+      kind: 'adapted-overlay',
+      path: '/adapter/retained-overlay',
+    };
+    const disposableOverlay: GcObjectObservation = {
+      ...overlayTemplate,
+      id: '5'.repeat(64),
+      kind: 'adapted-overlay',
+      path: '/adapter/disposable-overlay',
+    };
+    const overlays = classifyGcReachability({
+      model: emptyLedgerModel('2026-07-23T00:00:00.000Z'),
+      objects: [retainedOverlay, disposableOverlay],
+      liveTargets: [
+        {
+          sourceId: 'adapter:retained',
+          path: retainedOverlay.path,
+          contentHash: retainedOverlay.contentHash,
+        },
+      ],
+      nowMilliseconds: Date.parse('2026-07-23T01:00:00.000Z'),
+      olderThanMilliseconds: null,
+    });
+    expect(overlays.state).toBe('ok');
+    if (overlays.state !== 'ok') throw new Error(overlays.reason);
+    expect(overlays.classifications.map(({ object, outcome }) => [object.path, outcome])).toEqual([
+      ['/adapter/disposable-overlay', 'eligible'],
+      ['/adapter/retained-overlay', 'protected'],
+    ]);
 
     await makeUnsafeHardLink(safe);
     const before = await snapshotGcState(selected);
@@ -448,6 +679,85 @@ describe('gc command contract', () => {
     expect(result).toMatchObject({ state: 'completed' });
     expect(await pathExists(reachable.path)).toBeTrue();
     expect(await pathExists(reclaimable.path)).toBeFalse();
+
+    const interruptedObject = await createStoreObject(selected, {
+      revision: 'bbbbbbbbbbbc',
+      skill: 'finalize-interrupted',
+    });
+    const ports = await defaultRuntimePorts();
+    const inventory = await inventoryGcStore(ports, selected.store);
+    const ledger = await readLedgerState(ports, selected.ledger);
+    if (inventory.state !== 'ok' || !ledger.ok || ledger.value.state !== 'present') {
+      throw new Error('finalize recovery fixture observation failed');
+    }
+    const interruptedPlan = buildGcPlan({
+      sourceLedger: ledger.value,
+      model: ledger.value.model,
+      postForgetModel: ledger.value.model,
+      inventory,
+      classifications: inventory.objects.map((object) => ({
+        object,
+        protection:
+          object.path === interruptedObject.path
+            ? []
+            : [
+                {
+                  kind: 'ledger' as const,
+                  sourceId: 'selector:reachable',
+                  path: object.path,
+                  contentHash: object.contentHash,
+                },
+              ],
+        ageEligible: true,
+        outcome:
+          object.path === interruptedObject.path ? ('eligible' as const) : ('protected' as const),
+      })),
+      duration: null,
+      nowMilliseconds: Date.now(),
+      projects: [],
+      dataDir: selected.data,
+      storeRoot: selected.store,
+      ledgerPath: selected.ledger,
+      project: { effectiveCwd: selected.cwd, root: selected.cwd, identity: selected.cwd },
+      retryArguments: ['gc', '--yes'],
+      normalizedForgetRoots: [],
+    });
+    const reclaim = interruptedPlan.actions.find((action) => action.kind === 'reclaim-store');
+    if (reclaim?.kind !== 'reclaim-store') throw new Error('interrupted action missing');
+    const actionContainer = join(
+      selected.store,
+      '.gc-tombstones',
+      'v1',
+      interruptedPlan.planId,
+      reclaim.actionId,
+    );
+    let interruptedFinalize = false;
+    const crashPorts = Object.assign(Object.create(ports) as typeof ports, {
+      removeEmptyDirectory: async (path: string) => {
+        if (!interruptedFinalize && path === actionContainer) {
+          interruptedFinalize = true;
+          throw Object.assign(new Error('simulated permission failure'), { code: 'EACCES' });
+        }
+        await ports.removeEmptyDirectory?.(path);
+      },
+    });
+    expect(await executeGcPlan(crashPorts, interruptedPlan)).toMatchObject({
+      ok: false,
+      report: {
+        state: 'partial',
+        recovery: { state: 'pending', phase: 'reclaiming' },
+        summary: { reclaimedItems: 1 },
+      },
+    });
+    expect(await pathExists(interruptedObject.path)).toBeFalse();
+    expect(await ports.listDir(actionContainer)).toEqual([]);
+    const resumed = requireGcReport(await runGcCli(selected, ['gc', '--yes', '--json']));
+    expect(resumed).toMatchObject({
+      state: 'completed',
+      planId: interruptedPlan.planId,
+      summary: { reclaimedItems: 1 },
+    });
+    expect(await pathExists(reachable.path)).toBeTrue();
 
     const planted = join(selected.store, '.gc-tombstones', 'v1', 'planted');
     await mkdir(planted, { recursive: true });

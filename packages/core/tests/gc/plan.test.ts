@@ -34,12 +34,12 @@ describe('GC pure request and ledger planning', () => {
     }
   });
 
-  test('normalizes missing roots lexically, preserves first order, and deduplicates exact keys', () => {
+  test('normalizes missing roots lexically, byte-sorts, and deduplicates exact keys', () => {
     expect(
-      normalizeGcForgetRoots('/workspace/current', ['../retired', '../retired', './gone']),
+      normalizeGcForgetRoots('/workspace/current', ['./gone', '../retired', '../retired']),
     ).toEqual({
       ok: true,
-      value: ['/workspace/retired', '/workspace/current/gone'],
+      value: ['/workspace/current/gone', '/workspace/retired'],
     });
     expect(normalizeGcForgetRoots('/workspace', [''])).toMatchObject({
       ok: false,
@@ -56,6 +56,9 @@ describe('GC pure request and ledger planning', () => {
     );
     expect(gcRequestDigest(oneHour.value, ['/retired'])).not.toBe(
       gcRequestDigest(oneHour.value, ['/different']),
+    );
+    expect(gcRequestDigest(oneHour.value, ['/zeta', '/alpha'])).toBe(
+      gcRequestDigest(oneHour.value, ['/alpha', '/zeta']),
     );
   });
 
@@ -183,5 +186,41 @@ describe('GC pure request and ledger planning', () => {
     expect(first.report.summary).toMatchObject({ eligibleItems: 1, eligibleBytes: 6 });
     expect(Object.isFrozen(first.report)).toBeTrue();
     expect(Object.isFrozen(first.report.actions)).toBeTrue();
+
+    const secondRoot = '/retired-zeta';
+    const firstProject = input.projects[0];
+    if (firstProject === undefined) throw new Error('project fixture missing');
+    const permutedInput = {
+      ...input,
+      projects: [...input.projects, { ...firstProject, root: secondRoot }],
+      retryArguments: [
+        'gc',
+        '--forget-project',
+        secondRoot,
+        '--forget-project',
+        '/retired',
+        '--yes',
+      ],
+      normalizedForgetRoots: [secondRoot, '/retired'],
+    };
+    const canonicalInput = {
+      ...permutedInput,
+      retryArguments: [
+        'gc',
+        '--forget-project',
+        '/retired',
+        '--forget-project',
+        secondRoot,
+        '--yes',
+      ],
+      normalizedForgetRoots: ['/retired', secondRoot],
+    };
+    const permuted = buildGcPlan(permutedInput);
+    const canonical = buildGcPlan(canonicalInput);
+    expect(permuted.requestDigest).toBe(canonical.requestDigest);
+    expect(permuted.planId).toBe(canonical.planId);
+    expect(permuted.actions.map(({ actionId }) => actionId)).toEqual(
+      canonical.actions.map(({ actionId }) => actionId),
+    );
   });
 });

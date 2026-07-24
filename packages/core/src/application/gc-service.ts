@@ -3,7 +3,13 @@ import { logicalJournalPairIdentity } from '../artifacts/registry.ts';
 import { resolveProjectContext } from '../context/project.ts';
 import type { ProjectContext } from '../context/types.ts';
 import type { GcProjectV1Dto, GcReportV1Dto } from '../contracts/v1/gc.ts';
-import { clearIncompleteGcRecovery, executeGcPlan, resumeGcRecovery } from '../gc/execute.ts';
+import { safeErrorCode } from '../errors.ts';
+import {
+  clearIncompleteGcRecovery,
+  executeGcPlan,
+  pendingGcRecoveryReport,
+  resumeGcRecovery,
+} from '../gc/execute.ts';
 import { observeGcState } from '../gc/observe.ts';
 import {
   buildGcPlan,
@@ -192,11 +198,11 @@ const refuse = (
   report: { result: report },
   diagnostics: [{ code, severity: 'error', message }],
   exitClass,
-  mutation: NO_MUTATION,
+  mutation: report === null ? NO_MUTATION : gcMutationFor(report, false),
   deprecations: [],
 });
 
-const gcExecutionExitClass = (
+export const gcExecutionExitClass = (
   reason: string,
   signal?: AbortSignal,
 ): 'failure' | 'state' | 'permission' | 'cancelled' => {
@@ -266,11 +272,25 @@ const retryArguments = (
     '--yes',
   ]);
 
-const mutationFor = (report: GcReportV1Dto, dryRun: boolean): MutationSummary => ({
-  kind: dryRun ? 'preview' : report.state === 'completed' ? 'applied' : 'none',
+export const gcMutationFor = (report: GcReportV1Dto, dryRun: boolean): MutationSummary => ({
+  kind: dryRun
+    ? 'preview'
+    : report.summary.reclaimedItems +
+          report.summary.forgottenProjects +
+          (report.migration.outcome === 'succeeded' ? 1 : 0) >
+        0
+      ? 'applied'
+      : 'none',
   planned: report.actions.length,
-  changed: dryRun ? 0 : report.results.filter(({ outcome }) => outcome === 'succeeded').length,
-  unchanged: report.summary.protectedItems + report.summary.ageFilteredItems,
+  changed: dryRun
+    ? 0
+    : report.summary.reclaimedItems +
+      report.summary.forgottenProjects +
+      (report.migration.outcome === 'succeeded' ? 1 : 0),
+  unchanged:
+    report.summary.protectedItems +
+    report.summary.ageFilteredItems +
+    report.summary.alreadyAbsentItems,
   failed: report.summary.failedItems,
 });
 
@@ -278,7 +298,7 @@ const success = (report: GcReportV1Dto, dryRun: boolean): CommandOutcome<GcAppli
   report: { result: report },
   diagnostics: [],
   exitClass: 'success',
-  mutation: mutationFor(report, dryRun),
+  mutation: gcMutationFor(report, dryRun),
   deprecations: [],
 });
 
@@ -301,10 +321,26 @@ export const runGcApplication: ApplicationService<
   const dataDir = resolveDataDir(context.ports, context.configuration);
   const storeRoot = storeRootOf(dataDir);
   const ledgerPath = ledgerPathOf(dataDir);
-  const observed = await observeGcState(context.ports, { dataDir, storeRoot, ledgerPath });
-  if ('error' in observed) {
+  let observed: Awaited<ReturnType<typeof observeGcState>>;
+  try {
+    observed = await observeGcState(context.ports, { dataDir, storeRoot, ledgerPath });
+  } catch (error) {
+    const code = safeErrorCode(error);
+    const permission = code === 'EACCES' || code === 'EPERM';
+    const message = permission
+      ? 'GC permission denied during state observation'
+      : 'GC state observation failed';
     return refuse(
-      'state',
+      permission ? 'permission' : 'failure',
+      'gc-observation',
+      message,
+      refusalReport(project, message),
+    );
+  }
+  if ('error' in observed) {
+    const observedExitClass = gcExecutionExitClass(observed.error);
+    return refuse(
+      observedExitClass === 'permission' ? 'permission' : 'state',
       'gc-observation',
       observed.error,
       refusalReport(project, observed.error),
@@ -327,10 +363,7 @@ export const runGcApplication: ApplicationService<
     }
     if (normalized.value.dryRun) {
       const pending: GcReportV1Dto = Object.freeze({
-        ...observed.recovery.record.approvedReport,
-        mode: 'dry-run',
-        state: 'partial',
-        recovery: { state: 'pending' as const, phase: observed.recovery.record.phase },
+        ...pendingGcRecoveryReport(observed.recovery.record, 'dry-run'),
         diagnostics: [
           {
             code: 'gc-recovery-pending',

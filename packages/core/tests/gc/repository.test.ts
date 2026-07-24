@@ -8,7 +8,11 @@ import {
   observeGcTombstones,
   reclaimGcStoreObject,
 } from '../../src/gc/repository.ts';
-import type { GcObjectObservation, GcReclaimRequest } from '../../src/gc/types.ts';
+import type {
+  GcObjectObservation,
+  GcReclaimRequest,
+  GcRecoveryObservation,
+} from '../../src/gc/types.ts';
 import { defaultRuntimePorts } from '../../src/ports/default.ts';
 
 const id = (character: string): string => character.repeat(64);
@@ -92,7 +96,7 @@ describe('GC owner-bound store repository', () => {
           ...cleaned,
           outcome: cleaned.state,
         }),
-      ).toBeTrue();
+      ).toEqual({ ok: true });
       expect(await ports.readText(join(concurrent, 'keep'))).toBe('keep');
       expect(await ports.pathKind(path)).toBe('absent');
       expect(await ports.pathKind(join(root, '.gc-tombstones', 'v1', id('a'), id('b')))).toBe(
@@ -161,6 +165,124 @@ describe('GC owner-bound store repository', () => {
       expect(prepared).toMatchObject({ state: 'prepared' });
       if (prepared.state !== 'prepared') throw new Error('empty action adoption failed');
       expect(await ports.listDir(request.containerPath)).toEqual(['owner.json']);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('adopts a cleaned exact empty action container after final owner removal was interrupted', async () => {
+    const ports = await defaultRuntimePorts();
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-gc-cleaned-empty-'));
+    try {
+      await seed(root);
+      const inventory = await inventoryGcStore(ports, root);
+      if (inventory.state !== 'ok' || inventory.objects[0] === undefined) {
+        throw new Error('fixture inventory failed');
+      }
+      const request = requestFor(root, inventory.objects[0]);
+      const prepared = await reclaimGcStoreObject(ports, request);
+      if (prepared.state !== 'prepared') throw new Error('prepare failed');
+      const detached = await reclaimGcStoreObject(ports, {
+        ...request,
+        ...prepared,
+        outcome: 'prepared',
+      });
+      if (detached.state !== 'detached') throw new Error('detach failed');
+      const cleanupStarted = await reclaimGcStoreObject(ports, {
+        ...request,
+        ...detached,
+        outcome: 'detached',
+      });
+      if (cleanupStarted.state !== 'cleanup-started') throw new Error('cleanup start failed');
+      const cleaned = await reclaimGcStoreObject(ports, {
+        ...request,
+        ...cleanupStarted,
+        outcome: 'cleanup-started',
+      });
+      if (cleaned.state !== 'cleaned') throw new Error('cleanup failed');
+      let interrupted = false;
+      const interruptedPorts = Object.assign(Object.create(ports) as typeof ports, {
+        removeEmptyDirectory: async (target: string) => {
+          if (!interrupted && target === request.containerPath) {
+            interrupted = true;
+            throw Object.assign(new Error('denied'), { code: 'EACCES' });
+          }
+          await ports.removeEmptyDirectory?.(target);
+        },
+      });
+      const failed = await finalizeGcStoreReclaim(interruptedPorts, {
+        ...request,
+        ...cleaned,
+        outcome: 'cleaned',
+      });
+      expect(failed).toEqual({
+        ok: false,
+        reason: 'GC permission denied during tombstone metadata cleanup',
+      });
+      expect(await ports.listDir(request.containerPath)).toEqual([]);
+      const recovery = {
+        state: 'pending',
+        path: '',
+        record: {
+          planId: request.planId,
+          actions: [
+            {
+              ...request,
+              path: request.object.path,
+              contentHash: request.object.contentHash,
+              modifiedAt: request.object.modifiedAt,
+              ...cleaned,
+              outcome: 'cleaned',
+            },
+          ],
+        },
+      } as unknown as Extract<GcRecoveryObservation, { readonly state: 'pending' }>;
+      expect(await observeGcTombstones(ports, root, recovery)).toMatchObject({ state: 'safe' });
+      expect(
+        await finalizeGcStoreReclaim(ports, {
+          ...request,
+          ...cleaned,
+          outcome: 'cleaned',
+        }),
+      ).toEqual({ ok: true });
+      expect(await ports.pathKind(request.containerPath)).toBe('absent');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('refuses an owner container for an already-absent record outcome', async () => {
+    const ports = await defaultRuntimePorts();
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-gc-already-absent-owner-'));
+    try {
+      await seed(root);
+      const inventory = await inventoryGcStore(ports, root);
+      if (inventory.state !== 'ok' || inventory.objects[0] === undefined) {
+        throw new Error('fixture inventory failed');
+      }
+      const request = requestFor(root, inventory.objects[0]);
+      const prepared = await reclaimGcStoreObject(ports, request);
+      if (prepared.state !== 'prepared') throw new Error('prepare failed');
+      const recovery = {
+        state: 'pending',
+        path: '',
+        record: {
+          planId: request.planId,
+          actions: [
+            {
+              ...request,
+              path: request.object.path,
+              contentHash: request.object.contentHash,
+              modifiedAt: request.object.modifiedAt,
+              logicalBytes: request.object.logicalBytes,
+              outcome: 'already-absent',
+              containerIdentity: null,
+              payloadIdentity: null,
+            },
+          ],
+        },
+      } as unknown as Extract<GcRecoveryObservation, { readonly state: 'pending' }>;
+      expect(await observeGcTombstones(ports, root, recovery)).toMatchObject({ state: 'refused' });
     } finally {
       await rm(root, { recursive: true, force: true });
     }

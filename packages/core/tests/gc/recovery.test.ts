@@ -214,6 +214,92 @@ describe('GC private recovery repository', () => {
     }
   });
 
+  test('refuses planted reclaiming records whose terminal actions are not a deterministic prefix', async () => {
+    const ports = await defaultRuntimePorts();
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-gc-recovery-prefix-'));
+    try {
+      await chmod(root, 0o700);
+      const initial = record(root, 'approved');
+      const firstAction = initial.actions[0];
+      const firstPublicAction = initial.approvedReport.actions[0];
+      if (firstAction === undefined || firstPublicAction === undefined) {
+        throw new Error('action fixture missing');
+      }
+      const secondActionId = id('7');
+      const secondPath = join(root, 'store', 'fixture', 'repo@0123456789ab', 'second');
+      const secondObject = {
+        ...firstAction.object,
+        id: id('8'),
+        path: secondPath,
+        relativePath: 'fixture/repo@0123456789ab/second',
+        skill: 'second',
+        directoryIdentity: 'second-directory-id',
+      };
+      const { revision: _revision, ...initialSeed } = initial;
+      const plantedSeed = {
+        ...initialSeed,
+        phase: 'reclaiming' as const,
+        approvedReport: {
+          ...initial.approvedReport,
+          actions: [
+            firstPublicAction,
+            {
+              ...firstPublicAction,
+              actionId: secondActionId,
+              target: secondPath,
+            },
+          ],
+        },
+        actions: [
+          firstAction,
+          {
+            ...firstAction,
+            actionId: secondActionId,
+            path: secondPath,
+            object: secondObject,
+            containerPath: join(
+              root,
+              'store',
+              '.gc-tombstones',
+              'v1',
+              initial.planId,
+              secondActionId,
+            ),
+            payloadPath: join(
+              root,
+              'store',
+              '.gc-tombstones',
+              'v1',
+              initial.planId,
+              secondActionId,
+              'payload',
+            ),
+            containerIdentity: 'second-container-id',
+            payloadIdentity: 'second-directory-id',
+            outcome: 'cleaned' as const,
+          },
+        ],
+      };
+      const planted = { ...plantedSeed, revision: gcRecoveryRevision(plantedSeed) };
+      const recovery = join(root, '.gc-recovery', 'v1');
+      await mkdir(recovery, { recursive: true, mode: 0o700 });
+      await chmod(join(root, '.gc-recovery'), 0o700);
+      await writeFile(
+        join(recovery, `${initial.planId}.json`),
+        `${JSON.stringify(planted, null, 2)}\n`,
+        {
+          mode: 0o600,
+        },
+      );
+      expect(await observeGcRecovery(ports, root)).toMatchObject({
+        state: 'refused',
+        reason: expect.stringContaining('malformed'),
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test('reports valid initial temp state read-only and converges it only on execution', async () => {
     const ports = await defaultRuntimePorts();
     const root = await mkdtemp(join(tmpdir(), 'skillsmith-gc-recovery-temp-'));

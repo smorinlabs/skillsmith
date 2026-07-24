@@ -3,6 +3,7 @@ import type { ArtifactDigest } from '../artifacts/hash.ts';
 import type { LedgerModel, LedgerReadState } from '../artifacts/ledger-types.ts';
 import { ledgerSemanticRevision, logicalJournalPairIdentity } from '../artifacts/registry.ts';
 import type { GcReportV1Dto } from '../contracts/v1/gc.ts';
+import { type SkillSmithError, safeErrorCode } from '../errors.ts';
 import { emptyLedgerModel, readLedgerState, withLedgerLock, writeLedger } from '../place/ledger.ts';
 import type {
   ClockPort,
@@ -27,7 +28,7 @@ import {
   removeIncompleteGcRecovery,
   replaceGcRecoveryRecord,
 } from './recovery.ts';
-import { finalizeGcStoreReclaim, reclaimGcStoreObject } from './repository.ts';
+import { finalizeGcStoreReclaim, observeGcTombstones, reclaimGcStoreObject } from './repository.ts';
 import type {
   GcRecoveryActionV1,
   GcRecoveryLedgerSourceV1,
@@ -121,14 +122,162 @@ const failureReport = (report: GcReportV1Dto, reason: string): GcReportV1Dto => 
   summary: { ...report.summary, failedItems: 1 },
 });
 
+const forgetCommitted = (record: GcRecoveryRecordV1): boolean =>
+  record.phase === 'forget-complete' ||
+  record.phase === 'reclaiming' ||
+  record.phase === 'complete';
+
+const migrationCommitted = (record: GcRecoveryRecordV1): boolean => record.phase !== 'approved';
+
+const reportFromRecord = (
+  record: GcRecoveryRecordV1,
+  input: Readonly<{
+    readonly mode: 'dry-run' | 'execute';
+    readonly completed: boolean;
+    readonly reason?: string;
+  }>,
+): GcReportV1Dto => {
+  const outcomes = new Map(record.actions.map((action) => [action.actionId, action.outcome]));
+  const cleaned = new Set(
+    record.actions.filter(({ outcome }) => outcome === 'cleaned').map(({ actionId }) => actionId),
+  );
+  const skipped = new Set(
+    record.actions
+      .filter(({ outcome }) => outcome === 'protected-skip')
+      .map(({ actionId }) => actionId),
+  );
+  const alreadyAbsent = new Set(
+    record.actions
+      .filter(({ outcome }) => outcome === 'already-absent')
+      .map(({ actionId }) => actionId),
+  );
+  const firstIncomplete = record.actions.find(
+    ({ outcome }) =>
+      outcome === 'pending' ||
+      outcome === 'prepared' ||
+      outcome === 'detached' ||
+      outcome === 'cleanup-started',
+  )?.actionId;
+  const migrationDone = migrationCommitted(record);
+  const forgetDone = forgetCommitted(record);
+  const results = record.approvedReport.actions.map((action) => {
+    if (action.kind === 'migrate-ledger') {
+      return {
+        ...action,
+        outcome: migrationDone ? ('succeeded' as const) : ('planned' as const),
+        reason: null,
+      };
+    }
+    if (action.kind === 'forget-project') {
+      return {
+        ...action,
+        outcome: forgetDone ? ('succeeded' as const) : ('planned' as const),
+        reason: null,
+      };
+    }
+    const outcome = outcomes.get(action.actionId);
+    return {
+      ...action,
+      outcome:
+        outcome === 'cleaned' || outcome === 'already-absent'
+          ? ('succeeded' as const)
+          : outcome === 'protected-skip'
+            ? ('protected-skip' as const)
+            : input.reason !== undefined && action.actionId === firstIncomplete
+              ? ('failed' as const)
+              : ('planned' as const),
+      reason:
+        outcome === 'protected-skip'
+          ? 'protection changed after ledger commit'
+          : outcome === 'already-absent'
+            ? 'already absent before detach'
+            : input.reason !== undefined && action.actionId === firstIncomplete
+              ? input.reason
+              : null,
+    };
+  });
+  const reclaimedItems = cleaned.size;
+  const reclaimedBytes = record.actions
+    .filter(({ outcome }) => outcome === 'cleaned')
+    .reduce((sum, { logicalBytes }) => sum + logicalBytes, 0);
+  const forgottenProjects = forgetDone
+    ? record.approvedReport.projects.filter(({ action }) => action === 'forget-project').length
+    : 0;
+  return Object.freeze({
+    ...record.approvedReport,
+    mode: input.mode,
+    state: input.completed ? 'completed' : 'partial',
+    migration: {
+      ...record.approvedReport.migration,
+      outcome:
+        record.approvedReport.migration.action === 'migrate-ledger'
+          ? migrationDone
+            ? ('succeeded' as const)
+            : ('planned' as const)
+          : ('not-required' as const),
+    },
+    approval: {
+      required: record.approvedReport.actions.length > 0,
+      outcome:
+        record.approvedReport.actions.length > 0
+          ? ('approved' as const)
+          : ('not-required' as const),
+    },
+    recovery: input.completed
+      ? { state: 'completed' as const, phase: 'complete' as const }
+      : { state: 'pending' as const, phase: record.phase },
+    projects: record.approvedReport.projects.map((project) =>
+      project.action === 'forget-project' && forgetDone
+        ? { ...project, outcome: 'forgotten' as const }
+        : project,
+    ),
+    objects: record.approvedReport.objects.map((object) => {
+      const action = record.approvedReport.actions.find(
+        (candidate) => candidate.kind === 'reclaim-store' && candidate.target === object.path,
+      );
+      return action !== undefined && cleaned.has(action.actionId)
+        ? { ...object, outcome: 'reclaimed' as const }
+        : action !== undefined && alreadyAbsent.has(action.actionId)
+          ? {
+              ...object,
+              outcome: 'already-absent' as const,
+              reason: 'already absent before detach',
+            }
+          : action !== undefined && skipped.has(action.actionId)
+            ? {
+                ...object,
+                outcome: 'protected' as const,
+                reason: 'protection changed after ledger commit',
+              }
+            : object;
+    }),
+    results,
+    diagnostics:
+      input.reason === undefined
+        ? record.approvedReport.diagnostics
+        : [{ code: 'gc-execution', message: input.reason, path: null }],
+    summary: {
+      ...record.approvedReport.summary,
+      protectedItems: record.approvedReport.summary.protectedItems + skipped.size,
+      forgottenProjects,
+      alreadyAbsentItems: alreadyAbsent.size,
+      reclaimedItems,
+      reclaimedBytes,
+      failedItems: input.reason === undefined ? 0 : 1,
+    },
+  });
+};
+
+export const pendingGcRecoveryReport = (
+  record: GcRecoveryRecordV1,
+  mode: 'dry-run' | 'execute',
+): GcReportV1Dto => reportFromRecord(record, { mode, completed: false });
+
 const fail = (record: GcRecoveryRecordV1, reason: string): GcExecutionResult =>
   Object.freeze({
     ok: false,
     reason,
-    report: failureReport(
-      { ...record.approvedReport, recovery: { state: 'pending', phase: record.phase } },
-      reason,
-    ),
+    report: reportFromRecord(record, { mode: 'execute', completed: false, reason }),
   });
 
 const sameSource = (expected: GcRecoveryLedgerSourceV1, actual: LedgerReadState): boolean =>
@@ -146,10 +295,29 @@ const replace = async (
   ports: ExecutePorts,
   recovery: Extract<GcRecoveryObservation, { readonly state: 'pending' }>,
   patch: Partial<Omit<GcRecoveryRecordV1, 'revision'>>,
-): Promise<Extract<GcRecoveryObservation, { readonly state: 'pending' }> | null> => {
+  fallback: string,
+): Promise<
+  | Readonly<{
+      readonly ok: true;
+      readonly recovery: Extract<GcRecoveryObservation, { readonly state: 'pending' }>;
+    }>
+  | Readonly<{ readonly ok: false; readonly result: GcExecutionResult }>
+> => {
   const next = recordWithRevision({ ...withoutRevision(recovery.record), ...patch });
   const result = await replaceGcRecoveryRecord(ports, recovery, next);
-  return result.state === 'pending' ? result : null;
+  if (result.state === 'pending' && result.publicationFailure === undefined) {
+    return Object.freeze({ ok: true, recovery: result });
+  }
+  const reason =
+    result.state === 'pending'
+      ? (result.publicationFailure ?? fallback)
+      : result.state === 'refused'
+        ? result.reason
+        : fallback;
+  return Object.freeze({
+    ok: false,
+    result: fail(result.state === 'pending' ? result.record : recovery.record, reason),
+  });
 };
 
 const writeExactLedger = async (
@@ -158,27 +326,37 @@ const writeExactLedger = async (
   model: LedgerModel,
   updatedAt: string,
   expected: ArtifactDigest,
-): Promise<boolean> => {
+): Promise<string | null> => {
   const exact = atUpdatedTime(model, updatedAt);
-  if (semanticRevision(exact) !== expected) return false;
+  if (semanticRevision(exact) !== expected) return 'GC ledger semantic precondition failed';
   const written = await writeLedger(
     Object.assign(Object.create(ports), { wallNowIso: () => updatedAt }),
     ledgerPath,
     exact,
   );
-  if (!written.ok) return false;
+  if (!written.ok) {
+    return written.error.code === 'permission-denied'
+      ? 'GC permission denied during ledger write'
+      : 'GC ledger write failed';
+  }
   const reread = await readLedgerState(ports, ledgerPath);
-  return reread.ok && hasSemantic(reread.value, expected);
+  if (!reread.ok) {
+    return reread.error.code === 'permission-denied'
+      ? 'GC permission denied while verifying the ledger write'
+      : 'GC ledger write verification failed';
+  }
+  return hasSemantic(reread.value, expected) ? null : 'GC ledger semantic verification failed';
 };
 
 const forgetPreconditionsHold = async (
   ports: ExecutePorts,
   model: LedgerModel,
-  record: GcRecoveryRecordV1,
+  currentProjectRoot: string,
+  roots: readonly string[],
 ): Promise<boolean> => {
-  for (const root of record.normalizedForgetRoots) {
+  for (const root of roots) {
     if (
-      root === record.approvedReport.project.root ||
+      root === currentProjectRoot ||
       (await ports.pathKind(root)) !== 'absent' ||
       !Object.hasOwn(model.projects, root) ||
       !Object.hasOwn(model.projectRegistrations, root)
@@ -196,6 +374,16 @@ const forgetPreconditionsHold = async (
   return true;
 };
 
+const lockFailureReason = (error: SkillSmithError): string =>
+  error.code === 'permission-denied'
+    ? 'GC permission denied while acquiring the placement ledger lock'
+    : error.code === 'cancelled'
+      ? 'GC execution was cancelled'
+      : 'GC could not acquire the placement ledger lock';
+
+const ledgerReadFailureReason = (error: SkillSmithError, fallback: string): string =>
+  error.code === 'permission-denied' ? 'GC permission denied while reading the ledger' : fallback;
+
 const commitLedgerBoundaries = async (
   ports: ExecutePorts,
   ledgerPath: string,
@@ -210,46 +398,77 @@ const commitLedgerBoundaries = async (
 > => {
   let recovery = recoveryInput;
   let current = await readLedgerState(ports, ledgerPath);
-  if (!current.ok) return { ok: false, result: fail(recovery.record, 'GC ledger is unreadable') };
+  if (!current.ok) {
+    return {
+      ok: false,
+      result: fail(
+        recovery.record,
+        ledgerReadFailureReason(current.error, 'GC ledger is unreadable'),
+      ),
+    };
+  }
 
   if (recovery.record.phase === 'approved') {
     const expected = recovery.record.expectedMigrationSemanticRevision;
     if (expected !== null && hasSemantic(current.value, expected)) {
-      const advanced = await replace(ports, recovery, { phase: 'migration-complete' });
-      if (advanced === null)
-        return { ok: false, result: fail(recovery.record, 'GC migration recovery CAS failed') };
-      recovery = advanced;
+      const advanced = await replace(
+        ports,
+        recovery,
+        { phase: 'migration-complete' },
+        'GC migration recovery CAS failed',
+      );
+      if (!advanced.ok) return { ok: false, result: advanced.result };
+      recovery = advanced.recovery;
     } else if (expected !== null && sameSource(recovery.record.sourceLedger, current.value)) {
-      if (
-        current.value.state !== 'present' ||
-        recovery.record.migrationUpdatedAt === null ||
-        !(await writeExactLedger(
-          ports,
-          ledgerPath,
-          current.value.model,
-          recovery.record.migrationUpdatedAt,
-          expected,
-        ))
-      ) {
+      if (current.value.state !== 'present' || recovery.record.migrationUpdatedAt === null) {
         return { ok: false, result: fail(recovery.record, 'GC ledger migration failed') };
       }
-      const advanced = await replace(ports, recovery, { phase: 'migration-complete' });
-      if (advanced === null)
-        return { ok: false, result: fail(recovery.record, 'GC migration recovery CAS failed') };
-      recovery = advanced;
+      const writeFailure = await writeExactLedger(
+        ports,
+        ledgerPath,
+        current.value.model,
+        recovery.record.migrationUpdatedAt,
+        expected,
+      );
+      if (writeFailure !== null) {
+        return { ok: false, result: fail(recovery.record, writeFailure) };
+      }
+      const advanced = await replace(
+        ports,
+        recovery,
+        { phase: 'migration-complete' },
+        'GC migration recovery CAS failed',
+      );
+      if (!advanced.ok) return { ok: false, result: advanced.result };
+      recovery = advanced.recovery;
       current = await readLedgerState(ports, ledgerPath);
-      if (!current.ok)
-        return { ok: false, result: fail(recovery.record, 'GC migrated ledger is unreadable') };
+      if (!current.ok) {
+        return {
+          ok: false,
+          result: fail(
+            recovery.record,
+            ledgerReadFailureReason(current.error, 'GC migrated ledger is unreadable'),
+          ),
+        };
+      }
     } else if (expected === null && sameSource(recovery.record.sourceLedger, current.value)) {
-      const advanced = await replace(ports, recovery, { phase: 'migration-complete' });
-      if (advanced === null)
-        return { ok: false, result: fail(recovery.record, 'GC migration skip CAS failed') };
-      recovery = advanced;
+      const advanced = await replace(
+        ports,
+        recovery,
+        { phase: 'migration-complete' },
+        'GC migration skip CAS failed',
+      );
+      if (!advanced.ok) return { ok: false, result: advanced.result };
+      recovery = advanced.recovery;
     } else if (hasSemantic(current.value, recovery.record.expectedPostForgetSemanticRevision)) {
-      const advanced = await replace(ports, recovery, { phase: 'forget-complete' });
-      if (advanced === null)
-        return { ok: false, result: fail(recovery.record, 'GC committed ledger adoption failed') };
-      recovery = advanced;
+      const advanced = await replace(
+        ports,
+        recovery,
+        { phase: 'forget-complete' },
+        'GC committed ledger adoption failed',
+      );
+      if (!advanced.ok) return { ok: false, result: advanced.result };
+      recovery = advanced.recovery;
     } else {
       return { ok: false, result: fail(recovery.record, 'GC ledger drifted before migration') };
     }
@@ -257,13 +476,25 @@ const commitLedgerBoundaries = async (
 
   if (recovery.record.phase === 'migration-complete') {
     current = await readLedgerState(ports, ledgerPath);
-    if (!current.ok) return { ok: false, result: fail(recovery.record, 'GC ledger is unreadable') };
+    if (!current.ok) {
+      return {
+        ok: false,
+        result: fail(
+          recovery.record,
+          ledgerReadFailureReason(current.error, 'GC ledger is unreadable'),
+        ),
+      };
+    }
     const expected = recovery.record.expectedPostForgetSemanticRevision;
     if (hasSemantic(current.value, expected)) {
-      const advanced = await replace(ports, recovery, { phase: 'forget-complete' });
-      if (advanced === null)
-        return { ok: false, result: fail(recovery.record, 'GC forget adoption CAS failed') };
-      recovery = advanced;
+      const advanced = await replace(
+        ports,
+        recovery,
+        { phase: 'forget-complete' },
+        'GC forget adoption CAS failed',
+      );
+      if (!advanced.ok) return { ok: false, result: advanced.result };
+      recovery = advanced.recovery;
     } else if (recovery.record.normalizedForgetRoots.length === 0) {
       const unchanged =
         recovery.record.expectedMigrationSemanticRevision === null
@@ -271,16 +502,25 @@ const commitLedgerBoundaries = async (
           : hasSemantic(current.value, recovery.record.expectedMigrationSemanticRevision);
       if (!unchanged)
         return { ok: false, result: fail(recovery.record, 'GC ledger drifted before reclaim') };
-      const advanced = await replace(ports, recovery, { phase: 'forget-complete' });
-      if (advanced === null)
-        return { ok: false, result: fail(recovery.record, 'GC forget skip CAS failed') };
-      recovery = advanced;
+      const advanced = await replace(
+        ports,
+        recovery,
+        { phase: 'forget-complete' },
+        'GC forget skip CAS failed',
+      );
+      if (!advanced.ok) return { ok: false, result: advanced.result };
+      recovery = advanced.recovery;
     } else {
       if (
         current.value.state !== 'present' ||
         recovery.record.forgetUpdatedAt === null ||
         expected === null ||
-        !(await forgetPreconditionsHold(ports, current.value.model, recovery.record))
+        !(await forgetPreconditionsHold(
+          ports,
+          current.value.model,
+          recovery.record.approvedReport.project.root,
+          recovery.record.normalizedForgetRoots,
+        ))
       ) {
         return { ok: false, result: fail(recovery.record, 'GC forget source is unavailable') };
       }
@@ -288,27 +528,40 @@ const commitLedgerBoundaries = async (
         current.value.model,
         recovery.record.normalizedForgetRoots,
       );
-      if (
-        !forgotten.ok ||
-        !(await writeExactLedger(
-          ports,
-          ledgerPath,
-          forgotten.value,
-          recovery.record.forgetUpdatedAt,
-          expected,
-        ))
-      ) {
+      if (!forgotten.ok) {
         return { ok: false, result: fail(recovery.record, 'GC ledger forget commit failed') };
       }
-      const advanced = await replace(ports, recovery, { phase: 'forget-complete' });
-      if (advanced === null)
-        return { ok: false, result: fail(recovery.record, 'GC forget recovery CAS failed') };
-      recovery = advanced;
+      const writeFailure = await writeExactLedger(
+        ports,
+        ledgerPath,
+        forgotten.value,
+        recovery.record.forgetUpdatedAt,
+        expected,
+      );
+      if (writeFailure !== null) {
+        return { ok: false, result: fail(recovery.record, writeFailure) };
+      }
+      const advanced = await replace(
+        ports,
+        recovery,
+        { phase: 'forget-complete' },
+        'GC forget recovery CAS failed',
+      );
+      if (!advanced.ok) return { ok: false, result: advanced.result };
+      recovery = advanced.recovery;
     }
   }
 
   current = await readLedgerState(ports, ledgerPath);
-  if (!current.ok) return { ok: false, result: fail(recovery.record, 'GC ledger is unreadable') };
+  if (!current.ok) {
+    return {
+      ok: false,
+      result: fail(
+        recovery.record,
+        ledgerReadFailureReason(current.error, 'GC ledger is unreadable'),
+      ),
+    };
+  }
   const expected = recovery.record.expectedPostForgetSemanticRevision;
   const unchangedAbsent =
     expected === null &&
@@ -343,96 +596,6 @@ const actionRequest = (storeRoot: string, planId: string, action: GcRecoveryActi
   payloadIdentity: action.payloadIdentity,
 });
 
-const executionReport = (record: GcRecoveryRecordV1): GcReportV1Dto => {
-  const outcomes = new Map(record.actions.map((action) => [action.actionId, action.outcome]));
-  const results = record.approvedReport.actions.map((action) => {
-    const outcome = outcomes.get(action.actionId);
-    return {
-      ...action,
-      outcome: outcome === 'protected-skip' ? ('protected-skip' as const) : ('succeeded' as const),
-      reason:
-        outcome === 'protected-skip'
-          ? 'protection changed after ledger commit'
-          : outcome === 'already-absent'
-            ? 'already absent before detach'
-            : null,
-    };
-  });
-  const cleaned = new Set(
-    record.actions.filter(({ outcome }) => outcome === 'cleaned').map(({ actionId }) => actionId),
-  );
-  const skipped = new Set(
-    record.actions
-      .filter(({ outcome }) => outcome === 'protected-skip')
-      .map(({ actionId }) => actionId),
-  );
-  const alreadyAbsent = new Set(
-    record.actions
-      .filter(({ outcome }) => outcome === 'already-absent')
-      .map(({ actionId }) => actionId),
-  );
-  const reclaimedItems = record.actions.filter(({ outcome }) => outcome === 'cleaned').length;
-  const reclaimedBytes = record.actions
-    .filter(({ outcome }) => outcome === 'cleaned')
-    .reduce((sum, { logicalBytes }) => sum + logicalBytes, 0);
-  const forgottenProjects = record.approvedReport.projects.filter(
-    ({ action }) => action === 'forget-project',
-  ).length;
-  return Object.freeze({
-    ...record.approvedReport,
-    mode: 'execute',
-    state: 'completed',
-    migration: {
-      ...record.approvedReport.migration,
-      outcome:
-        record.approvedReport.migration.action === 'migrate-ledger'
-          ? ('succeeded' as const)
-          : ('not-required' as const),
-    },
-    approval: {
-      required: record.approvedReport.actions.length > 0,
-      outcome:
-        record.approvedReport.actions.length > 0
-          ? ('approved' as const)
-          : ('not-required' as const),
-    },
-    recovery: { state: 'completed' as const, phase: 'complete' as const },
-    projects: record.approvedReport.projects.map((project) =>
-      project.action === 'forget-project' ? { ...project, outcome: 'forgotten' as const } : project,
-    ),
-    objects: record.approvedReport.objects.map((object) => {
-      const action = record.approvedReport.actions.find(
-        (candidate) => candidate.kind === 'reclaim-store' && candidate.target === object.path,
-      );
-      return action !== undefined && cleaned.has(action.actionId)
-        ? { ...object, outcome: 'reclaimed' as const }
-        : action !== undefined && alreadyAbsent.has(action.actionId)
-          ? {
-              ...object,
-              outcome: 'already-absent' as const,
-              reason: 'already absent before detach',
-            }
-          : action !== undefined && skipped.has(action.actionId)
-            ? {
-                ...object,
-                outcome: 'protected' as const,
-                reason: 'protection changed after ledger commit',
-              }
-            : object;
-    }),
-    results,
-    summary: {
-      ...record.approvedReport.summary,
-      protectedItems: record.approvedReport.summary.protectedItems + skipped.size,
-      forgottenProjects,
-      alreadyAbsentItems: alreadyAbsent.size,
-      reclaimedItems,
-      reclaimedBytes,
-      failedItems: 0,
-    },
-  });
-};
-
 const runPendingLocked = async (
   ports: ExecutePorts,
   dataDir: string,
@@ -452,8 +615,16 @@ const runPendingLocked = async (
   }
   const converged = await convergeGcRecovery(ports, dataDir, observed);
   if (converged.state !== 'pending') {
-    return fail(approved.record, 'GC recovery staging could not converge');
+    return fail(
+      approved.record,
+      converged.state === 'refused' ? converged.reason : 'GC recovery staging could not converge',
+    );
   }
+  if (converged.publicationFailure !== undefined) {
+    return fail(converged.record, converged.publicationFailure);
+  }
+  const tombstones = await observeGcTombstones(ports, storeRoot, converged);
+  if (tombstones.state === 'refused') return fail(converged.record, tombstones.reason);
   const boundaries = await commitLedgerBoundaries(ports, ledgerPath, converged);
   if (!boundaries.ok) return boundaries.result;
   let recovery = boundaries.recovery;
@@ -504,10 +675,14 @@ const runPendingLocked = async (
             ? { ...candidate, outcome: 'protected-skip' as const }
             : candidate,
         );
-        const advanced = await replace(ports, recovery, { phase: 'reclaiming', actions });
-        if (advanced === null)
-          return fail(recovery.record, 'GC protected-skip recovery CAS failed');
-        recovery = advanced;
+        const advanced = await replace(
+          ports,
+          recovery,
+          { phase: 'reclaiming', actions },
+          'GC protected-skip recovery CAS failed',
+        );
+        if (!advanced.ok) return advanced.result;
+        recovery = advanced.recovery;
         continue;
       }
     }
@@ -532,34 +707,88 @@ const runPendingLocked = async (
             }
           : candidate,
       );
-      const advanced = await replace(ports, recovery, { phase: 'reclaiming', actions });
-      if (advanced === null) return fail(recovery.record, 'GC reclaim recovery CAS failed');
-      recovery = advanced;
+      const advanced = await replace(
+        ports,
+        recovery,
+        { phase: 'reclaiming', actions },
+        'GC reclaim recovery CAS failed',
+      );
+      if (!advanced.ok) return advanced.result;
+      recovery = advanced.recovery;
       action = recovery.record.actions.find(({ actionId }) => actionId === initialAction.actionId);
       if (action === undefined) return fail(recovery.record, 'GC recovery action disappeared');
       if (signal?.aborted) return fail(recovery.record, 'GC execution was cancelled');
     }
-    if (
-      action.outcome === 'cleaned' &&
-      !(await finalizeGcStoreReclaim(
+    if (action.outcome === 'cleaned') {
+      const finalized = await finalizeGcStoreReclaim(
         ports,
         actionRequest(storeRoot, recovery.record.planId, action),
-      ))
-    ) {
-      return fail(recovery.record, 'GC tombstone metadata cleanup failed');
+      );
+      if (!finalized.ok) return fail(recovery.record, finalized.reason);
     }
   }
 
-  const complete =
-    recovery.record.phase === 'complete'
-      ? recovery
-      : await replace(ports, recovery, { phase: 'complete' });
-  if (complete === null) return fail(recovery.record, 'GC recovery completion CAS failed');
-  const report = executionReport(complete.record);
-  if (!(await removeGcRecoveryRecord(ports, complete))) {
-    return fail(complete.record, 'GC recovery completion cleanup failed');
+  let complete = recovery;
+  if (recovery.record.phase !== 'complete') {
+    const advanced = await replace(
+      ports,
+      recovery,
+      { phase: 'complete' },
+      'GC recovery completion CAS failed',
+    );
+    if (!advanced.ok) return advanced.result;
+    complete = advanced.recovery;
+  }
+  const report = reportFromRecord(complete.record, { mode: 'execute', completed: true });
+  try {
+    if (!(await removeGcRecoveryRecord(ports, complete))) {
+      return fail(complete.record, 'GC recovery completion cleanup failed');
+    }
+  } catch (error) {
+    const code = safeErrorCode(error);
+    return fail(
+      complete.record,
+      code === 'EACCES' || code === 'EPERM'
+        ? 'GC permission denied during recovery completion cleanup'
+        : 'GC recovery completion cleanup failed',
+    );
   }
   return Object.freeze({ ok: true, report });
+};
+
+const unexpectedExecutionReason = (error: unknown, operation: string): string => {
+  const code = safeErrorCode(error);
+  if (code === 'EACCES' || code === 'EPERM') {
+    return `GC permission denied during ${operation}`;
+  }
+  if (code === 'cancelled' || code === 'ABORT_ERR' || code === 'AbortError') {
+    return 'GC execution was cancelled';
+  }
+  return `GC ${operation} failed`;
+};
+
+const runPendingSafely = async (
+  ports: ExecutePorts,
+  dataDir: string,
+  storeRoot: string,
+  ledgerPath: string,
+  approved: Extract<GcRecoveryObservation, { readonly state: 'pending' }>,
+  signal?: AbortSignal,
+): Promise<GcExecutionResult> => {
+  try {
+    return await runPendingLocked(ports, dataDir, storeRoot, ledgerPath, approved, signal);
+  } catch (error) {
+    let record = approved.record;
+    try {
+      const observed = await observeGcRecovery(ports, dataDir);
+      if (observed.state === 'pending' && observed.record.planId === record.planId) {
+        record = observed.record;
+      }
+    } catch {
+      // Preserve the last proven recovery authority when re-observation is itself unavailable.
+    }
+    return fail(record, unexpectedExecutionReason(error, 'recovery execution'));
+  }
 };
 
 export const resumeGcRecovery = async (
@@ -582,18 +811,21 @@ export const resumeGcRecovery = async (
       'GC configured paths differ from pending recovery authority',
     );
   }
-  const locked = await withLedgerLock(ports, input.ledgerPath, () =>
-    runPendingLocked(
-      ports,
-      input.dataDir,
-      input.storeRoot,
-      input.ledgerPath,
-      input.recovery,
-      input.signal,
-    ),
+  const locked = await withLedgerLock(
+    ports,
+    input.ledgerPath,
+    () =>
+      runPendingSafely(
+        ports,
+        input.dataDir,
+        input.storeRoot,
+        input.ledgerPath,
+        input.recovery,
+        input.signal,
+      ),
+    input.signal === undefined ? undefined : { signal: input.signal },
   );
-  if (!locked.ok)
-    return fail(input.recovery.record, 'GC could not acquire the placement ledger lock');
+  if (!locked.ok) return fail(input.recovery.record, lockFailureReason(locked.error));
   return locked.value;
 };
 
@@ -607,10 +839,53 @@ export const clearIncompleteGcRecovery = async (
   }>,
 ): Promise<boolean> => {
   if (input.signal?.aborted) return false;
-  const locked = await withLedgerLock(ports, input.ledgerPath, () =>
-    removeIncompleteGcRecovery(ports, input.dataDir, input.recovery),
+  const locked = await withLedgerLock(
+    ports,
+    input.ledgerPath,
+    () => removeIncompleteGcRecovery(ports, input.dataDir, input.recovery),
+    input.signal === undefined ? undefined : { signal: input.signal },
   );
   return locked.ok && locked.value;
+};
+
+const preRecordPlanFailure = async (
+  ports: ExecutePorts,
+  plan: PreparedGcPlan,
+  ledger: LedgerReadState,
+): Promise<string | null> => {
+  if (plan.normalizedForgetRoots.length > 0) {
+    if (
+      ledger.state !== 'present' ||
+      !(await forgetPreconditionsHold(
+        ports,
+        ledger.model,
+        plan.report.project.root,
+        plan.normalizedForgetRoots,
+      ))
+    ) {
+      return 'GC forget preconditions changed after approval';
+    }
+  }
+  const inventory = await inventoryGcStore(ports, plan.storeRoot);
+  if (inventory.state !== 'ok') return 'GC store inventory became unsafe after approval';
+  for (const action of plan.actions) {
+    if (action.kind !== 'reclaim-store') continue;
+    const current = inventory.objects.find(({ path }) => path === action.object.path);
+    const alreadyAbsent =
+      current === undefined && (await ports.pathKind(action.object.path)) === 'absent';
+    if (!alreadyAbsent && JSON.stringify(current) !== JSON.stringify(action.object)) {
+      return 'GC approved candidate changed after approval';
+    }
+  }
+  for (const action of recoveryActions(plan)) {
+    if (
+      (await ports.pathKind(action.containerPath)) !== 'absent' ||
+      (await ports.pathKind(action.payloadPath)) !== 'absent'
+    ) {
+      return 'GC tombstone action state was planted after approval';
+    }
+  }
+  return null;
 };
 
 export const executeGcPlan = async (
@@ -618,67 +893,124 @@ export const executeGcPlan = async (
   plan: PreparedGcPlan,
   signal?: AbortSignal,
 ): Promise<GcExecutionResult> => {
-  const locked = await withLedgerLock(ports, plan.ledgerPath, async () => {
-    if (signal?.aborted) {
-      const reason = 'GC execution was cancelled';
-      return Object.freeze({ ok: false, report: failureReport(plan.report, reason), reason });
-    }
-    const currentLedger = await readLedgerState(ports, plan.ledgerPath);
-    if (
-      !currentLedger.ok ||
-      !sameSource(sourceLedgerRecord(plan.sourceLedger), currentLedger.value)
-    ) {
-      const reason = 'GC ledger changed after approval';
-      return Object.freeze({ ok: false, report: failureReport(plan.report, reason), reason });
-    }
-    const hasMigration = plan.actions.some(({ kind }) => kind === 'migrate-ledger');
-    const hasForget = plan.normalizedForgetRoots.length > 0;
-    const migrationUpdatedAt = hasMigration ? ports.wallNowIso() : null;
-    const forgetUpdatedAt = hasForget ? ports.wallNowIso() : null;
-    const migrationModel =
-      migrationUpdatedAt === null ? plan.model : atUpdatedTime(plan.model, migrationUpdatedAt);
-    const postForgetModel =
-      forgetUpdatedAt === null
-        ? migrationModel
-        : atUpdatedTime(plan.postForgetModel, forgetUpdatedAt);
-    const expectedMigrationSemanticRevision = hasMigration
-      ? semanticRevision(migrationModel)
-      : null;
-    const expectedPostForgetSemanticRevision =
-      currentLedger.value.state === 'absent' && !hasMigration && !hasForget
-        ? null
-        : semanticRevision(postForgetModel);
-    const initial = recordWithRevision({
-      schemaVersion: 1,
-      kind: 'skillsmith.gc-recovery',
-      planId: plan.planId,
-      requestDigest: plan.requestDigest,
-      phase: 'approved',
-      dataDir: plan.dataDir,
-      storeRoot: plan.storeRoot,
-      ledgerPath: plan.ledgerPath,
-      retryArguments: plan.retryArguments,
-      sourceLedger: sourceLedgerRecord(plan.sourceLedger),
-      normalizedForgetRoots: plan.normalizedForgetRoots,
-      migrationUpdatedAt,
-      expectedMigrationSemanticRevision,
-      forgetUpdatedAt,
-      expectedPostForgetSemanticRevision,
-      nowMilliseconds: plan.nowMilliseconds,
-      olderThanMilliseconds: plan.olderThanMilliseconds,
-      approvedReport: plan.report,
-      actions: recoveryActions(plan),
-    });
-    const recovery = await createGcRecoveryRecord(ports, plan.dataDir, initial);
-    if (recovery.state !== 'pending') {
-      const reason =
-        recovery.state === 'refused' ? recovery.reason : 'GC recovery record was not published';
-      return Object.freeze({ ok: false, report: failureReport(plan.report, reason), reason });
-    }
-    return runPendingLocked(ports, plan.dataDir, plan.storeRoot, plan.ledgerPath, recovery, signal);
-  });
+  const locked = await withLedgerLock(
+    ports,
+    plan.ledgerPath,
+    async () => {
+      try {
+        if (signal?.aborted) {
+          const reason = 'GC execution was cancelled';
+          return Object.freeze({ ok: false, report: failureReport(plan.report, reason), reason });
+        }
+        const currentRecovery = await observeGcRecovery(ports, plan.dataDir);
+        if (currentRecovery.state === 'refused' || currentRecovery.state === 'incomplete') {
+          const reason = currentRecovery.reason;
+          return Object.freeze({ ok: false, report: failureReport(plan.report, reason), reason });
+        }
+        const tombstones = await observeGcTombstones(ports, plan.storeRoot, currentRecovery);
+        if (tombstones.state === 'refused') {
+          return Object.freeze({
+            ok: false,
+            report: failureReport(plan.report, tombstones.reason),
+            reason: tombstones.reason,
+          });
+        }
+        if (currentRecovery.state === 'pending') {
+          if (currentRecovery.record.requestDigest !== plan.requestDigest) {
+            const reason = 'GC recovery state belongs to a different approved request';
+            return Object.freeze({ ok: false, report: failureReport(plan.report, reason), reason });
+          }
+          return runPendingSafely(
+            ports,
+            plan.dataDir,
+            plan.storeRoot,
+            plan.ledgerPath,
+            currentRecovery,
+            signal,
+          );
+        }
+        const currentLedger = await readLedgerState(ports, plan.ledgerPath);
+        if (
+          !currentLedger.ok ||
+          !sameSource(sourceLedgerRecord(plan.sourceLedger), currentLedger.value)
+        ) {
+          const reason = currentLedger.ok
+            ? 'GC ledger changed after approval'
+            : ledgerReadFailureReason(currentLedger.error, 'GC ledger changed after approval');
+          return Object.freeze({ ok: false, report: failureReport(plan.report, reason), reason });
+        }
+        const preRecordFailure = await preRecordPlanFailure(ports, plan, currentLedger.value);
+        if (preRecordFailure !== null) {
+          return Object.freeze({
+            ok: false,
+            report: failureReport(plan.report, preRecordFailure),
+            reason: preRecordFailure,
+          });
+        }
+        const hasMigration = plan.actions.some(({ kind }) => kind === 'migrate-ledger');
+        const hasForget = plan.normalizedForgetRoots.length > 0;
+        const migrationUpdatedAt = hasMigration ? ports.wallNowIso() : null;
+        const forgetUpdatedAt = hasForget ? ports.wallNowIso() : null;
+        const migrationModel =
+          migrationUpdatedAt === null ? plan.model : atUpdatedTime(plan.model, migrationUpdatedAt);
+        const postForgetModel =
+          forgetUpdatedAt === null
+            ? migrationModel
+            : atUpdatedTime(plan.postForgetModel, forgetUpdatedAt);
+        const expectedMigrationSemanticRevision = hasMigration
+          ? semanticRevision(migrationModel)
+          : null;
+        const expectedPostForgetSemanticRevision =
+          currentLedger.value.state === 'absent' && !hasMigration && !hasForget
+            ? null
+            : semanticRevision(postForgetModel);
+        const initial = recordWithRevision({
+          schemaVersion: 1,
+          kind: 'skillsmith.gc-recovery',
+          planId: plan.planId,
+          requestDigest: plan.requestDigest,
+          phase: 'approved',
+          dataDir: plan.dataDir,
+          storeRoot: plan.storeRoot,
+          ledgerPath: plan.ledgerPath,
+          retryArguments: plan.retryArguments,
+          sourceLedger: sourceLedgerRecord(plan.sourceLedger),
+          normalizedForgetRoots: plan.normalizedForgetRoots,
+          migrationUpdatedAt,
+          expectedMigrationSemanticRevision,
+          forgetUpdatedAt,
+          expectedPostForgetSemanticRevision,
+          nowMilliseconds: plan.nowMilliseconds,
+          olderThanMilliseconds: plan.olderThanMilliseconds,
+          approvedReport: plan.report,
+          actions: recoveryActions(plan),
+        });
+        const recovery = await createGcRecoveryRecord(ports, plan.dataDir, initial);
+        if (recovery.state !== 'pending') {
+          const reason =
+            recovery.state === 'refused' ? recovery.reason : 'GC recovery record was not published';
+          return Object.freeze({ ok: false, report: failureReport(plan.report, reason), reason });
+        }
+        if (recovery.publicationFailure !== undefined) {
+          return fail(recovery.record, recovery.publicationFailure);
+        }
+        return runPendingSafely(
+          ports,
+          plan.dataDir,
+          plan.storeRoot,
+          plan.ledgerPath,
+          recovery,
+          signal,
+        );
+      } catch (error) {
+        const reason = unexpectedExecutionReason(error, 'approved-plan precondition check');
+        return Object.freeze({ ok: false, report: failureReport(plan.report, reason), reason });
+      }
+    },
+    signal === undefined ? undefined : { signal },
+  );
   if (!locked.ok) {
-    const reason = 'GC could not acquire the placement ledger lock';
+    const reason = lockFailureReason(locked.error);
     return Object.freeze({ ok: false, report: failureReport(plan.report, reason), reason });
   }
   return locked.value;
