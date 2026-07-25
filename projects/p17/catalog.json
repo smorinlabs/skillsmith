@@ -7472,7 +7472,7 @@
       "phase": "5",
       "title": "Shared bulk approval, fail-fast/continue scheduling, cancellation, exits, and final artifact-option closure",
       "dependsOn": ["P17-G5-01", "P17-G5-02", "P17-G5-03"],
-      "status": "active",
+      "status": "reviewed",
       "owner": "root-goal",
       "ownedFiles": [
         "biome.json",
@@ -7612,7 +7612,7 @@
         "bun test tests/ergonomics/workflows/EWP-WF13.test.ts --test-name-pattern EWP-WF13"
       ],
       "implementers": ["root-codex-goal"],
-      "reviewer": null,
+      "reviewer": "/external-codex/019f9b2c-eef2-78a2-9d97-069f2e74485b",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -7654,8 +7654,10 @@
           ]
         },
         "adversarial-review": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G5-05.md#f30-corrected-post-fix-adversarial-review-go-at-c1649c1"
+          ]
         },
         "traceability-closure": {
           "status": "pending",
@@ -7714,7 +7716,8 @@
         "projects/p17/evidence/P17-G5-05.md#f22-f28-digest-domain-correction-and-immutable-green-at-959e0d0",
         "projects/p17/evidence/P17-G5-05.md#f29-doctor-manifest-operation-image-review-no-go-and-amendment-at-4348933",
         "projects/p17/evidence/P17-G5-05.md#f29-doctor-manifest-image-correction-and-immutable-green-at-546d983",
-        "projects/p17/evidence/P17-G5-05.md#f30-ownership-manifest-existence-review-no-go-at-eea321a-and-correction"
+        "projects/p17/evidence/P17-G5-05.md#f30-ownership-manifest-existence-review-no-go-at-eea321a-and-correction",
+        "projects/p17/evidence/P17-G5-05.md#f30-corrected-post-fix-adversarial-review-go-at-c1649c1"
       ]
     },
     {
@@ -26763,7 +26766,8 @@
         "projects/p17/evidence/P17-G5-05.md#f22-f28-digest-domain-correction-and-immutable-green-at-959e0d0",
         "projects/p17/evidence/P17-G5-05.md#f29-doctor-manifest-operation-image-review-no-go-and-amendment-at-4348933",
         "projects/p17/evidence/P17-G5-05.md#f29-doctor-manifest-image-correction-and-immutable-green-at-546d983",
-        "projects/p17/evidence/P17-G5-05.md#f30-ownership-manifest-existence-review-no-go-at-eea321a-and-correction"
+        "projects/p17/evidence/P17-G5-05.md#f30-ownership-manifest-existence-review-no-go-at-eea321a-and-correction",
+        "projects/p17/evidence/P17-G5-05.md#f30-corrected-post-fix-adversarial-review-go-at-c1649c1"
       ],
       "secondaryGroups": [],
       "implements": [],
