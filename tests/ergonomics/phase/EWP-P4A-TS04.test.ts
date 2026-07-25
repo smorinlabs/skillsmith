@@ -9,7 +9,10 @@ import type {
   ArtifactPairBarrier,
 } from '../../../packages/core/src/artifacts/coordinator-types.ts';
 import { updateCoordinatedHumanFile } from '../../../packages/core/src/artifacts/coordinator.ts';
-import { hashCanonicalInput } from '../../../packages/core/src/artifacts/hash.ts';
+import {
+  hashCanonicalInput,
+  hashManifestBytes,
+} from '../../../packages/core/src/artifacts/hash.ts';
 import { planInitManifest } from '../../../packages/core/src/artifacts/init.ts';
 import { createTestNodeArtifactCoordinatorPorts } from '../../../packages/core/src/artifacts/node-coordinator.ts';
 import { prepareInitOperationPlan } from '../../../packages/core/src/init/plan.ts';
@@ -261,7 +264,7 @@ describe('EWP-P4A-TS04', () => {
     }
   });
 
-  test('result and operation digest domains stay separate while a same-byte inode writer loses', async () => {
+  test('snapshot and operation digest domains stay separate while a same-byte inode writer loses', async () => {
     const root = await mkdtemp(join(tmpdir(), 'skillsmith-p4a-ts04-writer-'));
     try {
       const coordinator = await createTestNodeArtifactCoordinatorPorts(join(root, 'coordination'));
@@ -274,11 +277,11 @@ describe('EWP-P4A-TS04', () => {
       const operation = prepared.plan.operations[0];
       expect(operation).toBeDefined();
       if (operation === undefined || operation.before.kind !== 'manifest') return;
-      const resourceDigest = hashCanonicalInput('resource', 1, source);
-      expect(resourceDigest.ok).toBeTrue();
-      if (!resourceDigest.ok || prepared.result.before.state !== 'present') return;
-      expect(operation.before.byteHash).toBe(resourceDigest.value);
-      expect(operation.before.byteHash).not.toBe(prepared.result.before.byteHash);
+      const manifestDigest = hashManifestBytes(source);
+      if (prepared.result.before.state !== 'present' || prepared.observed.state !== 'file') return;
+      expect(operation.before.byteHash).toBe(manifestDigest);
+      expect(operation.before.byteHash).toBe(prepared.result.before.byteHash);
+      expect(operation.before.byteHash).not.toBe(prepared.observed.resourceDigest);
 
       const peer = join(project, 'peer.toml');
       await writeFile(peer, source, { mode: 0o600 });

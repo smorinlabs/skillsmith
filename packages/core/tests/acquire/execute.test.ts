@@ -16,7 +16,11 @@ import {
 } from '../../src/acquire/execute.ts';
 import { toolRegistry } from '../../src/agents/registry.ts';
 import type { ArtifactCoordinatorPorts } from '../../src/artifacts/coordinator-types.ts';
-import { hashCanonicalInput, hashManifestSemantics } from '../../src/artifacts/hash.ts';
+import {
+  hashCanonicalInput,
+  hashManifestBytes,
+  hashManifestSemantics,
+} from '../../src/artifacts/hash.ts';
 import {
   type PortableLockV1,
   hashPortableLock,
@@ -1099,14 +1103,13 @@ const manifestImageForExecution = (
   if (!document.ok) throw new Error('fixture manifest is unreadable');
   const normalized = normalizeManifestDocument(document.value);
   if (!normalized.ok) throw new Error('fixture manifest is not normalizable');
-  const byteHash = hashCanonicalInput('resource', 1, bytes);
-  if (!byteHash.ok) throw new Error('fixture manifest byte hash failed');
+  const byteHash = hashManifestBytes(bytes);
   return Object.freeze({
     kind: 'manifest' as const,
     location: Object.freeze({ kind: 'machine-bound' as const, path }),
     shape: document.value.shape,
     version: 1 as const,
-    byteHash: byteHash.value as Extract<OperationImage, { kind: 'manifest' }>['byteHash'],
+    byteHash: byteHash as Extract<OperationImage, { kind: 'manifest' }>['byteHash'],
     semanticHash: hashManifestSemantics(normalized.value) as Extract<
       OperationImage,
       { kind: 'manifest' }

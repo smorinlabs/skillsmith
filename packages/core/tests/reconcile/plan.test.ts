@@ -2,7 +2,11 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { type ArtifactDigest, hashManifestSemantics } from '../../src/artifacts/hash.ts';
+import {
+  type ArtifactDigest,
+  hashManifestBytes,
+  hashManifestSemantics,
+} from '../../src/artifacts/hash.ts';
 import type { LedgerModel, LedgerPairV1Dto } from '../../src/artifacts/ledger-types.ts';
 import type { PortableLockSkillV1, PortableLockV1 } from '../../src/artifacts/lock.ts';
 import { hashSourceContentV1, projectSourceContent } from '../../src/artifacts/source-content.ts';
@@ -406,7 +410,12 @@ describe('desired/current plan reconciliation', () => {
     const input = productInput(state.root, [resolved]);
     const semanticRevision = input.observed.manifest.semanticRevision;
     if (semanticRevision === null) throw new Error('fixture manifest lacks semantic revision');
+    const resultSource = 'version = 1\n';
     const resultByteRevision = digest('2');
+    const expectedOperationByteHash = hashManifestBytes(input.observed.manifest.source);
+    const resultOperationByteHash = hashManifestBytes(resultSource);
+    expect(expectedOperationByteHash).not.toBe(input.observed.manifest.byteRevision);
+    expect(resultOperationByteHash).not.toBe(resultByteRevision);
     const result = await reconcile(
       {
         ...input,
@@ -424,7 +433,7 @@ describe('desired/current plan reconciliation', () => {
               expectedSemanticRevision: semanticRevision,
               resultByteRevision,
               resultSemanticRevision: semanticRevision,
-              resultSource: 'version = 1\n',
+              resultSource,
               createsLockfile: false,
             },
           },
@@ -439,8 +448,16 @@ describe('desired/current plan reconciliation', () => {
       'install',
     ]);
     expect(result.value.plan.operations[0]).toMatchObject({
-      before: { kind: 'manifest', shape: 'legacy' },
-      after: { kind: 'manifest', shape: 'canonical', byteHash: resultByteRevision },
+      before: {
+        kind: 'manifest',
+        shape: 'legacy',
+        byteHash: expectedOperationByteHash,
+      },
+      after: {
+        kind: 'manifest',
+        shape: 'canonical',
+        byteHash: resultOperationByteHash,
+      },
     });
     expect(createSavedPlan(result.value).ok).toBeTrue();
   });

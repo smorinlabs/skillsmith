@@ -232,7 +232,6 @@ describe('init output', () => {
     const manifestBytes = 'sha256:f59632b3a21636f59c5f3f93b747c27663df80cb2a9bc9c4f7a1f19803c6049b';
     const manifestSemantics =
       'sha256:cd8e75a20fadb8a5e7a05138f382a0abb5d31f405f315180b8bfec3e597d4229';
-    const resourceBytes = 'sha256:ade706565a80a020dff9d8cbbf44fe4e595a7ee14a1879784fb95f69a58c472b';
     expect(classification.value.after).toMatchObject({
       source: 'version = 1\n',
       byteHash: manifestBytes,
@@ -245,7 +244,7 @@ describe('init output', () => {
     const operation = prepared.plan.operations[0];
     expect(operation?.after).toMatchObject({
       kind: 'manifest',
-      byteHash: resourceBytes,
+      byteHash: manifestBytes,
       semanticHash: manifestSemantics,
     });
 

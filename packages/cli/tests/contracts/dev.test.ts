@@ -1171,13 +1171,17 @@ describe('EWP-CMD-DEV-TS05', () => {
       for (const [index, operation] of records(executionPlan.operations).entries()) {
         const inverse = records(rollbackPlan.operations)[index];
         expect(inverse?.operationId).not.toBe(operation.operationId);
+        expect(inverse?.groupId).not.toBe(operation.groupId);
+        expect(inverse?.pairId).not.toBe(operation.pairId);
         expect(inverse?.kind).toBe('promote');
         expect(inverse).toMatchObject({
-          groupId: operation.groupId,
-          pairId: operation.pairId,
           skill: operation.skill,
           tool: operation.tool,
           scope: operation.scope,
+          reversibility: {
+            kind: 'conditional',
+            retentionResourceIds: [operation.pairId],
+          },
         });
         expect(inverse?.before).toEqual(operation.after);
         expect(inverse?.after).toEqual(operation.before);
