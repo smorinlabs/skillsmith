@@ -7472,7 +7472,7 @@
       "phase": "5",
       "title": "Shared bulk approval, fail-fast/continue scheduling, cancellation, exits, and final artifact-option closure",
       "dependsOn": ["P17-G5-01", "P17-G5-02", "P17-G5-03"],
-      "status": "active",
+      "status": "reviewed",
       "owner": "root-goal",
       "ownedFiles": [
         "docs/architecture.md",
@@ -7599,7 +7599,7 @@
         "bun test tests/ergonomics/workflows/EWP-WF13.test.ts --test-name-pattern EWP-WF13"
       ],
       "implementers": ["root-codex-goal"],
-      "reviewer": null,
+      "reviewer": "/root/g5_05_f21_final_review",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -7641,8 +7641,10 @@
           ]
         },
         "adversarial-review": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G5-05.md#f21-final-independent-adversarial-review-go-at-f21a00d"
+          ]
         },
         "traceability-closure": {
           "status": "pending",
@@ -7686,7 +7688,8 @@
         "projects/p17/evidence/P17-G5-05.md#f18-final-adversarial-review-no-go-at-3399124",
         "projects/p17/evidence/P17-G5-05.md#f19f20-complete-recovery-preflight-correction-and-immutable-green-at-65c3907",
         "projects/p17/evidence/P17-G5-05.md#f21-final-envelope-revalidation-review-no-go-at-b3cf18e",
-        "projects/p17/evidence/P17-G5-05.md#f21-final-envelope-revalidation-correction-and-immutable-green-at-a311a53"
+        "projects/p17/evidence/P17-G5-05.md#f21-final-envelope-revalidation-correction-and-immutable-green-at-a311a53",
+        "projects/p17/evidence/P17-G5-05.md#f21-final-independent-adversarial-review-go-at-f21a00d"
       ]
     },
     {

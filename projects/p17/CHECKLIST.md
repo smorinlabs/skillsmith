@@ -1483,7 +1483,7 @@ Downstream coverage obligations: none.
 
 ## P17-G5-05 — Shared bulk approval, fail-fast/continue scheduling, cancellation, exits, and final artifact-option closure
 
-Phase: 5; status: **active**; dependencies: P17-G5-01, P17-G5-02, P17-G5-03.
+Phase: 5; status: **reviewed**; dependencies: P17-G5-01, P17-G5-02, P17-G5-03.
 Required-now validations: EWP-CMD-APPLY-TS09, EWP-CMD-APPLY-TS11, EWP-CMD-APPLY-TS13, EWP-CMD-SYNC-TS09, EWP-CMD-UNDO-TS03, EWP-CMD-UPDATE-TS06, EWP-CMD-UPDATE-TS07, EWP-CMD-UPDATE-TS08, EWP-CMD-UPDATE-TS09, EWP-OPT-TS08, EWP-P4A-TS02, EWP-P5-TS05, EWP-WF09, EWP-WF13.
 Downstream coverage obligations: none.
 
@@ -1496,7 +1496,7 @@ Downstream coverage obligations: none.
 - [x] P17-G5-05:targeted-green _(passed)_
 - [x] P17-G5-05:impacted-green _(passed)_
 - [x] P17-G5-05:refactor _(passed)_
-- [ ] P17-G5-05:adversarial-review _(pending)_
+- [x] P17-G5-05:adversarial-review _(passed)_
 - [ ] P17-G5-05:traceability-closure _(pending)_
 - [ ] P17-G5-05:signed-off _(pending)_
 
