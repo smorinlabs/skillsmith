@@ -1485,8 +1485,10 @@ export const executeValidatedReconcilePlan = async <Command extends ReconcileExe
       const artifactActions = new Map(
         (runtime.artifactActions ?? []).map(({ operationId, action }) => [operationId, action]),
       );
-      const currentOperationIds = Object.freeze(
-        plan.operations.map(({ operationId }) => operationId),
+      const currentArtifactOperationIds = Object.freeze(
+        plan.operations
+          .filter(({ kind }) => kind === 'write-manifest' || kind === 'write-lock')
+          .map(({ operationId }) => operationId),
       );
       const verificationBlockedResult = (
         operation: ExecutableOperation,
@@ -1550,7 +1552,7 @@ export const executeValidatedReconcilePlan = async <Command extends ReconcileExe
                   artifactCoordinator: runtime.artifactCoordinator,
                   ports: runtime.ports,
                   ledgerPath,
-                  currentOperationIds,
+                  currentArtifactOperationIds,
                   ...(runtime.signal === undefined ? {} : { signal: runtime.signal }),
                 });
                 if (changed) {
@@ -1637,7 +1639,7 @@ export const executeValidatedReconcilePlan = async <Command extends ReconcileExe
                   artifactCoordinator: runtime.artifactCoordinator,
                   ports: runtime.ports,
                   ledgerPath,
-                  currentOperationIds,
+                  currentArtifactOperationIds,
                   onLedgerCommitted: () => lifecycle.rebase([snapshotAuthority.ledgerResourceId]),
                   ...(runtime.signal === undefined ? {} : { signal: runtime.signal }),
                 })

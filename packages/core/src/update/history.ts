@@ -62,8 +62,8 @@ export interface BindForwardUpdateArtifactHistoryRequestV1 {
   readonly artifactCoordinator: ArtifactCoordinatorPorts;
   readonly ports: PlacementPorts;
   readonly ledgerPath: string;
-  /** Every operation owned by the current invocation; defaults to this artifact operation. */
-  readonly currentOperationIds?: readonly string[];
+  /** Every artifact-history operation owned by this invocation; defaults to this operation. */
+  readonly currentArtifactOperationIds?: readonly string[];
   readonly onLedgerCommitted?: () => Promise<void>;
   readonly signal?: AbortSignal;
 }
@@ -72,7 +72,7 @@ export interface RecoverPendingUpdateArtifactHistoryRequestV1 {
   readonly artifactCoordinator: ArtifactCoordinatorPorts;
   readonly ports: PlacementPorts;
   readonly ledgerPath: string;
-  readonly currentOperationIds: readonly string[];
+  readonly currentArtifactOperationIds: readonly string[];
   readonly signal?: AbortSignal;
 }
 
@@ -80,7 +80,7 @@ type PendingUpdateArtifactHistoryRecoveryRequestV1 = Readonly<{
   artifactCoordinator: ArtifactCoordinatorPorts;
   ports: PlacementPorts;
   ledgerPath: string;
-  currentOperationIds: ReadonlySet<string>;
+  currentArtifactOperationIds: ReadonlySet<string>;
   signal?: AbortSignal;
 }>;
 
@@ -878,7 +878,9 @@ const recoverSupersededArtifactHistory = async (
       }
       return authority;
     })
-    .filter((authority) => !request.currentOperationIds.has(authority.journal.intent.operationId))
+    .filter(
+      (authority) => !request.currentArtifactOperationIds.has(authority.journal.intent.operationId),
+    )
     .sort((left, right) => left.journal.transactionId.localeCompare(right.journal.transactionId));
   for (const authority of superseded) {
     if (request.signal?.aborted) throw new TypeError('update artifact orphan cleanup cancelled');
@@ -974,7 +976,7 @@ export const recoverPendingUpdateArtifactHistoryV1 = async (
       artifactCoordinator: request.artifactCoordinator,
       ports: request.ports,
       ledgerPath: request.ledgerPath,
-      currentOperationIds: new Set(request.currentOperationIds),
+      currentArtifactOperationIds: new Set(request.currentArtifactOperationIds),
       ...(request.signal === undefined ? {} : { signal: request.signal }),
     },
     async (next) => {
@@ -1048,9 +1050,9 @@ export const bindForwardUpdateArtifactHistoryV1 = (
             artifactCoordinator: request.artifactCoordinator,
             ports: request.ports,
             ledgerPath: request.ledgerPath,
-            currentOperationIds: new Set([
+            currentArtifactOperationIds: new Set([
               request.operation.operationId,
-              ...(request.currentOperationIds ?? []),
+              ...(request.currentArtifactOperationIds ?? []),
             ]),
             ...(request.signal === undefined ? {} : { signal: request.signal }),
           },
