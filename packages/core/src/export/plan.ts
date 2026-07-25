@@ -1,5 +1,5 @@
 import type { CurrentApplicationContext } from '../application/types.ts';
-import { hashCanonicalInput, hashManifestSemantics } from '../artifacts/hash.ts';
+import { hashManifestBytes, hashManifestSemantics } from '../artifacts/hash.ts';
 import type { LedgerReadState } from '../artifacts/ledger-types.ts';
 import { hashPortableLock } from '../artifacts/lock.ts';
 import type { NormalizedManifestV1 } from '../artifacts/types.ts';
@@ -81,12 +81,6 @@ const resource = (
     ? Object.freeze({ kind: 'manifest-bytes' as const, location: location(path) })
     : Object.freeze({ kind: 'lock' as const, location: location(path) });
 
-const resourceDigest = (bytes: Uint8Array): OperationDigest => {
-  const digest = hashCanonicalInput('resource', 1, bytes);
-  if (!digest.ok) throw new TypeError('export artifact bytes could not be hashed');
-  return digest.value as OperationDigest;
-};
-
 const manifestSnapshot = (value: NormalizedManifestV1): OperationManifestSnapshot =>
   Object.freeze({
     version: 1,
@@ -116,7 +110,7 @@ const manifestImage = (
     location: location(path),
     shape,
     version: 1,
-    byteHash: resourceDigest(bytes),
+    byteHash: hashManifestBytes(bytes) as OperationDigest,
     semanticHash: hashManifestSemantics(model) as OperationDigest,
     value: manifestSnapshot(model),
   });

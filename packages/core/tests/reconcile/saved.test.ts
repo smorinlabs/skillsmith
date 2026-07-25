@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import {
   type ArtifactDigest,
   hashCanonicalInput,
+  hashManifestBytes,
   hashManifestSemantics,
 } from '../../src/artifacts/hash.ts';
 import { type PortableLockV1, hashPortableLock } from '../../src/artifacts/lock.ts';
@@ -796,9 +797,36 @@ describe('saved plan projection', () => {
     const reviewedLock = combinedProjection.value.plan.operations.find(
       ({ kind }) => kind === 'write-lock',
     );
+    const reviewedMigration = combinedProjection.value.plan.operations.find(
+      ({ kind }) => kind === 'migrate-project-config',
+    );
     const replannedLock = lockOnlyProjection.value.plan.operations.find(
       ({ kind }) => kind === 'write-lock',
     );
+    if (reviewedMigration?.before.kind !== 'manifest') {
+      throw new Error('reviewed manifest migration is missing');
+    }
+    const resourceRevision = combined.product.input.observed.manifest.byteRevision;
+    const roleHash = hashManifestBytes(combined.product.input.observed.manifest.source);
+    expect(reviewedMigration.before.byteHash).toBe(roleHash);
+    expect(reviewedMigration.before.byteHash).not.toBe(resourceRevision);
+    const referencedPreconditions = combinedProjection.value.plan.resourcePreconditions.filter(
+      ({ preconditionId }) => reviewedMigration.preconditionIds.includes(preconditionId),
+    );
+    expect(
+      referencedPreconditions.find(({ expectedHash }) => expectedHash.domain === 'manifest-bytes'),
+    ).toMatchObject({
+      expectedHash: { domain: 'manifest-bytes', digest: roleHash },
+      expectedRevision: { kind: 'artifact-bytes', digest: resourceRevision },
+    });
+    for (const semantic of referencedPreconditions.filter(
+      ({ expectedHash }) => expectedHash.domain === 'manifest-semantic',
+    )) {
+      expect(semantic.expectedRevision).toEqual({
+        kind: 'artifact-bytes',
+        digest: resourceRevision,
+      });
+    }
     expect(replannedLock?.groupId).toBe(reviewedLock?.groupId);
     expect(replannedLock?.operationId).toBe(reviewedLock?.operationId);
   });

@@ -1,6 +1,6 @@
 import { dirname, join, resolve } from 'node:path';
 import type { Placement } from '../agents/placement-shared.ts';
-import { hashCanonicalInput } from '../artifacts/hash.ts';
+import { hashCanonicalInput, hashManifestBytes } from '../artifacts/hash.ts';
 import { normalizeSourceIdentity } from '../artifacts/identity.ts';
 import type { LedgerPairV1Dto } from '../artifacts/ledger-types.ts';
 import type { PortableLockV1 } from '../artifacts/lock.ts';
@@ -1112,7 +1112,7 @@ const projectConfigMigrationOperation = (input: ResolvedPlanInput): ExecutableOp
       location,
       shape: 'legacy',
       version: 1,
-      byteHash: migration.expectedByteRevision as OperationDigest,
+      byteHash: hashManifestBytes(manifest.source) as OperationDigest,
       semanticHash: migration.expectedSemanticRevision as OperationDigest,
       value,
     },
@@ -1121,7 +1121,7 @@ const projectConfigMigrationOperation = (input: ResolvedPlanInput): ExecutableOp
       location,
       shape: 'canonical',
       version: 1,
-      byteHash: migration.resultByteRevision as OperationDigest,
+      byteHash: hashManifestBytes(migration.resultSource) as OperationDigest,
       semanticHash: migration.resultSemanticRevision as OperationDigest,
       value,
     },

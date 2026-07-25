@@ -986,6 +986,42 @@ describe('saved reconciliation validation', () => {
     );
     if (!migrationBaseline.ok)
       throw new Error(`migration baseline: ${migrationBaseline.error.code}`);
+    const migrationOperation = migrationBaseline.value.plan.operations.find(
+      ({ kind }) => kind === 'migrate-project-config',
+    );
+    if (migrationOperation?.before.kind !== 'manifest') {
+      throw new Error('migration operation before image is missing');
+    }
+    const savedManifestByteGuard = migration.value.projection.plan.resourcePreconditions.find(
+      ({ expectedHash }) => expectedHash.domain === 'manifest-bytes',
+    );
+    const runtimeManifestGuards = migrationBaseline.value.guards.resourcePreconditions.filter(
+      ({ preconditionId }) => migrationOperation.preconditionIds.includes(preconditionId),
+    );
+    const runtimeManifestByteGuard = runtimeManifestGuards.find(
+      ({ expectedHash }) => expectedHash.domain === 'manifest-bytes',
+    );
+    expect(runtimeManifestByteGuard).toMatchObject({
+      expectedHash: {
+        domain: 'manifest-bytes',
+        digest: migrationOperation.before.byteHash,
+      },
+      expectedRevision: savedManifestByteGuard?.expectedRevision,
+    });
+    expect(runtimeManifestByteGuard?.expectedHash.digest).not.toBe(
+      runtimeManifestByteGuard?.expectedRevision?.digest,
+    );
+    for (const semanticGuard of runtimeManifestGuards.filter(
+      ({ expectedHash }) => expectedHash.domain === 'manifest-semantic',
+    )) {
+      expect(semanticGuard).toMatchObject({
+        expectedHash: {
+          domain: 'manifest-semantic',
+          digest: migrationOperation.before.semanticHash,
+        },
+        expectedRevision: savedManifestByteGuard?.expectedRevision,
+      });
+    }
     await appendFile(join(migrationContext.root, 'skillsmith.toml'), '# after review\n');
     expect(
       await validateSavedReconcilePlanValue(migration.value.projection.plan, {

@@ -1,5 +1,5 @@
 import { isAbsolute, relative } from 'node:path';
-import { type ArtifactDigest, hashCanonicalInput } from '../artifacts/hash.ts';
+import { type ArtifactDigest, hashCanonicalInput, hashManifestBytes } from '../artifacts/hash.ts';
 import {
   type PortableLockSkillV1,
   type PortableLockV1,
@@ -475,10 +475,8 @@ export const createSavedPlanProjection = (
     'manifest-semantic',
     scopedFacts.value.scopedManifestSemanticHash,
   );
-  const manifestBytesPreconditionId = preconditionIdFor(
-    'manifest-bytes',
-    observed.manifest.byteRevision,
-  );
+  const manifestByteHash = hashManifestBytes(observed.manifest.source);
+  const manifestBytesPreconditionId = preconditionIdFor('manifest-bytes', manifestByteHash);
   const lockHash =
     observed.lock.state === 'present'
       ? hashPortableLock(observed.lock.model)
@@ -509,7 +507,7 @@ export const createSavedPlanProjection = (
       expectedHash: {
         domain: 'manifest-bytes',
         hashSchemaVersion: 1,
-        digest: observed.manifest.byteRevision,
+        digest: manifestByteHash,
       },
       expectedRevision: { kind: 'artifact-bytes', digest: observed.manifest.byteRevision },
     },
@@ -625,7 +623,10 @@ export const createSavedPlanProjection = (
         hashSchemaVersion: 1,
         digest: manifestMigrationBefore.semanticHash,
       },
-      expectedRevision: { kind: 'artifact-bytes', digest: manifestMigrationBefore.byteHash },
+      expectedRevision: {
+        kind: 'artifact-bytes',
+        digest: observed.manifest.byteRevision,
+      },
     });
   }
 

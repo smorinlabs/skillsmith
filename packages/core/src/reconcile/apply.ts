@@ -4,7 +4,7 @@ import { classifyPlacementRoot } from '../agents/placement-shared.ts';
 import { toolRegistry } from '../agents/registry.ts';
 import type { SupportedTool } from '../agents/types.ts';
 import { selectReadableArtifactContext } from '../artifacts/discovery.ts';
-import { hashCanonicalInput } from '../artifacts/hash.ts';
+import { hashCanonicalInput, hashManifestBytes } from '../artifacts/hash.ts';
 import { hashPortableLock } from '../artifacts/lock.ts';
 import type { PortableLockV1 } from '../artifacts/lock.ts';
 import { resolveArtifactPair } from '../artifacts/pair.ts';
@@ -724,7 +724,7 @@ const validateObservedBefore = async (
     if (
       image.version !== manifest.model.version ||
       image.shape !== currentShape ||
-      String(image.byteHash) !== manifest.byteRevision ||
+      String(image.byteHash) !== hashManifestBytes(manifest.source) ||
       String(image.semanticHash) !== manifest.semanticRevision ||
       canonicalPlanningString(image.value) !== canonicalPlanningString(currentValue)
     ) {
@@ -1482,6 +1482,7 @@ export const validateSavedReconcilePlanValue = async <
     );
   }
 
+  const manifestByteHash = hashManifestBytes(manifestRead.value.source);
   const guards: ResourcePreconditionV1[] = [];
   for (const candidate of runtimeSavedPlan.resourcePreconditions) {
     const precondition = jsonValue(candidate) as unknown as ResourcePreconditionV1;
@@ -1490,7 +1491,7 @@ export const validateSavedReconcilePlanValue = async <
         ...precondition,
         expectedHash:
           precondition.expectedHash.domain === 'manifest-bytes'
-            ? { ...precondition.expectedHash, digest: manifestRead.value.byteRevision }
+            ? { ...precondition.expectedHash, digest: manifestByteHash }
             : precondition.expectedHash.domain === 'manifest-semantic'
               ? {
                   ...precondition.expectedHash,
