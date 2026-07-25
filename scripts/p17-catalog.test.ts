@@ -10,6 +10,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { relative, resolve } from 'node:path';
+import { runGit } from '../packages/core/tests/fixtures/git-env.ts';
 import { gitRecordsExactDeletion, ownedPathState } from './p17-catalog.ts';
 
 const root = resolve(import.meta.dir, '..');
@@ -144,16 +145,6 @@ function runCatalogMutation(
     stdout: 'pipe',
     stderr: 'pipe',
   });
-}
-
-function runGit(repository: string, args: readonly string[]): void {
-  const result = Bun.spawnSync(['git', '-C', repository, ...args], {
-    stdout: 'pipe',
-    stderr: 'pipe',
-  });
-  if (result.exitCode !== 0) {
-    throw new Error(`git ${args.join(' ')} failed: ${result.stderr.toString()}`);
-  }
 }
 
 function temporaryGitRepository(prefix: string): string {

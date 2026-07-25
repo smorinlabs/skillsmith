@@ -91,3 +91,18 @@
   Git-error cases hermetically.
 - **Verdict:** **NO-GO at 0.99 confidence**. G5-04 remains 7/10; Phase-5 review, approval, and exit
   remain pending; Phase 6 remains planned with zero owned files and zero passed gates.
+
+## G5-04 F03 second-correction review NO-GO — 2026-07-25
+
+- **Reviewed head:** `bcbe2a8c2d40ff83356195b9260637bb38b6dd31`.
+- **Reviewer:** fresh read-only external Codex session
+  `/external-codex/019f9ba3-36a5-7960-b861-4fa1d24ddfa3`.
+- **Production result:** the exact deletion validator and all adjacent command-mode behavior passed
+  adversarial inspection; no production false acceptance remained.
+- **P17-RV-P5-F03 remains open (test isolation, release-blocking):** temporary Git fixture setup
+  inherited hook-exported repository selectors, so `config`, `add`, and `commit` could target a
+  foreign repository and escape temporary-directory cleanup.
+- **Required correction:** use the repository's canonical hermetic Git test helper, which scrubs the
+  complete repository-local denylist and isolates global/system Git configuration, then prove the
+  suite under poisoned Git variables and obtain fresh immutable review.
+- **Verdict:** **NO-GO at 0.99 confidence**. G5-04 remains 7/10; Phase 6 remains wholly planned.
