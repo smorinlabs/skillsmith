@@ -7641,12 +7641,16 @@
           ]
         },
         "impacted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G5-05.md#f22-f28-digest-domain-correction-and-immutable-green-at-959e0d0"
+          ]
         },
         "refactor": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G5-05.md#f22-f28-digest-domain-correction-and-immutable-green-at-959e0d0"
+          ]
         },
         "adversarial-review": {
           "status": "pending",
@@ -7705,7 +7709,8 @@
         "projects/p17/evidence/P17-G5-05.md#f26-saved-plan-dual-domain-amendment-review-go-at-be74561",
         "projects/p17/evidence/P17-G5-05.md#f27-saved-plan-operation-image-runtime-validation-finding-and-amendment",
         "projects/p17/evidence/P17-G5-05.md#f28-saved-execution-guard-rebinding-review-finding",
-        "projects/p17/evidence/P17-G5-05.md#f27-f28-corrected-saved-validation-amendment-review-go-at-ff2516c"
+        "projects/p17/evidence/P17-G5-05.md#f27-f28-corrected-saved-validation-amendment-review-go-at-ff2516c",
+        "projects/p17/evidence/P17-G5-05.md#f22-f28-digest-domain-correction-and-immutable-green-at-959e0d0"
       ]
     },
     {
@@ -26720,7 +26725,7 @@
       "designStatus": "retained",
       "stateModel": "coverage",
       "primaryGroup": "P17-G5-05",
-      "status": "mapped",
+      "status": "validated",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G5-05",
       "target": null,
@@ -26750,7 +26755,8 @@
         "projects/p17/evidence/P17-G5-05.md#f26-saved-plan-dual-domain-amendment-review-go-at-be74561",
         "projects/p17/evidence/P17-G5-05.md#f27-saved-plan-operation-image-runtime-validation-finding-and-amendment",
         "projects/p17/evidence/P17-G5-05.md#f28-saved-execution-guard-rebinding-review-finding",
-        "projects/p17/evidence/P17-G5-05.md#f27-f28-corrected-saved-validation-amendment-review-go-at-ff2516c"
+        "projects/p17/evidence/P17-G5-05.md#f27-f28-corrected-saved-validation-amendment-review-go-at-ff2516c",
+        "projects/p17/evidence/P17-G5-05.md#f22-f28-digest-domain-correction-and-immutable-green-at-959e0d0"
       ],
       "secondaryGroups": [],
       "implements": [],
