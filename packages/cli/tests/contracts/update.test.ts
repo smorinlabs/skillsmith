@@ -13,11 +13,16 @@ import {
   snapshotUpdateState,
 } from '../../../../tests/ergonomics/fixtures/p5-update/fleet.ts';
 import { CURRENT_APPLICATION_SERVICES } from '../../../core/src/application/current-services.ts';
+import type { LogicalJournalV1Dto } from '../../../core/src/artifacts/journal-types.ts';
+import { encodeRetainedArtifactPreimageV1 } from '../../../core/src/artifacts/retained-preimage-codec.ts';
 import {
   hashSourceContentV1,
   projectSourceContent,
 } from '../../../core/src/artifacts/source-content.ts';
+import { readLedgerState, writeLedger } from '../../../core/src/place/ledger.ts';
+import type { ExecutableOperation } from '../../../core/src/planning/types.ts';
 import { defaultRuntimePorts } from '../../../core/src/ports/default.ts';
+import { createForwardUpdateArtifactJournalSequenceV1 } from '../../../core/src/update/history.ts';
 import { runGit } from '../../../core/tests/fixtures/git-env.ts';
 import { CURRENT_COMMAND_SPECS } from '../../src/spec/index.ts';
 
@@ -89,6 +94,75 @@ const updateError = async (
   const parsed: unknown = JSON.parse(product.stdout);
   expect(parsed).toMatchObject({ schemaVersion: 1, kind: 'error' });
   return parsed as Record<string, unknown>;
+};
+
+const seedWorkflowCorruptedArtifactJournal = async (
+  selected: UpdateFleet,
+  operation: ExecutableOperation,
+  shape: 'cleanup' | 'forward',
+): Promise<string> => {
+  if (operation.kind !== 'write-manifest' || operation.after.kind !== 'manifest') {
+    throw new TypeError('F16 fixture requires a manifest artifact operation');
+  }
+  const mode = (await lstat(selected.manifest)).mode & 0o7777;
+  const envelope = encodeRetainedArtifactPreimageV1({
+    operationId: operation.operationId,
+    role: 'manifest',
+    path: selected.manifest,
+    before: { bytes: new Uint8Array(await readFile(selected.manifest)), mode },
+    after: { digest: operation.after.byteHash, mode },
+  });
+  if (!envelope.ok) throw new TypeError(envelope.error.message);
+  const transactionId = `transaction:v1:f16-${shape}`;
+  const retainedPath = join(
+    dirname(selected.ledger),
+    `.skillsmith-artifact-${transactionId}`,
+    'manifest.backup',
+  );
+  const sequence = createForwardUpdateArtifactJournalSequenceV1({
+    operation,
+    transactionId,
+    startedAt: '2026-07-24T20:00:00.000Z',
+    retainedPath,
+    retainedBytes: envelope.value.encoded,
+    expectedAfterMode: mode,
+  });
+  if (!sequence.ok) throw new TypeError(sequence.error.message);
+  const pending: LogicalJournalV1Dto =
+    shape === 'forward'
+      ? {
+          ...sequence.value.staged,
+          context: {
+            ...sequence.value.staged.context,
+            workflow: 'corrupt-update-artifact-history',
+          },
+        }
+      : {
+          ...sequence.value.staged,
+          context: {
+            ...sequence.value.staged.context,
+            workflow: 'corrupt-update-artifact-orphan-cleanup',
+            attempt: sequence.value.staged.context.attempt + 1,
+          },
+          disposition: 'rollback',
+          phase: 'prepared',
+          actual: { ...sequence.value.staged.actual, after: [], retained: [] },
+          updatedAt: '2026-07-24T20:01:00.000Z',
+          completedAt: null,
+        };
+  const ports = await defaultRuntimePorts();
+  const ledger = await readLedgerState(ports, selected.ledger);
+  if (!ledger.ok || ledger.value.state !== 'present') {
+    throw new TypeError('F16 fixture requires the existing update ledger');
+  }
+  const written = await writeLedger(ports, selected.ledger, {
+    ...ledger.value.model,
+    transactions: { ...ledger.value.model.transactions, [transactionId]: pending },
+  });
+  if (!written.ok) throw new TypeError(JSON.stringify(written.error));
+  await mkdir(dirname(retainedPath), { recursive: true, mode: 0o700 });
+  await writeFile(retainedPath, envelope.value.encoded, { mode: 0o600 });
+  return retainedPath;
 };
 
 describe('update command contract', () => {
@@ -604,6 +678,61 @@ describe('update command contract', () => {
       operations: [],
     });
   });
+
+  test.each(['forward', 'cleanup'] as const)(
+    'F16 — live-only repair refuses a workflow-corrupted %s artifact journal before mutation',
+    async (shape) => {
+      const selected = await fleet();
+      const pinPreview = await updateReport(selected, [
+        'update',
+        'factor-scan',
+        '--pin',
+        '--dry-run',
+      ]);
+      const artifactOperation = (pinPreview.operations as readonly ExecutableOperation[]).find(
+        ({ kind }) => kind === 'write-manifest',
+      );
+      if (artifactOperation === undefined)
+        throw new TypeError('F16 fixture lacks artifact authority');
+
+      expect(
+        await updateReport(selected, ['update', 'factor-scan', '--tool', 'codex']),
+      ).toMatchObject({ state: 'completed' });
+      const liveOnly = await updateReport(selected, ['update', 'factor-scan', '--check'], 7);
+      expect(liveOnly).toMatchObject({
+        groups: [{ skill: 'factor-scan', drift: { artifact: false, live: true } }],
+      });
+
+      const retainedPath = await seedWorkflowCorruptedArtifactJournal(
+        selected,
+        artifactOperation,
+        shape,
+      );
+      const before = await snapshotUpdateState(selected);
+      const retainedBefore = await readFile(retainedPath);
+      const attempted = await runUpdateCli(selected, ['update', 'factor-scan', '--json']);
+      const parsed = JSON.parse(attempted.stdout) as { readonly kind?: string };
+      const after = await snapshotUpdateState(selected);
+      const retainedAfter = await readFile(retainedPath);
+
+      expect({
+        exitCode: attempted.exitCode,
+        kind: parsed.kind,
+        stateUnchanged:
+          after.manifest === before.manifest &&
+          after.lock === before.lock &&
+          after.ledger === before.ledger &&
+          after.codex === before.codex &&
+          after.claude === before.claude,
+        retainedUnchanged: Buffer.from(retainedAfter).equals(Buffer.from(retainedBefore)),
+      }).toEqual({
+        exitCode: 1,
+        kind: 'error',
+        stateUnchanged: true,
+        retainedUnchanged: true,
+      });
+    },
+  );
 
   test('EWP-CMD-UPDATE-TS07 — update commits exact reversible artifact lineage', async () => {
     const selected = await fleet();
