@@ -69,7 +69,10 @@ import type {
   OperationPlanInput,
 } from '../planning/types.ts';
 import { type Result, err, ok } from '../result.ts';
-import { bindForwardUpdateArtifactHistoryV1 } from '../update/history.ts';
+import {
+  bindForwardUpdateArtifactHistoryV1,
+  recoverPendingUpdateArtifactHistoryV1,
+} from '../update/history.ts';
 import type {
   SavedReconcileExecutionGuards,
   ValidateSavedReconcilePlanRuntime,
@@ -1482,6 +1485,9 @@ export const executeValidatedReconcilePlan = async <Command extends ReconcileExe
       const artifactActions = new Map(
         (runtime.artifactActions ?? []).map(({ operationId, action }) => [operationId, action]),
       );
+      const currentOperationIds = Object.freeze(
+        plan.operations.map(({ operationId }) => operationId),
+      );
       const verificationBlockedResult = (
         operation: ExecutableOperation,
         actualBefore: OperationImage,
@@ -1537,6 +1543,22 @@ export const executeValidatedReconcilePlan = async <Command extends ReconcileExe
       };
 
       const authorities: ReconcileRuntimeExecutionAuthoritiesV1 = {
+        ...(plan.command === 'update'
+          ? {
+              beforeSchedule: async () => {
+                const changed = await recoverPendingUpdateArtifactHistoryV1({
+                  artifactCoordinator: runtime.artifactCoordinator,
+                  ports: runtime.ports,
+                  ledgerPath,
+                  currentOperationIds,
+                  ...(runtime.signal === undefined ? {} : { signal: runtime.signal }),
+                });
+                if (changed) {
+                  await lifecycle.rebase([snapshotAuthority.ledgerResourceId]);
+                }
+              },
+            }
+          : {}),
         placement: {
           bind: (operation) => {
             const physical = physicalOperations.get(operation.operationId);
@@ -1615,6 +1637,7 @@ export const executeValidatedReconcilePlan = async <Command extends ReconcileExe
                   artifactCoordinator: runtime.artifactCoordinator,
                   ports: runtime.ports,
                   ledgerPath,
+                  currentOperationIds,
                   onLedgerCommitted: () => lifecycle.rebase([snapshotAuthority.ledgerResourceId]),
                   ...(runtime.signal === undefined ? {} : { signal: runtime.signal }),
                 })

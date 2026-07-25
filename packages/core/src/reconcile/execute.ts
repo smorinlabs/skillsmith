@@ -160,6 +160,8 @@ export interface ReconcileRuntimeExecutionAuthoritiesV1 {
   readonly guards: ReconcileExecutionGuardAuthorityV1;
   readonly lockPort: LockPort;
   readonly locks: readonly ExecutionLockDescriptor[];
+  /** Runs once under every coordinator lock after binding and before scheduling. */
+  readonly beforeSchedule?: (bindings: readonly ValidatedExecutionBinding[]) => Promise<void>;
   /** Releases acquired source material and other attempt-scoped temporary resources. */
   readonly cleanupSources?: () => Promise<void>;
 }
@@ -1256,6 +1258,7 @@ type OwnedRuntimeAuthoritiesV1 = Readonly<{
   guards: ReconcileExecutionGuardAuthorityV1;
   lockPort: LockPort;
   locks: readonly ExecutionLockDescriptor[];
+  beforeSchedule: ((bindings: readonly ValidatedExecutionBinding[]) => Promise<void>) | undefined;
   cleanupSources: (() => Promise<void>) | undefined;
 }>;
 
@@ -1265,12 +1268,14 @@ const snapshotRuntimeAuthorities = (
   if (input === null || typeof input !== 'object' || utilTypes.isProxy(input)) {
     throw new TypeError('reconciliation runtime authorities are invalid');
   }
+  const hasBeforeSchedule = Object.hasOwn(input, 'beforeSchedule');
   const hasCleanup = Object.hasOwn(input, 'cleanupSources');
   if (
     !exactDataKeys(
       input,
       [
         'artifact',
+        ...(hasBeforeSchedule ? ['beforeSchedule'] : []),
         ...(hasCleanup ? ['cleanupSources'] : []),
         'guards',
         'ledgerMigration',
@@ -1364,6 +1369,11 @@ const snapshotRuntimeAuthorities = (
     lockPort,
     'withFileLock',
   ) as unknown as LockPort['withFileLock'];
+  const beforeSchedule = hasBeforeSchedule
+    ? (dataFunction(input, 'beforeSchedule') as unknown as NonNullable<
+        ReconcileRuntimeExecutionAuthoritiesV1['beforeSchedule']
+      >)
+    : undefined;
   const cleanup = hasCleanup
     ? (dataFunction(input, 'cleanupSources') as unknown as () => Promise<void>)
     : undefined;
@@ -1406,6 +1416,10 @@ const snapshotRuntimeAuthorities = (
       ): Promise<T> => withFileLock.call(lockPort, path, operation, options) as Promise<T>,
     }),
     locks,
+    beforeSchedule:
+      beforeSchedule === undefined
+        ? undefined
+        : (bindings: readonly ValidatedExecutionBinding[]) => beforeSchedule.call(input, bindings),
     cleanupSources: cleanup === undefined ? undefined : () => cleanup.call(input),
   });
 };
@@ -1489,6 +1503,9 @@ export const executeValidatedReconcilePlanV1 = async (
             preconditions: preconditions.value,
             locks: authorities.locks,
             lockPort: authorities.lockPort,
+            ...(authorities.beforeSchedule === undefined
+              ? {}
+              : { beforeSchedule: authorities.beforeSchedule }),
             ...(request.signal === undefined ? {} : { signal: request.signal }),
           };
           const results =

@@ -62,9 +62,27 @@ export interface BindForwardUpdateArtifactHistoryRequestV1 {
   readonly artifactCoordinator: ArtifactCoordinatorPorts;
   readonly ports: PlacementPorts;
   readonly ledgerPath: string;
+  /** Every operation owned by the current invocation; defaults to this artifact operation. */
+  readonly currentOperationIds?: readonly string[];
   readonly onLedgerCommitted?: () => Promise<void>;
   readonly signal?: AbortSignal;
 }
+
+export interface RecoverPendingUpdateArtifactHistoryRequestV1 {
+  readonly artifactCoordinator: ArtifactCoordinatorPorts;
+  readonly ports: PlacementPorts;
+  readonly ledgerPath: string;
+  readonly currentOperationIds: readonly string[];
+  readonly signal?: AbortSignal;
+}
+
+type PendingUpdateArtifactHistoryRecoveryRequestV1 = Readonly<{
+  artifactCoordinator: ArtifactCoordinatorPorts;
+  ports: PlacementPorts;
+  ledgerPath: string;
+  currentOperationIds: ReadonlySet<string>;
+  signal?: AbortSignal;
+}>;
 
 type ArtifactRole = 'manifest' | 'lock';
 type ArtifactHistoryImage = OperationImage | LogicalJournalV1Dto['intent']['before'];
@@ -739,7 +757,7 @@ const completePendingArtifactAbortProjection = (
 
 const recoverPendingArtifactCleanupMarkers = async (
   model: LedgerModel,
-  request: BindForwardUpdateArtifactHistoryRequestV1,
+  request: PendingUpdateArtifactHistoryRecoveryRequestV1,
   persist: (next: LedgerModel) => Promise<LedgerModel>,
 ): Promise<LedgerModel> => {
   let next = model;
@@ -834,7 +852,7 @@ const finalizePendingArtifactProjection = (
 
 const recoverSupersededArtifactHistory = async (
   model: LedgerModel,
-  request: BindForwardUpdateArtifactHistoryRequestV1,
+  request: PendingUpdateArtifactHistoryRecoveryRequestV1,
   persist: (next: LedgerModel) => Promise<LedgerModel>,
 ): Promise<LedgerModel> => {
   for (const journal of Object.values(model.transactions)) {
@@ -860,7 +878,7 @@ const recoverSupersededArtifactHistory = async (
       }
       return authority;
     })
-    .filter((authority) => authority.journal.intent.operationId !== request.operation.operationId)
+    .filter((authority) => !request.currentOperationIds.has(authority.journal.intent.operationId))
     .sort((left, right) => left.journal.transactionId.localeCompare(right.journal.transactionId));
   for (const authority of superseded) {
     if (request.signal?.aborted) throw new TypeError('update artifact orphan cleanup cancelled');
@@ -934,6 +952,41 @@ const recoverSupersededArtifactHistory = async (
   return next;
 };
 
+/**
+ * Recover or reject every pending update artifact carrier before an invocation can schedule any
+ * physical operation. The caller must hold the artifact-group, member, and ledger lock hierarchy.
+ */
+export const recoverPendingUpdateArtifactHistoryV1 = async (
+  request: RecoverPendingUpdateArtifactHistoryRequestV1,
+): Promise<boolean> => {
+  const state = await readLedgerState(request.ports, request.ledgerPath);
+  if (!state.ok) throw state.error;
+  const model = ledgerModelForMutation(state.value, request.ports.wallNowIso());
+  const persistence = createLedgerPersistenceGateway(
+    request.ports,
+    request.ledgerPath,
+    request.signal,
+  );
+  let changed = false;
+  await recoverSupersededArtifactHistory(
+    model,
+    {
+      artifactCoordinator: request.artifactCoordinator,
+      ports: request.ports,
+      ledgerPath: request.ledgerPath,
+      currentOperationIds: new Set(request.currentOperationIds),
+      ...(request.signal === undefined ? {} : { signal: request.signal }),
+    },
+    async (next) => {
+      const persisted = await persistence.persist(next);
+      if (!persisted.ok) throw persisted.error;
+      changed = true;
+      return persisted.value.model;
+    },
+  );
+  return changed;
+};
+
 const historyFailureResult = (
   operation: ExecutableOperation,
   binding: ValidatedExecutionBinding,
@@ -989,11 +1042,24 @@ export const bindForwardUpdateArtifactHistoryV1 = (
           request.ledgerPath,
           request.signal,
         );
-        model = await recoverSupersededArtifactHistory(model, request, async (next) => {
-          const persisted = await persistence.persist(next);
-          if (!persisted.ok) throw persisted.error;
-          return persisted.value.model;
-        });
+        model = await recoverSupersededArtifactHistory(
+          model,
+          {
+            artifactCoordinator: request.artifactCoordinator,
+            ports: request.ports,
+            ledgerPath: request.ledgerPath,
+            currentOperationIds: new Set([
+              request.operation.operationId,
+              ...(request.currentOperationIds ?? []),
+            ]),
+            ...(request.signal === undefined ? {} : { signal: request.signal }),
+          },
+          async (next) => {
+            const persisted = await persistence.persist(next);
+            if (!persisted.ok) throw persisted.error;
+            return persisted.value.model;
+          },
+        );
         const candidates = Object.values(model.transactions).filter(
           (journal) =>
             journal.intent.operationId === request.operation.operationId &&

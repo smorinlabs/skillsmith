@@ -165,6 +165,9 @@ const seedWorkflowCorruptedArtifactJournal = async (
   return retainedPath;
 };
 
+const sameSnapshotBytes = (left: Uint8Array | null, right: Uint8Array | null): boolean =>
+  left === null ? right === null : right !== null && Buffer.from(left).equals(Buffer.from(right));
+
 describe('update command contract', () => {
   test('EWP-CMD-UPDATE-TS01 — exact remote candidate discovery', async () => {
     const selected = await fleet();
@@ -718,17 +721,20 @@ describe('update command contract', () => {
       expect({
         exitCode: attempted.exitCode,
         kind: parsed.kind,
-        stateUnchanged:
-          after.manifest === before.manifest &&
-          after.lock === before.lock &&
-          after.ledger === before.ledger &&
-          after.codex === before.codex &&
-          after.claude === before.claude,
-        retainedUnchanged: Buffer.from(retainedAfter).equals(Buffer.from(retainedBefore)),
+        manifestUnchanged: sameSnapshotBytes(after.manifest, before.manifest),
+        lockUnchanged: sameSnapshotBytes(after.lock, before.lock),
+        ledgerUnchanged: sameSnapshotBytes(after.ledger, before.ledger),
+        codexUnchanged: sameSnapshotBytes(after.codex, before.codex),
+        claudeUnchanged: sameSnapshotBytes(after.claude, before.claude),
+        retainedUnchanged: sameSnapshotBytes(retainedAfter, retainedBefore),
       }).toEqual({
         exitCode: 1,
         kind: 'error',
-        stateUnchanged: true,
+        manifestUnchanged: true,
+        lockUnchanged: true,
+        ledgerUnchanged: true,
+        codexUnchanged: true,
+        claudeUnchanged: true,
         retainedUnchanged: true,
       });
     },
