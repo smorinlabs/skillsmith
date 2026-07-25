@@ -165,6 +165,98 @@ const seedWorkflowCorruptedArtifactJournal = async (
   return retainedPath;
 };
 
+const seedAliasedArtifactJournal = async (
+  selected: UpdateFleet,
+  operation: ExecutableOperation,
+  operationId: string,
+  retention: 'missing' | 'present',
+): Promise<Readonly<{ transactionId: string; retainedPath: string }>> => {
+  if (operation.kind !== 'write-manifest' || operation.after.kind !== 'manifest') {
+    throw new TypeError('F17 fixture requires a manifest artifact operation');
+  }
+  const aliasedOperation: ExecutableOperation = { ...operation, operationId };
+  const mode = (await lstat(selected.manifest)).mode & 0o7777;
+  const envelope = encodeRetainedArtifactPreimageV1({
+    operationId,
+    role: 'manifest',
+    path: selected.manifest,
+    before: { bytes: new Uint8Array(await readFile(selected.manifest)), mode },
+    after: { digest: operation.after.byteHash, mode },
+  });
+  if (!envelope.ok) throw new TypeError(envelope.error.message);
+  const transactionId = `transaction:v1:f17-${retention}`;
+  const retainedPath = join(
+    dirname(selected.ledger),
+    `.skillsmith-artifact-${transactionId}`,
+    'manifest.backup',
+  );
+  const sequence = createForwardUpdateArtifactJournalSequenceV1({
+    operation: aliasedOperation,
+    transactionId,
+    startedAt: '2026-07-25T05:00:00.000Z',
+    retainedPath,
+    retainedBytes: envelope.value.encoded,
+    expectedAfterMode: mode,
+  });
+  if (!sequence.ok) throw new TypeError(sequence.error.message);
+  const ports = await defaultRuntimePorts();
+  const ledger = await readLedgerState(ports, selected.ledger);
+  if (!ledger.ok || ledger.value.state !== 'present') {
+    throw new TypeError('F17 fixture requires the existing update ledger');
+  }
+  const written = await writeLedger(ports, selected.ledger, {
+    ...ledger.value.model,
+    transactions: {
+      ...ledger.value.model.transactions,
+      [transactionId]: sequence.value.staged,
+    },
+  });
+  if (!written.ok) throw new TypeError(JSON.stringify(written.error));
+  if (retention === 'present') {
+    await mkdir(dirname(retainedPath), { recursive: true, mode: 0o700 });
+    await writeFile(retainedPath, envelope.value.encoded, { mode: 0o600 });
+  }
+  return Object.freeze({ transactionId, retainedPath });
+};
+
+const aliasedLiveRepairFixture = async (
+  retention: 'missing' | 'present',
+): Promise<
+  Readonly<{
+    selected: UpdateFleet;
+    repairOperation: ExecutableOperation;
+    transactionId: string;
+    retainedPath: string;
+  }>
+> => {
+  const selected = await fleet();
+  const pinPreview = await updateReport(selected, ['update', 'factor-scan', '--pin', '--dry-run']);
+  const artifactOperation = (pinPreview.operations as readonly ExecutableOperation[]).find(
+    ({ kind }) => kind === 'write-manifest',
+  );
+  if (artifactOperation === undefined) {
+    throw new TypeError('F17 fixture lacks artifact authority');
+  }
+  expect(await updateReport(selected, ['update', 'factor-scan', '--tool', 'codex'])).toMatchObject({
+    state: 'completed',
+  });
+  const liveOnly = await updateReport(selected, ['update', 'factor-scan', '--check'], 7);
+  expect(liveOnly).toMatchObject({
+    groups: [{ skill: 'factor-scan', drift: { artifact: false, live: true } }],
+  });
+  const repairOperation = (liveOnly.operations as readonly ExecutableOperation[]).find(
+    ({ kind }) => kind === 'repair',
+  );
+  if (repairOperation === undefined) throw new TypeError('F17 fixture lacks live repair authority');
+  const seeded = await seedAliasedArtifactJournal(
+    selected,
+    artifactOperation,
+    repairOperation.operationId,
+    retention,
+  );
+  return Object.freeze({ selected, repairOperation, ...seeded });
+};
+
 const sameSnapshotBytes = (
   left: Uint8Array | null | undefined,
   right: Uint8Array | null | undefined,
@@ -746,6 +838,80 @@ describe('update command contract', () => {
       });
     },
   );
+
+  test('F17 — live-only repair refuses an unrecoverable artifact carrier aliased to its operation ID', async () => {
+    const { selected, retainedPath } = await aliasedLiveRepairFixture('missing');
+    const before = await snapshotUpdateState(selected);
+    const attempted = await runUpdateCli(selected, ['update', 'factor-scan', '--json']);
+    const parsed = JSON.parse(attempted.stdout) as { readonly kind?: string };
+    const after = await snapshotUpdateState(selected);
+
+    expect({
+      exitCode: attempted.exitCode,
+      kind: parsed.kind,
+      manifestUnchanged: sameSnapshotBytes(after.manifest, before.manifest),
+      lockUnchanged: sameSnapshotBytes(after.lock, before.lock),
+      ledgerUnchanged: sameSnapshotBytes(after.ledger, before.ledger),
+      codexUnchanged: sameSnapshotBytes(after.codex, before.codex),
+      claudeUnchanged: sameSnapshotBytes(after.claude, before.claude),
+      retainedAbsent: !(await Bun.file(retainedPath).exists()),
+    }).toEqual({
+      exitCode: 1,
+      kind: 'error',
+      manifestUnchanged: true,
+      lockUnchanged: true,
+      ledgerUnchanged: true,
+      codexUnchanged: true,
+      claudeUnchanged: true,
+      retainedAbsent: true,
+    });
+  });
+
+  test('F17 — live-only repair recovers an aliased artifact carrier before placement execution', async () => {
+    const { selected, repairOperation, transactionId, retainedPath } =
+      await aliasedLiveRepairFixture('present');
+    const before = await snapshotUpdateState(selected);
+    const attempted = await runUpdateCli(selected, ['update', 'factor-scan', '--json']);
+    const parsed = JSON.parse(attempted.stdout) as { readonly kind?: string };
+    const after = await snapshotUpdateState(selected);
+    const ports = await defaultRuntimePorts();
+    const ledger = await readLedgerState(ports, selected.ledger);
+    if (!ledger.ok || ledger.value.state !== 'present') {
+      throw new TypeError('F17 recovery lost the update ledger');
+    }
+    const cleanupIndex = ledger.value.model.history.findIndex(
+      (journal) =>
+        journal.transactionId === transactionId &&
+        journal.context.workflow === 'update-artifact-orphan-cleanup',
+    );
+    const placementIndex = ledger.value.model.history.findIndex(
+      (journal) =>
+        journal.intent.operationId === repairOperation.operationId &&
+        journal.intent.kind === 'repair',
+    );
+
+    expect({
+      exitCode: attempted.exitCode,
+      kind: parsed.kind,
+      manifestUnchanged: sameSnapshotBytes(after.manifest, before.manifest),
+      lockUnchanged: sameSnapshotBytes(after.lock, before.lock),
+      codexUnchanged: sameSnapshotBytes(after.codex, before.codex),
+      claudeChanged: !sameSnapshotBytes(after.claude, before.claude),
+      transactionPending: ledger.value.model.transactions[transactionId] !== undefined,
+      cleanupBeforePlacement: cleanupIndex >= 0 && placementIndex > cleanupIndex,
+      retainedAbsent: !(await Bun.file(retainedPath).exists()),
+    }).toEqual({
+      exitCode: 0,
+      kind: 'skillsmith.update',
+      manifestUnchanged: true,
+      lockUnchanged: true,
+      codexUnchanged: true,
+      claudeChanged: true,
+      transactionPending: false,
+      cleanupBeforePlacement: true,
+      retainedAbsent: true,
+    });
+  });
 
   test('EWP-CMD-UPDATE-TS07 — update commits exact reversible artifact lineage', async () => {
     const selected = await fleet();
