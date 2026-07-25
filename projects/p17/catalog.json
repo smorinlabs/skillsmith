@@ -7472,7 +7472,7 @@
       "phase": "5",
       "title": "Shared bulk approval, fail-fast/continue scheduling, cancellation, exits, and final artifact-option closure",
       "dependsOn": ["P17-G5-01", "P17-G5-02", "P17-G5-03"],
-      "status": "reviewed",
+      "status": "signed-off",
       "owner": "root-goal",
       "ownedFiles": [
         "biome.json",
@@ -7660,12 +7660,12 @@
           ]
         },
         "traceability-closure": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G5-05.md#traceability-closure-and-sign-off"]
         },
         "signed-off": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G5-05.md#traceability-closure-and-sign-off"]
         }
       },
       "evidence": [
@@ -7717,7 +7717,9 @@
         "projects/p17/evidence/P17-G5-05.md#f29-doctor-manifest-operation-image-review-no-go-and-amendment-at-4348933",
         "projects/p17/evidence/P17-G5-05.md#f29-doctor-manifest-image-correction-and-immutable-green-at-546d983",
         "projects/p17/evidence/P17-G5-05.md#f30-ownership-manifest-existence-review-no-go-at-eea321a-and-correction",
-        "projects/p17/evidence/P17-G5-05.md#f30-corrected-post-fix-adversarial-review-go-at-c1649c1"
+        "projects/p17/evidence/P17-G5-05.md#f30-corrected-post-fix-adversarial-review-go-at-c1649c1",
+        "projects/p17/evidence/P17-G5-05.md#full-terminal-repository-gate-at-a1b051b",
+        "projects/p17/evidence/P17-G5-05.md#traceability-closure-and-sign-off"
       ]
     },
     {
@@ -18375,7 +18377,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-05",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-05:packages/cli/tests/contracts/undo.test.ts#EWP-CMD-UNDO-TS03",
       "target": {
@@ -18386,7 +18388,8 @@
       },
       "evidence": [
         "projects/p17/evidence/P17-G5-05.md#green-execution-receipt-ewp-cmd-undo-ts03",
-        "projects/p17/evidence/P17-G5-05.md#red-execution-receipt-ewp-cmd-undo-ts03"
+        "projects/p17/evidence/P17-G5-05.md#red-execution-receipt-ewp-cmd-undo-ts03",
+        "projects/p17/evidence/P17-G5-05.md#traceability-closure-and-sign-off"
       ],
       "secondaryGroups": ["P17-G5-02", "P17-G5-03", "P17-G3B-03", "P17-G3B-02", "P17-G1-01"],
       "implements": [],
@@ -19286,7 +19289,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-05",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-05:packages/cli/tests/contracts/update.test.ts#EWP-CMD-UPDATE-TS07",
       "target": {
@@ -19297,7 +19300,8 @@
       },
       "evidence": [
         "projects/p17/evidence/P17-G5-05.md#green-execution-receipt-ewp-cmd-update-ts07",
-        "projects/p17/evidence/P17-G5-05.md#red-execution-receipt-ewp-cmd-update-ts07"
+        "projects/p17/evidence/P17-G5-05.md#red-execution-receipt-ewp-cmd-update-ts07",
+        "projects/p17/evidence/P17-G5-05.md#traceability-closure-and-sign-off"
       ],
       "secondaryGroups": ["P17-G5-02", "P17-G5-03", "P17-G3B-03", "P17-G3B-02", "P17-G1-01"],
       "implements": [],
@@ -19799,7 +19803,7 @@
       "kind": "option-gate",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-05",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-05:packages/cli/tests/contracts/options.test.ts#EWP-OPT-TS08",
       "target": {
@@ -19808,7 +19812,10 @@
         "selector": "EWP-OPT-TS08",
         "command": "bun test packages/cli/tests/contracts/options.test.ts --test-name-pattern EWP-OPT-TS08"
       },
-      "evidence": ["projects/p17/evidence/P17-G5-05.md#green-execution-receipt-ewp-opt-ts08"],
+      "evidence": [
+        "projects/p17/evidence/P17-G5-05.md#green-execution-receipt-ewp-opt-ts08",
+        "projects/p17/evidence/P17-G5-05.md#traceability-closure-and-sign-off"
+      ],
       "secondaryGroups": [
         "P17-G4B-02",
         "P17-G1-02B",
@@ -25256,7 +25263,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-05",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-05:tests/ergonomics/phase/EWP-P5-TS05.test.ts#EWP-P5-TS05",
       "target": {
@@ -25267,7 +25274,8 @@
       },
       "evidence": [
         "projects/p17/evidence/P17-G5-05.md#green-execution-receipt-ewp-p5-ts05",
-        "projects/p17/evidence/P17-G5-05.md#red-execution-receipt-ewp-p5-ts05"
+        "projects/p17/evidence/P17-G5-05.md#red-execution-receipt-ewp-p5-ts05",
+        "projects/p17/evidence/P17-G5-05.md#traceability-closure-and-sign-off"
       ],
       "secondaryGroups": [],
       "implements": [],
@@ -26009,7 +26017,7 @@
       "kind": "workflow",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-05",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-05:tests/ergonomics/workflows/EWP-WF09.test.ts#EWP-WF09",
       "target": {
@@ -26020,7 +26028,8 @@
       },
       "evidence": [
         "projects/p17/evidence/P17-G5-05.md#green-execution-receipt-ewp-wf09",
-        "projects/p17/evidence/P17-G5-05.md#red-execution-receipt-ewp-wf09"
+        "projects/p17/evidence/P17-G5-05.md#red-execution-receipt-ewp-wf09",
+        "projects/p17/evidence/P17-G5-05.md#traceability-closure-and-sign-off"
       ],
       "secondaryGroups": [
         "P17-G5-02",
@@ -26215,7 +26224,7 @@
       "kind": "workflow",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-05",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-05:tests/ergonomics/workflows/EWP-WF13.test.ts#EWP-WF13",
       "target": {
@@ -26224,7 +26233,10 @@
         "selector": "EWP-WF13",
         "command": "bun test tests/ergonomics/workflows/EWP-WF13.test.ts --test-name-pattern EWP-WF13"
       },
-      "evidence": ["projects/p17/evidence/P17-G5-05.md#green-execution-receipt-ewp-wf13"],
+      "evidence": [
+        "projects/p17/evidence/P17-G5-05.md#green-execution-receipt-ewp-wf13",
+        "projects/p17/evidence/P17-G5-05.md#traceability-closure-and-sign-off"
+      ],
       "secondaryGroups": ["P17-G4A-04", "P17-G4B-02", "P17-G5-01", "P17-G5-02"],
       "implements": [],
       "validatedBy": ["EWP-WF13"],
@@ -26732,7 +26744,7 @@
       "designStatus": "retained",
       "stateModel": "coverage",
       "primaryGroup": "P17-G5-05",
-      "status": "validated",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G5-05",
       "target": null,
@@ -26767,7 +26779,8 @@
         "projects/p17/evidence/P17-G5-05.md#f29-doctor-manifest-operation-image-review-no-go-and-amendment-at-4348933",
         "projects/p17/evidence/P17-G5-05.md#f29-doctor-manifest-image-correction-and-immutable-green-at-546d983",
         "projects/p17/evidence/P17-G5-05.md#f30-ownership-manifest-existence-review-no-go-at-eea321a-and-correction",
-        "projects/p17/evidence/P17-G5-05.md#f30-corrected-post-fix-adversarial-review-go-at-c1649c1"
+        "projects/p17/evidence/P17-G5-05.md#f30-corrected-post-fix-adversarial-review-go-at-c1649c1",
+        "projects/p17/evidence/P17-G5-05.md#traceability-closure-and-sign-off"
       ],
       "secondaryGroups": [],
       "implements": [],

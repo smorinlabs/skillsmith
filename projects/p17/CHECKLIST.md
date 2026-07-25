@@ -11,12 +11,12 @@ Tracked entities: **426** across **45** change groups.
 
 | Kind | Total | Signed off | Active/open | Deferred |
 |---|---:|---:|---:|---:|
-| recommendation | 34 | 23 | 5 | 6 |
+| recommendation | 34 | 24 | 4 | 6 |
 | phase-task | 65 | 58 | 7 | 0 |
-| phase-test | 61 | 54 | 7 | 0 |
-| command-test | 157 | 142 | 15 | 0 |
-| option-gate | 10 | 7 | 3 | 0 |
-| workflow | 16 | 12 | 4 | 0 |
+| phase-test | 61 | 55 | 6 | 0 |
+| command-test | 157 | 144 | 13 | 0 |
+| option-gate | 10 | 8 | 2 | 0 |
+| workflow | 16 | 14 | 2 | 0 |
 | command | 23 | 21 | 2 | 0 |
 | finding | 44 | 41 | 3 | 0 |
 | decision | 16 | 14 | 1 | 1 |
@@ -30,7 +30,7 @@ Tracked entities: **426** across **45** change groups.
 | 2 | 5 | 32 | 32 | 0 |
 | 3 | 8 | 82 | 82 | 0 |
 | 4 | 7 | 105 | 105 | 0 |
-| 5 | 5 | 70 | 63 | 0 |
+| 5 | 5 | 70 | 70 | 0 |
 | 6 | 5 | 40 | 0 | 0 |
 | 7 | 1 | 7 | 0 | 7 |
 
@@ -143,7 +143,7 @@ Tracked entities: **426** across **45** change groups.
 | P1-01 | P17-G3A-02 | signed-off | required-pr |
 | P1-02 | P17-G3A-01 | signed-off | required-pr |
 | P1-03 | P17-G3A-02 | signed-off | required-pr |
-| P1-04 | P17-G5-05 | validated | required-pr |
+| P1-04 | P17-G5-05 | signed-off | required-pr |
 | P1-05 | P17-G4A-03 | signed-off | required-pr |
 | P1-06 | P17-G4A-02 | signed-off | required-pr |
 | P1-07 | P17-G4B-01 | signed-off | required-pr |
@@ -248,7 +248,7 @@ Tracked entities: **426** across **45** change groups.
 | EWP-OPT-TS05 | P17-G6-02A | planned | required-pr |
 | EWP-OPT-TS06 | P17-G1-01 | signed-off | required-pr |
 | EWP-OPT-TS07 | P17-G6-02A | planned | required-pr |
-| EWP-OPT-TS08 | P17-G5-05 | passing | required-pr |
+| EWP-OPT-TS08 | P17-G5-05 | signed-off | required-pr |
 | EWP-OPT-TS09 | P17-G4B-02 | signed-off | required-pr |
 | EWP-OPT-TS10 | P17-G1-02A | signed-off | required-pr |
 
@@ -264,11 +264,11 @@ Tracked entities: **426** across **45** change groups.
 | EWP-WF06 | P17-G4B-02 | signed-off | required-pr |
 | EWP-WF07 | P17-G4B-02 | signed-off | required-pr |
 | EWP-WF08 | P17-G4B-02 | signed-off | required-pr |
-| EWP-WF09 | P17-G5-05 | passing | required-pr |
+| EWP-WF09 | P17-G5-05 | signed-off | required-pr |
 | EWP-WF10 | P17-G5-01 | signed-off | required-pr |
 | EWP-WF11 | P17-G5-03 | signed-off | required-pr |
 | EWP-WF12 | P17-G5-04 | signed-off | required-pr |
-| EWP-WF13 | P17-G5-05 | passing | required-pr |
+| EWP-WF13 | P17-G5-05 | signed-off | required-pr |
 | EWP-WF14 | P17-G1-01 | signed-off | required-pr |
 | EWP-WF15 | P17-G1-02A | signed-off | required-pr |
 | EWP-WF16 | P17-G6-02A | planned | required-pr |
@@ -1483,7 +1483,7 @@ Downstream coverage obligations: none.
 
 ## P17-G5-05 — Shared bulk approval, fail-fast/continue scheduling, cancellation, exits, and final artifact-option closure
 
-Phase: 5; status: **reviewed**; dependencies: P17-G5-01, P17-G5-02, P17-G5-03.
+Phase: 5; status: **signed-off**; dependencies: P17-G5-01, P17-G5-02, P17-G5-03.
 Required-now validations: EWP-CMD-APPLY-TS09, EWP-CMD-APPLY-TS11, EWP-CMD-APPLY-TS13, EWP-CMD-SYNC-TS09, EWP-CMD-UNDO-TS03, EWP-CMD-UPDATE-TS06, EWP-CMD-UPDATE-TS07, EWP-CMD-UPDATE-TS08, EWP-CMD-UPDATE-TS09, EWP-OPT-TS08, EWP-P4A-TS02, EWP-P5-TS05, EWP-WF09, EWP-WF13.
 Downstream coverage obligations: none.
 
@@ -1497,18 +1497,18 @@ Downstream coverage obligations: none.
 - [x] P17-G5-05:impacted-green _(passed)_
 - [x] P17-G5-05:refactor _(passed)_
 - [x] P17-G5-05:adversarial-review _(passed)_
-- [ ] P17-G5-05:traceability-closure _(pending)_
-- [ ] P17-G5-05:signed-off _(pending)_
+- [x] P17-G5-05:traceability-closure _(passed)_
+- [x] P17-G5-05:signed-off _(passed)_
 
 ### Tracked entities
 
-- [ ] **EWP-CMD-UNDO-TS03** — update reversal and lock restoration. _(command-test; passing)_
-- [ ] **EWP-CMD-UPDATE-TS07** — prior-store retention and undo. _(command-test; passing)_
-- [ ] **EWP-OPT-TS08** — Assert sibling lock derivation plus the uniform advanced lockfile override on _(option-gate; passing)_
-- [ ] **EWP-P5-TS05** — Bulk confirmation/noninteractive safety plus fail-fast/continue scheduling _(phase-test; passing)_
-- [ ] **EWP-WF09** — Update lifecycle _(workflow; passing)_
-- [ ] **EWP-WF13** — Multi-tool partial failure _(workflow; passing)_
-- [ ] **P1-04** — Safe bulk mutation _(recommendation; validated)_
+- [x] **EWP-CMD-UNDO-TS03** — update reversal and lock restoration. _(command-test; signed-off)_
+- [x] **EWP-CMD-UPDATE-TS07** — prior-store retention and undo. _(command-test; signed-off)_
+- [x] **EWP-OPT-TS08** — Assert sibling lock derivation plus the uniform advanced lockfile override on _(option-gate; signed-off)_
+- [x] **EWP-P5-TS05** — Bulk confirmation/noninteractive safety plus fail-fast/continue scheduling _(phase-test; signed-off)_
+- [x] **EWP-WF09** — Update lifecycle _(workflow; signed-off)_
+- [x] **EWP-WF13** — Multi-tool partial failure _(workflow; signed-off)_
+- [x] **P1-04** — Safe bulk mutation _(recommendation; signed-off)_
 
 ## P17-G6-01 — Native assets, checksums, Homebrew/npm distribution, and clean installs
 
