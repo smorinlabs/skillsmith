@@ -171,6 +171,7 @@ const seedAliasedArtifactJournal = async (
   operationId: string,
   retention: 'missing' | 'present',
   label = `f17-${retention}`,
+  phase: 'staged' | 'live' = 'staged',
 ): Promise<Readonly<{ transactionId: string; retainedPath: string }>> => {
   const authority =
     operation.kind === 'write-manifest' && operation.after.kind === 'manifest'
@@ -217,7 +218,7 @@ const seedAliasedArtifactJournal = async (
     ...ledger.value.model,
     transactions: {
       ...ledger.value.model.transactions,
-      [transactionId]: sequence.value.staged,
+      [transactionId]: sequence.value[phase],
     },
   });
   if (!written.ok) throw new TypeError(JSON.stringify(written.error));
@@ -1121,6 +1122,109 @@ describe('update command contract', () => {
       claudeUnchanged: true,
       firstRetainedUnchanged: true,
       secondRetainedUnchanged: true,
+    });
+  });
+
+  test('F19 — live-only repair validates every superseded carrier before recovery mutation', async () => {
+    const selected = await fleet();
+    const preview = await updateReport(selected, ['update', 'factor-scan', '--pin', '--dry-run']);
+    const operations = preview.operations as readonly ExecutableOperation[];
+    const artifactOperation = operations.find(({ kind }) => kind === 'write-manifest');
+    const lockOperation = operations.find(({ kind }) => kind === 'write-lock');
+    if (artifactOperation === undefined || lockOperation === undefined) {
+      throw new TypeError('F19 fixture requires manifest and lock artifact operations');
+    }
+    expect(
+      await updateReport(selected, ['update', 'factor-scan', '--tool', 'codex']),
+    ).toMatchObject({ state: 'completed' });
+    expect(await updateReport(selected, ['update', 'factor-scan', '--check'], 7)).toMatchObject({
+      groups: [{ skill: 'factor-scan', drift: { artifact: false, live: true } }],
+    });
+    const first = await seedAliasedArtifactJournal(
+      selected,
+      artifactOperation,
+      artifactOperation.operationId,
+      'present',
+      'f19-a-valid',
+    );
+    const second = await seedAliasedArtifactJournal(
+      selected,
+      artifactOperation,
+      lockOperation.operationId,
+      'missing',
+      'f19-b-missing',
+    );
+    const before = await snapshotUpdateState(selected);
+    const firstRetainedBefore = await readFile(first.retainedPath);
+    const attempted = await runUpdateCli(selected, ['update', 'factor-scan', '--json']);
+    const parsed = JSON.parse(attempted.stdout) as { readonly kind?: string };
+    const after = await snapshotUpdateState(selected);
+    const firstRetainedAfter = (await Bun.file(first.retainedPath).exists())
+      ? await readFile(first.retainedPath)
+      : null;
+
+    expect({
+      exitCode: attempted.exitCode,
+      kind: parsed.kind,
+      manifestUnchanged: sameSnapshotBytes(after.manifest, before.manifest),
+      lockUnchanged: sameSnapshotBytes(after.lock, before.lock),
+      ledgerUnchanged: sameSnapshotBytes(after.ledger, before.ledger),
+      codexUnchanged: sameSnapshotBytes(after.codex, before.codex),
+      claudeUnchanged: sameSnapshotBytes(after.claude, before.claude),
+      firstRetainedUnchanged: sameSnapshotBytes(firstRetainedAfter, firstRetainedBefore),
+      secondRetainedAbsent: !(await Bun.file(second.retainedPath).exists()),
+    }).toEqual({
+      exitCode: 1,
+      kind: 'error',
+      manifestUnchanged: true,
+      lockUnchanged: true,
+      ledgerUnchanged: true,
+      codexUnchanged: true,
+      claudeUnchanged: true,
+      firstRetainedUnchanged: true,
+      secondRetainedAbsent: true,
+    });
+  });
+
+  test('F20 — pin update refuses a current live lock carrier at its physical before-image', async () => {
+    const selected = await fleet();
+    const preview = await updateReport(selected, ['update', 'factor-scan', '--pin', '--dry-run']);
+    const lock = (preview.operations as readonly ExecutableOperation[]).find(
+      ({ kind }) => kind === 'write-lock',
+    );
+    if (lock === undefined) throw new TypeError('F20 fixture requires a lock artifact operation');
+    const { retainedPath } = await seedAliasedArtifactJournal(
+      selected,
+      lock,
+      lock.operationId,
+      'present',
+      'f20-live-before',
+      'live',
+    );
+    const before = await snapshotUpdateState(selected);
+    const retainedBefore = await readFile(retainedPath);
+    const attempted = await runUpdateCli(selected, ['update', 'factor-scan', '--pin', '--json']);
+    const parsed = JSON.parse(attempted.stdout) as { readonly kind?: string };
+    const after = await snapshotUpdateState(selected);
+
+    expect({
+      exitCode: attempted.exitCode,
+      kind: parsed.kind,
+      manifestUnchanged: sameSnapshotBytes(after.manifest, before.manifest),
+      lockUnchanged: sameSnapshotBytes(after.lock, before.lock),
+      ledgerUnchanged: sameSnapshotBytes(after.ledger, before.ledger),
+      codexUnchanged: sameSnapshotBytes(after.codex, before.codex),
+      claudeUnchanged: sameSnapshotBytes(after.claude, before.claude),
+      retainedUnchanged: sameSnapshotBytes(await readFile(retainedPath), retainedBefore),
+    }).toEqual({
+      exitCode: 1,
+      kind: 'error',
+      manifestUnchanged: true,
+      lockUnchanged: true,
+      ledgerUnchanged: true,
+      codexUnchanged: true,
+      claudeUnchanged: true,
+      retainedUnchanged: true,
     });
   });
 
