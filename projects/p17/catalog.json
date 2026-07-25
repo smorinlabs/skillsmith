@@ -7493,6 +7493,7 @@
         "packages/core/src/artifacts/retained-preimage-codec.ts",
         "packages/core/src/contracts/v1/undo.ts",
         "packages/core/src/execution/scheduler.ts",
+        "packages/core/src/export/plan.ts",
         "packages/core/src/place/execute.ts",
         "packages/core/src/place/logical-transactions.ts",
         "packages/core/src/place/plan.ts",
@@ -7512,6 +7513,7 @@
         "packages/core/src/update/execute.ts",
         "packages/core/src/update/history.ts",
         "packages/core/src/update/plan.ts",
+        "packages/core/tests/acquire/execute.test.ts",
         "packages/core/tests/application/undo-service.test.ts",
         "packages/core/tests/application/update-service.test.ts",
         "packages/core/tests/artifacts/codec.test.ts",
@@ -7536,13 +7538,16 @@
         "packages/core/tests/update/execute.test.ts",
         "packages/core/tests/update/history.test.ts",
         "packages/core/tests/update/plan.test.ts",
+        "packages/cli/tests/contracts/dev.test.ts",
         "packages/cli/tests/contracts/options.test.ts",
         "packages/cli/tests/contracts/undo.test.ts",
         "packages/cli/tests/contracts/update.test.ts",
+        "packages/cli/tests/output/init.test.ts",
         "packages/cli/tests/output/undo.test.ts",
         "tests/ergonomics/fixtures/p5-batch/fleet.ts",
         "tests/ergonomics/fixtures/p5-undo/fleet.ts",
         "tests/ergonomics/fixtures/p5-update/fleet.ts",
+        "tests/ergonomics/phase/EWP-P4A-TS04.test.ts",
         "tests/ergonomics/phase/EWP-P5-TS05.test.ts",
         "tests/ergonomics/workflows/EWP-WF09.test.ts",
         "tests/ergonomics/workflows/EWP-WF13.test.ts",
@@ -7686,7 +7691,8 @@
         "projects/p17/evidence/P17-G5-05.md#f21-final-envelope-revalidation-correction-and-immutable-green-at-a311a53",
         "projects/p17/evidence/P17-G5-05.md#f21-final-independent-adversarial-review-go-at-f21a00d",
         "projects/p17/evidence/P17-G5-05.md#terminal-repository-gate-lint-size-failure-and-tooling-amendment-at-2691c32",
-        "projects/p17/evidence/P17-G5-05.md#terminal-lint-tooling-amendment-review-go-at-d1051fe"
+        "projects/p17/evidence/P17-G5-05.md#terminal-lint-tooling-amendment-review-go-at-d1051fe",
+        "projects/p17/evidence/P17-G5-05.md#exact-post-lint-terminal-failure-audit-and-f22-f24-amendment-at-806a9ff"
       ]
     },
     {
@@ -26723,7 +26729,8 @@
         "projects/p17/evidence/P17-G5-05.md#f21-final-envelope-revalidation-review-no-go-at-b3cf18e",
         "projects/p17/evidence/P17-G5-05.md#f21-final-envelope-revalidation-correction-and-immutable-green-at-a311a53",
         "projects/p17/evidence/P17-G5-05.md#terminal-repository-gate-lint-size-failure-and-tooling-amendment-at-2691c32",
-        "projects/p17/evidence/P17-G5-05.md#terminal-lint-tooling-amendment-review-go-at-d1051fe"
+        "projects/p17/evidence/P17-G5-05.md#terminal-lint-tooling-amendment-review-go-at-d1051fe",
+        "projects/p17/evidence/P17-G5-05.md#exact-post-lint-terminal-failure-audit-and-f22-f24-amendment-at-806a9ff"
       ],
       "secondaryGroups": [],
       "implements": [],
