@@ -7629,12 +7629,16 @@
           ]
         },
         "impacted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G5-05.md#f18-full-current-authority-correction-and-immutable-green-at-7f868bf"
+          ]
         },
         "refactor": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G5-05.md#f18-full-current-authority-correction-and-immutable-green-at-7f868bf"
+          ]
         },
         "adversarial-review": {
           "status": "pending",
@@ -7677,7 +7681,8 @@
         "projects/p17/evidence/P17-G5-05.md#f16-invocation-scope-recovery-correction-and-immutable-green-at-aefc1ba",
         "projects/p17/evidence/P17-G5-05.md#f16-final-adversarial-review-no-go-at-a0a3cf6",
         "projects/p17/evidence/P17-G5-05.md#f17-artifact-only-identity-correction-and-immutable-green-at-42179d1",
-        "projects/p17/evidence/P17-G5-05.md#f17-final-adversarial-review-no-go-at-2df4e45"
+        "projects/p17/evidence/P17-G5-05.md#f17-final-adversarial-review-no-go-at-2df4e45",
+        "projects/p17/evidence/P17-G5-05.md#f18-full-current-authority-correction-and-immutable-green-at-7f868bf"
       ]
     },
     {
@@ -26696,7 +26701,7 @@
       "designStatus": "retained",
       "stateModel": "coverage",
       "primaryGroup": "P17-G5-05",
-      "status": "mapped",
+      "status": "validated",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G5-05",
       "target": null,
@@ -26711,7 +26716,8 @@
         "projects/p17/evidence/P17-G5-05.md#f16-invocation-scope-recovery-correction-and-immutable-green-at-aefc1ba",
         "projects/p17/evidence/P17-G5-05.md#f16-final-adversarial-review-no-go-at-a0a3cf6",
         "projects/p17/evidence/P17-G5-05.md#f17-artifact-only-identity-correction-and-immutable-green-at-42179d1",
-        "projects/p17/evidence/P17-G5-05.md#f17-final-adversarial-review-no-go-at-2df4e45"
+        "projects/p17/evidence/P17-G5-05.md#f17-final-adversarial-review-no-go-at-2df4e45",
+        "projects/p17/evidence/P17-G5-05.md#f18-full-current-authority-correction-and-immutable-green-at-7f868bf"
       ],
       "secondaryGroups": [],
       "implements": [],
