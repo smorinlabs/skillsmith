@@ -698,20 +698,21 @@ const removePrivateEnvelope = async (
   path: string,
   observation: OptionalPrivateEnvelope,
 ): Promise<void> => {
+  const finalObservation = await reobserveOptionalPrivateEnvelope(ports, path, observation);
   const directory = dirname(path);
   const expectedDirectoryIdentity =
-    observation.state === 'present'
-      ? observation.value.parentIdentity
-      : observation.directoryIdentity;
-  if (observation.state === 'present') {
+    finalObservation.state === 'present'
+      ? finalObservation.value.parentIdentity
+      : finalObservation.directoryIdentity;
+  if (finalObservation.state === 'present') {
     const parent = await ports.observe(directory);
     const file = await ports.observe(path);
     if (
       parent.kind !== 'directory' ||
-      parent.identity !== observation.value.parentIdentity ||
+      parent.identity !== finalObservation.value.parentIdentity ||
       parent.mode !== 0o700 ||
       file.kind !== 'file' ||
-      file.identity !== observation.value.identity ||
+      file.identity !== finalObservation.value.identity ||
       file.mode !== 0o600 ||
       file.linkCount !== 1 ||
       file.parent.state !== 'present' ||
