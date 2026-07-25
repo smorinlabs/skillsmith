@@ -63,7 +63,7 @@ export interface BindForwardUpdateArtifactHistoryRequestV1 {
   readonly ports: PlacementPorts;
   readonly ledgerPath: string;
   /** Every artifact-history operation owned by this invocation; defaults to this operation. */
-  readonly currentArtifactOperationIds?: readonly string[];
+  readonly currentArtifactOperations?: readonly ExecutableOperation[];
   readonly onLedgerCommitted?: () => Promise<void>;
   readonly signal?: AbortSignal;
 }
@@ -72,7 +72,7 @@ export interface RecoverPendingUpdateArtifactHistoryRequestV1 {
   readonly artifactCoordinator: ArtifactCoordinatorPorts;
   readonly ports: PlacementPorts;
   readonly ledgerPath: string;
-  readonly currentArtifactOperationIds: readonly string[];
+  readonly currentArtifactOperations: readonly ExecutableOperation[];
   readonly signal?: AbortSignal;
 }
 
@@ -80,7 +80,7 @@ type PendingUpdateArtifactHistoryRecoveryRequestV1 = Readonly<{
   artifactCoordinator: ArtifactCoordinatorPorts;
   ports: PlacementPorts;
   ledgerPath: string;
-  currentArtifactOperationIds: ReadonlySet<string>;
+  currentArtifactOperations: ReadonlyMap<string, ExecutableOperation>;
   signal?: AbortSignal;
 }>;
 
@@ -220,6 +220,41 @@ const exactArtifactOperation = (
     : null;
 };
 
+const indexCurrentArtifactOperations = (
+  operations: readonly ExecutableOperation[],
+): ReadonlyMap<string, ExecutableOperation> => {
+  const indexed = new Map<string, ExecutableOperation>();
+  for (const operation of operations) {
+    if (exactArtifactOperation(operation) === null || indexed.has(operation.operationId)) {
+      throw new TypeError('current update artifact authority is invalid or ambiguous');
+    }
+    indexed.set(operation.operationId, operation);
+  }
+  return indexed;
+};
+
+const artifactJournalIntent = (
+  operation: ExecutableOperation,
+  artifact: NonNullable<ReturnType<typeof exactArtifactOperation>>,
+): LogicalJournalV1Dto['intent'] => ({
+  operationId: operation.operationId,
+  groupId: operation.groupId,
+  pairId: null,
+  kind: operation.kind,
+  skill: null,
+  source: null,
+  tool: null,
+  scope: null,
+  before: operation.before as LogicalJournalV1Dto['intent']['before'],
+  after: operation.after as LogicalJournalV1Dto['intent']['after'],
+  mutates: operation.mutates,
+  reversibility: {
+    kind: 'conditional',
+    retentionResourceIds: [artifact.retentionResourceId],
+  },
+  conflict: null,
+});
+
 export const createForwardUpdateArtifactJournalSequenceV1 = (
   request: CreateForwardUpdateArtifactJournalSequenceRequestV1,
 ): Result<ForwardUpdateArtifactJournalSequenceV1, ForwardUpdateArtifactHistoryErrorV1> => {
@@ -253,24 +288,7 @@ export const createForwardUpdateArtifactJournalSequenceV1 = (
     contentHash: envelope.value.contentDigest,
     retainUntil: null,
   });
-  const intent: LogicalJournalV1Dto['intent'] = {
-    operationId: request.operation.operationId,
-    groupId: request.operation.groupId,
-    pairId: null,
-    kind: request.operation.kind,
-    skill: null,
-    source: null,
-    tool: null,
-    scope: null,
-    before: request.operation.before as LogicalJournalV1Dto['intent']['before'],
-    after: request.operation.after as LogicalJournalV1Dto['intent']['after'],
-    mutates: request.operation.mutates,
-    reversibility: {
-      kind: 'conditional',
-      retentionResourceIds: [artifact.retentionResourceId],
-    },
-    conflict: null,
-  };
+  const intent = artifactJournalIntent(request.operation, artifact);
   const at = (
     phase: LogicalJournalV1Dto['phase'],
     retainedRows: readonly JournalRetainedV1Dto[],
@@ -850,6 +868,113 @@ const finalizePendingArtifactProjection = (
   return committed.value;
 };
 
+interface ForwardArtifactCarrierObservation {
+  readonly pending: LogicalJournalV1Dto | null;
+  readonly retainedPath: string;
+  readonly retainedBytes: Uint8Array;
+  readonly sequence: ForwardUpdateArtifactJournalSequenceV1;
+}
+
+async function observeForwardArtifactCarrier(
+  model: LedgerModel,
+  operation: ExecutableOperation,
+  request: PendingUpdateArtifactHistoryRecoveryRequestV1,
+): Promise<ForwardArtifactCarrierObservation> {
+  const artifact = exactArtifactOperation(operation);
+  if (artifact === null) throw new TypeError('current update artifact operation is invalid');
+  const candidates = Object.values(model.transactions).filter(
+    (journal) =>
+      journal.intent.operationId === operation.operationId &&
+      journal.disposition === 'forward' &&
+      journal.context.command === 'update' &&
+      journal.context.workflow === 'update-artifact-history',
+  );
+  if (candidates.length > 1) {
+    throw new TypeError('update artifact operation has ambiguous pending history');
+  }
+  const pending = candidates[0] ?? null;
+  const transactionId =
+    pending?.transactionId ?? request.ports.nextId('update-artifact-transaction');
+  const startedAt = pending?.context.startedAt ?? request.ports.wallNowIso();
+  const retainedPath = join(
+    dirname(request.ledgerPath),
+    `.skillsmith-artifact-${transactionId}`,
+    `${artifact.role}.backup`,
+  );
+  const physical = await observePhysicalArtifact(
+    request.artifactCoordinator,
+    artifact.role,
+    artifact.path,
+  );
+  const physicalIsBefore = sameImage(physical.image, operation.before);
+  const physicalIsAfter = sameImage(physical.image, operation.after);
+  if (
+    (!physicalIsBefore && !physicalIsAfter) ||
+    (pending === null && !physicalIsBefore) ||
+    (pending?.phase === 'prepared' && !physicalIsBefore) ||
+    (pending?.phase === 'staged' && !physicalIsBefore)
+  ) {
+    throw new TypeError('physical update artifact does not match its retained journal phase');
+  }
+
+  let retainedBytes: Uint8Array;
+  let expectedAfterMode: number;
+  if (pending !== null && pending.phase !== 'prepared') {
+    retainedBytes = await readPrivateEnvelope(request.artifactCoordinator, retainedPath);
+    const decoded = decodeRetainedArtifactPreimageV1(retainedBytes, {
+      operationId: operation.operationId,
+      role: artifact.role,
+      path: artifact.path,
+      after: { digest: artifact.afterDigest, mode: physical.mode },
+    });
+    if (!decoded.ok) throw new TypeError(decoded.error.message);
+    expectedAfterMode = decoded.value.model.after.mode;
+  } else {
+    if (!physicalIsBefore) throw new TypeError('update artifact preimage is no longer available');
+    expectedAfterMode = physical.mode;
+    const encoded = encodeRetainedArtifactPreimageV1({
+      operationId: operation.operationId,
+      role: artifact.role,
+      path: artifact.path,
+      before: { bytes: physical.bytes, mode: physical.mode },
+      after: { digest: artifact.afterDigest, mode: expectedAfterMode },
+    });
+    if (!encoded.ok) throw new TypeError(encoded.error.message);
+    retainedBytes = encoded.value.encoded;
+    if (pending !== null) {
+      const existing = await observeOptionalPrivateEnvelope(
+        request.artifactCoordinator,
+        retainedPath,
+      );
+      if (existing.state === 'present' && !equalBytes(existing.value.bytes, retainedBytes)) {
+        throw new TypeError('prepared update artifact envelope differs from approved authority');
+      }
+    }
+  }
+  const sequence = createForwardUpdateArtifactJournalSequenceV1({
+    operation,
+    transactionId,
+    startedAt,
+    retainedPath,
+    retainedBytes,
+    expectedAfterMode,
+  });
+  if (!sequence.ok) throw new TypeError(sequence.error.message);
+  if (
+    pending !== null &&
+    canonicalPlanningString(pending) !==
+      canonicalPlanningString(journalAtPendingPhase(sequence.value, pending.phase))
+  ) {
+    throw new TypeError('pending update artifact history differs from approved authority');
+  }
+  return Object.freeze({
+    pending,
+    retainedPath,
+    retainedBytes,
+    sequence: sequence.value,
+  });
+}
+
 const recoverSupersededArtifactHistory = async (
   model: LedgerModel,
   request: PendingUpdateArtifactHistoryRecoveryRequestV1,
@@ -868,8 +993,7 @@ const recoverSupersededArtifactHistory = async (
     }
     throw new TypeError('pending update artifact recovery authority is invalid');
   }
-  let next = await recoverPendingArtifactCleanupMarkers(model, request, persist);
-  const superseded = Object.values(next.transactions)
+  const forward = Object.values(model.transactions)
     .filter((journal) => journal.context.workflow === 'update-artifact-history')
     .map((journal) => {
       const authority = pendingUpdateArtifactAuthority(journal, request.ledgerPath);
@@ -878,10 +1002,21 @@ const recoverSupersededArtifactHistory = async (
       }
       return authority;
     })
-    .filter(
-      (authority) => !request.currentArtifactOperationIds.has(authority.journal.intent.operationId),
-    )
     .sort((left, right) => left.journal.transactionId.localeCompare(right.journal.transactionId));
+  const claimedCurrent = new Set<string>();
+  for (const authority of forward) {
+    const operation = request.currentArtifactOperations.get(authority.journal.intent.operationId);
+    if (operation === undefined) continue;
+    if (claimedCurrent.has(operation.operationId)) {
+      throw new TypeError('current update artifact history is ambiguous');
+    }
+    claimedCurrent.add(operation.operationId);
+    await observeForwardArtifactCarrier(model, operation, request);
+  }
+  let next = await recoverPendingArtifactCleanupMarkers(model, request, persist);
+  const superseded = forward.filter(
+    (authority) => !request.currentArtifactOperations.has(authority.journal.intent.operationId),
+  );
   for (const authority of superseded) {
     if (request.signal?.aborted) throw new TypeError('update artifact orphan cleanup cancelled');
     const physical = await observePhysicalArtifact(
@@ -976,7 +1111,7 @@ export const recoverPendingUpdateArtifactHistoryV1 = async (
       artifactCoordinator: request.artifactCoordinator,
       ports: request.ports,
       ledgerPath: request.ledgerPath,
-      currentArtifactOperationIds: new Set(request.currentArtifactOperationIds),
+      currentArtifactOperations: indexCurrentArtifactOperations(request.currentArtifactOperations),
       ...(request.signal === undefined ? {} : { signal: request.signal }),
     },
     async (next) => {
@@ -1044,16 +1179,19 @@ export const bindForwardUpdateArtifactHistoryV1 = (
           request.ledgerPath,
           request.signal,
         );
+        const suppliedCurrent = request.currentArtifactOperations ?? [request.operation];
+        const currentArtifactOperations = indexCurrentArtifactOperations(
+          suppliedCurrent.some(({ operationId }) => operationId === request.operation.operationId)
+            ? suppliedCurrent
+            : [request.operation, ...suppliedCurrent],
+        );
         model = await recoverSupersededArtifactHistory(
           model,
           {
             artifactCoordinator: request.artifactCoordinator,
             ports: request.ports,
             ledgerPath: request.ledgerPath,
-            currentArtifactOperationIds: new Set([
-              request.operation.operationId,
-              ...(request.currentArtifactOperationIds ?? []),
-            ]),
+            currentArtifactOperations,
             ...(request.signal === undefined ? {} : { signal: request.signal }),
           },
           async (next) => {
@@ -1062,84 +1200,15 @@ export const bindForwardUpdateArtifactHistoryV1 = (
             return persisted.value.model;
           },
         );
-        const candidates = Object.values(model.transactions).filter(
-          (journal) =>
-            journal.intent.operationId === request.operation.operationId &&
-            journal.disposition === 'forward' &&
-            journal.context.command === 'update' &&
-            journal.context.workflow === 'update-artifact-history',
-        );
-        if (candidates.length > 1) {
-          throw new TypeError('update artifact operation has ambiguous pending history');
-        }
-        const pending = candidates[0] ?? null;
-        const transactionId =
-          pending?.transactionId ?? request.ports.nextId('update-artifact-transaction');
-        const startedAt = pending?.context.startedAt ?? request.ports.wallNowIso();
-        const retainedPath = join(
-          dirname(request.ledgerPath),
-          `.skillsmith-artifact-${transactionId}`,
-          `${artifact.role}.backup`,
-        );
-        const physical = await observePhysicalArtifact(
-          request.artifactCoordinator,
-          artifact.role,
-          artifact.path,
-        );
-        const physicalIsBefore = sameImage(physical.image, request.operation.before);
-        const physicalIsAfter = sameImage(physical.image, request.operation.after);
-        if (
-          (!physicalIsBefore && !physicalIsAfter) ||
-          (pending === null && !physicalIsBefore) ||
-          (pending?.phase === 'prepared' && !physicalIsBefore) ||
-          (pending?.phase === 'staged' && !physicalIsBefore)
-        ) {
-          throw new TypeError('physical update artifact does not match its retained journal phase');
-        }
-
-        let retainedBytes: Uint8Array;
-        let expectedAfterMode: number;
-        if (pending !== null && pending.phase !== 'prepared') {
-          retainedBytes = await readPrivateEnvelope(request.artifactCoordinator, retainedPath);
-          const decoded = decodeRetainedArtifactPreimageV1(retainedBytes, {
-            operationId: request.operation.operationId,
-            role: artifact.role,
-            path: artifact.path,
-            after: { digest: artifact.afterDigest, mode: physical.mode },
-          });
-          if (!decoded.ok) throw new TypeError(decoded.error.message);
-          expectedAfterMode = decoded.value.model.after.mode;
-        } else {
-          if (!physicalIsBefore) {
-            throw new TypeError('update artifact preimage is no longer available');
-          }
-          expectedAfterMode = physical.mode;
-          const encoded = encodeRetainedArtifactPreimageV1({
-            operationId: request.operation.operationId,
-            role: artifact.role,
-            path: artifact.path,
-            before: { bytes: physical.bytes, mode: physical.mode },
-            after: { digest: artifact.afterDigest, mode: expectedAfterMode },
-          });
-          if (!encoded.ok) throw new TypeError(encoded.error.message);
-          retainedBytes = encoded.value.encoded;
-        }
-        const sequence = createForwardUpdateArtifactJournalSequenceV1({
-          operation: request.operation,
-          transactionId,
-          startedAt,
-          retainedPath,
-          retainedBytes,
-          expectedAfterMode,
+        const observed = await observeForwardArtifactCarrier(model, request.operation, {
+          artifactCoordinator: request.artifactCoordinator,
+          ports: request.ports,
+          ledgerPath: request.ledgerPath,
+          currentArtifactOperations,
+          ...(request.signal === undefined ? {} : { signal: request.signal }),
         });
-        if (!sequence.ok) throw new TypeError(sequence.error.message);
-        if (
-          pending !== null &&
-          canonicalPlanningString(pending) !==
-            canonicalPlanningString(journalAtPendingPhase(sequence.value, pending.phase))
-        ) {
-          throw new TypeError('pending update artifact history differs from approved authority');
-        }
+        const { pending, retainedPath, sequence } = observed;
+        let retainedBytes = observed.retainedBytes;
 
         const persist = async (journal: LogicalJournalV1Dto, terminal = false): Promise<void> => {
           const advanced = terminal
@@ -1151,17 +1220,17 @@ export const bindForwardUpdateArtifactHistoryV1 = (
           model = persisted.value.model;
         };
 
-        if (pending === null) await persist(sequence.value.prepared);
+        if (pending === null) await persist(sequence.prepared);
         if (pending === null || pending.phase === 'prepared') {
           retainedBytes = await ensurePrivateEnvelope(
             request.artifactCoordinator,
             retainedPath,
             retainedBytes,
           );
-          await persist(sequence.value.staged);
+          await persist(sequence.staged);
         }
         if (pending === null || pending.phase === 'prepared' || pending.phase === 'staged') {
-          await persist(sequence.value.backedUp);
+          await persist(sequence.backedUp);
         }
 
         const physicalResult = await request.binding.execute(binding);
@@ -1169,8 +1238,8 @@ export const bindForwardUpdateArtifactHistoryV1 = (
           durableImage = request.operation.after;
         }
         if (!sameImage(durableImage, request.operation.after)) return physicalResult;
-        if (pending?.phase !== 'live') await persist(sequence.value.live);
-        await persist(sequence.value.committed, true);
+        if (pending?.phase !== 'live') await persist(sequence.live);
+        await persist(sequence.committed, true);
         await request.onLedgerCommitted?.();
         return physicalResult;
       } catch (error) {
