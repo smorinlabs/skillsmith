@@ -7629,12 +7629,16 @@
           ]
         },
         "impacted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G5-05.md#f17-artifact-only-identity-correction-and-immutable-green-at-42179d1"
+          ]
         },
         "refactor": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G5-05.md#f17-artifact-only-identity-correction-and-immutable-green-at-42179d1"
+          ]
         },
         "adversarial-review": {
           "status": "pending",
@@ -7675,7 +7679,8 @@
         "projects/p17/evidence/P17-G5-05.md#f15-structural-discovery-correction-and-immutable-green-at-ec831af",
         "projects/p17/evidence/P17-G5-05.md#f15-final-adversarial-review-no-go-at-b72ef1c",
         "projects/p17/evidence/P17-G5-05.md#f16-invocation-scope-recovery-correction-and-immutable-green-at-aefc1ba",
-        "projects/p17/evidence/P17-G5-05.md#f16-final-adversarial-review-no-go-at-a0a3cf6"
+        "projects/p17/evidence/P17-G5-05.md#f16-final-adversarial-review-no-go-at-a0a3cf6",
+        "projects/p17/evidence/P17-G5-05.md#f17-artifact-only-identity-correction-and-immutable-green-at-42179d1"
       ]
     },
     {
@@ -26694,7 +26699,7 @@
       "designStatus": "retained",
       "stateModel": "coverage",
       "primaryGroup": "P17-G5-05",
-      "status": "mapped",
+      "status": "validated",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G5-05",
       "target": null,
@@ -26707,7 +26712,8 @@
         "projects/p17/evidence/P17-G5-05.md#f15-structural-discovery-correction-and-immutable-green-at-ec831af",
         "projects/p17/evidence/P17-G5-05.md#f15-final-adversarial-review-no-go-at-b72ef1c",
         "projects/p17/evidence/P17-G5-05.md#f16-invocation-scope-recovery-correction-and-immutable-green-at-aefc1ba",
-        "projects/p17/evidence/P17-G5-05.md#f16-final-adversarial-review-no-go-at-a0a3cf6"
+        "projects/p17/evidence/P17-G5-05.md#f16-final-adversarial-review-no-go-at-a0a3cf6",
+        "projects/p17/evidence/P17-G5-05.md#f17-artifact-only-identity-correction-and-immutable-green-at-42179d1"
       ],
       "secondaryGroups": [],
       "implements": [],
