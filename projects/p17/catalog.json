@@ -7502,6 +7502,7 @@
         "packages/core/src/reconcile/apply-execution.ts",
         "packages/core/src/reconcile/execute.ts",
         "packages/core/src/reconcile/plan.ts",
+        "packages/core/src/reconcile/saved.ts",
         "packages/core/src/status/join.ts",
         "packages/core/src/status/read.ts",
         "packages/core/src/status/types.ts",
@@ -7532,6 +7533,7 @@
         "packages/core/tests/reconcile/apply-execution.test.ts",
         "packages/core/tests/reconcile/execute.test.ts",
         "packages/core/tests/reconcile/plan.test.ts",
+        "packages/core/tests/reconcile/saved.test.ts",
         "packages/core/tests/status/read.test.ts",
         "packages/core/tests/undo/artifacts.test.ts",
         "packages/core/tests/undo/execute.test.ts",
@@ -7696,7 +7698,8 @@
         "projects/p17/evidence/P17-G5-05.md#terminal-lint-tooling-amendment-review-go-at-d1051fe",
         "projects/p17/evidence/P17-G5-05.md#exact-post-lint-terminal-failure-audit-and-f22-f24-amendment-at-806a9ff",
         "projects/p17/evidence/P17-G5-05.md#f25-reconcile-migration-producer-review-no-go-and-corrected-amendment-at-2028474",
-        "projects/p17/evidence/P17-G5-05.md#f25-corrected-terminal-amendment-review-go-at-12751cb"
+        "projects/p17/evidence/P17-G5-05.md#f25-corrected-terminal-amendment-review-go-at-12751cb",
+        "projects/p17/evidence/P17-G5-05.md#f26-saved-plan-dual-domain-projection-finding-and-amendment"
       ]
     },
     {
@@ -26736,7 +26739,8 @@
         "projects/p17/evidence/P17-G5-05.md#terminal-lint-tooling-amendment-review-go-at-d1051fe",
         "projects/p17/evidence/P17-G5-05.md#exact-post-lint-terminal-failure-audit-and-f22-f24-amendment-at-806a9ff",
         "projects/p17/evidence/P17-G5-05.md#f25-reconcile-migration-producer-review-no-go-and-corrected-amendment-at-2028474",
-        "projects/p17/evidence/P17-G5-05.md#f25-corrected-terminal-amendment-review-go-at-12751cb"
+        "projects/p17/evidence/P17-G5-05.md#f25-corrected-terminal-amendment-review-go-at-12751cb",
+        "projects/p17/evidence/P17-G5-05.md#f26-saved-plan-dual-domain-projection-finding-and-amendment"
       ],
       "secondaryGroups": [],
       "implements": [],
