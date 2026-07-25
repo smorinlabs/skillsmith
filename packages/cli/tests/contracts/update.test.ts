@@ -1048,6 +1048,82 @@ describe('update command contract', () => {
     });
   });
 
+  test('F18 — pin update refuses duplicate carriers for the current lock ID before mutation', async () => {
+    const selected = await fleet();
+    const preview = await updateReport(selected, ['update', 'factor-scan', '--pin', '--dry-run']);
+    const operations = preview.operations as readonly ExecutableOperation[];
+    const lock = operations.find(({ kind }) => kind === 'write-lock');
+    if (lock === undefined) throw new TypeError('F18 duplicate fixture requires a lock operation');
+    const first = await seedAliasedArtifactJournal(
+      selected,
+      lock,
+      lock.operationId,
+      'present',
+      'f18-duplicate-first',
+    );
+    const rawLedger = JSON.parse(await readFile(selected.ledger, 'utf8')) as {
+      transactions: Record<string, LogicalJournalV1Dto>;
+    };
+    const firstJournal = rawLedger.transactions[first.transactionId];
+    if (firstJournal === undefined) {
+      throw new TypeError('F18 duplicate fixture lost its first carrier');
+    }
+    const secondTransactionId = 'transaction:v1:f18-duplicate-second';
+    const secondRetainedPath = join(
+      dirname(selected.ledger),
+      `.skillsmith-artifact-${secondTransactionId}`,
+      'lock.backup',
+    );
+    const firstRetainedBefore = await readFile(first.retainedPath);
+    await mkdir(dirname(secondRetainedPath), { recursive: true, mode: 0o700 });
+    await writeFile(secondRetainedPath, firstRetainedBefore, { mode: 0o600 });
+    rawLedger.transactions[secondTransactionId] = {
+      ...firstJournal,
+      transactionId: secondTransactionId,
+      actual: {
+        ...firstJournal.actual,
+        retained: firstJournal.actual.retained.map((retained) => ({
+          ...retained,
+          path: secondRetainedPath,
+        })),
+      },
+    };
+    await writeFile(selected.ledger, `${JSON.stringify(rawLedger, null, 2)}\n`);
+    const before = await snapshotUpdateState(selected);
+    const secondRetainedBefore = await readFile(secondRetainedPath);
+    const attempted = await runUpdateCli(selected, ['update', 'factor-scan', '--pin', '--json']);
+    const parsed = JSON.parse(attempted.stdout) as { readonly kind?: string };
+    const after = await snapshotUpdateState(selected);
+
+    expect({
+      exitCode: attempted.exitCode,
+      kind: parsed.kind,
+      manifestUnchanged: sameSnapshotBytes(after.manifest, before.manifest),
+      lockUnchanged: sameSnapshotBytes(after.lock, before.lock),
+      ledgerUnchanged: sameSnapshotBytes(after.ledger, before.ledger),
+      codexUnchanged: sameSnapshotBytes(after.codex, before.codex),
+      claudeUnchanged: sameSnapshotBytes(after.claude, before.claude),
+      firstRetainedUnchanged: sameSnapshotBytes(
+        await readFile(first.retainedPath),
+        firstRetainedBefore,
+      ),
+      secondRetainedUnchanged: sameSnapshotBytes(
+        await readFile(secondRetainedPath),
+        secondRetainedBefore,
+      ),
+    }).toEqual({
+      exitCode: 3,
+      kind: 'error',
+      manifestUnchanged: true,
+      lockUnchanged: true,
+      ledgerUnchanged: true,
+      codexUnchanged: true,
+      claudeUnchanged: true,
+      firstRetainedUnchanged: true,
+      secondRetainedUnchanged: true,
+    });
+  });
+
   test('EWP-CMD-UPDATE-TS07 — update commits exact reversible artifact lineage', async () => {
     const selected = await fleet();
     await chmod(selected.manifest, 0o604);
