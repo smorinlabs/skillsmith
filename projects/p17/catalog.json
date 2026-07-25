@@ -7629,12 +7629,16 @@
           ]
         },
         "impacted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G5-05.md#f15-structural-discovery-correction-and-immutable-green-at-ec831af"
+          ]
         },
         "refactor": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G5-05.md#f15-structural-discovery-correction-and-immutable-green-at-ec831af"
+          ]
         },
         "adversarial-review": {
           "status": "pending",
@@ -7671,7 +7675,8 @@
         "projects/p17/evidence/P17-G5-05.md#adversarial-correction-test-first-evidence-at-23eb290",
         "projects/p17/evidence/P17-G5-05.md#adversarial-correction-implementation-and-impacted-green-at-e778e6b",
         "projects/p17/evidence/P17-G5-05.md#adversarial-correction-refactor-gate-at-e778e6b",
-        "projects/p17/evidence/P17-G5-05.md#corrected-adversarial-review-no-go-at-e497dcc"
+        "projects/p17/evidence/P17-G5-05.md#corrected-adversarial-review-no-go-at-e497dcc",
+        "projects/p17/evidence/P17-G5-05.md#f15-structural-discovery-correction-and-immutable-green-at-ec831af"
       ]
     },
     {
@@ -26690,7 +26695,7 @@
       "designStatus": "retained",
       "stateModel": "coverage",
       "primaryGroup": "P17-G5-05",
-      "status": "mapped",
+      "status": "validated",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G5-05",
       "target": null,
@@ -26699,7 +26704,8 @@
         "projects/p17/evidence/P17-G5-05.md#minimal-implementation-and-targeted-green-at-86fd011",
         "projects/p17/evidence/P17-G5-05.md#impacted-green-at-c33a75f",
         "projects/p17/evidence/P17-G5-05.md#adversarial-correction-implementation-and-impacted-green-at-e778e6b",
-        "projects/p17/evidence/P17-G5-05.md#corrected-adversarial-review-no-go-at-e497dcc"
+        "projects/p17/evidence/P17-G5-05.md#corrected-adversarial-review-no-go-at-e497dcc",
+        "projects/p17/evidence/P17-G5-05.md#f15-structural-discovery-correction-and-immutable-green-at-ec831af"
       ],
       "secondaryGroups": [],
       "implements": [],
