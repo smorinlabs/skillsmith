@@ -7499,6 +7499,7 @@
         "packages/core/src/place/plan.ts",
         "packages/core/src/place/swap.ts",
         "packages/core/src/place/types.ts",
+        "packages/core/src/reconcile/apply.ts",
         "packages/core/src/reconcile/apply-execution.ts",
         "packages/core/src/reconcile/execute.ts",
         "packages/core/src/reconcile/plan.ts",
@@ -7530,6 +7531,7 @@
         "packages/core/tests/place/logical-transactions.test.ts",
         "packages/core/tests/place/plan.test.ts",
         "packages/core/tests/place/swap.test.ts",
+        "packages/core/tests/reconcile/apply.test.ts",
         "packages/core/tests/reconcile/apply-execution.test.ts",
         "packages/core/tests/reconcile/execute.test.ts",
         "packages/core/tests/reconcile/plan.test.ts",
@@ -7700,7 +7702,8 @@
         "projects/p17/evidence/P17-G5-05.md#f25-reconcile-migration-producer-review-no-go-and-corrected-amendment-at-2028474",
         "projects/p17/evidence/P17-G5-05.md#f25-corrected-terminal-amendment-review-go-at-12751cb",
         "projects/p17/evidence/P17-G5-05.md#f26-saved-plan-dual-domain-projection-finding-and-amendment",
-        "projects/p17/evidence/P17-G5-05.md#f26-saved-plan-dual-domain-amendment-review-go-at-be74561"
+        "projects/p17/evidence/P17-G5-05.md#f26-saved-plan-dual-domain-amendment-review-go-at-be74561",
+        "projects/p17/evidence/P17-G5-05.md#f27-saved-plan-operation-image-runtime-validation-finding-and-amendment"
       ]
     },
     {
@@ -26742,7 +26745,8 @@
         "projects/p17/evidence/P17-G5-05.md#f25-reconcile-migration-producer-review-no-go-and-corrected-amendment-at-2028474",
         "projects/p17/evidence/P17-G5-05.md#f25-corrected-terminal-amendment-review-go-at-12751cb",
         "projects/p17/evidence/P17-G5-05.md#f26-saved-plan-dual-domain-projection-finding-and-amendment",
-        "projects/p17/evidence/P17-G5-05.md#f26-saved-plan-dual-domain-amendment-review-go-at-be74561"
+        "projects/p17/evidence/P17-G5-05.md#f26-saved-plan-dual-domain-amendment-review-go-at-be74561",
+        "projects/p17/evidence/P17-G5-05.md#f27-saved-plan-operation-image-runtime-validation-finding-and-amendment"
       ],
       "secondaryGroups": [],
       "implements": [],
