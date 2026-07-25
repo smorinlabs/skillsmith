@@ -7472,9 +7472,10 @@
       "phase": "5",
       "title": "Shared bulk approval, fail-fast/continue scheduling, cancellation, exits, and final artifact-option closure",
       "dependsOn": ["P17-G5-01", "P17-G5-02", "P17-G5-03"],
-      "status": "reviewed",
+      "status": "active",
       "owner": "root-goal",
       "ownedFiles": [
+        "biome.json",
         "docs/architecture.md",
         "packages/core/src/acquire/execute.ts",
         "packages/core/src/acquire/plan.ts",
@@ -7599,7 +7600,7 @@
         "bun test tests/ergonomics/workflows/EWP-WF13.test.ts --test-name-pattern EWP-WF13"
       ],
       "implementers": ["root-codex-goal"],
-      "reviewer": "/root/g5_05_f21_final_review",
+      "reviewer": null,
       "gates": {
         "mapped": {
           "status": "passed",
@@ -7629,22 +7630,16 @@
           ]
         },
         "impacted-green": {
-          "status": "passed",
-          "evidence": [
-            "projects/p17/evidence/P17-G5-05.md#f21-final-envelope-revalidation-correction-and-immutable-green-at-a311a53"
-          ]
+          "status": "pending",
+          "evidence": []
         },
         "refactor": {
-          "status": "passed",
-          "evidence": [
-            "projects/p17/evidence/P17-G5-05.md#f21-final-envelope-revalidation-correction-and-immutable-green-at-a311a53"
-          ]
+          "status": "pending",
+          "evidence": []
         },
         "adversarial-review": {
-          "status": "passed",
-          "evidence": [
-            "projects/p17/evidence/P17-G5-05.md#f21-final-independent-adversarial-review-go-at-f21a00d"
-          ]
+          "status": "pending",
+          "evidence": []
         },
         "traceability-closure": {
           "status": "pending",
@@ -7689,7 +7684,8 @@
         "projects/p17/evidence/P17-G5-05.md#f19f20-complete-recovery-preflight-correction-and-immutable-green-at-65c3907",
         "projects/p17/evidence/P17-G5-05.md#f21-final-envelope-revalidation-review-no-go-at-b3cf18e",
         "projects/p17/evidence/P17-G5-05.md#f21-final-envelope-revalidation-correction-and-immutable-green-at-a311a53",
-        "projects/p17/evidence/P17-G5-05.md#f21-final-independent-adversarial-review-go-at-f21a00d"
+        "projects/p17/evidence/P17-G5-05.md#f21-final-independent-adversarial-review-go-at-f21a00d",
+        "projects/p17/evidence/P17-G5-05.md#terminal-repository-gate-lint-size-failure-and-tooling-amendment-at-2691c32"
       ]
     },
     {
@@ -19780,9 +19776,7 @@
         "selector": "EWP-OPT-TS08",
         "command": "bun test packages/cli/tests/contracts/options.test.ts --test-name-pattern EWP-OPT-TS08"
       },
-      "evidence": [
-        "projects/p17/evidence/P17-G5-05.md#green-execution-receipt-ewp-opt-ts08"
-      ],
+      "evidence": ["projects/p17/evidence/P17-G5-05.md#green-execution-receipt-ewp-opt-ts08"],
       "secondaryGroups": [
         "P17-G4B-02",
         "P17-G1-02B",
@@ -26198,9 +26192,7 @@
         "selector": "EWP-WF13",
         "command": "bun test tests/ergonomics/workflows/EWP-WF13.test.ts --test-name-pattern EWP-WF13"
       },
-      "evidence": [
-        "projects/p17/evidence/P17-G5-05.md#green-execution-receipt-ewp-wf13"
-      ],
+      "evidence": ["projects/p17/evidence/P17-G5-05.md#green-execution-receipt-ewp-wf13"],
       "secondaryGroups": ["P17-G4A-04", "P17-G4B-02", "P17-G5-01", "P17-G5-02"],
       "implements": [],
       "validatedBy": ["EWP-WF13"],
@@ -26708,7 +26700,7 @@
       "designStatus": "retained",
       "stateModel": "coverage",
       "primaryGroup": "P17-G5-05",
-      "status": "validated",
+      "status": "mapped",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G5-05",
       "target": null,
@@ -26728,7 +26720,8 @@
         "projects/p17/evidence/P17-G5-05.md#f18-final-adversarial-review-no-go-at-3399124",
         "projects/p17/evidence/P17-G5-05.md#f19f20-complete-recovery-preflight-correction-and-immutable-green-at-65c3907",
         "projects/p17/evidence/P17-G5-05.md#f21-final-envelope-revalidation-review-no-go-at-b3cf18e",
-        "projects/p17/evidence/P17-G5-05.md#f21-final-envelope-revalidation-correction-and-immutable-green-at-a311a53"
+        "projects/p17/evidence/P17-G5-05.md#f21-final-envelope-revalidation-correction-and-immutable-green-at-a311a53",
+        "projects/p17/evidence/P17-G5-05.md#terminal-repository-gate-lint-size-failure-and-tooling-amendment-at-2691c32"
       ],
       "secondaryGroups": [],
       "implements": [],
