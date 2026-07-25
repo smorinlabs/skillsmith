@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 2,
+  "experimental": true,
+  "findings": [
+    {
+      "findingId": "finding:v1:364da286e47a6963bac4838bf6412a854c4b39a6648e839f8fe6bb3d825902e7",
+      "checkId": "fixture.paths",
+      "severity": "warning",
+      "title": "Fixture path needs attention",
+      "message": "The fixture path is illustrative.",
+      "remediation": "Use a real project path.",
+      "tool": "codex",
+      "scope": "project",
+      "path": "/fixture/project",
+      "operation": "read",
+      "reason": "fixture",
+      "scopeInUse": true
+    }
+  ],
+  "counts": {
+    "ok": 2,
+    "warning": 1,
+    "error": 0
+  },
+  "repair": {
+    "mode": "not-requested",
+    "operations": [],
+    "results": []
+  },
+  "mutation": {
+    "kind": "none",
+    "planned": 0,
+    "changed": 0,
+    "unchanged": 0,
+    "failed": 0
+  }
+}

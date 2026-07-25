@@ -1785,14 +1785,13 @@ describe('EWP-P3B-TS04 — canonical ledger-v2 transactions, history, and local 
       ),
       'UTF-16 depth fairness trace',
     );
-    expect(depth).toMatchObject({
-      depthOrder: [0, 1],
-      anchorOrder: expect.arrayContaining(['\u{10000}', '\uE000']),
-    });
     const trace = depth as Readonly<{
       anchorOrder: readonly string[];
+      depthOrder: readonly number[];
       history: LogicalJournalV1Dto[];
     }>;
+    expect(trace.depthOrder).toEqual([0, 1]);
+    expect(trace.anchorOrder).toEqual(expect.arrayContaining(['\u{10000}', '\uE000']));
     expect(trace.anchorOrder.indexOf('\u{10000}')).toBeLessThan(
       trace.anchorOrder.indexOf('\uE000'),
     );
@@ -1844,19 +1843,15 @@ describe('EWP-P3B-TS04 — canonical ledger-v2 transactions, history, and local 
       ...Array.from({ length: 256 }, (_, index) => journal(index + 1, 'committed')),
     ];
     const pending = await unwrap(select({ ...emptyModel(), history }), 'select cleanup victim');
-    expect(pending).toMatchObject({
-      history: expect.any(Array),
-      cleanupVictim: {
-        transactionId: victim.transactionId,
-        status: 'pending',
-      },
-    });
     const pendingRecord = pending as Readonly<{
       history: readonly LogicalJournalV1Dto[];
       cleanupVictim: Readonly<{ transactionId: string; status: string }> | null;
     }>;
     expect(pendingRecord.history).toHaveLength(257);
-    expect(pendingRecord.cleanupVictim).not.toBeNull();
+    expect(pendingRecord.cleanupVictim).toEqual({
+      transactionId: victim.transactionId,
+      status: 'pending',
+    });
 
     const unsafe = await unwrap(
       select(
@@ -1870,11 +1865,15 @@ describe('EWP-P3B-TS04 — canonical ledger-v2 transactions, history, and local 
       ),
       'retain unsafe cleanup tombstone',
     );
-    expect(unsafe).toMatchObject({
-      history: expect.any(Array),
-      cleanupVictim: { transactionId: victim.transactionId, status: 'unsafe' },
+    const unsafeRecord = unsafe as Readonly<{
+      history: readonly LogicalJournalV1Dto[];
+      cleanupVictim: Readonly<{ transactionId: string; status: string }> | null;
+    }>;
+    expect(unsafeRecord.history).toHaveLength(257);
+    expect(unsafeRecord.cleanupVictim).toEqual({
+      transactionId: victim.transactionId,
+      status: 'unsafe',
     });
-    expect((unsafe as { history: unknown[] }).history).toHaveLength(257);
 
     const cleaned = await unwrap(
       select(
@@ -1952,7 +1951,7 @@ describe('EWP-P3B-TS04 — canonical ledger-v2 transactions, history, and local 
     const cleanupSeed = { ...emptyModel(), history };
     const tombstoneModel = await unwrapModel(select(cleanupSeed), 'select live cleanup tombstone');
     expect(tombstoneModel.history).toHaveLength(257);
-    expect((tombstoneModel as unknown as UnknownRecord).cleanupVictim).toMatchObject({
+    expect((tombstoneModel as unknown as UnknownRecord).cleanupVictim).toEqual({
       transactionId,
       status: 'pending',
     });
@@ -2145,7 +2144,7 @@ describe('EWP-P3B-TS04 — canonical ledger-v2 transactions, history, and local 
       'recompute same missing-backup victim at unchanged ledger revision',
     );
     expect(recomputed.history.map((item) => item.transactionId)).toContain(transactionId);
-    expect((recomputed as unknown as UnknownRecord).cleanupVictim).toMatchObject({
+    expect((recomputed as unknown as UnknownRecord).cleanupVictim).toEqual({
       transactionId,
       status: 'pending',
     });

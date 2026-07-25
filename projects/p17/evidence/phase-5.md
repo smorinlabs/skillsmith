@@ -45,9 +45,9 @@
 - **Verdict:** **NO-GO at 0.99 confidence**. Phase-5 review, standing approval, and exit remain
   pending. Standing authorization does not waive either finding.
 - **Required correction:** materialize the promised focused GC renderer test or formally amend to
-  equivalent proven coverage; enforce existence of every non-planned group-owned file; remove the
-  Bun-specific product behavior and use direct non-mutating assertions; then obtain fresh G5-04 and
-  whole-Phase-5 review on immutable corrections.
+  equivalent proven coverage; require every non-planned group-owned path to be a current regular
+  file or an exact Git-recorded deletion; remove the Bun-specific product behavior and use direct
+  non-mutating assertions; then obtain fresh G5-04 and whole-Phase-5 review on immutable corrections.
 - **Boundary:** Phase 6 and all five G6 groups remain planned with zero owned files and zero passed
   gates. No Phase-6 work is authorized by this correction.
 

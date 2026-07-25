@@ -901,6 +901,38 @@ describe('P17 group lifecycle coherence', () => {
     );
   });
 
+  test.each([
+    ['absent', 'packages/cli/tests/output/not-a-real-test.ts'],
+    ['non-file', 'packages/cli/tests/output'],
+  ])('rejects %s ownership after a group leaves planned state', (_kind, path) => {
+    const result = runCatalogMutation((catalog) => {
+      activatePhase0(catalog);
+      const value = group(catalog);
+      value.status = 'ready';
+      value.ownedFiles = [path];
+      value.testCommands = ['bun test scripts/p17-catalog.test.ts'];
+      value.implementers = ['implementation-agent'];
+      passGroupThrough(value, 'ready');
+    });
+    expectFailure(
+      result,
+      `P17-G0-01 owned path is neither a regular repository file nor a recorded deletion: ${path}`,
+    );
+  });
+
+  test('accepts an absent owned path only when Git records its deletion', () => {
+    const result = runCatalogMutation((catalog) => {
+      activatePhase0(catalog);
+      const value = group(catalog);
+      value.status = 'ready';
+      value.ownedFiles = ['packages/cli/src/util/config-notice.ts'];
+      value.testCommands = ['bun test scripts/p17-catalog.test.ts'];
+      value.implementers = ['implementation-agent'];
+      passGroupThrough(value, 'ready');
+    }, '--write');
+    expect(result.exitCode).toBe(0);
+  });
+
   test('rejects ready status after a later lifecycle gate has passed', () => {
     const result = runCatalogMutation((catalog) => {
       activatePhase0(catalog);

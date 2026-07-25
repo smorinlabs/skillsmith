@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { containsSensitiveMaterial } from '../../safety/redaction.ts';
 import { createJsonWireCodec } from '../codec.ts';
 import type { WireCodec } from '../types.ts';
 
@@ -193,6 +194,14 @@ const SummarySchema = z
     failedItems: Count,
   })
   .strict();
+const containsForbiddenOutput = (input: unknown): boolean => {
+  if (typeof input === 'string') {
+    return containsSensitiveMaterial(input) || /(?:https?|ssh):\/\//iu.test(input);
+  }
+  if (Array.isArray(input)) return input.some(containsForbiddenOutput);
+  if (input === null || typeof input !== 'object') return false;
+  return Object.values(input).some(containsForbiddenOutput);
+};
 const GcReportSchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -247,7 +256,15 @@ const GcReportSchema = z
     ),
     summary: SummarySchema,
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    if (containsForbiddenOutput(value)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'gc reports cannot contain source URLs or credential material',
+      });
+    }
+  });
 
 export const gcV1Codec = createJsonWireCodec(
   {

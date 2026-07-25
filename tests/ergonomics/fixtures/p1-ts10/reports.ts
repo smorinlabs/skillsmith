@@ -1460,11 +1460,26 @@ export const CURRENT_LIFECYCLE_V2_GOLDENS = {
   uninstall: JSON.stringify(UNINSTALL_V2_DTO, null, 2),
 } as const;
 
+const DOCTOR_HEALTH_V2_DTO = {
+  schemaVersion: 2,
+  experimental: true,
+  findings: [
+    {
+      findingId: 'finding:v1:364da286e47a6963bac4838bf6412a854c4b39a6648e839f8fe6bb3d825902e7',
+      ...HEALTH_REPORT_FIXTURE.result.findings[0],
+    },
+  ],
+  counts: HEALTH_REPORT_FIXTURE.result.counts,
+  repair: { mode: 'not-requested', operations: [], results: [] },
+  mutation: { kind: 'none', planned: 0, changed: 0, unchanged: 0, failed: 0 },
+} as const;
+
 export const CURRENT_JSON_GOLDENS = {
   ...HISTORICAL_JSON_GOLDENS,
   agents: `${JSON.stringify(AGENTS_V2_DTO, null, 2)}\n`,
   apply: `${JSON.stringify(APPLY_REPORT_FIXTURE, null, 2)}\n`,
   commands: `${JSON.stringify(COMMANDS_V2_DTO, null, 2)}\n`,
+  doctor: JSON.stringify(DOCTOR_HEALTH_V2_DTO, null, 2),
   flip: JSON.stringify(FLIP_V4_DTO, null, 2),
   install: CURRENT_LIFECYCLE_V2_GOLDENS.install,
   list: `${JSON.stringify(LIST_V3_DTO, null, 2)}\n`,
@@ -1483,6 +1498,7 @@ export const GOLDEN_TERMINAL_LF = {
   apply: true,
   health: false,
   commands: true,
+  doctor: false,
   configGetUnscoped: true,
   configGetScoped: true,
   configListUnscoped: false,

@@ -1478,6 +1478,37 @@ function validate(catalog: Catalog): void {
       if (!same(group[key], baseline[key])) fail(`${group.id} immutable ${key} drifted`);
     }
     if (!groupStatuses.has(group.status)) fail(`${group.id} has invalid status ${group.status}`);
+    if (group.status !== 'planned' && group.status !== 'deferred') {
+      for (const path of group.ownedFiles) {
+        const absolutePath = resolve(root, path);
+        const repositoryRelative = relative(root, absolutePath);
+        const realPath = existsSync(absolutePath) ? realpathSync(absolutePath) : absolutePath;
+        const realRepositoryRelative = relative(realpathSync(root), realPath);
+        const currentRegularFile =
+          existsSync(absolutePath) &&
+          lstatSync(absolutePath).isFile() &&
+          statSync(absolutePath).isFile();
+        const recordedDeletion =
+          !existsSync(absolutePath) &&
+          Bun.spawnSync(['git', 'log', '-1', '--format=', '--name-status', '--', path], {
+            cwd: root,
+            stdout: 'pipe',
+            stderr: 'ignore',
+          })
+            .stdout.toString()
+            .trim() === `D\t${path}`;
+        if (
+          path.startsWith('/') ||
+          repositoryRelative.startsWith('..') ||
+          realRepositoryRelative.startsWith('..') ||
+          (!currentRegularFile && !recordedDeletion)
+        ) {
+          fail(
+            `${group.id} owned path is neither a regular repository file nor a recorded deletion: ${path}`,
+          );
+        }
+      }
+    }
     requireKeys(`${group.id}.gates`, group.gates, [...gateNames]);
     for (const gateName of gateNames) {
       const gate = group.gates[gateName];

@@ -46,7 +46,7 @@ describe('gc@1 wire contract', () => {
     expect(decoded).toEqual({ ok: true, value: report() });
   });
 
-  test('rejects recursive unknown fields and invalid counts', () => {
+  test('rejects recursive unknown fields, unsafe strings, and invalid counts', () => {
     expect(gcV1Codec.validate({ ...report(), extra: true })).toMatchObject({ ok: false });
     expect(
       gcV1Codec.validate({
@@ -63,6 +63,18 @@ describe('gc@1 wire contract', () => {
     expect(gcV1Codec.validate({ ...report(), planId: 'not-a-plan-id' })).toMatchObject({
       ok: false,
     });
+    expect(
+      gcV1Codec.validate({
+        ...report(),
+        project: { ...report().project, root: '/workspace?access_token=gc-secret-canary' },
+      }),
+    ).toMatchObject({ ok: false });
+    expect(
+      gcV1Codec.validate({
+        ...report(),
+        diagnostics: [{ code: 'gc-source', message: 'https://example.test/private', path: null }],
+      }),
+    ).toMatchObject({ ok: false });
     expect(
       gcV1Codec.validate({
         ...report(),

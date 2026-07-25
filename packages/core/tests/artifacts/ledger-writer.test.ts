@@ -988,9 +988,10 @@ describe('bounded history and one-victim cleanup', () => {
     const durableIds = durable.history.map(({ transactionId }) => transactionId);
     expect(durableIds).toContain(fixture.parent.transactionId);
     expect(durableIds).toContain(fixture.child.transactionId);
-    expect(selectBoundedHistory(durable)).toMatchObject({
-      ok: true,
-      value: { cleanupVictim: { transactionId: fixture.child.transactionId, status: 'pending' } },
+    const selection = unwrap(selectBoundedHistory(durable));
+    expect(selection.cleanupVictim).toEqual({
+      transactionId: fixture.child.transactionId,
+      status: 'pending',
     });
     expect(existsSync(fixture.backupPath)).toBeTrue();
   }, 30_000);

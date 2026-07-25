@@ -262,6 +262,7 @@ export interface LedgerHistorySelection {
 
 export interface LedgerHistorySelectionOptions {
   readonly newestTransactionId?: string;
+  /** Include deterministic selection-order diagnostics without changing selection semantics. */
   readonly includeSelectionTrace?: boolean;
   readonly ledgerRevision?: string;
   readonly cleanup?: Readonly<{
@@ -797,41 +798,19 @@ export const selectBoundedHistory = (
           transactionId: victim.transactionId,
           status: cleanupUnsafe ? ('unsafe' as const) : ('pending' as const),
         });
-  const output = {
-    ...model,
-    history: selectedHistory,
-    ...(options.includeSelectionTrace
-      ? {
-          depthOrder: Object.freeze(maximumDepth > 1 ? [0, 1] : maximumDepth === 1 ? [0] : []),
-          anchorOrder,
-        }
-      : {}),
-  } as LedgerModel & Omit<BoundedLedgerHistory, 'cleanupVictim'>;
-  Object.defineProperty(output, 'cleanupVictim', {
-    enumerable: true,
-    configurable: false,
-    get: () => {
-      // Bun's asymmetric object matcher currently replaces a matched property even on a frozen
-      // object. Restore the earlier history field when it next observes this later property.
-      Object.defineProperty(output, 'history', {
-        value: selectedHistory,
-        enumerable: true,
-        configurable: false,
-        writable: false,
-      });
-      return cleanupVictim;
-    },
-  });
-  if (options.includeSelectionTrace) {
-    return ok(
-      new Proxy(output as BoundedLedgerHistory, {
-        set: () => true,
-        defineProperty: () => true,
-        deleteProperty: () => true,
-      }),
-    );
-  }
-  return ok(Object.freeze(output) as BoundedLedgerHistory);
+  return ok(
+    Object.freeze({
+      ...model,
+      history: selectedHistory,
+      ...(options.includeSelectionTrace
+        ? {
+            depthOrder: Object.freeze(maximumDepth > 1 ? [0, 1] : maximumDepth === 1 ? [0] : []),
+            anchorOrder,
+          }
+        : {}),
+      cleanupVictim,
+    }) as BoundedLedgerHistory,
+  );
 };
 
 export interface LedgerHistoryCleanupPorts extends FileMetadataReadPort {
