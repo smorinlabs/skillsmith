@@ -7492,6 +7492,7 @@
         "packages/core/src/artifacts/plan-codec.ts",
         "packages/core/src/artifacts/retained-preimage-codec.ts",
         "packages/core/src/contracts/v1/undo.ts",
+        "packages/core/src/doctor/checks/artifact-state.ts",
         "packages/core/src/execution/scheduler.ts",
         "packages/core/src/export/plan.ts",
         "packages/core/src/place/execute.ts",
@@ -7526,6 +7527,7 @@
         "packages/core/tests/artifacts/ledger-writer.test.ts",
         "packages/core/tests/artifacts/retained-preimage-codec.test.ts",
         "packages/core/tests/contracts/undo.test.ts",
+        "packages/core/tests/doctor/checks/artifact-state.test.ts",
         "packages/core/tests/execution/scheduler.test.ts",
         "packages/core/tests/place/execute.test.ts",
         "packages/core/tests/place/logical-transactions.test.ts",
@@ -7641,16 +7643,12 @@
           ]
         },
         "impacted-green": {
-          "status": "passed",
-          "evidence": [
-            "projects/p17/evidence/P17-G5-05.md#f22-f28-digest-domain-correction-and-immutable-green-at-959e0d0"
-          ]
+          "status": "pending",
+          "evidence": []
         },
         "refactor": {
-          "status": "passed",
-          "evidence": [
-            "projects/p17/evidence/P17-G5-05.md#f22-f28-digest-domain-correction-and-immutable-green-at-959e0d0"
-          ]
+          "status": "pending",
+          "evidence": []
         },
         "adversarial-review": {
           "status": "pending",
@@ -7710,7 +7708,8 @@
         "projects/p17/evidence/P17-G5-05.md#f27-saved-plan-operation-image-runtime-validation-finding-and-amendment",
         "projects/p17/evidence/P17-G5-05.md#f28-saved-execution-guard-rebinding-review-finding",
         "projects/p17/evidence/P17-G5-05.md#f27-f28-corrected-saved-validation-amendment-review-go-at-ff2516c",
-        "projects/p17/evidence/P17-G5-05.md#f22-f28-digest-domain-correction-and-immutable-green-at-959e0d0"
+        "projects/p17/evidence/P17-G5-05.md#f22-f28-digest-domain-correction-and-immutable-green-at-959e0d0",
+        "projects/p17/evidence/P17-G5-05.md#f29-doctor-manifest-operation-image-review-no-go-and-amendment-at-4348933"
       ]
     },
     {
@@ -26725,7 +26724,7 @@
       "designStatus": "retained",
       "stateModel": "coverage",
       "primaryGroup": "P17-G5-05",
-      "status": "validated",
+      "status": "mapped",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G5-05",
       "target": null,
@@ -26756,7 +26755,8 @@
         "projects/p17/evidence/P17-G5-05.md#f27-saved-plan-operation-image-runtime-validation-finding-and-amendment",
         "projects/p17/evidence/P17-G5-05.md#f28-saved-execution-guard-rebinding-review-finding",
         "projects/p17/evidence/P17-G5-05.md#f27-f28-corrected-saved-validation-amendment-review-go-at-ff2516c",
-        "projects/p17/evidence/P17-G5-05.md#f22-f28-digest-domain-correction-and-immutable-green-at-959e0d0"
+        "projects/p17/evidence/P17-G5-05.md#f22-f28-digest-domain-correction-and-immutable-green-at-959e0d0",
+        "projects/p17/evidence/P17-G5-05.md#f29-doctor-manifest-operation-image-review-no-go-and-amendment-at-4348933"
       ],
       "secondaryGroups": [],
       "implements": [],
