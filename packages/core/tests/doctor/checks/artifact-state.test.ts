@@ -84,11 +84,13 @@ describe('artifactState', () => {
     expect(migration.expectedByteRevision).not.toBe(beforeRoleHash);
     expect(migration.resultByteRevision).not.toBe(afterRoleHash);
 
-    expect([repair.beforeImage.byteHash, repair.afterImage.byteHash]).toEqual([
-      beforeRoleHash,
-      afterRoleHash,
+    expect([String(repair.beforeImage.byteHash), String(repair.afterImage.byteHash)]).toEqual([
+      String(beforeRoleHash),
+      String(afterRoleHash),
     ]);
-    expect(repair.beforeImage.semanticHash).toBe(migration.expectedSemanticRevision);
-    expect(repair.afterImage.semanticHash).toBe(migration.resultSemanticRevision);
+    expect(String(repair.beforeImage.semanticHash)).toBe(
+      String(migration.expectedSemanticRevision),
+    );
+    expect(String(repair.afterImage.semanticHash)).toBe(String(migration.resultSemanticRevision));
   });
 });
