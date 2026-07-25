@@ -165,8 +165,15 @@ const seedWorkflowCorruptedArtifactJournal = async (
   return retainedPath;
 };
 
-const sameSnapshotBytes = (left: Uint8Array | null, right: Uint8Array | null): boolean =>
-  left === null ? right === null : right !== null && Buffer.from(left).equals(Buffer.from(right));
+const sameSnapshotBytes = (
+  left: Uint8Array | null | undefined,
+  right: Uint8Array | null | undefined,
+): boolean => {
+  if (left === undefined || right === undefined) return false;
+  return left === null
+    ? right === null
+    : right !== null && Buffer.from(left).equals(Buffer.from(right));
+};
 
 describe('update command contract', () => {
   test('EWP-CMD-UPDATE-TS01 — exact remote candidate discovery', async () => {
