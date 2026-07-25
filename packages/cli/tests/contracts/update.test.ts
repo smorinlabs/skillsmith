@@ -170,25 +170,34 @@ const seedAliasedArtifactJournal = async (
   operation: ExecutableOperation,
   operationId: string,
   retention: 'missing' | 'present',
+  label = `f17-${retention}`,
 ): Promise<Readonly<{ transactionId: string; retainedPath: string }>> => {
-  if (operation.kind !== 'write-manifest' || operation.after.kind !== 'manifest') {
-    throw new TypeError('F17 fixture requires a manifest artifact operation');
-  }
+  const authority =
+    operation.kind === 'write-manifest' && operation.after.kind === 'manifest'
+      ? {
+          role: 'manifest' as const,
+          path: selected.manifest,
+          afterDigest: operation.after.byteHash,
+        }
+      : operation.kind === 'write-lock' && operation.after.kind === 'lock'
+        ? { role: 'lock' as const, path: selected.lock, afterDigest: operation.after.canonicalHash }
+        : null;
+  if (authority === null) throw new TypeError('aliased fixture requires an artifact operation');
   const aliasedOperation: ExecutableOperation = { ...operation, operationId };
-  const mode = (await lstat(selected.manifest)).mode & 0o7777;
+  const mode = (await lstat(authority.path)).mode & 0o7777;
   const envelope = encodeRetainedArtifactPreimageV1({
     operationId,
-    role: 'manifest',
-    path: selected.manifest,
-    before: { bytes: new Uint8Array(await readFile(selected.manifest)), mode },
-    after: { digest: operation.after.byteHash, mode },
+    role: authority.role,
+    path: authority.path,
+    before: { bytes: new Uint8Array(await readFile(authority.path)), mode },
+    after: { digest: authority.afterDigest, mode },
   });
   if (!envelope.ok) throw new TypeError(envelope.error.message);
-  const transactionId = `transaction:v1:f17-${retention}`;
+  const transactionId = `transaction:v1:${label}`;
   const retainedPath = join(
     dirname(selected.ledger),
     `.skillsmith-artifact-${transactionId}`,
-    'manifest.backup',
+    `${authority.role}.backup`,
   );
   const sequence = createForwardUpdateArtifactJournalSequenceV1({
     operation: aliasedOperation,
@@ -909,6 +918,132 @@ describe('update command contract', () => {
       claudeChanged: true,
       transactionPending: false,
       cleanupBeforePlacement: true,
+      retainedAbsent: true,
+    });
+  });
+
+  test('F18 — pin update refuses a manifest carrier aliased to the current lock ID before mutation', async () => {
+    const selected = await fleet();
+    const preview = await updateReport(selected, ['update', 'factor-scan', '--pin', '--dry-run']);
+    const operations = preview.operations as readonly ExecutableOperation[];
+    const manifest = operations.find(({ kind }) => kind === 'write-manifest');
+    const lock = operations.find(({ kind }) => kind === 'write-lock');
+    if (manifest === undefined || lock === undefined) {
+      throw new TypeError('F18 cross-role fixture requires manifest and lock operations');
+    }
+    const { retainedPath } = await seedAliasedArtifactJournal(
+      selected,
+      manifest,
+      lock.operationId,
+      'present',
+      'f18-cross-role',
+    );
+    const before = await snapshotUpdateState(selected);
+    const retainedBefore = await readFile(retainedPath);
+    const attempted = await runUpdateCli(selected, ['update', 'factor-scan', '--pin', '--json']);
+    const parsed = JSON.parse(attempted.stdout) as { readonly kind?: string };
+    const after = await snapshotUpdateState(selected);
+
+    expect({
+      exitCode: attempted.exitCode,
+      kind: parsed.kind,
+      manifestUnchanged: sameSnapshotBytes(after.manifest, before.manifest),
+      lockUnchanged: sameSnapshotBytes(after.lock, before.lock),
+      ledgerUnchanged: sameSnapshotBytes(after.ledger, before.ledger),
+      codexUnchanged: sameSnapshotBytes(after.codex, before.codex),
+      claudeUnchanged: sameSnapshotBytes(after.claude, before.claude),
+      retainedUnchanged: sameSnapshotBytes(await readFile(retainedPath), retainedBefore),
+    }).toEqual({
+      exitCode: 1,
+      kind: 'error',
+      manifestUnchanged: true,
+      lockUnchanged: true,
+      ledgerUnchanged: true,
+      codexUnchanged: true,
+      claudeUnchanged: true,
+      retainedUnchanged: true,
+    });
+  });
+
+  test('F18 — pin update refuses changed current lock intent before manifest mutation', async () => {
+    const selected = await fleet();
+    const preview = await updateReport(selected, ['update', 'factor-scan', '--pin', '--dry-run']);
+    const operations = preview.operations as readonly ExecutableOperation[];
+    const manifest = operations.find(({ kind }) => kind === 'write-manifest');
+    const lock = operations.find(({ kind }) => kind === 'write-lock');
+    if (manifest === undefined || lock === undefined) {
+      throw new TypeError('F18 changed-intent fixture requires manifest and lock operations');
+    }
+    const changedLock: ExecutableOperation = { ...lock, groupId: manifest.operationId };
+    const { retainedPath } = await seedAliasedArtifactJournal(
+      selected,
+      changedLock,
+      lock.operationId,
+      'present',
+      'f18-changed-intent',
+    );
+    const before = await snapshotUpdateState(selected);
+    const retainedBefore = await readFile(retainedPath);
+    const attempted = await runUpdateCli(selected, ['update', 'factor-scan', '--pin', '--json']);
+    const parsed = JSON.parse(attempted.stdout) as { readonly kind?: string };
+    const after = await snapshotUpdateState(selected);
+
+    expect({
+      exitCode: attempted.exitCode,
+      kind: parsed.kind,
+      manifestUnchanged: sameSnapshotBytes(after.manifest, before.manifest),
+      lockUnchanged: sameSnapshotBytes(after.lock, before.lock),
+      ledgerUnchanged: sameSnapshotBytes(after.ledger, before.ledger),
+      codexUnchanged: sameSnapshotBytes(after.codex, before.codex),
+      claudeUnchanged: sameSnapshotBytes(after.claude, before.claude),
+      retainedUnchanged: sameSnapshotBytes(await readFile(retainedPath), retainedBefore),
+    }).toEqual({
+      exitCode: 1,
+      kind: 'error',
+      manifestUnchanged: true,
+      lockUnchanged: true,
+      ledgerUnchanged: true,
+      codexUnchanged: true,
+      claudeUnchanged: true,
+      retainedUnchanged: true,
+    });
+  });
+
+  test('F18 — pin update validates exact current lock retention before manifest mutation', async () => {
+    const selected = await fleet();
+    const preview = await updateReport(selected, ['update', 'factor-scan', '--pin', '--dry-run']);
+    const operations = preview.operations as readonly ExecutableOperation[];
+    const lock = operations.find(({ kind }) => kind === 'write-lock');
+    if (lock === undefined) throw new TypeError('F18 retention fixture requires a lock operation');
+    const { retainedPath } = await seedAliasedArtifactJournal(
+      selected,
+      lock,
+      lock.operationId,
+      'missing',
+      'f18-missing-retention',
+    );
+    const before = await snapshotUpdateState(selected);
+    const attempted = await runUpdateCli(selected, ['update', 'factor-scan', '--pin', '--json']);
+    const parsed = JSON.parse(attempted.stdout) as { readonly kind?: string };
+    const after = await snapshotUpdateState(selected);
+
+    expect({
+      exitCode: attempted.exitCode,
+      kind: parsed.kind,
+      manifestUnchanged: sameSnapshotBytes(after.manifest, before.manifest),
+      lockUnchanged: sameSnapshotBytes(after.lock, before.lock),
+      ledgerUnchanged: sameSnapshotBytes(after.ledger, before.ledger),
+      codexUnchanged: sameSnapshotBytes(after.codex, before.codex),
+      claudeUnchanged: sameSnapshotBytes(after.claude, before.claude),
+      retainedAbsent: !(await Bun.file(retainedPath).exists()),
+    }).toEqual({
+      exitCode: 1,
+      kind: 'error',
+      manifestUnchanged: true,
+      lockUnchanged: true,
+      ledgerUnchanged: true,
+      codexUnchanged: true,
+      claudeUnchanged: true,
       retainedAbsent: true,
     });
   });
