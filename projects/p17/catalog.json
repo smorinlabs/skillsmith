@@ -7629,16 +7629,12 @@
           ]
         },
         "impacted-green": {
-          "status": "passed",
-          "evidence": [
-            "projects/p17/evidence/P17-G5-05.md#f19f20-complete-recovery-preflight-correction-and-immutable-green-at-65c3907"
-          ]
+          "status": "pending",
+          "evidence": []
         },
         "refactor": {
-          "status": "passed",
-          "evidence": [
-            "projects/p17/evidence/P17-G5-05.md#f19f20-complete-recovery-preflight-correction-and-immutable-green-at-65c3907"
-          ]
+          "status": "pending",
+          "evidence": []
         },
         "adversarial-review": {
           "status": "pending",
@@ -7684,7 +7680,8 @@
         "projects/p17/evidence/P17-G5-05.md#f17-final-adversarial-review-no-go-at-2df4e45",
         "projects/p17/evidence/P17-G5-05.md#f18-full-current-authority-correction-and-immutable-green-at-7f868bf",
         "projects/p17/evidence/P17-G5-05.md#f18-final-adversarial-review-no-go-at-3399124",
-        "projects/p17/evidence/P17-G5-05.md#f19f20-complete-recovery-preflight-correction-and-immutable-green-at-65c3907"
+        "projects/p17/evidence/P17-G5-05.md#f19f20-complete-recovery-preflight-correction-and-immutable-green-at-65c3907",
+        "projects/p17/evidence/P17-G5-05.md#f21-final-envelope-revalidation-review-no-go-at-b3cf18e"
       ]
     },
     {
@@ -26703,7 +26700,7 @@
       "designStatus": "retained",
       "stateModel": "coverage",
       "primaryGroup": "P17-G5-05",
-      "status": "validated",
+      "status": "mapped",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G5-05",
       "target": null,
@@ -26721,7 +26718,8 @@
         "projects/p17/evidence/P17-G5-05.md#f17-final-adversarial-review-no-go-at-2df4e45",
         "projects/p17/evidence/P17-G5-05.md#f18-full-current-authority-correction-and-immutable-green-at-7f868bf",
         "projects/p17/evidence/P17-G5-05.md#f18-final-adversarial-review-no-go-at-3399124",
-        "projects/p17/evidence/P17-G5-05.md#f19f20-complete-recovery-preflight-correction-and-immutable-green-at-65c3907"
+        "projects/p17/evidence/P17-G5-05.md#f19f20-complete-recovery-preflight-correction-and-immutable-green-at-65c3907",
+        "projects/p17/evidence/P17-G5-05.md#f21-final-envelope-revalidation-review-no-go-at-b3cf18e"
       ],
       "secondaryGroups": [],
       "implements": [],
