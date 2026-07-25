@@ -3,6 +3,7 @@ import { SUPPORTED_TOOLS } from '../../agents/types.ts';
 import {
   type ArtifactDigest,
   hashCanonicalInput,
+  hashManifestBytes,
   hashManifestSemantics,
 } from '../../artifacts/hash.ts';
 import type { LedgerModel } from '../../artifacts/ledger-types.ts';
@@ -294,7 +295,7 @@ const projectFindings = async (ctx: Parameters<Check['run']>[0]): Promise<Findin
         location: location(pair.file),
         shape: 'legacy',
         version: 1,
-        byteHash: planningDigest(migration.expectedByteRevision),
+        byteHash: planningDigest(hashManifestBytes(manifest.value.source)),
         semanticHash: planningDigest(migration.expectedSemanticRevision),
         value: manifestSnapshot(manifest.value.model),
       },
@@ -303,7 +304,7 @@ const projectFindings = async (ctx: Parameters<Check['run']>[0]): Promise<Findin
         location: location(pair.file),
         shape: 'canonical',
         version: 1,
-        byteHash: planningDigest(migration.resultByteRevision),
+        byteHash: planningDigest(hashManifestBytes(migration.resultSource)),
         semanticHash: planningDigest(migration.resultSemanticRevision),
         value: manifestSnapshot(manifest.value.model),
       },
