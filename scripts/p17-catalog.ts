@@ -2,6 +2,7 @@
 
 import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, posix, relative, resolve, win32 } from 'node:path';
+import { GIT_REPO_LOCAL_ENV_VARS } from '../packages/core/src/env/git.ts';
 
 type Kind =
   | 'recommendation'
@@ -171,27 +172,138 @@ const canonicalOwnedPath = (path: string): boolean =>
   posix.normalize(path) === path &&
   path.split('/').every((segment) => segment !== '' && segment !== '.' && segment !== '..');
 
-const ownedPathState = (path: string): OwnedPathState => {
-  let current = root;
-  const segments = path.split('/');
-  for (const [index, segment] of segments.entries()) {
-    current = resolve(current, segment);
-    let metadata: ReturnType<typeof lstatSync>;
-    try {
-      metadata = lstatSync(current);
-    } catch (cause) {
-      const code =
-        cause !== null && typeof cause === 'object' && 'code' in cause
-          ? (cause as { readonly code?: unknown }).code
-          : undefined;
-      return code === 'ENOENT' || code === 'ENOTDIR' ? 'absent' : 'unreadable';
-    }
-    if (metadata.isSymbolicLink()) return 'non-file';
-    const final = index === segments.length - 1;
-    if (final) return metadata.isFile() ? 'regular-file' : 'non-file';
-    if (!metadata.isDirectory()) return 'non-file';
+export const ownedPathState = (path: string, repositoryRoot: string = root): OwnedPathState => {
+  let physicalRoot: string;
+  try {
+    physicalRoot = realpathSync(repositoryRoot);
+  } catch {
+    return 'unreadable';
   }
-  return 'non-file';
+
+  const inspect = (): OwnedPathState => {
+    let current = physicalRoot;
+    const segments = path.split('/');
+    for (const [index, segment] of segments.entries()) {
+      current = resolve(current, segment);
+      let metadata: ReturnType<typeof lstatSync>;
+      try {
+        metadata = lstatSync(current);
+      } catch (cause) {
+        const code =
+          cause !== null && typeof cause === 'object' && 'code' in cause
+            ? (cause as { readonly code?: unknown }).code
+            : undefined;
+        if (code === 'ENOENT') return 'absent';
+        return code === 'ENOTDIR' ? 'non-file' : 'unreadable';
+      }
+      if (metadata.isSymbolicLink()) return 'non-file';
+      const final = index === segments.length - 1;
+      if (final) {
+        if (!metadata.isFile()) return 'non-file';
+        try {
+          if (realpathSync(current) !== current) return 'non-file';
+        } catch {
+          return 'unreadable';
+        }
+        return 'regular-file';
+      }
+      if (!metadata.isDirectory()) return 'non-file';
+    }
+    return 'non-file';
+  };
+
+  const first = inspect();
+  return first === 'regular-file' ? inspect() : first;
+};
+
+const repositoryGitEnvironment = (
+  environment: Readonly<Record<string, string | undefined>>,
+): Record<string, string | undefined> => {
+  const sanitized = { ...environment, GIT_TERMINAL_PROMPT: '0' };
+  for (const name of GIT_REPO_LOCAL_ENV_VARS) delete sanitized[name];
+  return sanitized;
+};
+
+const spawnRepositoryGit = (
+  args: readonly string[],
+  repositoryRoot: string = root,
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+) =>
+  Bun.spawnSync(['git', '-C', repositoryRoot, ...args], {
+    cwd: repositoryRoot,
+    env: repositoryGitEnvironment(environment),
+    stdout: 'pipe',
+    stderr: 'ignore',
+  });
+
+type GitChange = Readonly<{ status: string; paths: readonly string[] }>;
+
+const parseGitNameStatus = (output: string): readonly GitChange[] | null => {
+  if (!output.endsWith('\0')) return null;
+  const fields = output.split('\0');
+  fields.pop();
+  const changes: GitChange[] = [];
+  for (let index = 0; index < fields.length; ) {
+    const status = fields[index++] ?? '';
+    const kind = status[0] ?? '';
+    const pathCount = kind === 'R' || kind === 'C' ? 2 : 1;
+    if (
+      !(/^[RC]\d{1,3}$/u.test(status) || /^[ADMTUXB]$/u.test(status)) ||
+      index + pathCount > fields.length
+    ) {
+      return null;
+    }
+    const paths = fields.slice(index, index + pathCount);
+    if (paths.some((path) => path.length === 0)) return null;
+    changes.push({ status, paths });
+    index += pathCount;
+  }
+  return changes;
+};
+
+export const gitRecordsExactDeletion = (
+  path: string,
+  repositoryRoot: string = root,
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): boolean => {
+  if (!canonicalOwnedPath(path)) return false;
+  const pathspec = `:(top,literal)${path}`;
+  let log: ReturnType<typeof spawnRepositoryGit>;
+  try {
+    log = spawnRepositoryGit(
+      ['log', '-1', '--format=%H', '--', pathspec],
+      repositoryRoot,
+      environment,
+    );
+  } catch {
+    return false;
+  }
+  if (log.exitCode !== 0) return false;
+  const revision = log.stdout.toString().trim();
+  if (!/^[0-9a-f]{40}$/u.test(revision)) return false;
+
+  let show: ReturnType<typeof spawnRepositoryGit>;
+  try {
+    show = spawnRepositoryGit(
+      ['show', '--format=', '--name-status', '-z', '--find-renames', '--find-copies', revision],
+      repositoryRoot,
+      environment,
+    );
+  } catch {
+    return false;
+  }
+  if (show.exitCode !== 0) return false;
+  const changes = parseGitNameStatus(show.stdout.toString());
+  if (!changes) return false;
+
+  let exactDeletions = 0;
+  for (const change of changes) {
+    if (!change.paths.includes(path)) continue;
+    if (change.status !== 'D' || change.paths.length !== 1 || change.paths[0] !== path)
+      return false;
+    exactDeletions += 1;
+  }
+  return exactDeletions === 1;
 };
 
 function matches(regex: RegExp, text: string): Array<{ id: string; title: string }> {
@@ -1517,16 +1629,7 @@ function validate(catalog: Catalog): void {
         const canonical = canonicalOwnedPath(path);
         const state = canonical ? ownedPathState(path) : 'non-file';
         const currentRegularFile = state === 'regular-file';
-        const recordedDeletion =
-          canonical &&
-          state === 'absent' &&
-          Bun.spawnSync(['git', 'log', '-1', '--format=', '--name-status', '--', path], {
-            cwd: root,
-            stdout: 'pipe',
-            stderr: 'ignore',
-          })
-            .stdout.toString()
-            .trim() === `D\t${path}`;
+        const recordedDeletion = canonical && state === 'absent' && gitRecordsExactDeletion(path);
         if (!currentRegularFile && !recordedDeletion) {
           fail(
             `${group.id} owned path is neither a regular repository file nor a recorded deletion: ${path}`,
@@ -1923,27 +2026,18 @@ function validate(catalog: Catalog): void {
       if (entity.status === 'signed-off') {
         const revision = receipt.match(/^- Revision: `([0-9a-f]{40})`$/m)?.[1];
         const commitExists = revision
-          ? Bun.spawnSync(['git', 'cat-file', '-e', `${revision}^{commit}`], {
-              cwd: root,
-              stdout: 'ignore',
-              stderr: 'ignore',
-            }).exitCode === 0
+          ? spawnRepositoryGit(['cat-file', '-e', `${revision}^{commit}`]).exitCode === 0
           : false;
         const targetAtRevision = revision
-          ? Bun.spawnSync(['git', 'cat-file', '-e', `${revision}:${target.path}`], {
-              cwd: root,
-              stdout: 'ignore',
-              stderr: 'ignore',
-            }).exitCode === 0
+          ? spawnRepositoryGit(['cat-file', '-e', `${revision}:${target.path}`]).exitCode === 0
           : false;
         if (!commitExists || !targetAtRevision) {
           fail(`${entity.id} signed receipt revision does not contain its executable target`);
         }
-        const committedTarget = Bun.spawnSync(['git', 'show', `${revision}:${target.path}`], {
-          cwd: root,
-          stdout: 'pipe',
-          stderr: 'ignore',
-        }).stdout.toString();
+        const committedTarget = spawnRepositoryGit([
+          'show',
+          `${revision}:${target.path}`,
+        ]).stdout.toString();
         const committedExecutableBody = committedTarget
           .replace(/\/\*[\s\S]*?\*\//g, '')
           .replace(/^\s*\/\/.*$/gm, '');
@@ -2486,96 +2580,54 @@ function render(catalog: Catalog): string {
   return `${lines.join('\n').trimEnd()}\n`;
 }
 
-const mode = Bun.argv[2] ?? '--check';
-if (mode === '--init' || mode === '--reset-baseline') {
-  const exists = await Bun.file(catalogPath).exists();
-  if (mode === '--init' && exists)
-    fail('catalog already exists; edit it in place and use --write/--check');
-  if (mode === '--reset-baseline') {
-    if (!exists) fail('cannot reset a missing catalog; use --init');
-    const old = JSON.parse(readFileSync(catalogPath, 'utf8')) as Partial<Catalog>;
-    const gateIsBaseline = (gate: Partial<GateRecord> | undefined): boolean =>
-      gate?.status === 'pending' && (gate.evidence?.length ?? 0) === 0;
-    const progressedGroup = (old.groups ?? []).some(
-      (group) =>
-        !['planned', 'deferred'].includes(group.status) ||
-        group.evidence.length > 0 ||
-        group.ownedFiles.length > 0 ||
-        group.testCommands.length > 0 ||
-        group.implementers.length > 0 ||
-        group.integrationOwner !== null ||
-        group.reviewer !== null ||
-        gateNames.some((name) => !gateIsBaseline(group.gates[name])),
-    );
-    const progressedEntity = (old.entities ?? []).some(
-      (entity) =>
-        !['planned', 'deferred'].includes(entity.status) ||
-        entity.evidence.length > 0 ||
-        entity.target !== null ||
-        entity.ownedFiles.length > 0 ||
-        entity.testCommands.length > 0,
-    );
-    const progressedPhase = (old.phases ?? []).some(
-      (phase) =>
-        !['planned', 'deferred'].includes(phase.status) ||
-        !gateIsBaseline(phase.entry) ||
-        !gateIsBaseline(phase.review) ||
-        !gateIsBaseline(phase.approval) ||
-        !gateIsBaseline(phase.exit) ||
-        phase.review.reviewer !== null ||
-        phase.approval.approvedBy !== null,
-    );
-    const progressedFinal = [old.finalReview, old.finalApproval, old.finalSignoff].some(
-      (gate) => gate && !gateIsBaseline(gate),
-    );
-    if (progressedGroup || progressedEntity || progressedPhase || progressedFinal) {
-      fail('--reset-baseline refuses after any execution state exists');
+async function main(): Promise<void> {
+  const mode = Bun.argv[2] ?? '--check';
+  if (mode === '--init' || mode === '--reset-baseline') {
+    const exists = await Bun.file(catalogPath).exists();
+    if (mode === '--init' && exists)
+      fail('catalog already exists; edit it in place and use --write/--check');
+    if (mode === '--reset-baseline') {
+      if (!exists) fail('cannot reset a missing catalog; use --init');
+      const old = JSON.parse(readFileSync(catalogPath, 'utf8')) as Partial<Catalog>;
+      const gateIsBaseline = (gate: Partial<GateRecord> | undefined): boolean =>
+        gate?.status === 'pending' && (gate.evidence?.length ?? 0) === 0;
+      const progressedGroup = (old.groups ?? []).some(
+        (group) =>
+          !['planned', 'deferred'].includes(group.status) ||
+          group.evidence.length > 0 ||
+          group.ownedFiles.length > 0 ||
+          group.testCommands.length > 0 ||
+          group.implementers.length > 0 ||
+          group.integrationOwner !== null ||
+          group.reviewer !== null ||
+          gateNames.some((name) => !gateIsBaseline(group.gates[name])),
+      );
+      const progressedEntity = (old.entities ?? []).some(
+        (entity) =>
+          !['planned', 'deferred'].includes(entity.status) ||
+          entity.evidence.length > 0 ||
+          entity.target !== null ||
+          entity.ownedFiles.length > 0 ||
+          entity.testCommands.length > 0,
+      );
+      const progressedPhase = (old.phases ?? []).some(
+        (phase) =>
+          !['planned', 'deferred'].includes(phase.status) ||
+          !gateIsBaseline(phase.entry) ||
+          !gateIsBaseline(phase.review) ||
+          !gateIsBaseline(phase.approval) ||
+          !gateIsBaseline(phase.exit) ||
+          phase.review.reviewer !== null ||
+          phase.approval.approvedBy !== null,
+      );
+      const progressedFinal = [old.finalReview, old.finalApproval, old.finalSignoff].some(
+        (gate) => gate && !gateIsBaseline(gate),
+      );
+      if (progressedGroup || progressedEntity || progressedPhase || progressedFinal) {
+        fail('--reset-baseline refuses after any execution state exists');
+      }
     }
-  }
-  const catalog = initialize();
-  validate(catalog);
-  await Bun.write(catalogPath, `${JSON.stringify(catalog, null, 2)}\n`);
-  const formatResult = Bun.spawnSync(['bunx', 'biome', 'format', '--write', catalogPath], {
-    cwd: root,
-    stdout: 'pipe',
-    stderr: 'pipe',
-  });
-  if (formatResult.exitCode !== 0) {
-    fail(`could not format generated catalog\n${formatResult.stderr.toString()}`);
-  }
-  await Bun.write(checklistPath, render(catalog));
-  console.log(
-    `${mode === '--init' ? 'initialized' : 'reset'} ${catalog.counts.total} entities across ${catalog.groups.length} groups`,
-  );
-} else {
-  const catalog = JSON.parse(readFileSync(catalogPath, 'utf8')) as Catalog;
-  if (mode === '--sync-planned-targets') {
-    const expected = initialize();
-    if (
-      catalog.entities.length !== expected.entities.length ||
-      catalog.entities.some(
-        (entity, index) =>
-          entity.id !== expected.entities[index]?.id ||
-          entity.kind !== expected.entities[index]?.kind,
-      )
-    ) {
-      fail('--sync-planned-targets refuses an entity ID, kind, cardinality, or order mismatch');
-    }
-    const expectedById = new Map(expected.entities.map((entity) => [entity.id, entity]));
-    const permittedResult = structuredClone(catalog);
-    for (const entity of permittedResult.entities) {
-      if (entity.stateModel !== 'validation') continue;
-      const plannedTarget = expectedById.get(entity.id)?.plannedTarget;
-      if (!plannedTarget) fail(`--sync-planned-targets has no baseline target for ${entity.id}`);
-      entity.plannedTarget = plannedTarget;
-    }
-    for (const entity of catalog.entities) {
-      if (entity.stateModel !== 'validation') continue;
-      entity.plannedTarget = expectedById.get(entity.id)?.plannedTarget ?? entity.plannedTarget;
-    }
-    if (JSON.stringify(catalog) !== JSON.stringify(permittedResult)) {
-      fail('--sync-planned-targets attempted to change execution state');
-    }
+    const catalog = initialize();
     validate(catalog);
     await Bun.write(catalogPath, `${JSON.stringify(catalog, null, 2)}\n`);
     const formatResult = Bun.spawnSync(['bunx', 'biome', 'format', '--write', catalogPath], {
@@ -2584,32 +2636,81 @@ if (mode === '--init' || mode === '--reset-baseline') {
       stderr: 'pipe',
     });
     if (formatResult.exitCode !== 0) {
-      fail(`could not format synchronized catalog\n${formatResult.stderr.toString()}`);
+      fail(`could not format generated catalog\n${formatResult.stderr.toString()}`);
     }
+    await Bun.write(checklistPath, render(catalog));
     console.log(
-      `synchronized ${catalog.entities.filter((entity) => entity.stateModel === 'validation').length} planned validation targets; run bun scripts/p17-catalog.ts --write`,
-    );
-    process.exit(0);
-  }
-  validate(catalog);
-  const rendered = render(catalog);
-  if (mode === '--write') {
-    await Bun.write(checklistPath, rendered);
-    console.log(`rendered ${catalog.counts.total} entities across ${catalog.groups.length} groups`);
-  } else if (mode === '--check') {
-    const current = readFileSync(checklistPath, 'utf8');
-    if (current !== rendered) fail('CHECKLIST.md is stale; run bun scripts/p17-catalog.ts --write');
-    const required = catalog.entities.filter((entity) => entity.tier !== 'deferred').length;
-    const deferred = catalog.entities.length - required;
-    const validations = catalog.entities.filter(
-      (entity) => entity.stateModel === 'validation',
-    ).length;
-    console.log(
-      `valid: ${catalog.counts.total} entities (${required} required, ${deferred} deferred; ${validations} validation obligations), ${catalog.groups.length} groups, deterministic checklist`,
+      `${mode === '--init' ? 'initialized' : 'reset'} ${catalog.counts.total} entities across ${catalog.groups.length} groups`,
     );
   } else {
-    fail(
-      `unknown mode ${mode}; use --init, --reset-baseline, --sync-planned-targets, --write, or --check`,
-    );
+    const catalog = JSON.parse(readFileSync(catalogPath, 'utf8')) as Catalog;
+    if (mode === '--sync-planned-targets') {
+      const expected = initialize();
+      if (
+        catalog.entities.length !== expected.entities.length ||
+        catalog.entities.some(
+          (entity, index) =>
+            entity.id !== expected.entities[index]?.id ||
+            entity.kind !== expected.entities[index]?.kind,
+        )
+      ) {
+        fail('--sync-planned-targets refuses an entity ID, kind, cardinality, or order mismatch');
+      }
+      const expectedById = new Map(expected.entities.map((entity) => [entity.id, entity]));
+      const permittedResult = structuredClone(catalog);
+      for (const entity of permittedResult.entities) {
+        if (entity.stateModel !== 'validation') continue;
+        const plannedTarget = expectedById.get(entity.id)?.plannedTarget;
+        if (!plannedTarget) fail(`--sync-planned-targets has no baseline target for ${entity.id}`);
+        entity.plannedTarget = plannedTarget;
+      }
+      for (const entity of catalog.entities) {
+        if (entity.stateModel !== 'validation') continue;
+        entity.plannedTarget = expectedById.get(entity.id)?.plannedTarget ?? entity.plannedTarget;
+      }
+      if (JSON.stringify(catalog) !== JSON.stringify(permittedResult)) {
+        fail('--sync-planned-targets attempted to change execution state');
+      }
+      validate(catalog);
+      await Bun.write(catalogPath, `${JSON.stringify(catalog, null, 2)}\n`);
+      const formatResult = Bun.spawnSync(['bunx', 'biome', 'format', '--write', catalogPath], {
+        cwd: root,
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      if (formatResult.exitCode !== 0) {
+        fail(`could not format synchronized catalog\n${formatResult.stderr.toString()}`);
+      }
+      console.log(
+        `synchronized ${catalog.entities.filter((entity) => entity.stateModel === 'validation').length} planned validation targets; run bun scripts/p17-catalog.ts --write`,
+      );
+      process.exit(0);
+    }
+    validate(catalog);
+    const rendered = render(catalog);
+    if (mode === '--write') {
+      await Bun.write(checklistPath, rendered);
+      console.log(
+        `rendered ${catalog.counts.total} entities across ${catalog.groups.length} groups`,
+      );
+    } else if (mode === '--check') {
+      const current = readFileSync(checklistPath, 'utf8');
+      if (current !== rendered)
+        fail('CHECKLIST.md is stale; run bun scripts/p17-catalog.ts --write');
+      const required = catalog.entities.filter((entity) => entity.tier !== 'deferred').length;
+      const deferred = catalog.entities.length - required;
+      const validations = catalog.entities.filter(
+        (entity) => entity.stateModel === 'validation',
+      ).length;
+      console.log(
+        `valid: ${catalog.counts.total} entities (${required} required, ${deferred} deferred; ${validations} validation obligations), ${catalog.groups.length} groups, deterministic checklist`,
+      );
+    } else {
+      fail(
+        `unknown mode ${mode}; use --init, --reset-baseline, --sync-planned-targets, --write, or --check`,
+      );
+    }
   }
 }
+
+if (import.meta.main) await main();

@@ -10,6 +10,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { relative, resolve } from 'node:path';
+import { gitRecordsExactDeletion, ownedPathState } from './p17-catalog.ts';
 
 const root = resolve(import.meta.dir, '..');
 const checklistPath = resolve(root, 'projects/p17/CHECKLIST.md');
@@ -124,6 +125,7 @@ function temporaryFile(prefix: string, name: string): string {
 function runCatalogMutation(
   mutate: (catalog: CatalogFixture) => void,
   mode: '--check' | '--write' | '--reset-baseline' = '--check',
+  environment: Readonly<Record<string, string | undefined>> = {},
 ) {
   const temporaryCatalog = temporaryFile('skillsmith-p17-catalog-', 'catalog.json');
   const temporaryChecklist = temporaryFile('skillsmith-p17-checklist-', 'CHECKLIST.md');
@@ -135,12 +137,37 @@ function runCatalogMutation(
     cwd: root,
     env: {
       ...process.env,
+      ...environment,
       P17_CATALOG_PATH: temporaryCatalog,
       P17_CHECKLIST_PATH: temporaryChecklist,
     },
     stdout: 'pipe',
     stderr: 'pipe',
   });
+}
+
+function runGit(repository: string, args: readonly string[]): void {
+  const result = Bun.spawnSync(['git', '-C', repository, ...args], {
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  if (result.exitCode !== 0) {
+    throw new Error(`git ${args.join(' ')} failed: ${result.stderr.toString()}`);
+  }
+}
+
+function temporaryGitRepository(prefix: string): string {
+  const repository = mkdtempSync(resolve(tmpdir(), prefix));
+  temporaryDirectories.push(repository);
+  runGit(repository, ['init', '--quiet']);
+  runGit(repository, ['config', 'user.name', 'P17 Validator']);
+  runGit(repository, ['config', 'user.email', 'p17-validator@example.invalid']);
+  return repository;
+}
+
+function commitAll(repository: string, message: string): void {
+  runGit(repository, ['add', '--all']);
+  runGit(repository, ['commit', '--quiet', '-m', message]);
 }
 
 function expectFailure(result: ReturnType<typeof runCatalogMutation>, message: string): void {
@@ -1003,6 +1030,23 @@ describe('P17 group lifecycle coherence', () => {
     }
   });
 
+  test('rejects a rename-away instead of treating its path-filtered status as deletion', () => {
+    const path = 'commitlint.config.js';
+    const result = runCatalogMutation((catalog) => {
+      activatePhase0(catalog);
+      const value = group(catalog);
+      value.status = 'ready';
+      value.ownedFiles = [path];
+      value.testCommands = ['bun test scripts/p17-catalog.test.ts'];
+      value.implementers = ['implementation-agent'];
+      passGroupThrough(value, 'ready');
+    });
+    expectFailure(
+      result,
+      `P17-G0-01 owned path is neither a regular repository file nor a recorded deletion: ${path}`,
+    );
+  });
+
   test('accepts an absent owned path only when Git records its deletion', () => {
     const result = runCatalogMutation((catalog) => {
       activatePhase0(catalog);
@@ -1014,6 +1058,69 @@ describe('P17 group lifecycle coherence', () => {
       passGroupThrough(value, 'ready');
     }, '--write');
     expect(result.exitCode).toBe(0);
+  });
+
+  test('accepts only a latest exact deletion in a hermetic repository', () => {
+    const repository = temporaryGitRepository('skillsmith-p17-deletion-');
+    const path = 'owned.ts';
+    writeFileSync(resolve(repository, path), 'export const value = 1;\n');
+    commitAll(repository, 'add owner');
+    rmSync(resolve(repository, path));
+    commitAll(repository, 'delete owner');
+    expect(gitRecordsExactDeletion(path, repository)).toBe(true);
+  });
+
+  test('rejects stale deletion history followed by an add or modification', () => {
+    const repository = temporaryGitRepository('skillsmith-p17-stale-deletion-');
+    const path = 'owned.ts';
+    const absolute = resolve(repository, path);
+    writeFileSync(absolute, 'export const value = 1;\n');
+    commitAll(repository, 'add owner');
+    rmSync(absolute);
+    commitAll(repository, 'delete owner');
+
+    writeFileSync(absolute, 'export const value = 2;\n');
+    commitAll(repository, 'restore owner');
+    rmSync(absolute);
+    expect(gitRecordsExactDeletion(path, repository)).toBe(false);
+
+    writeFileSync(absolute, 'export const value = 3;\n');
+    commitAll(repository, 'modify restored owner');
+    rmSync(absolute);
+    expect(gitRecordsExactDeletion(path, repository)).toBe(false);
+  });
+
+  test('rejects rename provenance in a hermetic repository', () => {
+    const repository = temporaryGitRepository('skillsmith-p17-rename-');
+    const oldPath = 'owned.ts';
+    writeFileSync(resolve(repository, oldPath), 'export const value = 1;\n');
+    commitAll(repository, 'add owner');
+    renameSync(resolve(repository, oldPath), resolve(repository, 'renamed.ts'));
+    commitAll(repository, 'rename owner');
+    expect(gitRecordsExactDeletion(oldPath, repository)).toBe(false);
+  });
+
+  test('ignores ambient repository selectors and fails closed on Git errors', () => {
+    const intended = temporaryGitRepository('skillsmith-p17-intended-');
+    const foreign = temporaryGitRepository('skillsmith-p17-foreign-');
+    const path = 'foreign-owned.ts';
+    writeFileSync(resolve(foreign, path), 'export {};\n');
+    commitAll(foreign, 'add foreign owner');
+    rmSync(resolve(foreign, path));
+    commitAll(foreign, 'delete foreign owner');
+
+    expect(
+      gitRecordsExactDeletion(path, intended, {
+        ...process.env,
+        GIT_DIR: resolve(foreign, '.git'),
+        GIT_WORK_TREE: foreign,
+      }),
+    ).toBe(false);
+    expect(gitRecordsExactDeletion(path, resolve(intended, 'missing-repository'))).toBe(false);
+  });
+
+  test('classifies a non-directory parent as non-file rather than absence', () => {
+    expect(ownedPathState('package.json/child.ts', root)).toBe('non-file');
   });
 
   test('rejects ready status after a later lifecycle gate has passed', () => {

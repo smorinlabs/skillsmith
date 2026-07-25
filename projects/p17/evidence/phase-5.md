@@ -70,3 +70,24 @@
   symlink/ghost, and stale-history cases before another immutable review.
 - **Verdict:** **NO-GO at 0.99 confidence**. G5-04 remains 7/10; Phase-5 boundary gates remain
   pending; Phase 6 remains planned with zero progress.
+
+## G5-04 F03 correction re-review NO-GO — 2026-07-25
+
+- **Reviewed head:** `1ee9e6dc235ee15777335f386831897b55a5f196`.
+- **Reviewer:** fresh read-only external Codex session
+  `/external-codex/019f9b8f-812f-7a70-937b-0e62629593b3`.
+- **Closed portion:** canonical portable path grammar, component-by-component static symlink
+  rejection, dangling-symlink rejection, and the current 878-regular-plus-two-deletion ownership
+  arithmetic are correct. All focused validation selectors passed.
+- **P17-RV-P5-F03 remains open (medium, release-blocking):** path-limited Git history collapses a
+  rename-away into `D`, so the absent historical `commitlint.config.js` is a concrete false
+  acceptance. The Git subprocess also inherits repository-selecting environment variables and
+  ignores its exit status, while `ENOTDIR` is classified as absence. Those conditions can make
+  provenance come from the wrong repository or from an invalid filesystem state.
+- **Required correction:** bind Git to the intended repository with the canonical production
+  repository-environment denylist, require successful commands and a canonical commit identifier,
+  inspect the complete unfiltered commit's NUL-delimited name-status records, accept only an exact
+  `D` row, classify `ENOTDIR` as non-file, and cover rename, stale history, ambient-repository, and
+  Git-error cases hermetically.
+- **Verdict:** **NO-GO at 0.99 confidence**. G5-04 remains 7/10; Phase-5 review, approval, and exit
+  remain pending; Phase 6 remains planned with zero owned files and zero passed gates.
