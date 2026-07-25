@@ -52,3 +52,21 @@
   gates. No Phase-6 work is authorized by this correction.
 
 **Whole-phase review result:** FAIL pending correction of P17-RV-P5-F01 and P17-RV-P5-F02.
+
+## G5-04 correction review NO-GO — 2026-07-25
+
+- **Reviewed head:** `5a4e5cd9f6db8a5131b25e323a19703c89a06e79`.
+- **Reviewer:** fresh read-only external Codex session
+  `/external-codex/019f9b7f-3bde-7580-97ba-b8d2b0f2a86a`.
+- **Closed substance:** the promised GC output owner exists with meaningful strict human/JSON and
+  runtime-binding coverage; the ledger-history matcher getter/Proxy is gone; adjacent GC privacy,
+  materialized context/selection owners, and the doctor golden are correct and green.
+- **P17-RV-P5-F03 (medium, release-blocking):** the new owned-path invariant accepts normalized
+  in-repository traversal and symlinked parents, and can treat a dangling symlink as absent before
+  accepting exact deletion history. The actual catalog remains clean: 878 current regular unique
+  paths plus two exact deletions; all 445 Phase-5 ownership entries are current regular blobs.
+- **Required correction:** validate canonical portable path grammar, inspect every component without
+  following symlinks, reserve deletion provenance for genuine absence, and cover traversal,
+  symlink/ghost, and stale-history cases before another immutable review.
+- **Verdict:** **NO-GO at 0.99 confidence**. G5-04 remains 7/10; Phase-5 boundary gates remain
+  pending; Phase 6 remains planned with zero progress.

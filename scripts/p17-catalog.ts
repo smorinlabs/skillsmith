@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'node:fs';
-import { relative, resolve } from 'node:path';
+import { isAbsolute, posix, relative, resolve, win32 } from 'node:path';
 
 type Kind =
   | 'recommendation'
@@ -159,6 +159,40 @@ const gateNames = [
 function fail(message: string): never {
   throw new Error(message);
 }
+
+type OwnedPathState = 'regular-file' | 'absent' | 'non-file' | 'unreadable';
+
+const canonicalOwnedPath = (path: string): boolean =>
+  path.length > 0 &&
+  !isAbsolute(path) &&
+  !win32.isAbsolute(path) &&
+  !/^[A-Za-z]:/u.test(path) &&
+  !path.includes('\\') &&
+  posix.normalize(path) === path &&
+  path.split('/').every((segment) => segment !== '' && segment !== '.' && segment !== '..');
+
+const ownedPathState = (path: string): OwnedPathState => {
+  let current = root;
+  const segments = path.split('/');
+  for (const [index, segment] of segments.entries()) {
+    current = resolve(current, segment);
+    let metadata: ReturnType<typeof lstatSync>;
+    try {
+      metadata = lstatSync(current);
+    } catch (cause) {
+      const code =
+        cause !== null && typeof cause === 'object' && 'code' in cause
+          ? (cause as { readonly code?: unknown }).code
+          : undefined;
+      return code === 'ENOENT' || code === 'ENOTDIR' ? 'absent' : 'unreadable';
+    }
+    if (metadata.isSymbolicLink()) return 'non-file';
+    const final = index === segments.length - 1;
+    if (final) return metadata.isFile() ? 'regular-file' : 'non-file';
+    if (!metadata.isDirectory()) return 'non-file';
+  }
+  return 'non-file';
+};
 
 function matches(regex: RegExp, text: string): Array<{ id: string; title: string }> {
   return [...text.matchAll(regex)].map((match) => {
@@ -1480,16 +1514,12 @@ function validate(catalog: Catalog): void {
     if (!groupStatuses.has(group.status)) fail(`${group.id} has invalid status ${group.status}`);
     if (group.status !== 'planned' && group.status !== 'deferred') {
       for (const path of group.ownedFiles) {
-        const absolutePath = resolve(root, path);
-        const repositoryRelative = relative(root, absolutePath);
-        const realPath = existsSync(absolutePath) ? realpathSync(absolutePath) : absolutePath;
-        const realRepositoryRelative = relative(realpathSync(root), realPath);
-        const currentRegularFile =
-          existsSync(absolutePath) &&
-          lstatSync(absolutePath).isFile() &&
-          statSync(absolutePath).isFile();
+        const canonical = canonicalOwnedPath(path);
+        const state = canonical ? ownedPathState(path) : 'non-file';
+        const currentRegularFile = state === 'regular-file';
         const recordedDeletion =
-          !existsSync(absolutePath) &&
+          canonical &&
+          state === 'absent' &&
           Bun.spawnSync(['git', 'log', '-1', '--format=', '--name-status', '--', path], {
             cwd: root,
             stdout: 'pipe',
@@ -1497,12 +1527,7 @@ function validate(catalog: Catalog): void {
           })
             .stdout.toString()
             .trim() === `D\t${path}`;
-        if (
-          path.startsWith('/') ||
-          repositoryRelative.startsWith('..') ||
-          realRepositoryRelative.startsWith('..') ||
-          (!currentRegularFile && !recordedDeletion)
-        ) {
+        if (!currentRegularFile && !recordedDeletion) {
           fail(
             `${group.id} owned path is neither a regular repository file nor a recorded deletion: ${path}`,
           );

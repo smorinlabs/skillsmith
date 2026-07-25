@@ -1,7 +1,15 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { resolve } from 'node:path';
+import { relative, resolve } from 'node:path';
 
 const root = resolve(import.meta.dir, '..');
 const checklistPath = resolve(root, 'projects/p17/CHECKLIST.md');
@@ -904,6 +912,9 @@ describe('P17 group lifecycle coherence', () => {
   test.each([
     ['absent', 'packages/cli/tests/output/not-a-real-test.ts'],
     ['non-file', 'packages/cli/tests/output'],
+    ['lexical traversal', 'scripts/../scripts/p17-catalog.test.ts'],
+    ['Windows traversal', 'scripts\\..\\scripts\\p17-catalog.test.ts'],
+    ['absolute', resolve(root, 'scripts/p17-catalog.test.ts')],
   ])('rejects %s ownership after a group leaves planned state', (_kind, path) => {
     const result = runCatalogMutation((catalog) => {
       activatePhase0(catalog);
@@ -918,6 +929,78 @@ describe('P17 group lifecycle coherence', () => {
       result,
       `P17-G0-01 owned path is neither a regular repository file nor a recorded deletion: ${path}`,
     );
+  });
+
+  test('rejects a regular file reached through a symlinked repository parent', () => {
+    const directory = mkdtempSync(resolve(root, '.p17-owned-path-symlink-'));
+    temporaryDirectories.push(directory);
+    const realDirectory = resolve(directory, 'real');
+    mkdirSync(realDirectory);
+    writeFileSync(resolve(realDirectory, 'owner.ts'), 'export {};\n');
+    symlinkSync('real', resolve(directory, 'linked'), 'dir');
+    const path = relative(root, resolve(directory, 'linked/owner.ts'));
+    const result = runCatalogMutation((catalog) => {
+      activatePhase0(catalog);
+      const value = group(catalog);
+      value.status = 'ready';
+      value.ownedFiles = [path];
+      value.testCommands = ['bun test scripts/p17-catalog.test.ts'];
+      value.implementers = ['implementation-agent'];
+      passGroupThrough(value, 'ready');
+    });
+    expectFailure(
+      result,
+      `P17-G0-01 owned path is neither a regular repository file nor a recorded deletion: ${path}`,
+    );
+  });
+
+  test('rejects a dangling symlink even when the path has exact deletion provenance', () => {
+    const path = 'packages/cli/src/util/config-notice.ts';
+    const absolute = resolve(root, path);
+    symlinkSync('missing-config-notice-target', absolute);
+    try {
+      const result = runCatalogMutation((catalog) => {
+        activatePhase0(catalog);
+        const value = group(catalog);
+        value.status = 'ready';
+        value.ownedFiles = [path];
+        value.testCommands = ['bun test scripts/p17-catalog.test.ts'];
+        value.implementers = ['implementation-agent'];
+        passGroupThrough(value, 'ready');
+      });
+      expectFailure(
+        result,
+        `P17-G0-01 owned path is neither a regular repository file nor a recorded deletion: ${path}`,
+      );
+    } finally {
+      rmSync(absolute, { force: true });
+    }
+  });
+
+  test('rejects an absent path whose latest exact Git event is not deletion', () => {
+    const path = 'LICENSE';
+    const absolute = resolve(root, path);
+    const directory = mkdtempSync(resolve(root, '.p17-owned-path-history-'));
+    temporaryDirectories.push(directory);
+    const backup = resolve(directory, 'LICENSE');
+    renameSync(absolute, backup);
+    try {
+      const result = runCatalogMutation((catalog) => {
+        activatePhase0(catalog);
+        const value = group(catalog);
+        value.status = 'ready';
+        value.ownedFiles = [path];
+        value.testCommands = ['bun test scripts/p17-catalog.test.ts'];
+        value.implementers = ['implementation-agent'];
+        passGroupThrough(value, 'ready');
+      });
+      expectFailure(
+        result,
+        `P17-G0-01 owned path is neither a regular repository file nor a recorded deletion: ${path}`,
+      );
+    } finally {
+      renameSync(backup, absolute);
+    }
   });
 
   test('accepts an absent owned path only when Git records its deletion', () => {
