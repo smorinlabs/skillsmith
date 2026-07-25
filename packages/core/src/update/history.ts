@@ -342,11 +342,18 @@ export const createForwardUpdateArtifactJournalSequenceV1 = (
 const sameImage = (left: unknown, right: unknown): boolean =>
   canonicalPlanningString(left) === canonicalPlanningString(right);
 
+interface PhysicalArtifactObservation {
+  readonly image: OperationImage;
+  readonly bytes: Uint8Array;
+  readonly mode: number;
+  readonly identity: string;
+}
+
 const observePhysicalArtifact = async (
   ports: ArtifactCoordinatorPorts,
   role: ArtifactRole,
   path: string,
-): Promise<Readonly<{ image: OperationImage; bytes: Uint8Array; mode: number }>> => {
+): Promise<PhysicalArtifactObservation> => {
   const before = await ports.observe(path);
   if (
     before.kind !== 'file' ||
@@ -373,7 +380,26 @@ const observePhysicalArtifact = async (
         : artifactLockImageFromBytesV1(path, bytes),
     bytes,
     mode: before.mode,
+    identity: before.identity,
   });
+};
+
+const reobservePhysicalArtifact = async (
+  ports: ArtifactCoordinatorPorts,
+  role: ArtifactRole,
+  path: string,
+  expected: PhysicalArtifactObservation,
+): Promise<PhysicalArtifactObservation> => {
+  const observed = await observePhysicalArtifact(ports, role, path);
+  if (
+    observed.identity !== expected.identity ||
+    observed.mode !== expected.mode ||
+    !equalBytes(observed.bytes, expected.bytes) ||
+    !sameImage(observed.image, expected.image)
+  ) {
+    throw new TypeError('update artifact changed after recovery preflight');
+  }
+  return observed;
 };
 
 const observePrivateEnvelope = async (
@@ -648,6 +674,25 @@ const observeOptionalPrivateEnvelope = async (
   return Object.freeze({ state: 'absent', directoryIdentity: parent.identity });
 };
 
+const reobserveOptionalPrivateEnvelope = async (
+  ports: ArtifactCoordinatorPorts,
+  path: string,
+  expected: OptionalPrivateEnvelope,
+): Promise<OptionalPrivateEnvelope> => {
+  const observed = await observeOptionalPrivateEnvelope(ports, path);
+  const unchanged =
+    observed.state === 'absent'
+      ? expected.state === 'absent' && observed.directoryIdentity === expected.directoryIdentity
+      : expected.state === 'present' &&
+        observed.value.identity === expected.value.identity &&
+        observed.value.parentIdentity === expected.value.parentIdentity &&
+        equalBytes(observed.value.bytes, expected.value.bytes);
+  if (!unchanged) {
+    throw new TypeError('retained update artifact changed after recovery preflight');
+  }
+  return observed;
+};
+
 const removePrivateEnvelope = async (
   ports: ArtifactCoordinatorPorts,
   path: string,
@@ -773,13 +818,17 @@ const completePendingArtifactAbortProjection = (
   return committed.value;
 };
 
-const recoverPendingArtifactCleanupMarkers = async (
+interface PendingArtifactCleanupRecoveryAction {
+  readonly authority: PendingUpdateArtifactCleanupAuthority;
+  readonly physical: PhysicalArtifactObservation;
+  readonly envelope: OptionalPrivateEnvelope;
+}
+
+const observePendingArtifactCleanupMarkers = async (
   model: LedgerModel,
   request: PendingUpdateArtifactHistoryRecoveryRequestV1,
-  persist: (next: LedgerModel) => Promise<LedgerModel>,
-): Promise<LedgerModel> => {
-  let next = model;
-  const markers = Object.values(next.transactions)
+): Promise<readonly PendingArtifactCleanupRecoveryAction[]> => {
+  const markers = Object.values(model.transactions)
     .filter((journal) => journal.context.workflow === 'update-artifact-orphan-cleanup')
     .map((journal) => {
       const authority = pendingUpdateArtifactCleanupAuthority(journal, request.ledgerPath);
@@ -789,6 +838,7 @@ const recoverPendingArtifactCleanupMarkers = async (
       return authority;
     })
     .sort((left, right) => left.journal.transactionId.localeCompare(right.journal.transactionId));
+  const actions: PendingArtifactCleanupRecoveryAction[] = [];
   for (const authority of markers) {
     if (request.signal?.aborted) throw new TypeError('update artifact orphan cleanup cancelled');
     const physical = await observePhysicalArtifact(
@@ -821,11 +871,40 @@ const recoverPendingArtifactCleanupMarkers = async (
     if (!sameImage(physical.image, authority.journal.intent.before)) {
       throw new TypeError('pending update artifact cleanup physical preimage changed');
     }
-    await removePrivateEnvelope(request.artifactCoordinator, authority.retainedPath, envelope);
+    actions.push(Object.freeze({ authority, physical, envelope }));
+  }
+  return Object.freeze(actions);
+};
+
+const executePendingArtifactCleanupActions = async (
+  model: LedgerModel,
+  request: PendingUpdateArtifactHistoryRecoveryRequestV1,
+  persist: (next: LedgerModel) => Promise<LedgerModel>,
+  actions: readonly PendingArtifactCleanupRecoveryAction[],
+): Promise<LedgerModel> => {
+  let next = model;
+  for (const action of actions) {
+    if (request.signal?.aborted) throw new TypeError('update artifact orphan cleanup cancelled');
+    await reobservePhysicalArtifact(
+      request.artifactCoordinator,
+      action.authority.role,
+      action.authority.path,
+      action.physical,
+    );
+    const envelope = await reobserveOptionalPrivateEnvelope(
+      request.artifactCoordinator,
+      action.authority.retainedPath,
+      action.envelope,
+    );
+    await removePrivateEnvelope(
+      request.artifactCoordinator,
+      action.authority.retainedPath,
+      envelope,
+    );
     next = await persist(
       completePendingArtifactAbortProjection(
         next,
-        authority.journal.transactionId,
+        action.authority.journal.transactionId,
         request.ports.wallNowIso(),
       ),
     );
@@ -912,7 +991,8 @@ async function observeForwardArtifactCarrier(
     (!physicalIsBefore && !physicalIsAfter) ||
     (pending === null && !physicalIsBefore) ||
     (pending?.phase === 'prepared' && !physicalIsBefore) ||
-    (pending?.phase === 'staged' && !physicalIsBefore)
+    (pending?.phase === 'staged' && !physicalIsBefore) ||
+    (pending?.phase === 'live' && !physicalIsAfter)
   ) {
     throw new TypeError('physical update artifact does not match its retained journal phase');
   }
@@ -975,49 +1055,19 @@ async function observeForwardArtifactCarrier(
   });
 }
 
-const recoverSupersededArtifactHistory = async (
-  model: LedgerModel,
+interface SupersededArtifactRecoveryAction {
+  readonly kind: 'abort' | 'finalize';
+  readonly authority: PendingUpdateArtifactAuthority;
+  readonly physical: PhysicalArtifactObservation;
+  readonly envelope: OptionalPrivateEnvelope;
+}
+
+const observeSupersededArtifactActions = async (
+  authorities: readonly PendingUpdateArtifactAuthority[],
   request: PendingUpdateArtifactHistoryRecoveryRequestV1,
-  persist: (next: LedgerModel) => Promise<LedgerModel>,
-): Promise<LedgerModel> => {
-  for (const journal of Object.values(model.transactions)) {
-    if (pendingPairNullArtifactRole(journal) === null) continue;
-    const forward = pendingUpdateArtifactAuthority(journal, request.ledgerPath);
-    const cleanup = pendingUpdateArtifactCleanupAuthority(journal, request.ledgerPath);
-    if (forward !== null || cleanup !== null) continue;
-    if (
-      journal.disposition === 'rollback' &&
-      journal.context.workflow === 'undo-artifact-history'
-    ) {
-      throw new TypeError('pending undo artifact history must recover before update');
-    }
-    throw new TypeError('pending update artifact recovery authority is invalid');
-  }
-  const forward = Object.values(model.transactions)
-    .filter((journal) => journal.context.workflow === 'update-artifact-history')
-    .map((journal) => {
-      const authority = pendingUpdateArtifactAuthority(journal, request.ledgerPath);
-      if (authority === null) {
-        throw new TypeError('pending update artifact history journal is invalid');
-      }
-      return authority;
-    })
-    .sort((left, right) => left.journal.transactionId.localeCompare(right.journal.transactionId));
-  const claimedCurrent = new Set<string>();
-  for (const authority of forward) {
-    const operation = request.currentArtifactOperations.get(authority.journal.intent.operationId);
-    if (operation === undefined) continue;
-    if (claimedCurrent.has(operation.operationId)) {
-      throw new TypeError('current update artifact history is ambiguous');
-    }
-    claimedCurrent.add(operation.operationId);
-    await observeForwardArtifactCarrier(model, operation, request);
-  }
-  let next = await recoverPendingArtifactCleanupMarkers(model, request, persist);
-  const superseded = forward.filter(
-    (authority) => !request.currentArtifactOperations.has(authority.journal.intent.operationId),
-  );
-  for (const authority of superseded) {
+): Promise<readonly SupersededArtifactRecoveryAction[]> => {
+  const actions: SupersededArtifactRecoveryAction[] = [];
+  for (const authority of authorities) {
     if (request.signal?.aborted) throw new TypeError('update artifact orphan cleanup cancelled');
     const physical = await observePhysicalArtifact(
       request.artifactCoordinator,
@@ -1068,25 +1118,117 @@ const recoverSupersededArtifactHistory = async (
     if (!canAbort && !canFinalize) {
       throw new TypeError('pending update artifact cannot be recovered for the next invocation');
     }
+    actions.push(
+      Object.freeze({
+        kind: canFinalize ? 'finalize' : 'abort',
+        authority,
+        physical,
+        envelope,
+      }),
+    );
+  }
+  return Object.freeze(actions);
+};
+
+const executeSupersededArtifactActions = async (
+  model: LedgerModel,
+  request: PendingUpdateArtifactHistoryRecoveryRequestV1,
+  persist: (next: LedgerModel) => Promise<LedgerModel>,
+  actions: readonly SupersededArtifactRecoveryAction[],
+): Promise<LedgerModel> => {
+  let next = model;
+  for (const action of actions) {
+    if (request.signal?.aborted) throw new TypeError('update artifact orphan cleanup cancelled');
+    await reobservePhysicalArtifact(
+      request.artifactCoordinator,
+      action.authority.role,
+      action.authority.path,
+      action.physical,
+    );
+    const envelope = await reobserveOptionalPrivateEnvelope(
+      request.artifactCoordinator,
+      action.authority.retainedPath,
+      action.envelope,
+    );
     const updatedAt = request.ports.wallNowIso();
-    if (canFinalize) {
-      next = await persist(finalizePendingArtifactProjection(next, authority, updatedAt));
+    if (action.kind === 'finalize') {
+      next = await persist(finalizePendingArtifactProjection(next, action.authority, updatedAt));
       continue;
     }
     next = await persist(
       beginPendingArtifactAbortProjection(
         next,
-        authority,
+        action.authority,
         envelope.state === 'present' ? envelope.value : null,
         updatedAt,
       ),
     );
-    await removePrivateEnvelope(request.artifactCoordinator, authority.retainedPath, envelope);
+    await removePrivateEnvelope(
+      request.artifactCoordinator,
+      action.authority.retainedPath,
+      envelope,
+    );
     next = await persist(
-      completePendingArtifactAbortProjection(next, authority.journal.transactionId, updatedAt),
+      completePendingArtifactAbortProjection(
+        next,
+        action.authority.journal.transactionId,
+        updatedAt,
+      ),
     );
   }
   return next;
+};
+
+const recoverSupersededArtifactHistory = async (
+  model: LedgerModel,
+  request: PendingUpdateArtifactHistoryRecoveryRequestV1,
+  persist: (next: LedgerModel) => Promise<LedgerModel>,
+): Promise<LedgerModel> => {
+  for (const journal of Object.values(model.transactions)) {
+    if (pendingPairNullArtifactRole(journal) === null) continue;
+    const forward = pendingUpdateArtifactAuthority(journal, request.ledgerPath);
+    const cleanup = pendingUpdateArtifactCleanupAuthority(journal, request.ledgerPath);
+    if (forward !== null || cleanup !== null) continue;
+    if (
+      journal.disposition === 'rollback' &&
+      journal.context.workflow === 'undo-artifact-history'
+    ) {
+      throw new TypeError('pending undo artifact history must recover before update');
+    }
+    throw new TypeError('pending update artifact recovery authority is invalid');
+  }
+  const forward = Object.values(model.transactions)
+    .filter((journal) => journal.context.workflow === 'update-artifact-history')
+    .map((journal) => {
+      const authority = pendingUpdateArtifactAuthority(journal, request.ledgerPath);
+      if (authority === null) {
+        throw new TypeError('pending update artifact history journal is invalid');
+      }
+      return authority;
+    })
+    .sort((left, right) => left.journal.transactionId.localeCompare(right.journal.transactionId));
+  const claimedCurrent = new Set<string>();
+  for (const authority of forward) {
+    const operation = request.currentArtifactOperations.get(authority.journal.intent.operationId);
+    if (operation === undefined) continue;
+    if (claimedCurrent.has(operation.operationId)) {
+      throw new TypeError('current update artifact history is ambiguous');
+    }
+    claimedCurrent.add(operation.operationId);
+    await observeForwardArtifactCarrier(model, operation, request);
+  }
+  const superseded = forward.filter(
+    (authority) => !request.currentArtifactOperations.has(authority.journal.intent.operationId),
+  );
+  const cleanupActions = await observePendingArtifactCleanupMarkers(model, request);
+  const supersededActions = await observeSupersededArtifactActions(superseded, request);
+  const afterCleanup = await executePendingArtifactCleanupActions(
+    model,
+    request,
+    persist,
+    cleanupActions,
+  );
+  return executeSupersededArtifactActions(afterCleanup, request, persist, supersededActions);
 };
 
 /**
