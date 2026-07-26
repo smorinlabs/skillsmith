@@ -7950,7 +7950,10 @@
         },
         "refactor": {
           "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G6-02A.md#refactor-at-daca91f"]
+          "evidence": [
+            "projects/p17/evidence/P17-G6-02A.md#refactor-at-daca91f",
+            "projects/p17/evidence/P17-G6-02A.md#renewed-refactor-after-independent-review-corrections-at-dbe57bc"
+          ]
         },
         "adversarial-review": {
           "status": "pending",
@@ -7980,7 +7983,8 @@
         "projects/p17/evidence/P17-G6-02A.md#test-first-evidence",
         "projects/p17/evidence/P17-G6-02A.md#minimal-implementation-and-targeted-green-at-76b2354",
         "projects/p17/evidence/P17-G6-02A.md#impacted-green-at-112cafa",
-        "projects/p17/evidence/P17-G6-02A.md#refactor-at-daca91f"
+        "projects/p17/evidence/P17-G6-02A.md#refactor-at-daca91f",
+        "projects/p17/evidence/P17-G6-02A.md#renewed-refactor-after-independent-review-corrections-at-dbe57bc"
       ]
     },
     {
