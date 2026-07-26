@@ -6664,6 +6664,7 @@
         "packages/core/src/sync/artifacts.ts",
         "packages/core/src/sync/endpoints.ts",
         "packages/core/src/sync/execute.ts",
+        "packages/core/src/sync/internal-projections.ts",
         "packages/core/src/sync/index.ts",
         "packages/core/src/sync/observe.ts",
         "packages/core/src/sync/plan.ts",

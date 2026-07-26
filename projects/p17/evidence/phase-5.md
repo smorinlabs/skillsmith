@@ -171,3 +171,28 @@
   review=failed, approval=pending, and exit=pending until fresh immutable G5-01 and whole-phase
   reviewers close `P17-RV-P5-F04`. Phase 6 remains five pristine planned groups, 0/50 passed gates,
   and 40 planned primary entities.
+
+## Whole-phase adversarial review F05/F06 NO-GO — 2026-07-26
+
+- **Reviewed head/tree:** `c28291886e1452f504928a77c01a5b870abdf44b` /
+  `8279dcebede0e1cc674dc179a0186a0e5828845d`, clean index and worktree.
+- **Reviewer:** fresh read-only external Codex session
+  `/external-codex/019f9c32-6e0b-7573-a5d5-06413b67ebef`.
+- **Independent closure recount:** five groups, 50/50 historical gates, 70/70 signed primary
+  entities, 60 required-now rows / 56 unique regular targets, and 45 unique resolving evidence
+  anchors. Phase-5 acceptance, workflow, focused owner, smoke, static, catalog, package, and diff
+  replays were green. The terminal receipt remains representative but cannot waive review defects.
+- **P17-RV-P5-F05 (high, release-blocking):** recursive sync validation still accepts and emits
+  SSH/scp, `git://`, and `file://` literal source-URL forms through codec, human, JSON, prepared
+  dry-run success, and executed success. Credential assignments and `https://`/`ssh://` are rejected;
+  ordinary local endpoint paths remain valid. F04 is therefore only partially closed.
+- **P17-RV-P5-F06 (medium, release-blocking):** the G5-01-created and application-used
+  `packages/core/src/sync/internal-projections.ts` is absent from all group ownership and the exact
+  G5-01 manifest. Correcting it changes Phase-5 ownership from 445 to 446 entries and 268 to 269
+  unique regular paths, and progressed ownership from 878 to 879 current regular paths plus two
+  exact deletions.
+- **Verdict:** **NO-GO**. Phase 5 remains blocked with review failed, approval pending, and exit
+  pending. The exact bounded correction is recorded in the G5-01 plan/evidence; renewed immutable
+  G5-01 and whole-phase reviews are mandatory.
+- **Boundary:** Phase 6 remains five pristine planned groups, 50 pending lifecycle gates, 40 planned
+  primary entities, zero owned paths, and zero executable targets. No Phase-6 work is authorized.
