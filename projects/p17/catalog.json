@@ -8087,20 +8087,20 @@
           "evidence": ["projects/p17/evidence/P17-G6-02B.md#test-first-evidence"]
         },
         "minimal-implementation": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G6-02B.md#minimal-implementation-at-3657662"]
         },
         "targeted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G6-02B.md#targeted-green-at-3657662"]
         },
         "impacted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G6-02B.md#impacted-green-at-3657662"]
         },
         "refactor": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G6-02B.md#refactor-result-at-3657662"]
         },
         "adversarial-review": {
           "status": "pending",
@@ -8127,7 +8127,11 @@
         "projects/p17/evidence/P17-G6-02B.md#accepted-ready-result",
         "projects/p17/evidence/P17-G6-02B.md#test-first-evidence",
         "projects/p17/evidence/P17-G6-02B.md#approved-implementation-boundary-ownership-amendment",
-        "projects/p17/evidence/P17-G6-02B.md#implementation-boundary-amendment-review-at-ff48528"
+        "projects/p17/evidence/P17-G6-02B.md#implementation-boundary-amendment-review-at-ff48528",
+        "projects/p17/evidence/P17-G6-02B.md#minimal-implementation-at-3657662",
+        "projects/p17/evidence/P17-G6-02B.md#targeted-green-at-3657662",
+        "projects/p17/evidence/P17-G6-02B.md#impacted-green-at-3657662",
+        "projects/p17/evidence/P17-G6-02B.md#refactor-result-at-3657662"
       ]
     },
     {
@@ -8530,11 +8534,14 @@
       "title": "Maintain — How do I emit completion for a shell?",
       "stateModel": "coverage",
       "primaryGroup": "P17-G6-02B",
-      "status": "mapped",
+      "status": "validated",
       "tier": "supported-platform",
       "plannedTarget": "surface:completion",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G6-02B.md#mapping-and-prerequisites"],
+      "evidence": [
+        "projects/p17/evidence/P17-G6-02B.md#mapping-and-prerequisites",
+        "projects/p17/evidence/P17-G6-02B.md#impacted-green-at-3657662"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": [
@@ -10719,11 +10726,14 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G6-02B",
-      "status": "mapped",
+      "status": "validated",
       "tier": "supported-platform",
       "plannedTarget": "coverage:P17-G6-02B",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G6-02B.md#mapping-and-prerequisites"],
+      "evidence": [
+        "projects/p17/evidence/P17-G6-02B.md#mapping-and-prerequisites",
+        "projects/p17/evidence/P17-G6-02B.md#impacted-green-at-3657662"
+      ],
       "secondaryGroups": ["P17-G6-04"],
       "implements": [],
       "validatedBy": [
@@ -14240,7 +14250,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02B",
-      "status": "failing",
+      "status": "passing",
       "tier": "supported-platform",
       "plannedTarget": "planned:P17-G6-02B:packages/cli/tests/contracts/completion.test.ts#EWP-CMD-COMPLETION-TS01",
       "target": {
@@ -14250,6 +14260,7 @@
         "command": "bun test packages/cli/tests/contracts/completion.test.ts --test-name-pattern EWP-CMD-COMPLETION-TS01"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G6-02B.md#green-execution-receipt-ewp-cmd-completion-ts01",
         "projects/p17/evidence/P17-G6-02B.md#red-execution-receipt-ewp-cmd-completion-ts01"
       ],
       "secondaryGroups": [],
@@ -14276,7 +14287,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02B",
-      "status": "failing",
+      "status": "passing",
       "tier": "supported-platform",
       "plannedTarget": "planned:P17-G6-02B:packages/cli/tests/contracts/completion.test.ts#EWP-CMD-COMPLETION-TS02",
       "target": {
@@ -14286,6 +14297,7 @@
         "command": "bun test packages/cli/tests/contracts/completion.test.ts --test-name-pattern EWP-CMD-COMPLETION-TS02"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G6-02B.md#green-execution-receipt-ewp-cmd-completion-ts02",
         "projects/p17/evidence/P17-G6-02B.md#red-execution-receipt-ewp-cmd-completion-ts02"
       ],
       "secondaryGroups": [],
@@ -14312,7 +14324,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02B",
-      "status": "failing",
+      "status": "passing",
       "tier": "supported-platform",
       "plannedTarget": "planned:P17-G6-02B:packages/cli/tests/contracts/completion.test.ts#EWP-CMD-COMPLETION-TS03",
       "target": {
@@ -14322,6 +14334,7 @@
         "command": "bun test packages/cli/tests/contracts/completion.test.ts --test-name-pattern EWP-CMD-COMPLETION-TS03"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G6-02B.md#green-execution-receipt-ewp-cmd-completion-ts03",
         "projects/p17/evidence/P17-G6-02B.md#red-execution-receipt-ewp-cmd-completion-ts03"
       ],
       "secondaryGroups": [],
@@ -14348,7 +14361,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02B",
-      "status": "failing",
+      "status": "passing",
       "tier": "supported-platform",
       "plannedTarget": "planned:P17-G6-02B:packages/cli/tests/contracts/completion.test.ts#EWP-CMD-COMPLETION-TS04",
       "target": {
@@ -14358,6 +14371,7 @@
         "command": "bun test packages/cli/tests/contracts/completion.test.ts --test-name-pattern EWP-CMD-COMPLETION-TS04"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G6-02B.md#green-execution-receipt-ewp-cmd-completion-ts04",
         "projects/p17/evidence/P17-G6-02B.md#red-execution-receipt-ewp-cmd-completion-ts04"
       ],
       "secondaryGroups": [],
@@ -14384,7 +14398,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02B",
-      "status": "failing",
+      "status": "passing",
       "tier": "supported-platform",
       "plannedTarget": "planned:P17-G6-02B:packages/cli/tests/contracts/completion.test.ts#EWP-CMD-COMPLETION-TS05",
       "target": {
@@ -14394,6 +14408,7 @@
         "command": "bun test packages/cli/tests/contracts/completion.test.ts --test-name-pattern EWP-CMD-COMPLETION-TS05"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G6-02B.md#green-execution-receipt-ewp-cmd-completion-ts05",
         "projects/p17/evidence/P17-G6-02B.md#red-execution-receipt-ewp-cmd-completion-ts05"
       ],
       "secondaryGroups": [],
@@ -14420,7 +14435,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02B",
-      "status": "failing",
+      "status": "passing",
       "tier": "supported-platform",
       "plannedTarget": "planned:P17-G6-02B:packages/cli/tests/contracts/completion.test.ts#EWP-CMD-COMPLETION-TS06",
       "target": {
@@ -14430,6 +14445,7 @@
         "command": "bun test packages/cli/tests/contracts/completion.test.ts --test-name-pattern EWP-CMD-COMPLETION-TS06"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G6-02B.md#green-execution-receipt-ewp-cmd-completion-ts06",
         "projects/p17/evidence/P17-G6-02B.md#red-execution-receipt-ewp-cmd-completion-ts06"
       ],
       "secondaryGroups": [],
@@ -25660,7 +25676,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G6-02B",
-      "status": "red",
+      "status": "green",
       "tier": "supported-platform",
       "plannedTarget": "planned:P17-G6-02B",
       "target": null,
@@ -25668,7 +25684,9 @@
         "projects/p17/evidence/P17-G6-02B.md#mapping-and-prerequisites",
         "projects/p17/evidence/P17-G6-02B.md#corrected-ready-review-at-7c01c14",
         "projects/p17/evidence/P17-G6-02B.md#accepted-ready-result",
-        "projects/p17/evidence/P17-G6-02B.md#test-first-evidence"
+        "projects/p17/evidence/P17-G6-02B.md#test-first-evidence",
+        "projects/p17/evidence/P17-G6-02B.md#minimal-implementation-at-3657662",
+        "projects/p17/evidence/P17-G6-02B.md#targeted-green-at-3657662"
       ],
       "secondaryGroups": [],
       "implements": ["COMMAND:completion", "EWP-CF-014", "P2-04"],
@@ -25829,7 +25847,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02B",
-      "status": "failing",
+      "status": "passing",
       "tier": "supported-platform",
       "plannedTarget": "planned:P17-G6-02B:tests/ergonomics/phase/EWP-P6-TS02.test.ts#EWP-P6-TS02",
       "target": {
@@ -25838,7 +25856,10 @@
         "selector": "EWP-P6-TS02",
         "command": "bun test tests/ergonomics/phase/EWP-P6-TS02.test.ts --test-name-pattern EWP-P6-TS02"
       },
-      "evidence": ["projects/p17/evidence/P17-G6-02B.md#red-execution-receipt-ewp-p6-ts02"],
+      "evidence": [
+        "projects/p17/evidence/P17-G6-02B.md#green-execution-receipt-ewp-p6-ts02",
+        "projects/p17/evidence/P17-G6-02B.md#red-execution-receipt-ewp-p6-ts02"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P6-TS02"],
@@ -27700,11 +27721,14 @@
       "designStatus": "retained",
       "stateModel": "coverage",
       "primaryGroup": "P17-G6-02B",
-      "status": "mapped",
+      "status": "validated",
       "tier": "supported-platform",
       "plannedTarget": "coverage:P17-G6-02B",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G6-02B.md#mapping-and-prerequisites"],
+      "evidence": [
+        "projects/p17/evidence/P17-G6-02B.md#mapping-and-prerequisites",
+        "projects/p17/evidence/P17-G6-02B.md#impacted-green-at-3657662"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": [
