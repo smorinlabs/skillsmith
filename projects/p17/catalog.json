@@ -7917,7 +7917,9 @@
           "status": "passed",
           "evidence": [
             "projects/p17/evidence/P17-G6-02A.md#corrected-ready-review-at-eb90c00",
-            "projects/p17/evidence/P17-G6-02A.md#accepted-ready-result"
+            "projects/p17/evidence/P17-G6-02A.md#accepted-ready-result",
+            "projects/p17/evidence/P17-G6-02A.md#corrected-lifecycle-ready-review-at-67854ce",
+            "projects/p17/evidence/P17-G6-02A.md#renewed-ready-acceptance"
           ]
         },
         "test-first": {
@@ -7961,7 +7963,10 @@
         "projects/p17/evidence/P17-G6-02A.md#mapping-result",
         "projects/p17/evidence/P17-G6-02A.md#ready-review-at-a89674d",
         "projects/p17/evidence/P17-G6-02A.md#corrected-ready-review-at-eb90c00",
-        "projects/p17/evidence/P17-G6-02A.md#accepted-ready-result"
+        "projects/p17/evidence/P17-G6-02A.md#accepted-ready-result",
+        "projects/p17/evidence/P17-G6-02A.md#pre-implementation-lifecycle-audit-at-78ef17b",
+        "projects/p17/evidence/P17-G6-02A.md#corrected-lifecycle-ready-review-at-67854ce",
+        "projects/p17/evidence/P17-G6-02A.md#renewed-ready-acceptance"
       ]
     },
     {
@@ -25459,7 +25464,9 @@
       "evidence": [
         "projects/p17/evidence/P17-G6-02A.md#mapping-and-prerequisites",
         "projects/p17/evidence/P17-G6-02A.md#corrected-ready-review-at-eb90c00",
-        "projects/p17/evidence/P17-G6-02A.md#accepted-ready-result"
+        "projects/p17/evidence/P17-G6-02A.md#accepted-ready-result",
+        "projects/p17/evidence/P17-G6-02A.md#corrected-lifecycle-ready-review-at-67854ce",
+        "projects/p17/evidence/P17-G6-02A.md#renewed-ready-acceptance"
       ],
       "secondaryGroups": [],
       "implements": ["COMMAND:help", "EWP-CF-013", "EWP-CF-032", "P2-05"],
