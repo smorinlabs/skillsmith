@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { SUPPORTED_TOOLS, type SupportedTool } from '../../agents/types.ts';
+import { containsSensitiveMaterial } from '../../safety/redaction.ts';
 import { createJsonWireCodec } from '../codec.ts';
 import type { WireCodec } from '../types.ts';
 import { planV1Codec } from './plan.ts';
@@ -208,6 +209,15 @@ const countKinds = <Kind extends string>(
     kinds.map((kind) => [kind, rows.filter((row) => row.kind === kind).length]),
   ) as Record<Kind, number>;
 
+const containsForbiddenOutput = (input: unknown): boolean => {
+  if (typeof input === 'string') {
+    return containsSensitiveMaterial(input) || /(?:https?|ssh):\/\//iu.test(input);
+  }
+  if (Array.isArray(input)) return input.some(containsForbiddenOutput);
+  if (input === null || typeof input !== 'object') return false;
+  return Object.values(input).some(containsForbiddenOutput);
+};
+
 const SyncV1Schema = z
   .object({
     schemaVersion: z.literal(1),
@@ -250,6 +260,13 @@ const SyncV1Schema = z
   })
   .strict()
   .superRefine((value, context) => {
+    if (containsForbiddenOutput(value)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'sync reports cannot contain source URLs or credential material',
+      });
+    }
+
     const operationGroupIds = new Set(value.operations.map(({ groupId }) => groupId));
     // plan-report@1 has no selected-group vector, so a truthful group-only noop/skip/refusal
     // correlation cannot be anchored when that group has no executable operation. Sync validates
