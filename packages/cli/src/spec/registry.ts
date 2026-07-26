@@ -277,7 +277,6 @@ const EXAMPLES: Readonly<Record<string, readonly string[]>> = {
     'skillsmith install smorinlabs/smorinlabs-harness/factor-scan --user',
     'skillsmith install acme/agent-tools/review@v1.2.0 --project --pin',
     'skillsmith install gitlab.com/acme/platform/tools//skills/review --tool claude-code',
-    'skillsmith install smorinlabs/smorinlabs-harness/factor-scan --force --ref v2.0.0',
   ],
   'skillsmith export': [
     'skillsmith export',
@@ -298,49 +297,41 @@ const EXAMPLES: Readonly<Record<string, readonly string[]>> = {
     'skillsmith plan --locked',
     'skillsmith plan --project --prune',
     'skillsmith plan --locked --check --json',
-    'skillsmith plan --locked --out review.skillsmith.plan',
   ],
   'skillsmith apply': [
     'skillsmith apply',
     'skillsmith apply --project --prune',
     'skillsmith apply --plan review.skillsmith.plan --dry-run',
-    'skillsmith apply --plan review.skillsmith.plan --check --json',
   ],
   'skillsmith sync': [
     'skillsmith sync --from user --to ./project-b --dry-run',
     'skillsmith sync lint --from ./project-a --to ./project-b --tool codex',
     'skillsmith sync --from user --to project --delete --yes',
-    'skillsmith sync review --from user --to project --save --json',
   ],
   'skillsmith update': [
     'skillsmith update --check',
     'skillsmith update factor-scan --dry-run',
     'skillsmith update factor-scan --ref main --pin',
-    'skillsmith update --all --yes',
   ],
   'skillsmith undo': [
     'skillsmith undo factor-scan --dry-run',
     'skillsmith undo factor-scan --tool codex --project',
     'skillsmith undo --all --scope user --yes',
-    'skillsmith undo factor-scan review --yes --json',
   ],
   'skillsmith uninstall': [
     'skillsmith uninstall factor-scan',
     'skillsmith uninstall review --project',
     'skillsmith rm review --all-scopes --tool codex',
-    'skillsmith uninstall factor-scan --dry-run',
   ],
   'skillsmith dev': [
     'skillsmith dev factor-scan',
     'skillsmith dev gh-fix-ci --tool codex --source ~/c/gh-fix-ci/skills/gh-fix-ci',
     'skillsmith dev --rollback factor-scan',
-    'skillsmith dev --all',
   ],
   'skillsmith promote': [
     'skillsmith promote factor-scan',
     'skillsmith promote --all --dry-run',
     'skillsmith promote factor-scan --tool claude-code --strict',
-    'skillsmith promote --rollback factor-scan',
   ],
   'skillsmith version': ['skillsmith version', 'skillsmith --version'],
   'skillsmith completion': ['skillsmith completion bash', 'skillsmith completion zsh'],
@@ -516,10 +507,15 @@ const MINIMAL_INVOCATIONS: Readonly<Record<(typeof PUBLIC_COMMAND_ORDER)[number]
 
 const workflowSafety = (capability: string, invocation: string): CommandWorkflowSafety => {
   if (/^skillsmith config (?:get|list)(?:\s|$)/u.test(invocation)) return 'read-only';
-  if (capability === 'read' || capability === 'dispatch' || capability === 'plan')
+  if (
+    capability === 'read' ||
+    capability === 'dispatch' ||
+    capability === 'plan' ||
+    capability === 'verify'
+  )
     return 'read-only';
   if (invocation.includes('--dry-run') || invocation.includes('--check')) return 'preview';
-  return 'requires-confirmation';
+  return 'changes-state';
 };
 
 const commonWorkflows = (
@@ -529,7 +525,7 @@ const commonWorkflows = (
 ): readonly CommandWorkflowSpec[] => {
   const descriptions = WORKFLOW_DESCRIPTIONS[path];
   if (descriptions === undefined) throw new Error(`missing workflow descriptions for ${path}`);
-  return examples.slice(0, 3).map((invocation, index) => {
+  return examples.map((invocation, index) => {
     const description = descriptions[index];
     if (description === undefined)
       throw new Error(`missing workflow description ${index + 1} for ${path}`);
@@ -1291,6 +1287,13 @@ export const validateCurrentCommandSpecs = (): readonly string[] => {
       errors.push(`${spec.path} has a minimal invocation outside its command path`);
     if (spec.commonWorkflows.length < 2 || spec.commonWorkflows.length > 3)
       errors.push(`${spec.path} must have two or three common workflows`);
+    if (
+      spec.examples.length !== spec.commonWorkflows.length ||
+      spec.examples.some(
+        (invocation, index) => invocation !== spec.commonWorkflows[index]?.invocation,
+      )
+    )
+      errors.push(`${spec.path} examples must close exactly against common workflows`);
     for (const workflow of spec.commonWorkflows) {
       if (!workflow.invocation.startsWith('skillsmith '))
         errors.push(`${spec.path} has a workflow outside the skillsmith CLI`);

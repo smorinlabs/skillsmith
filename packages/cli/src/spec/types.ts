@@ -8,7 +8,7 @@ export type OptionHelpFamily =
   | 'automation-output'
   | 'inherited-globals';
 export type OptionHelpLevel = 'common' | 'advanced';
-export type CommandWorkflowSafety = 'read-only' | 'preview' | 'requires-confirmation';
+export type CommandWorkflowSafety = 'read-only' | 'preview' | 'changes-state';
 export type OptionRelationKind =
   | 'conflicts'
   | 'requires'

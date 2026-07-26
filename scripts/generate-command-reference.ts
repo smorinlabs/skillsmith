@@ -10,6 +10,19 @@ const README_PATH = resolve(ROOT, 'README.md');
 const INDEX_START = '<!-- skillsmith-command-index:start -->';
 const INDEX_END = '<!-- skillsmith-command-index:end -->';
 
+const occurrences = (value: string, needle: string): number => value.split(needle).length - 1;
+
+export const validateReadmeCommandIndex = (readme: string): readonly string[] => {
+  const startCount = occurrences(readme, INDEX_START);
+  const endCount = occurrences(readme, INDEX_END);
+  if (startCount === 0 && endCount === 0) return [];
+  if (startCount !== 1 || endCount !== 1)
+    return ['README command index must have exactly one start marker and one end marker'];
+  return readme.indexOf(INDEX_START) < readme.indexOf(INDEX_END)
+    ? []
+    : ['README command-index markers are reversed'];
+};
+
 export const renderCommandReference = (): string => `${renderReference().trimEnd()}\n`;
 
 export const renderReadmeCommandIndex = (): string => {
@@ -56,15 +69,17 @@ export const checkCommandReference = async (): Promise<readonly string[]> => {
     readFile(REFERENCE_PATH, 'utf8'),
     readFile(README_PATH, 'utf8'),
   ]);
-  const errors: string[] = [];
+  const errors = [...validateReadmeCommandIndex(readme)];
   if (reference !== renderCommandReference()) errors.push('docs/commands.md is stale');
-  if (readme !== replaceReadmeIndex(readme, renderReadmeCommandIndex()))
+  if (errors.length === 0 && readme !== replaceReadmeIndex(readme, renderReadmeCommandIndex()))
     errors.push('README.md command index is stale');
   return errors;
 };
 
 const writeCommandReference = async (): Promise<void> => {
   const readme = await readFile(README_PATH, 'utf8');
+  const markerErrors = validateReadmeCommandIndex(readme);
+  if (markerErrors.length > 0) throw new Error(markerErrors.join('; '));
   await Promise.all([
     writeFile(REFERENCE_PATH, renderCommandReference()),
     writeFile(README_PATH, replaceReadmeIndex(readme, renderReadmeCommandIndex())),

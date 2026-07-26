@@ -2050,6 +2050,29 @@ describe('EWP-OPT-TS05', () => {
     expect(typeof reference.renderCommandReference).toBe('function');
     expect(typeof help.renderCommandHelp).toBe('function');
     expect(typeof help.renderRootHelp).toBe('function');
+
+    const legacy = {
+      ...(publicSpecs[0] as unknown as Record<string, unknown>),
+      helpOrder: undefined,
+      minimalInvocations: undefined,
+      commonWorkflows: undefined,
+      options: publicSpecs[0]?.options.map((option) => ({
+        ...option,
+        helpFamily: undefined,
+        helpLevel: undefined,
+      })),
+    } as Record<string, unknown>;
+    const rendered = (
+      reference.renderCommandReference as (
+        candidates: readonly unknown[],
+        version: string,
+      ) => string
+    )([legacy], 'fixture-version');
+    expect(rendered).toContain('fixture-version');
+    expect(rendered).toContain(
+      ((legacy.examples as readonly string[] | undefined)?.[0] ?? legacy.path) as string,
+    );
+    for (const option of publicSpecs[0]?.options ?? []) expect(rendered).toContain(option.flags);
   });
 });
 

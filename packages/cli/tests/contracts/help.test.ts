@@ -8,6 +8,7 @@ import { hermeticGitEnv } from '../../../core/tests/fixtures/git-env.ts';
 import cliPackage from '../../package.json' with { type: 'json' };
 import { HELP_TOPIC_NAMES, renderTopic } from '../../src/help/topics.ts';
 import { buildProgram } from '../../src/program.ts';
+import { attachCommandSpecs, createCommandFromSpec } from '../../src/runtime/command-spec.ts';
 import { CURRENT_COMMAND_SPECS } from '../../src/spec/index.ts';
 import { CLI_ENTRYPOINT } from '../fixtures/cli.ts';
 
@@ -29,6 +30,32 @@ interface PlannedHelpSpec {
 const plannedSpecs = CURRENT_COMMAND_SPECS as readonly PlannedHelpSpec[];
 const publicSpecs = (): readonly PlannedHelpSpec[] =>
   plannedSpecs.filter((spec) => spec.path.split(' ').length === 2);
+
+const invocationArguments = (invocation: string): readonly string[] =>
+  (invocation.match(/"[^"]*"|\S+/gu) ?? []).map((token) => token.replace(/^"|"$/gu, '')).slice(1);
+
+const materializeMinimalInvocation = (invocation: string): string =>
+  invocation
+    .replace('<source>', 'acme/tools/review')
+    .replace('<skill>', 'review')
+    .replace('<path>', './skills/review')
+    .replace('<A>', 'user')
+    .replace('<B>', 'project');
+
+const parseWithoutApplications = async (invocation: string): Promise<string | undefined> => {
+  const rootSpec = CURRENT_COMMAND_SPECS.find((spec) => spec.path === 'skillsmith');
+  if (rootSpec === undefined) throw new Error('root CommandSpec is missing');
+  const root = createCommandFromSpec(rootSpec).exitOverride();
+  let routed: string | undefined;
+  root.action(() => {
+    routed = rootSpec.path;
+  });
+  attachCommandSpecs(root, CURRENT_COMMAND_SPECS, (spec) => () => {
+    routed = spec.path;
+  });
+  await root.parseAsync([...invocationArguments(invocation)], { from: 'user' });
+  return routed;
+};
 
 const runCli = async (args: readonly string[]) => {
   const proc = Bun.spawn(['bun', CLI_ENTRYPOINT, ...args], {
@@ -151,7 +178,7 @@ describe('EWP-CMD-HELP-TS04', () => {
 });
 
 describe('EWP-CMD-HELP-TS05', () => {
-  test('all 23 commands declare bounded minimal invocations and runnable workflows', () => {
+  test('all 23 commands declare bounded minimal invocations and runnable workflows', async () => {
     expect(publicSpecs()).toHaveLength(23);
     for (const spec of publicSpecs()) {
       expect(spec.minimalInvocations?.length ?? 0, spec.path).toBeGreaterThanOrEqual(1);
@@ -159,8 +186,32 @@ describe('EWP-CMD-HELP-TS05', () => {
       expect(spec.commonWorkflows?.length ?? 0, spec.path).toBeLessThanOrEqual(3);
       for (const invocation of spec.minimalInvocations ?? []) {
         expect(invocation.startsWith(`${spec.path}`), invocation).toBeTrue();
+        const routed = await parseWithoutApplications(materializeMinimalInvocation(invocation));
+        expect(routed, invocation).toBe(
+          spec.path === 'skillsmith config' ? 'skillsmith config list' : spec.path,
+        );
+      }
+      for (const workflow of spec.commonWorkflows ?? []) {
+        expect(
+          await parseWithoutApplications(workflow.invocation),
+          workflow.invocation,
+        ).toBeString();
       }
     }
+    const byPath = new Map(CURRENT_COMMAND_SPECS.map((spec) => [spec.path, spec]));
+    expect(byPath.get('skillsmith verify')?.commonWorkflows.map(({ safety }) => safety)).toEqual([
+      'read-only',
+      'read-only',
+    ]);
+    expect(byPath.get('skillsmith config')?.commonWorkflows.map(({ safety }) => safety)).toEqual([
+      'read-only',
+      'read-only',
+    ]);
+    expect(byPath.get('skillsmith update')?.commonWorkflows.map(({ safety }) => safety)).toEqual([
+      'preview',
+      'preview',
+      'changes-state',
+    ]);
   });
 });
 

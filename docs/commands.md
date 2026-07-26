@@ -226,9 +226,9 @@ Minimal invocation: `skillsmith install <source>`
 
 #### Common workflows
 
-- **Start here** (requires-confirmation): Install factor-scan into user scope. — `skillsmith install smorinlabs/smorinlabs-harness/factor-scan --user`
-- **Focused workflow** (requires-confirmation): Install and pin an exact tagged review skill in project scope. — `skillsmith install acme/agent-tools/review@v1.2.0 --project --pin`
-- **Advanced workflow** (requires-confirmation): Install a nested GitLab skill path for Claude Code. — `skillsmith install gitlab.com/acme/platform/tools//skills/review --tool claude-code`
+- **Start here** (changes-state): Install factor-scan into user scope. — `skillsmith install smorinlabs/smorinlabs-harness/factor-scan --user`
+- **Focused workflow** (changes-state): Install and pin an exact tagged review skill in project scope. — `skillsmith install acme/agent-tools/review@v1.2.0 --project --pin`
+- **Advanced workflow** (changes-state): Install a nested GitLab skill path for Claude Code. — `skillsmith install gitlab.com/acme/platform/tools//skills/review --tool claude-code`
 
 #### Arguments
 
@@ -293,9 +293,9 @@ Minimal invocation: `skillsmith uninstall <skill>`
 
 #### Common workflows
 
-- **Start here** (requires-confirmation): Remove the selected factor-scan placement. — `skillsmith uninstall factor-scan`
-- **Focused workflow** (requires-confirmation): Remove review from project scope. — `skillsmith uninstall review --project`
-- **Advanced workflow** (requires-confirmation): Use the rm alias to remove Codex review placements across scopes. — `skillsmith rm review --all-scopes --tool codex`
+- **Start here** (changes-state): Remove the selected factor-scan placement. — `skillsmith uninstall factor-scan`
+- **Focused workflow** (changes-state): Remove review from project scope. — `skillsmith uninstall review --project`
+- **Advanced workflow** (changes-state): Use the rm alias to remove Codex review placements across scopes. — `skillsmith rm review --all-scopes --tool codex`
 
 #### Arguments
 
@@ -352,7 +352,7 @@ Minimal invocation: `skillsmith update --check`
 
 - **Start here** (preview): Check bounded declarations for newer revisions. — `skillsmith update --check`
 - **Focused workflow** (preview): Preview an update of factor-scan. — `skillsmith update factor-scan --dry-run`
-- **Advanced workflow** (requires-confirmation): Move factor-scan to main and pin the resolved revision. — `skillsmith update factor-scan --ref main --pin`
+- **Advanced workflow** (changes-state): Move factor-scan to main and pin the resolved revision. — `skillsmith update factor-scan --ref main --pin`
 
 #### Arguments
 
@@ -410,8 +410,8 @@ Minimal invocation: `skillsmith undo <skill>`
 #### Common workflows
 
 - **Start here** (preview): Preview reversal of the latest eligible factor-scan operation. — `skillsmith undo factor-scan --dry-run`
-- **Focused workflow** (requires-confirmation): Reverse the Codex project placement for factor-scan. — `skillsmith undo factor-scan --tool codex --project`
-- **Advanced workflow** (requires-confirmation): Approve reversal of every eligible user-scope operation. — `skillsmith undo --all --scope user --yes`
+- **Focused workflow** (changes-state): Reverse the Codex project placement for factor-scan. — `skillsmith undo factor-scan --tool codex --project`
+- **Advanced workflow** (changes-state): Approve reversal of every eligible user-scope operation. — `skillsmith undo --all --scope user --yes`
 
 #### Arguments
 
@@ -461,9 +461,9 @@ Minimal invocation: `skillsmith dev <skill> --source <path>`
 
 #### Common workflows
 
-- **Start here** (requires-confirmation): Return factor-scan to its recorded live development source. — `skillsmith dev factor-scan`
-- **Focused workflow** (requires-confirmation): Adopt an explicit local checkout as the gh-fix-ci development source. — `skillsmith dev gh-fix-ci --tool codex --source ~/c/gh-fix-ci/skills/gh-fix-ci`
-- **Advanced workflow** (requires-confirmation): Roll back the latest eligible factor-scan development operation. — `skillsmith dev --rollback factor-scan`
+- **Start here** (changes-state): Return factor-scan to its recorded live development source. — `skillsmith dev factor-scan`
+- **Focused workflow** (changes-state): Adopt an explicit local checkout as the gh-fix-ci development source. — `skillsmith dev gh-fix-ci --tool codex --source ~/c/gh-fix-ci/skills/gh-fix-ci`
+- **Advanced workflow** (changes-state): Roll back the latest eligible factor-scan development operation. — `skillsmith dev --rollback factor-scan`
 
 #### Arguments
 
@@ -521,8 +521,8 @@ Minimal invocation: `skillsmith verify <path>`
 
 #### Common workflows
 
-- **Start here** (requires-confirmation): Verify one bare skill directory. — `skillsmith verify ./skills/review`
-- **Focused workflow** (requires-confirmation): Run deep, strict verification for a plugin directory. — `skillsmith verify ./plugin --deep --strict`
+- **Start here** (read-only): Verify one bare skill directory. — `skillsmith verify ./skills/review`
+- **Focused workflow** (read-only): Run deep, strict verification for a plugin directory. — `skillsmith verify ./plugin --deep --strict`
 
 #### Arguments
 
@@ -562,9 +562,9 @@ Minimal invocation: `skillsmith promote <skill>`
 
 #### Common workflows
 
-- **Start here** (requires-confirmation): Snapshot factor-scan from development into managed state. — `skillsmith promote factor-scan`
+- **Start here** (changes-state): Snapshot factor-scan from development into managed state. — `skillsmith promote factor-scan`
 - **Focused workflow** (preview): Preview promotion of every eligible development placement. — `skillsmith promote --all --dry-run`
-- **Advanced workflow** (requires-confirmation): Strictly verify and promote factor-scan for Claude Code. — `skillsmith promote factor-scan --tool claude-code --strict`
+- **Advanced workflow** (changes-state): Strictly verify and promote factor-scan for Claude Code. — `skillsmith promote factor-scan --tool claude-code --strict`
 
 #### Arguments
 
@@ -620,8 +620,8 @@ Minimal invocation: `skillsmith init`
 
 #### Common workflows
 
-- **Start here** (requires-confirmation): Create or migrate the default desired-state manifest. — `skillsmith init`
-- **Focused workflow** (requires-confirmation): Initialize a project manifest bounded to Codex. — `skillsmith init --project --tool codex`
+- **Start here** (changes-state): Create or migrate the default desired-state manifest. — `skillsmith init`
+- **Focused workflow** (changes-state): Initialize a project manifest bounded to Codex. — `skillsmith init --project --tool codex`
 - **Advanced workflow** (preview): Preview an explicit team manifest and emit JSON. — `skillsmith init --file ./team.toml --dry-run --json`
 
 #### TARGETS AND SCOPE
@@ -666,8 +666,8 @@ Minimal invocation: `skillsmith export`
 
 #### Common workflows
 
-- **Start here** (requires-confirmation): Capture the default live fleet in portable desired state. — `skillsmith export`
-- **Focused workflow** (requires-confirmation): Write project-scoped desired state to an explicit manifest. — `skillsmith export --project --file ./skillsmith.toml`
+- **Start here** (changes-state): Capture the default live fleet in portable desired state. — `skillsmith export`
+- **Focused workflow** (changes-state): Write project-scoped desired state to an explicit manifest. — `skillsmith export --project --file ./skillsmith.toml`
 - **Advanced workflow** (preview): Preview a strict Claude Code export without writing files. — `skillsmith export --tool claude-code --strict --dry-run`
 
 #### TARGETS AND SCOPE
@@ -774,8 +774,8 @@ Minimal invocation: `skillsmith apply`
 
 #### Common workflows
 
-- **Start here** (requires-confirmation): Converge live state from the default manifest. — `skillsmith apply`
-- **Focused workflow** (requires-confirmation): Converge project state including safe pruning. — `skillsmith apply --project --prune`
+- **Start here** (changes-state): Converge live state from the default manifest. — `skillsmith apply`
+- **Focused workflow** (changes-state): Converge project state including safe pruning. — `skillsmith apply --project --prune`
 - **Advanced workflow** (preview): Preview an exact previously reviewed saved plan. — `skillsmith apply --plan review.skillsmith.plan --dry-run`
 
 #### TARGETS AND SCOPE
@@ -831,8 +831,8 @@ Minimal invocation: `skillsmith sync --from <A> --to <B>`
 #### Common workflows
 
 - **Start here** (preview): Preview a user-to-project-directory reconciliation. — `skillsmith sync --from user --to ./project-b --dry-run`
-- **Focused workflow** (requires-confirmation): Sync the lint skill between two projects for Codex. — `skillsmith sync lint --from ./project-a --to ./project-b --tool codex`
-- **Advanced workflow** (requires-confirmation): Approve user-to-project reconciliation including deletions. — `skillsmith sync --from user --to project --delete --yes`
+- **Focused workflow** (changes-state): Sync the lint skill between two projects for Codex. — `skillsmith sync lint --from ./project-a --to ./project-b --tool codex`
+- **Advanced workflow** (changes-state): Approve user-to-project reconciliation including deletions. — `skillsmith sync --from user --to project --delete --yes`
 
 #### Arguments
 
@@ -991,7 +991,7 @@ Minimal invocation: `skillsmith gc`
 
 - **Start here** (preview): Preview every currently eligible store reclamation. — `skillsmith gc --dry-run`
 - **Focused workflow** (preview): Preview objects older than 30 days and emit JSON. — `skillsmith gc --older-than 30d --dry-run --json`
-- **Advanced workflow** (requires-confirmation): Approve forgetting a retired project before reclamation. — `skillsmith gc --forget-project /workspace/retired --yes`
+- **Advanced workflow** (changes-state): Approve forgetting a retired project before reclamation. — `skillsmith gc --forget-project /workspace/retired --yes`
 
 #### SOURCE, DESTINATION, AND ARTIFACTS
 

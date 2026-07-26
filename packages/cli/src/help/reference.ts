@@ -5,6 +5,7 @@ import {
   COMMAND_GROUP_HEADINGS,
   OPTION_HELP_FAMILY_ORDER,
   OPTION_HELP_HEADINGS,
+  workflowsForSpec,
 } from './render.ts';
 import { HELP_TOPIC_NAMES } from './topics.ts';
 
@@ -15,7 +16,7 @@ const renderCommand = (spec: CommandSpec): string => {
     spec.aliases.length > 0
       ? `\nAliases: ${spec.aliases.map((alias) => `\`${alias}\``).join(', ')}\n`
       : '';
-  const workflows = spec.commonWorkflows
+  const workflows = workflowsForSpec(spec)
     .map(
       (workflow) =>
         `- **${workflow.label}** (${workflow.safety}): ${workflow.description} — \`${workflow.invocation}\``,
@@ -34,7 +35,9 @@ const renderCommand = (spec: CommandSpec): string => {
           '',
         ];
   const optionGroups = OPTION_HELP_FAMILY_ORDER.flatMap((family) => {
-    const options = spec.options.filter((option) => option.helpFamily === family);
+    const options = spec.options.filter(
+      (option) => (option.helpFamily ?? 'automation-output') === family,
+    );
     if (options.length === 0) return [];
     return [
       `#### ${OPTION_HELP_HEADINGS[family].replace(/:$/u, '')}`,
@@ -53,7 +56,7 @@ const renderCommand = (spec: CommandSpec): string => {
     aliases,
     `Primary question: ${spec.primaryQuestion}`,
     '',
-    `Minimal invocation: \`${spec.minimalInvocations[0] ?? spec.path}\``,
+    `Minimal invocation: \`${spec.minimalInvocations?.[0] ?? spec.examples[0] ?? spec.path}\``,
     '',
     '#### Common workflows',
     '',
@@ -74,7 +77,10 @@ export const renderCommandReference = (
 ): string => {
   const publicSpecs = specs
     .filter((spec) => spec.path.split(' ').length === 2)
-    .toSorted((left, right) => left.helpOrder - right.helpOrder);
+    .toSorted(
+      (left, right) =>
+        (left.helpOrder ?? Number.MAX_SAFE_INTEGER) - (right.helpOrder ?? Number.MAX_SAFE_INTEGER),
+    );
   const groups = Object.keys(COMMAND_GROUP_HEADINGS) as (keyof typeof COMMAND_GROUP_HEADINGS)[];
   const body = groups.flatMap((group) => {
     const commands = publicSpecs.filter((spec) => spec.group === group);

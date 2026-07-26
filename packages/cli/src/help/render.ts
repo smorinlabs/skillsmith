@@ -1,5 +1,10 @@
 import type { Command } from 'commander';
-import type { CommandOptionSpec, CommandSpec, OptionHelpFamily } from '../spec/types.ts';
+import type {
+  CommandOptionSpec,
+  CommandSpec,
+  CommandWorkflowSpec,
+  OptionHelpFamily,
+} from '../spec/types.ts';
 
 export const COMMAND_GROUP_HEADINGS = {
   discover: 'DISCOVER:',
@@ -32,24 +37,41 @@ export const compareOptionHelpOrder = (
   right: CommandOptionSpec,
 ): number => {
   const family =
-    OPTION_HELP_FAMILY_ORDER.indexOf(left.helpFamily) -
-    OPTION_HELP_FAMILY_ORDER.indexOf(right.helpFamily);
+    OPTION_HELP_FAMILY_ORDER.indexOf(left.helpFamily ?? 'automation-output') -
+    OPTION_HELP_FAMILY_ORDER.indexOf(right.helpFamily ?? 'automation-output');
   if (family !== 0) return family;
-  if (left.helpLevel === right.helpLevel) return 0;
-  return left.helpLevel === 'common' ? -1 : 1;
+  const leftLevel = left.helpLevel ?? 'common';
+  const rightLevel = right.helpLevel ?? 'common';
+  if (leftLevel === rightLevel) return 0;
+  return leftLevel === 'common' ? -1 : 1;
 };
 
 export const optionHelpHeading = (option: CommandOptionSpec): string =>
-  OPTION_HELP_HEADINGS[option.helpFamily];
+  OPTION_HELP_HEADINGS[option.helpFamily ?? 'automation-output'];
 
 export const optionHelpDescription = (option: CommandOptionSpec): string =>
   option.helpLevel === 'advanced'
     ? `Advanced — ${option.description ?? ''}`
     : (option.description ?? '');
 
+export const workflowsForSpec = (spec: CommandSpec): readonly CommandWorkflowSpec[] =>
+  spec.commonWorkflows ??
+  spec.examples.map((invocation, index) => ({
+    label: index === 0 ? 'Start here' : 'Workflow',
+    invocation,
+    description: spec.description,
+    safety:
+      invocation.includes('--dry-run') || invocation.includes('--check')
+        ? ('preview' as const)
+        : ['read', 'dispatch', 'plan', 'verify'].includes(spec.capability)
+          ? ('read-only' as const)
+          : ('changes-state' as const),
+  }));
+
 const workflowBlock = (spec: CommandSpec): string => {
-  if (spec.path === 'skillsmith' || spec.commonWorkflows.length === 0) return spec.description;
-  const rows = spec.commonWorkflows.flatMap((workflow) => [
+  const workflows = workflowsForSpec(spec);
+  if (spec.path === 'skillsmith' || workflows.length === 0) return spec.description;
+  const rows = workflows.flatMap((workflow) => [
     `  ${workflow.label} [${workflow.safety}] — ${workflow.description}`,
     `    $ ${workflow.invocation}`,
   ]);

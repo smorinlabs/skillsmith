@@ -107,24 +107,15 @@ const TOPIC_CONTENT: Readonly<Record<Exclude<HelpTopic, 'workflows'>, string>> =
 };
 
 export const TOPICS: Readonly<Record<HelpTopic, string>> = {
-  workflows: WORKFLOW_TOPIC(),
-  // P17 disposition: current behavior; authority: packages/cli/src/spec/registry.ts
-  manifest: TOPIC_CONTENT.manifest,
-  // P17 disposition: current behavior; authority: packages/core/src/artifacts/manifest-codec.ts
-  lock: TOPIC_CONTENT.lock,
-  // P17 disposition: current behavior; authority: packages/core/src/artifacts/lock-codec.ts
-  plan: TOPIC_CONTENT.plan,
-  // P17 disposition: current behavior; authority: packages/core/src/artifacts/plan-codec.ts
-  source: TOPIC_CONTENT.source,
-  // P17 disposition: current behavior; authority: packages/core/src/acquire/source.ts
-  environment: TOPIC_CONTENT.environment,
-  // P17 disposition: current behavior; authorities: packages/cli/src/util/color.ts, packages/core/src/config/env.ts, packages/core/src/place/paths.ts
-  scope: TOPIC_CONTENT.scope,
-  // P17 disposition: current behavior; authority: packages/cli/src/spec/options.ts
-  'exit-codes': TOPIC_CONTENT['exit-codes'],
-  // P17 disposition: current behavior; authority: packages/cli/src/util/exit-codes.ts
-  formatting: TOPIC_CONTENT.formatting,
-  // P17 disposition: current behavior; authority: packages/cli/src/runtime/io.ts
+  workflows: WORKFLOW_TOPIC(), // P17 disposition: current behavior; authority: packages/cli/src/spec/registry.ts
+  manifest: TOPIC_CONTENT.manifest, // P17 disposition: current behavior; authority: packages/core/src/artifacts/manifest-codec.ts
+  lock: TOPIC_CONTENT.lock, // P17 disposition: current behavior; authority: packages/core/src/artifacts/lock-codec.ts
+  plan: TOPIC_CONTENT.plan, // P17 disposition: current behavior; authority: packages/core/src/artifacts/plan-codec.ts
+  source: TOPIC_CONTENT.source, // P17 disposition: current behavior; authority: packages/core/src/acquire/source.ts
+  environment: TOPIC_CONTENT.environment, // P17 disposition: current behavior; authorities: packages/cli/src/util/color.ts, packages/core/src/config/env.ts, packages/core/src/place/paths.ts
+  scope: TOPIC_CONTENT.scope, // P17 disposition: current behavior; authority: packages/cli/src/spec/options.ts
+  'exit-codes': TOPIC_CONTENT['exit-codes'], // P17 disposition: current behavior; authority: packages/cli/src/util/exit-codes.ts
+  formatting: TOPIC_CONTENT.formatting, // P17 disposition: current behavior; authority: packages/cli/src/runtime/io.ts
 };
 
 export const renderTopic = (
