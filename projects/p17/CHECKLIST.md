@@ -11,14 +11,14 @@ Tracked entities: **426** across **45** change groups.
 
 | Kind | Total | Signed off | Active/open | Deferred |
 |---|---:|---:|---:|---:|
-| recommendation | 34 | 24 | 4 | 6 |
-| phase-task | 65 | 58 | 7 | 0 |
-| phase-test | 61 | 55 | 6 | 0 |
-| command-test | 157 | 144 | 13 | 0 |
-| option-gate | 10 | 8 | 2 | 0 |
-| workflow | 16 | 14 | 2 | 0 |
-| command | 23 | 21 | 2 | 0 |
-| finding | 44 | 41 | 3 | 0 |
+| recommendation | 34 | 25 | 3 | 6 |
+| phase-task | 65 | 59 | 6 | 0 |
+| phase-test | 61 | 57 | 4 | 0 |
+| command-test | 157 | 151 | 6 | 0 |
+| option-gate | 10 | 10 | 0 | 0 |
+| workflow | 16 | 15 | 1 | 0 |
+| command | 23 | 22 | 1 | 0 |
+| finding | 44 | 43 | 1 | 0 |
 | decision | 16 | 14 | 1 | 1 |
 
 ### Phases
@@ -31,7 +31,7 @@ Tracked entities: **426** across **45** change groups.
 | 3 | 8 | 82 | 82 | 0 |
 | 4 | 7 | 105 | 105 | 0 |
 | 5 | 5 | 70 | 70 | 0 |
-| 6 | 5 | 40 | 0 | 0 |
+| 6 | 5 | 40 | 17 | 0 |
 | 7 | 1 | 7 | 0 | 7 |
 
 ### Phase gates
@@ -114,7 +114,7 @@ Tracked entities: **426** across **45** change groups.
 | COMMAND:doctor | P17-G3B-03 | signed-off | required-pr |
 | COMMAND:export | P17-G4A-02 | signed-off | required-pr |
 | COMMAND:gc | P17-G5-04 | signed-off | required-pr |
-| COMMAND:help | P17-G6-02A | mapped | required-pr |
+| COMMAND:help | P17-G6-02A | signed-off | required-pr |
 | COMMAND:init | P17-G4A-03 | signed-off | required-pr |
 | COMMAND:install | P17-G4A-01 | signed-off | required-pr |
 | COMMAND:list | P17-G3A-02 | signed-off | required-pr |
@@ -156,7 +156,7 @@ Tracked entities: **426** across **45** change groups.
 | P2-02 | P17-G5-02 | signed-off | required-pr |
 | P2-03 | P17-G5-04 | signed-off | required-pr |
 | P2-04 | P17-G6-02B | planned | supported-platform |
-| P2-05 | P17-G6-02A | mapped | required-pr |
+| P2-05 | P17-G6-02A | signed-off | required-pr |
 | P2-06 | P17-G1-05 | signed-off | required-pr |
 | P2-07 | P17-G3B-03 | signed-off | required-pr |
 | P2-08 | P17-G6-03 | planned | required-pr |
@@ -183,7 +183,7 @@ Tracked entities: **426** across **45** change groups.
 | EWP-CF-010 | P17-G0-02 | signed-off | required-pr |
 | EWP-CF-011 | P17-G4A-02 | signed-off | required-pr |
 | EWP-CF-012 | P17-G2-03 | signed-off | required-pr |
-| EWP-CF-013 | P17-G6-02A | mapped | required-pr |
+| EWP-CF-013 | P17-G6-02A | signed-off | required-pr |
 | EWP-CF-014 | P17-G6-02B | planned | supported-platform |
 | EWP-CF-015 | P17-G4B-02 | signed-off | required-pr |
 | EWP-CF-016 | P17-G5-04 | signed-off | required-pr |
@@ -202,7 +202,7 @@ Tracked entities: **426** across **45** change groups.
 | EWP-CF-029 | P17-G2-05 | signed-off | required-pr |
 | EWP-CF-030 | P17-G2-03 | signed-off | required-pr |
 | EWP-CF-031 | P17-G1-01 | signed-off | required-pr |
-| EWP-CF-032 | P17-G6-02A | mapped | required-pr |
+| EWP-CF-032 | P17-G6-02A | signed-off | required-pr |
 | EWP-CF-033 | P17-G1-03 | signed-off | required-pr |
 | EWP-CF-034 | P17-G1-04 | signed-off | required-pr |
 | EWP-CF-035 | P17-G3B-04 | signed-off | required-pr |
@@ -245,9 +245,9 @@ Tracked entities: **426** across **45** change groups.
 | EWP-OPT-TS02 | P17-G1-03 | signed-off | required-pr |
 | EWP-OPT-TS03 | P17-G1-03 | signed-off | required-pr |
 | EWP-OPT-TS04 | P17-G1-02A | signed-off | required-pr |
-| EWP-OPT-TS05 | P17-G6-02A | passing | required-pr |
+| EWP-OPT-TS05 | P17-G6-02A | signed-off | required-pr |
 | EWP-OPT-TS06 | P17-G1-01 | signed-off | required-pr |
-| EWP-OPT-TS07 | P17-G6-02A | passing | required-pr |
+| EWP-OPT-TS07 | P17-G6-02A | signed-off | required-pr |
 | EWP-OPT-TS08 | P17-G5-05 | signed-off | required-pr |
 | EWP-OPT-TS09 | P17-G4B-02 | signed-off | required-pr |
 | EWP-OPT-TS10 | P17-G1-02A | signed-off | required-pr |
@@ -271,7 +271,7 @@ Tracked entities: **426** across **45** change groups.
 | EWP-WF13 | P17-G5-05 | signed-off | required-pr |
 | EWP-WF14 | P17-G1-01 | signed-off | required-pr |
 | EWP-WF15 | P17-G1-02A | signed-off | required-pr |
-| EWP-WF16 | P17-G6-02A | passing | required-pr |
+| EWP-WF16 | P17-G6-02A | signed-off | required-pr |
 
 ## P17-G0-01 — Governance, authority, accepted-decision/finding traceability, and truthful counts
 
@@ -1538,7 +1538,7 @@ Downstream coverage obligations: EWP-WF01.
 
 ## P17-G6-02A — Shared command metadata, five-group help, progressive options, workflows, and generated docs
 
-Phase: 6; status: **reviewed**; dependencies: P17-G5-04, P17-G5-05.
+Phase: 6; status: **signed-off**; dependencies: P17-G5-04, P17-G5-05.
 Required-now validations: EWP-CMD-HELP-TS01, EWP-CMD-HELP-TS02, EWP-CMD-HELP-TS03, EWP-CMD-HELP-TS04, EWP-CMD-HELP-TS05, EWP-CMD-HELP-TS06, EWP-CMD-HELP-TS07, EWP-OPT-TS05, EWP-OPT-TS07, EWP-P1-TS05, EWP-P6-TS04, EWP-P6-TS05, EWP-WF05, EWP-WF15, EWP-WF16.
 Downstream coverage obligations: EWP-CMD-COMPLETION-TS01, EWP-CMD-COMPLETION-TS03, EWP-CMD-COMPLETION-TS05, EWP-WF01.
 
@@ -1552,28 +1552,28 @@ Downstream coverage obligations: EWP-CMD-COMPLETION-TS01, EWP-CMD-COMPLETION-TS0
 - [x] P17-G6-02A:impacted-green _(passed)_
 - [x] P17-G6-02A:refactor _(passed)_
 - [x] P17-G6-02A:adversarial-review _(passed)_
-- [ ] P17-G6-02A:traceability-closure _(pending)_
-- [ ] P17-G6-02A:signed-off _(pending)_
+- [x] P17-G6-02A:traceability-closure _(passed)_
+- [x] P17-G6-02A:signed-off _(passed)_
 
 ### Tracked entities
 
-- [ ] **COMMAND:help** — Maintain — How do I learn a command, topic, or workflow? _(command; mapped)_
-- [ ] **EWP-CF-013** — Keep verbs flat but make workflow groups the information architecture _(finding; mapped)_
-- [ ] **EWP-CF-032** — Close the complexity budget with primary questions and progressive help _(finding; mapped)_
-- [ ] **EWP-CMD-HELP-TS01** — root and `help workflows` use _(command-test; passing)_
-- [ ] **EWP-CMD-HELP-TS02** — every significant command has usage/options/examples/exits, including _(command-test; passing)_
-- [ ] **EWP-CMD-HELP-TS03** — workflows/manifest/lock/plan/source/environment/scope topics are current. _(command-test; passing)_
-- [ ] **EWP-CMD-HELP-TS04** — typo suggestion for commands/topics without unsafe autocorrection. _(command-test; passing)_
-- [ ] **EWP-CMD-HELP-TS05** — examples parse, reference valid options, and preserve zero-target/bulk _(command-test; passing)_
-- [ ] **EWP-CMD-HELP-TS06** — no stale milestone/internal-only canonical references, four-group wording, _(command-test; passing)_
-- [ ] **EWP-CMD-HELP-TS07** — version subcommand and -V agree with package/release metadata. _(command-test; passing)_
-- [ ] **EWP-OPT-TS05** — Generate command help option inventories from the same declarations and compare _(option-gate; passing)_
-- [ ] **EWP-OPT-TS07** — Generate help categories/order from option-family metadata; assert every option _(option-gate; passing)_
-- [ ] **EWP-P6-T04** — Discover/Manage/Develop/Declarative/Maintain root/docs grouping, _(phase-task; red)_
-- [ ] **EWP-P6-TS04** — Generated docs vs command tree gate. _(phase-test; passing)_
-- [ ] **EWP-P6-TS05** — Twenty-three-command primary-question uniqueness, five-group membership, _(phase-test; passing)_
-- [ ] **EWP-WF16** — Documentation-driven manual test _(workflow; passing)_
-- [ ] **P2-05** — Help discovery _(recommendation; mapped)_
+- [x] **COMMAND:help** — Maintain — How do I learn a command, topic, or workflow? _(command; signed-off)_
+- [x] **EWP-CF-013** — Keep verbs flat but make workflow groups the information architecture _(finding; signed-off)_
+- [x] **EWP-CF-032** — Close the complexity budget with primary questions and progressive help _(finding; signed-off)_
+- [x] **EWP-CMD-HELP-TS01** — root and `help workflows` use _(command-test; signed-off)_
+- [x] **EWP-CMD-HELP-TS02** — every significant command has usage/options/examples/exits, including _(command-test; signed-off)_
+- [x] **EWP-CMD-HELP-TS03** — workflows/manifest/lock/plan/source/environment/scope topics are current. _(command-test; signed-off)_
+- [x] **EWP-CMD-HELP-TS04** — typo suggestion for commands/topics without unsafe autocorrection. _(command-test; signed-off)_
+- [x] **EWP-CMD-HELP-TS05** — examples parse, reference valid options, and preserve zero-target/bulk _(command-test; signed-off)_
+- [x] **EWP-CMD-HELP-TS06** — no stale milestone/internal-only canonical references, four-group wording, _(command-test; signed-off)_
+- [x] **EWP-CMD-HELP-TS07** — version subcommand and -V agree with package/release metadata. _(command-test; signed-off)_
+- [x] **EWP-OPT-TS05** — Generate command help option inventories from the same declarations and compare _(option-gate; signed-off)_
+- [x] **EWP-OPT-TS07** — Generate help categories/order from option-family metadata; assert every option _(option-gate; signed-off)_
+- [x] **EWP-P6-T04** — Discover/Manage/Develop/Declarative/Maintain root/docs grouping, _(phase-task; signed-off)_
+- [x] **EWP-P6-TS04** — Generated docs vs command tree gate. _(phase-test; signed-off)_
+- [x] **EWP-P6-TS05** — Twenty-three-command primary-question uniqueness, five-group membership, _(phase-test; signed-off)_
+- [x] **EWP-WF16** — Documentation-driven manual test _(workflow; signed-off)_
+- [x] **P2-05** — Help discovery _(recommendation; signed-off)_
 
 ## P17-G6-02B — Bash/zsh/fish completion generation and nested completion contracts
 

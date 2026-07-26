@@ -7810,7 +7810,7 @@
       "phase": "6",
       "title": "Shared command metadata, five-group help, progressive options, workflows, and generated docs",
       "dependsOn": ["P17-G5-04", "P17-G5-05"],
-      "status": "reviewed",
+      "status": "signed-off",
       "owner": "root-goal",
       "ownedFiles": [
         "README.md",
@@ -7964,12 +7964,12 @@
           ]
         },
         "traceability-closure": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G6-02A.md#traceability-closure-and-sign-off"]
         },
         "signed-off": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G6-02A.md#traceability-closure-and-sign-off"]
         }
       },
       "evidence": [
@@ -7990,7 +7990,8 @@
         "projects/p17/evidence/P17-G6-02A.md#refactor-at-daca91f",
         "projects/p17/evidence/P17-G6-02A.md#renewed-refactor-after-independent-review-corrections-at-dbe57bc",
         "projects/p17/evidence/P17-G6-02A.md#terminal-and-amended-refactor-green-at-1b6c1f4",
-        "projects/p17/evidence/P17-G6-02A.md#final-independent-adversarial-review-go-at-5fe0bb9"
+        "projects/p17/evidence/P17-G6-02A.md#final-independent-adversarial-review-go-at-5fe0bb9",
+        "projects/p17/evidence/P17-G6-02A.md#traceability-closure-and-sign-off"
       ]
     },
     {
@@ -8766,7 +8767,7 @@
       "title": "Maintain — How do I learn a command, topic, or workflow?",
       "stateModel": "coverage",
       "primaryGroup": "P17-G6-02A",
-      "status": "mapped",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "surface:help",
       "target": null,
@@ -10617,7 +10618,7 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G6-02A",
-      "status": "mapped",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G6-02A",
       "target": null,
@@ -12100,7 +12101,7 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G6-02A",
-      "status": "mapped",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G6-02A",
       "target": null,
@@ -15729,7 +15730,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02A",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-02A:packages/cli/tests/contracts/help.test.ts#EWP-CMD-HELP-TS01",
       "target": {
@@ -15771,7 +15772,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02A",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-02A:packages/cli/tests/contracts/help.test.ts#EWP-CMD-HELP-TS02",
       "target": {
@@ -15813,7 +15814,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02A",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-02A:packages/cli/tests/contracts/help.test.ts#EWP-CMD-HELP-TS03",
       "target": {
@@ -15855,7 +15856,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02A",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-02A:packages/cli/tests/contracts/help.test.ts#EWP-CMD-HELP-TS04",
       "target": {
@@ -15897,7 +15898,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02A",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-02A:packages/cli/tests/contracts/help.test.ts#EWP-CMD-HELP-TS05",
       "target": {
@@ -15939,7 +15940,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02A",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-02A:packages/cli/tests/contracts/help.test.ts#EWP-CMD-HELP-TS06",
       "target": {
@@ -15981,7 +15982,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02A",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-02A:packages/cli/tests/contracts/help.test.ts#EWP-CMD-HELP-TS07",
       "target": {
@@ -19898,7 +19899,7 @@
       "kind": "option-gate",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02A",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-02A:packages/cli/tests/contracts/options.test.ts#EWP-OPT-TS05",
       "target": {
@@ -19972,7 +19973,7 @@
       "kind": "option-gate",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02A",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-02A:packages/cli/tests/contracts/options.test.ts#EWP-OPT-TS07",
       "target": {
@@ -25580,7 +25581,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G6-02A",
-      "status": "red",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-02A",
       "target": null,
@@ -25755,7 +25756,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02A",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-02A:tests/ergonomics/phase/EWP-P6-TS04.test.ts#EWP-P6-TS04",
       "target": {
@@ -25797,7 +25798,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02A",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-02A:tests/ergonomics/phase/EWP-P6-TS05.test.ts#EWP-P6-TS05",
       "target": {
@@ -26563,7 +26564,7 @@
       "kind": "workflow",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02A",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-02A:tests/ergonomics/workflows/EWP-WF16.test.ts#EWP-WF16",
       "target": {
@@ -27609,7 +27610,7 @@
       "designStatus": "retained",
       "stateModel": "coverage",
       "primaryGroup": "P17-G6-02A",
-      "status": "mapped",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G6-02A",
       "target": null,
