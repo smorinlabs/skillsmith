@@ -1137,9 +1137,26 @@ describe('EWP-CMD-INIT-TS05', () => {
       expect(help.stdout).toContain(fragment);
     }
 
-    const completion = await runCli(value, ['completion', 'bash']);
-    expect(completion.exitCode, completion.stderr).toBe(0);
-    expect(completion.stdout).toContain('init');
+    const rootCompletion = await runCli(value, ['complete', '--', '']);
+    expect(rootCompletion.exitCode, rootCompletion.stderr).toBe(0);
+    expect(rootCompletion.stderr).toBe('');
+    const rootCandidates = rootCompletion.stdout
+      .trimEnd()
+      .split('\n')
+      .filter((line) => !line.startsWith(':'))
+      .map((line) => line.split('\t', 1)[0]);
+    expect(rootCandidates).toContain('init');
+
+    const optionCompletion = await runCli(value, ['complete', '--', 'init', '--']);
+    expect(optionCompletion.exitCode, optionCompletion.stderr).toBe(0);
+    const optionCandidates = optionCompletion.stdout
+      .trimEnd()
+      .split('\n')
+      .filter((line) => !line.startsWith(':'))
+      .map((line) => line.split('\t', 1)[0]);
+    for (const option of ['--file', '--tool', '--scope', '--force', '--dry-run']) {
+      expect(optionCandidates).toContain(option);
+    }
 
     const unsupported = json(
       await runCli(value, ['init', '--tool', 'kilo-code', '--json']),

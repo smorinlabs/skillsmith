@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { join } from 'node:path';
-import { runCompletion } from '../../../packages/cli/src/completion/run.ts';
+import { join, resolve } from 'node:path';
 import { buildProgram } from '../../../packages/cli/src/program.ts';
 import { optionsForPath } from '../../../packages/cli/src/spec/options.ts';
+import { CLI_ENTRYPOINT } from '../../../packages/cli/tests/fixtures/cli.ts';
 import { TOOL_OPERATIONS } from '../../../packages/core/src/agents/adapter-types.ts';
 import { verifyClaudeCode } from '../../../packages/core/src/agents/claude-code/verify.ts';
 import { verifyCodex } from '../../../packages/core/src/agents/codex/verify.ts';
@@ -11,6 +11,7 @@ import { resolveRuntimeConfiguration } from '../../../packages/core/src/config/r
 import { parseConfig } from '../../../packages/core/src/config/schema.ts';
 import { FLIP_TOOLS } from '../../../packages/core/src/place/types.ts';
 import { VERIFIED_AGAINST, VERIFY_TOOLS } from '../../../packages/core/src/verify/types.ts';
+import { hermeticGitEnv } from '../../../packages/core/tests/fixtures/git-env.ts';
 import { readOnlyFixtureAdapter } from '../fixtures/p1-ts09/read-only-adapter.ts';
 import { writeFixtureAdapter } from '../fixtures/p1-ts09/write-adapter.ts';
 
@@ -36,6 +37,8 @@ const OPERATIONS = [
   'update',
   'adapt',
 ] as const;
+
+const ROOT = resolve(import.meta.dir, '../../..');
 
 type OperationFact = {
   supported: boolean;
@@ -398,8 +401,20 @@ describe('EWP-P1-TS09', () => {
     const liveTool = verify?.options.find((option) => option.long === '--tool');
     expect(liveTool?.argChoices).toEqual(registry.ids);
     expect(verify?.helpInformation()).toContain('--tool');
-    const completion = runCompletion(program, 'fish');
-    for (const id of registry.ids) expect(completion).toContain(id);
+    const completion = Bun.spawnSync(
+      [process.execPath, CLI_ENTRYPOINT, 'complete', '--', 'verify', '--tool', ''],
+      {
+        cwd: ROOT,
+        env: hermeticGitEnv({ CI: '1', NO_COLOR: '1' }),
+        stdout: 'pipe',
+        stderr: 'pipe',
+      },
+    );
+    expect(completion.exitCode, completion.stderr.toString()).toBe(0);
+    expect(completion.stderr.toString()).toBe('');
+    const completionLines = completion.stdout.toString().trimEnd().split('\n');
+    expect(completionLines.pop()).toBe(':4');
+    expect(completionLines.map((line) => line.split('\t', 1)[0])).toEqual(registry.ids);
   });
 
   test('routes registered read-only and write fixture adapters without global mutation', async () => {
