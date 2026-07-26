@@ -159,7 +159,7 @@ Tracked entities: **426** across **45** change groups.
 | P2-05 | P17-G6-02A | signed-off | required-pr |
 | P2-06 | P17-G1-05 | signed-off | required-pr |
 | P2-07 | P17-G3B-03 | signed-off | required-pr |
-| P2-08 | P17-G6-03 | mapped | required-pr |
+| P2-08 | P17-G6-03 | validated | required-pr |
 | P3-01 | P17-G7-01 | deferred | deferred |
 | P3-02 | P17-G7-01 | deferred | deferred |
 | P3-03 | P17-G7-01 | deferred | deferred |
@@ -1619,20 +1619,20 @@ Downstream coverage obligations: EWP-WF01.
 - [x] P17-G6-03:mapped _(passed)_
 - [x] P17-G6-03:ready _(passed)_
 - [x] P17-G6-03:test-first _(passed)_
-- [ ] P17-G6-03:minimal-implementation _(pending)_
-- [ ] P17-G6-03:targeted-green _(pending)_
-- [ ] P17-G6-03:impacted-green _(pending)_
-- [ ] P17-G6-03:refactor _(pending)_
+- [x] P17-G6-03:minimal-implementation _(passed)_
+- [x] P17-G6-03:targeted-green _(passed)_
+- [x] P17-G6-03:impacted-green _(passed)_
+- [x] P17-G6-03:refactor _(passed)_
 - [ ] P17-G6-03:adversarial-review _(pending)_
 - [ ] P17-G6-03:traceability-closure _(pending)_
 - [ ] P17-G6-03:signed-off _(pending)_
 
 ### Tracked entities
 
-- [ ] **EWP-P6-T05** — Color/observer, legacy-logger, and dependency cleanup. _(phase-task; red)_
-- [ ] **EWP-P6-T06** — Version/capability matrix and install/upgrade docs. _(phase-task; red)_
-- [ ] **EWP-P6-TS03** — TTY/pipe/color/quiet/JSON rendering suite. _(phase-test; failing)_
-- [ ] **P2-08** — Dependency/render cleanup _(recommendation; mapped)_
+- [ ] **EWP-P6-T05** — Color/observer, legacy-logger, and dependency cleanup. _(phase-task; green)_
+- [ ] **EWP-P6-T06** — Version/capability matrix and install/upgrade docs. _(phase-task; green)_
+- [ ] **EWP-P6-TS03** — TTY/pipe/color/quiet/JSON rendering suite. _(phase-test; passing)_
+- [ ] **P2-08** — Dependency/render cleanup _(recommendation; validated)_
 
 ## P17-G6-04 — Canonical PR/release recipes, exact-SHA publication gate, and final 1.0 evidence
 

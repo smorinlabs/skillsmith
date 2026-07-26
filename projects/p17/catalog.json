@@ -8213,20 +8213,20 @@
           "evidence": ["projects/p17/evidence/P17-G6-03.md#test-first-evidence"]
         },
         "minimal-implementation": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G6-03.md#minimal-implementation-at-4b860c2"]
         },
         "targeted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G6-03.md#targeted-green-at-4b860c2"]
         },
         "impacted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G6-03.md#impacted-green-at-4b860c2"]
         },
         "refactor": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G6-03.md#refactor-result-at-4b860c2"]
         },
         "adversarial-review": {
           "status": "pending",
@@ -8251,7 +8251,12 @@
         "projects/p17/evidence/P17-G6-03.md#first-ready-review-at-2097fbf",
         "projects/p17/evidence/P17-G6-03.md#corrected-ready-review-at-201629f",
         "projects/p17/evidence/P17-G6-03.md#accepted-ready-result",
-        "projects/p17/evidence/P17-G6-03.md#test-first-evidence"
+        "projects/p17/evidence/P17-G6-03.md#test-first-evidence",
+        "projects/p17/evidence/P17-G6-03.md#minimal-implementation-at-4b860c2",
+        "projects/p17/evidence/P17-G6-03.md#green-execution-receipt-ewp-p6-ts03",
+        "projects/p17/evidence/P17-G6-03.md#targeted-green-at-4b860c2",
+        "projects/p17/evidence/P17-G6-03.md#impacted-green-at-4b860c2",
+        "projects/p17/evidence/P17-G6-03.md#refactor-result-at-4b860c2"
       ]
     },
     {
@@ -25832,7 +25837,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G6-03",
-      "status": "red",
+      "status": "green",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-03",
       "target": null,
@@ -25840,7 +25845,9 @@
         "projects/p17/evidence/P17-G6-03.md#mapping-and-prerequisites",
         "projects/p17/evidence/P17-G6-03.md#corrected-ready-review-at-201629f",
         "projects/p17/evidence/P17-G6-03.md#accepted-ready-result",
-        "projects/p17/evidence/P17-G6-03.md#test-first-evidence"
+        "projects/p17/evidence/P17-G6-03.md#test-first-evidence",
+        "projects/p17/evidence/P17-G6-03.md#minimal-implementation-at-4b860c2",
+        "projects/p17/evidence/P17-G6-03.md#targeted-green-at-4b860c2"
       ],
       "secondaryGroups": [],
       "implements": ["P2-08"],
@@ -25856,7 +25863,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G6-03",
-      "status": "red",
+      "status": "green",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-03",
       "target": null,
@@ -25864,7 +25871,9 @@
         "projects/p17/evidence/P17-G6-03.md#mapping-and-prerequisites",
         "projects/p17/evidence/P17-G6-03.md#corrected-ready-review-at-201629f",
         "projects/p17/evidence/P17-G6-03.md#accepted-ready-result",
-        "projects/p17/evidence/P17-G6-03.md#test-first-evidence"
+        "projects/p17/evidence/P17-G6-03.md#test-first-evidence",
+        "projects/p17/evidence/P17-G6-03.md#minimal-implementation-at-4b860c2",
+        "projects/p17/evidence/P17-G6-03.md#targeted-green-at-4b860c2"
       ],
       "secondaryGroups": ["P17-G6-04"],
       "implements": ["P2-08"],
@@ -25955,7 +25964,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-03",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-03:tests/ergonomics/phase/EWP-P6-TS03.test.ts#EWP-P6-TS03",
       "target": {
@@ -25964,7 +25973,10 @@
         "selector": "EWP-P6-TS03",
         "command": "bun test tests/ergonomics/phase/EWP-P6-TS03.test.ts --test-name-pattern EWP-P6-TS03"
       },
-      "evidence": ["projects/p17/evidence/P17-G6-03.md#red-execution-receipt-ewp-p6-ts03"],
+      "evidence": [
+        "projects/p17/evidence/P17-G6-03.md#green-execution-receipt-ewp-p6-ts03",
+        "projects/p17/evidence/P17-G6-03.md#red-execution-receipt-ewp-p6-ts03"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P6-TS03"],
@@ -27957,11 +27969,14 @@
       "designStatus": "retained",
       "stateModel": "coverage",
       "primaryGroup": "P17-G6-03",
-      "status": "mapped",
+      "status": "validated",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G6-03",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G6-03.md#mapping-and-prerequisites"],
+      "evidence": [
+        "projects/p17/evidence/P17-G6-03.md#mapping-and-prerequisites",
+        "projects/p17/evidence/P17-G6-03.md#impacted-green-at-4b860c2"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P6-TS03"],
