@@ -62,6 +62,40 @@ describe('sync output', () => {
     expect(JSON.parse(renderSyncJson(report, syncV1Codec))).toEqual(report);
   });
 
+  test('both renderers fail closed on invalid or credential-bearing material', () => {
+    const invalid = { ...report, state: 'private' };
+    const credentialBearing: SyncReportV1Dto = {
+      ...report,
+      endpoints: {
+        ...report.endpoints,
+        to: {
+          ...report.endpoints.to,
+          selectedInput: '/fixture/access_token=SYNC_SECRET_CANARY',
+          projectRoot: '/fixture/access_token=SYNC_SECRET_CANARY',
+        },
+      },
+    };
+    const refuses = (render: () => unknown): boolean => {
+      try {
+        render();
+        return false;
+      } catch {
+        return true;
+      }
+    };
+    expect({
+      humanInvalid: refuses(() => renderSyncHuman(invalid as SyncReportV1Dto)),
+      jsonInvalid: refuses(() => renderSyncJson(invalid as SyncReportV1Dto, syncV1Codec)),
+      humanCredential: refuses(() => renderSyncHuman(credentialBearing)),
+      jsonCredential: refuses(() => renderSyncJson(credentialBearing, syncV1Codec)),
+    }).toEqual({
+      humanInvalid: true,
+      jsonInvalid: true,
+      humanCredential: true,
+      jsonCredential: true,
+    });
+  });
+
   test('current runtime binds sync to the strict mapped codec', () => {
     expect(currentWireCodecs.sync.descriptor).toEqual(syncV1Codec.descriptor);
     const renderer = createCurrentRendererRegistry(new Command()).sync;
