@@ -2,7 +2,7 @@ import type { LedgerModel, LedgerPairV1Dto } from '../artifacts/ledger-types.ts'
 import { logicalJournalPairIdentity } from '../artifacts/registry.ts';
 import { resolveProjectContext } from '../context/project.ts';
 import type { ProjectContext } from '../context/types.ts';
-import type { GcProjectV1Dto, GcReportV1Dto } from '../contracts/v1/gc.ts';
+import { type GcProjectV1Dto, type GcReportV1Dto, gcV1Codec } from '../contracts/v1/gc.ts';
 import { safeErrorCode } from '../errors.ts';
 import {
   clearIncompleteGcRecovery,
@@ -189,18 +189,41 @@ const refusalReport = (
   },
 });
 
+const invalidGcReport = (): CommandOutcome<GcApplicationReport> => ({
+  report: { result: null },
+  diagnostics: [
+    { code: 'invalid-gc-report', severity: 'error', message: 'GC report invariant failed' },
+  ],
+  exitClass: 'failure',
+  mutation: NO_MUTATION,
+  deprecations: [],
+});
+
 const refuse = (
   exitClass: 'failure' | 'usage' | 'state' | 'permission' | 'cancelled',
   code: string,
   message: string,
   report: GcReportV1Dto | null = null,
-): CommandOutcome<GcApplicationReport> => ({
-  report: { result: report },
-  diagnostics: [{ code, severity: 'error', message }],
-  exitClass,
-  mutation: report === null ? NO_MUTATION : gcMutationFor(report, false),
-  deprecations: [],
-});
+): CommandOutcome<GcApplicationReport> => {
+  if (report === null) {
+    return {
+      report: { result: null },
+      diagnostics: [{ code, severity: 'error', message }],
+      exitClass,
+      mutation: NO_MUTATION,
+      deprecations: [],
+    };
+  }
+  const validated = gcV1Codec.validate(report);
+  if (!validated.ok) return invalidGcReport();
+  return {
+    report: { result: validated.value },
+    diagnostics: [{ code, severity: 'error', message }],
+    exitClass,
+    mutation: gcMutationFor(validated.value, false),
+    deprecations: [],
+  };
+};
 
 export const gcExecutionExitClass = (
   reason: string,
@@ -294,13 +317,17 @@ export const gcMutationFor = (report: GcReportV1Dto, dryRun: boolean): MutationS
   failed: report.summary.failedItems,
 });
 
-const success = (report: GcReportV1Dto, dryRun: boolean): CommandOutcome<GcApplicationReport> => ({
-  report: { result: report },
-  diagnostics: [],
-  exitClass: 'success',
-  mutation: gcMutationFor(report, dryRun),
-  deprecations: [],
-});
+const success = (report: GcReportV1Dto, dryRun: boolean): CommandOutcome<GcApplicationReport> => {
+  const validated = gcV1Codec.validate(report);
+  if (!validated.ok) return invalidGcReport();
+  return {
+    report: { result: validated.value },
+    diagnostics: [],
+    exitClass: 'success',
+    mutation: gcMutationFor(validated.value, dryRun),
+    deprecations: [],
+  };
+};
 
 export const runGcApplication: ApplicationService<
   CurrentCommandRequest,
@@ -500,10 +527,12 @@ export const runGcApplication: ApplicationService<
     retryArguments: retryArguments(normalized.value, normalizedRoots.value),
     normalizedForgetRoots: normalizedRoots.value,
   });
-  if (normalized.value.dryRun) return success(plan.report, true);
+  const validatedPlanReport = gcV1Codec.validate(plan.report);
+  if (!validatedPlanReport.ok) return invalidGcReport();
+  if (normalized.value.dryRun) return success(validatedPlanReport.value, true);
   if (plan.actions.length === 0) {
     const noOpReport: GcReportV1Dto = Object.freeze({
-      ...plan.report,
+      ...validatedPlanReport.value,
       mode: 'execute',
       state: 'no-op',
       approval: { required: false, outcome: 'not-required' as const },

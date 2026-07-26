@@ -380,7 +380,11 @@ const effectVectorsMatch = (
 
 const containsForbiddenOutput = (input: unknown): boolean => {
   if (typeof input === 'string') {
-    return containsSensitiveMaterial(input) || /(?:https?|ssh):\/\//iu.test(input);
+    return (
+      containsSensitiveMaterial(input) ||
+      /[A-Za-z][A-Za-z0-9+.-]*:\/\//u.test(input) ||
+      /^git@[^@/:]+:.+$/u.test(input)
+    );
   }
   if (Array.isArray(input)) return input.some(containsForbiddenOutput);
   if (input === null || typeof input !== 'object') return false;
