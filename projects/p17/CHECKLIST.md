@@ -74,7 +74,7 @@ Tracked entities: **426** across **45** change groups.
 #### Phase 5
 
 - [x] Phase 5:entry _(passed)_
-- [ ] Phase 5:review _(pending)_
+- [ ] Phase 5:review _(failed)_
 - [ ] Phase 5:approval _(pending)_
 - [ ] Phase 5:exit _(pending)_
 

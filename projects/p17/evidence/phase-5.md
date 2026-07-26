@@ -120,3 +120,30 @@
 - **Boundary:** Phase 6 remains five planned groups with zero owned files and zero passed gates.
   Phase-5 review, standing approval, and exit remain pending until G5-04 traceability/sign-off and
   fresh whole-phase review complete.
+
+## Whole-phase adversarial review F04 NO-GO — 2026-07-25
+
+- **Reviewed head:** `d0099b2c7997b3cb8927c96f9c41524f4b8fe0b5`.
+- **Reviewer:** fresh read-only external Codex session
+  `/external-codex/019f9bd6-ebdf-7c03-a64e-693710eeefba`.
+- **Verified closure:** all five Phase-5 groups report 50/50 historical lifecycle gates and 70/70
+  primary entities; 60 required-now rows reduce to 56 unique existing targets; all 45 gate-evidence
+  anchors resolve; F01 through F03 remain closed; 445 Phase-5 ownership entries reduce to 268
+  current regular paths; progressed ownership is 878 current regular paths plus two exact Git
+  deletions.
+- **Terminal receipt:** 3,217 passed + 28 intentional live-environment skips + 0 failed = 3,245
+  tests, with 104,768 assertions across 353 files. No skip intersects Phase-5 required-now closure.
+- **P17-RV-P5-F04 (high, release-blocking):** a schema-valid `sync@1` project endpoint containing
+  `access_token=SYNC_SECRET_CANARY` is accepted and emitted by both JSON and human renderers. The
+  sync codec lacks the shared sensitive-material rejection, the human renderer does not validate
+  before interpolation, and focused output coverage lacks invalid/credential refusal cases.
+- **Verdict:** **NO-GO at 0.99 confidence**. No other finding was identified. The Phase-5 review
+  gate is failed and Phase 5 is blocked; approval and exit remain pending. Historical G5-01 group
+  and entity states remain recorded solely to preserve the already-signed G5-05 dependency chain,
+  but they cannot support Phase-5 exit until F04 receives renewed immutable review.
+- **Required correction:** within the three already-owned sync codec, human renderer, and output
+  test paths, add fail-closed recursive sensitive-material validation, canonical human validation,
+  and focused invalid/credential rejection coverage; then replay G5-01 and the serialized terminal
+  gate and obtain renewed immutable G5-01 and whole-phase review.
+- **Boundary:** Phase 6 remains five planned groups, zero owned group paths, 0/50 gates, and 40
+  planned primary entities. This correction authorizes no Phase-6 work.

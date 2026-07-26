@@ -177,15 +177,17 @@
       "id": "5",
       "dependsOn": "4",
       "requiredGroups": ["P17-G5-01", "P17-G5-02", "P17-G5-03", "P17-G5-04", "P17-G5-05"],
-      "status": "active",
+      "status": "blocked",
       "entry": {
         "status": "passed",
         "evidence": ["projects/p17/evidence/phase-5.md#entry-gate-2026-07-21"]
       },
       "review": {
-        "status": "pending",
-        "evidence": [],
-        "reviewer": null
+        "status": "failed",
+        "evidence": [
+          "projects/p17/evidence/phase-5.md#whole-phase-adversarial-review-f04-no-go-2026-07-25"
+        ],
+        "reviewer": "/external-codex/019f9bd6-ebdf-7c03-a64e-693710eeefba"
       },
       "approval": {
         "status": "pending",
