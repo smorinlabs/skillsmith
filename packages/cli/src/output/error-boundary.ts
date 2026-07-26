@@ -6,6 +6,12 @@ import {
 } from '@skillsmith/core';
 import { errorV1Codec, toErrorV1Dto } from '@skillsmith/core/contracts/v1';
 import type { Command } from 'commander';
+import { type CliRuntimeIo, processRuntimeIo } from '../runtime/io.ts';
+import {
+  presentHumanOutput,
+  presentationPolicyForIo,
+  presentationPolicyFromArgv,
+} from '../runtime/presentation.ts';
 import { type ExitCode, exitCodeForError } from '../util/exit-codes.ts';
 import { encodeWire } from './wire-codec.ts';
 
@@ -218,21 +224,54 @@ export const failCliError = (
   error: unknown,
   format: CliErrorFormat = cliErrorFormatFromArgv(),
   fallback?: string | CliErrorFallback,
+  argv: readonly string[] = process.argv.slice(2),
+  io: CliRuntimeIo = processRuntimeIo,
 ): never => {
   const normalized = normalizeCliError(error, fallback);
-  (format === 'json' ? process.stdout : process.stderr).write(renderCliError(normalized, format));
+  const rendered = renderCliError(normalized, format);
+  if (format === 'json') {
+    io.stdout.write(rendered);
+  } else {
+    const presented = presentHumanOutput(
+      { stderr: rendered },
+      presentationPolicyFromArgv(argv, format, io),
+      'error',
+    );
+    io.stderr.write(presented.stderr ?? rendered);
+  }
   process.exit(normalized.exitCode);
+};
+
+const invocationForCommand = (command: Command): readonly string[] => {
+  let root = command;
+  while (root.parent !== null) root = root.parent;
+  const state = root as Command & {
+    readonly rawArgs?: readonly string[];
+    readonly _scriptPath?: string;
+  };
+  const rawArgs = state.rawArgs ?? process.argv;
+  return state._scriptPath === undefined ? rawArgs : rawArgs.slice(2);
 };
 
 /**
  * Route Commander usage failures through the same boundary. Commander writes its diagnostic before
  * invoking an exit override, so suppress that raw write and emit the normalized record here.
  */
-export const withCliErrorBoundary = <T extends Command>(command: T): T => {
+export const withCliErrorBoundary = <T extends Command>(
+  command: T,
+  io: CliRuntimeIo = processRuntimeIo,
+): T => {
   command.configureOutput({
     writeOut: (value) => {
       const options = command.optsWithGlobals() as { quiet?: boolean };
-      if (options.quiet !== true) process.stdout.write(value);
+      if (options.quiet !== true) {
+        const output = presentHumanOutput(
+          { stdout: value },
+          presentationPolicyForIo(options, 'human', io),
+          'help',
+        );
+        if (output.stdout !== undefined) io.stdout.write(output.stdout);
+      }
     },
     writeErr: () => undefined,
   });
@@ -240,7 +279,8 @@ export const withCliErrorBoundary = <T extends Command>(command: T): T => {
     if (error.code === 'commander.helpDisplayed' || error.code === 'commander.version') {
       process.exit(0);
     }
-    failCliError(error);
+    const invocation = invocationForCommand(command);
+    failCliError(error, cliErrorFormatFromArgv(invocation), undefined, invocation, io);
   });
   return command;
 };

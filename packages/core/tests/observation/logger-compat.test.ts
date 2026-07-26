@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { observationFromLegacyLogger } from '../../src/observation/index.ts';
+import { resolveObservationBundle } from '../../src/observation/logger-compat.ts';
 
 describe('legacy Logger observation adapter', () => {
   test('reproduces detection debug and warning messages without exposing synthetic identity', () => {
@@ -114,5 +115,67 @@ describe('legacy Logger observation adapter', () => {
       resultCount: 0,
     });
     expect(messages).toEqual([]);
+  });
+
+  test('prefers an explicit typed bundle, adapts only an explicit Logger, and otherwise uses noop observation', () => {
+    const explicit = observationFromLegacyLogger(
+      { debug: () => {}, info: () => {}, warn: () => {} },
+      'detect',
+    );
+    const ignoredLoggerCalls: string[] = [];
+    expect(
+      resolveObservationBundle(
+        explicit,
+        {
+          debug: (message) => ignoredLoggerCalls.push(message),
+          info: () => {},
+          warn: () => {},
+        },
+        'detect',
+      ),
+    ).toBe(explicit);
+    expect(ignoredLoggerCalls).toEqual([]);
+
+    const adaptedCalls: string[] = [];
+    const adapted = resolveObservationBundle(
+      undefined,
+      {
+        debug: (message) => adaptedCalls.push(message),
+        info: () => {},
+        warn: () => {},
+      },
+      'detect',
+      ['codex'],
+    );
+    const adaptedSpan = adapted.emitter.begin(adapted.context, {
+      kind: 'tool.detection.started',
+      toolId: 'codex',
+    });
+    adapted.emitter.complete(adaptedSpan, {
+      outcome: 'success',
+      errorCode: null,
+      resultCount: 1,
+    });
+    expect(adaptedCalls).toEqual(['detecting codex']);
+
+    const fallback = resolveObservationBundle(undefined, undefined, 'list-skills', ['codex']);
+    const fallbackSpan = fallback.emitter.begin(fallback.context, {
+      kind: 'operation.started',
+      operationKind: 'inventory',
+    });
+    expect(() =>
+      fallback.emitter.complete(fallbackSpan, {
+        outcome: 'success',
+        errorCode: null,
+        standaloneCount: 0,
+        bundledCount: 0,
+        resultCount: 0,
+      }),
+    ).not.toThrow();
+    expect(fallback.context).toMatchObject({
+      operationId: 'noop-observation',
+      command: 'direct-scan',
+      workflow: 'list-skills',
+    });
   });
 });

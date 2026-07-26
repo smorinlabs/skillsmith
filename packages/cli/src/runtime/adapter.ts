@@ -7,6 +7,7 @@ import type {
 import { normalizeCliError, renderCliError } from '../output/error-boundary.ts';
 import type { ExitCode } from '../util/exit-codes.ts';
 import { type CliRuntimeIo, type RenderedCommandOutput, emitCommandOutput } from './io.ts';
+import { type PresentationPolicy, presentHumanOutput } from './presentation.ts';
 
 export type RuntimeExitClass = CommandExitClass;
 
@@ -61,6 +62,8 @@ export interface RuntimeExecutionRequest {
   readonly context: unknown;
   readonly observation: ObservationBundle;
   readonly format: RuntimeFormat;
+  /** Invocation-scoped human presentation; ignored for JSON. */
+  readonly presentation?: PresentationPolicy;
   /** Presentation-only policy; JSON output is never suppressed. */
   readonly quiet?: boolean;
   /** Internal stderr observation buffer, settled before canonical command output. */
@@ -302,10 +305,18 @@ const renderedOutput = (value: string | RenderedCommandOutput): RenderedCommandO
 
 const outputForRequest = (
   output: RenderedCommandOutput,
-  request: Pick<RuntimeExecutionRequest, 'format' | 'quiet'>,
+  request: Pick<RuntimeExecutionRequest, 'format' | 'presentation' | 'quiet' | 'reportKind'>,
 ): RenderedCommandOutput =>
-  request.format === 'human' && request.quiet === true
-    ? { ...(output.stderr === undefined ? {} : { stderr: output.stderr }) }
+  request.format === 'human'
+    ? (() => {
+        const presented =
+          request.presentation === undefined
+            ? output
+            : presentHumanOutput(output, request.presentation, request.reportKind);
+        return request.quiet === true
+          ? { ...(presented.stderr === undefined ? {} : { stderr: presented.stderr }) }
+          : presented;
+      })()
     : output;
 
 const settleDiagnosticBuffer = (

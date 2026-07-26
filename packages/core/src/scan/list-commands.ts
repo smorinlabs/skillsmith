@@ -5,10 +5,10 @@ import type { CommandEntry } from '../commands/types.ts';
 import { walkCommandDir } from '../commands/walk.ts';
 import type { Scope } from '../config/types.ts';
 import type { Logger } from '../env/logger.ts';
-import { noopLogger } from '../env/logger.ts';
 import type { SkillSmithError } from '../errors.ts';
 import { throwIfInventoryCancelled } from '../inventory-control.ts';
-import { type ObservationBundle, observationFromLegacyLogger } from '../observation/index.ts';
+import type { ObservationBundle } from '../observation/index.ts';
+import { resolveObservationBundle } from '../observation/logger-compat.ts';
 import { discoverPlugins } from '../plugins/discover.ts';
 import type { DiscoveredPlugin } from '../plugins/types.ts';
 import type { InventoryReadPorts, ResolvedRuntimeConfiguration } from '../ports/types.ts';
@@ -156,9 +156,9 @@ const scanCommandPlacements = async (
   project: (entries: CommandEntry[]) => CommandEntry[],
 ): Promise<Result<CommandEntry[], SkillSmithError>> => {
   const tools = opts.tools ?? (Object.keys(registry) as readonly SupportedTool[]);
-  const observation =
-    opts.observation ??
-    observationFromLegacyLogger(opts.logger ?? noopLogger, 'list-commands', [...new Set(tools)]);
+  const observation = resolveObservationBundle(opts.observation, opts.logger, 'list-commands', [
+    ...new Set(tools),
+  ]);
   const span = observation.emitter.begin(observation.context, {
     kind: 'operation.started',
     operationKind: 'inventory',

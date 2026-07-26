@@ -103,7 +103,9 @@ const TOPIC_CONTENT: Readonly<Record<Exclude<HelpTopic, 'workflows'>, string>> =
     'Output formatting\n\n' +
     'Human-readable output is the default. Commands with machine-readable reports expose --json; ' +
     'agents also supports --format markdown|json. stdout carries requested data while stderr ' +
-    'carries diagnostics. Color is controlled by --color and standard terminal color variables.',
+    'carries diagnostics. Semantic color is limited to an eligible TTY and is never emitted ' +
+    'through a pipe, including with --color always. --no-color, --color never, NO_COLOR, ' +
+    'CLICOLOR=0, and JSON disable color.',
 };
 
 export const TOPICS: Readonly<Record<HelpTopic, string>> = {

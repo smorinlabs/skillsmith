@@ -80,12 +80,20 @@ Machine-readable form (`--format json`) wraps results in a small envelope. Shape
 
 > P17 disposition: current source-build behavior; authority: package.json
 
-No prebuilt binaries yet — run from source. Requires [Bun](https://bun.sh) ≥ 1.3.14.
+The Source checkout is the currently available installation method. It requires
+[Bun](https://bun.sh) ≥ 1.3.14.
+
+| Distribution | Availability |
+|---|---|
+| Source checkout | Available |
+| Homebrew | Not yet published |
+| npm/Bun global | Not yet published |
+| native release assets | Not yet published |
 
 ```sh
 git clone https://github.com/smorinlabs/skillsmith.git
 cd skillsmith
-bun install
+bun install --frozen-lockfile
 bun run dev agents         # fastest way to try it — no build step
 ```
 
@@ -95,6 +103,20 @@ To produce a standalone binary:
 bun run build              # compiles for the current host; package.json also has explicit targets
 ./dist/skillsmith --help
 ```
+
+## Upgrade
+
+Update a clean Source checkout, restore the exact reviewed dependency graph, and rerun the CLI:
+
+```sh
+git pull --ff-only
+bun install --frozen-lockfile
+bun run dev version
+```
+
+If you use a standalone binary, run `bun run build` again after the upgrade. Homebrew,
+npm/Bun global, and native release assets do not yet have upgrade commands because those
+distributions are not yet published.
 
 ## Quickstart
 
@@ -132,6 +154,11 @@ skillsmith completion bash              # emit a Bash completion script
 `check` fails on error findings by default; use `--report-only` when only the report should be
 produced. The inherited `-C <dir>` flag changes the effective working directory, and
 `--config <file>` selects an explicit configuration file.
+
+Human output uses semantic color only when its destination is an eligible TTY. `--color always`
+selects color on an eligible TTY but never through a pipe; `--no-color`, `--color never`,
+`NO_COLOR`, `CLICOLOR=0`, and JSON output disable it. stdout carries command reports while stderr
+carries diagnostics, warnings, and errors.
 
 `status` is read-only: it correlates the selected manifest/lock pair, placement ledger, journals,
 and live skill roots without running verification or writing recovery state. Use repeatable
@@ -178,6 +205,38 @@ is a noop, exact legacy project configuration is migrated losslessly, and other 
 requires `--force`; future schemas are never downgraded. The sibling lock, live roots, store, and
 placement ledger are not written. `--dry-run` and strict `--json` expose the same operation identity.
 
+
+<!-- skillsmith-capability-matrix:start -->
+## Capability and version matrix
+
+Generated from the live tool registry for Skillsmith 0.7.0. A scope list means the operation is supported in those scopes; “yes” means the operation is supported without a scope; “—” means it is not supported.
+
+| Tool | Capability contract | Verifier baseline |
+|---|---|---|
+| `claude-code` | capability v1 | 2.1.202 |
+| `codex` | capability v1 | 0.142.5 |
+| `kilo-code` | capability v1 | not applicable |
+| `opencode` | capability v1 | not applicable |
+
+| Operation | `claude-code` | `codex` | `kilo-code` | `opencode` |
+|---|---|---|---|---|
+| `detect` | yes | yes | yes | yes |
+| `inventory-skills` | user, project, system, managed | user, project, system, managed | user, project, system, managed | user, project, system, managed |
+| `inventory-commands` | user, project, system, managed | user, project, system, managed | user, project, system, managed | user, project, system, managed |
+| `diagnostics` | user, project, system, managed | user, project, system, managed | user, project, system, managed | user, project, system, managed |
+| `install` | user, project, custom | user, project, custom | — | — |
+| `uninstall` | user, project, custom | user, project, custom | — | — |
+| `dev` | user, project, custom | user, project, custom | — | — |
+| `promote` | user, project, custom | user, project, custom | — | — |
+| `undo` | user, project, custom | user, project, custom | — | — |
+| `verify-static` | artifact | artifact | — | — |
+| `verify-deep` | artifact | artifact | — | — |
+| `plan` | user, project, custom | user, project, custom | — | — |
+| `apply` | user, project, custom | user, project, custom | — | — |
+| `sync` | user, project, custom | user, project, custom | — | — |
+| `update` | user, project, custom | user, project, custom | — | — |
+| `adapt` | — | — | — | — |
+<!-- skillsmith-capability-matrix:end -->
 ## Supported tools
 
 | Tool ID        | Probed binary | Detection today                                   |

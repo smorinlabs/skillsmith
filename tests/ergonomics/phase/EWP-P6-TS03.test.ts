@@ -190,6 +190,17 @@ describe('EWP-P6-TS03', () => {
     expect(tty.stderr.toString()).toBe('');
     expect(tty.stdout.toString(), 'human help on an eligible TTY must be styled').toContain(ESCAPE);
 
+    const eagerVersion = Bun.spawnSync(
+      ['script', '-qefc', 'bun run packages/cli/src/index.ts --color auto version', '/dev/null'],
+      { cwd: ROOT, env, stdout: 'pipe', stderr: 'pipe' },
+    );
+    expect(eagerVersion.exitCode).toBe(0);
+    expect(eagerVersion.stderr.toString()).toBe('');
+    expect(eagerVersion.stdout.toString()).toContain(ESCAPE);
+    expect(eagerVersion.stdout.toString().replace(ANSI_SEQUENCE, '').replaceAll('\r', '')).toBe(
+      `${VERSION}\n`,
+    );
+
     for (const args of [
       ['--color', 'always', '--help'],
       ['--color', 'always', 'version'],
@@ -218,6 +229,34 @@ describe('EWP-P6-TS03', () => {
         'fixture',
       ).stderr,
     ).toBe('trace: operation.completed operation=op-1\n');
+
+    const runtimeMemory = memoryIo(true, true);
+    const runtime = createCliRuntimeAdapter({
+      applications: {
+        fixture: async () =>
+          successOutcome([{ severity: 'warning', code: 'careful', message: 'review this' }]),
+      },
+      renderers: {
+        fixture: {
+          human: () => ({ stdout: '# Result\n', stderr: 'warning: review this\n' }),
+          json: () => '{"kind":"fixture"}\n',
+        },
+      },
+      io: runtimeMemory.io,
+    });
+    await runtime.execute({
+      application: 'fixture',
+      reportKind: 'fixture',
+      request: {},
+      context: {},
+      observation: silentObservation(),
+      format: 'human',
+      presentation: { stdoutColor: 'on', stderrColor: 'on' },
+    });
+    expect(runtimeMemory.stdout.join('')).toContain(ESCAPE);
+    expect(runtimeMemory.stderr.join('')).toContain(ESCAPE);
+    expect(runtimeMemory.stdout.join('').replace(ANSI_SEQUENCE, '')).toBe('# Result\n');
+    expect(runtimeMemory.stderr.join('').replace(ANSI_SEQUENCE, '')).toBe('warning: review this\n');
   });
 
   test('family 3: preserves signed warning, deprecation, failure, cancellation, and JSON quiet semantics', async () => {
@@ -357,6 +396,27 @@ describe('EWP-P6-TS03', () => {
     expect(usage.stdout).toBe('');
     expect(usage.stderr).toStartWith('error: ');
     expect(usage.stderr).not.toContain(ESCAPE);
+
+    const ttyUsage = Bun.spawnSync(
+      [
+        'script',
+        '-qefc',
+        'bun run packages/cli/src/index.ts --color always --definitely-unknown',
+        '/dev/null',
+      ],
+      {
+        cwd: ROOT,
+        env: { ...withoutColorEnvironment(), TERM: 'xterm-256color' },
+        stdout: 'pipe',
+        stderr: 'pipe',
+      },
+    );
+    expect(ttyUsage.exitCode).toBe(2);
+    expect(ttyUsage.stderr.toString()).toBe('');
+    expect(ttyUsage.stdout.toString()).toContain(ESCAPE);
+    expect(ttyUsage.stdout.toString().replace(ANSI_SEQUENCE, '')).toContain(
+      "error: unknown option '--definitely-unknown'",
+    );
   });
 
   test('family 5: keeps explicit 1.x Logger compatibility while native fallback is typed no-op observation', async () => {

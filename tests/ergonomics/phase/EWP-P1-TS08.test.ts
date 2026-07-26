@@ -622,7 +622,7 @@ describe('EWP-P1-TS08', () => {
     const processAllow = new Set([
       'packages/core/src/ports/default.ts',
       'packages/cli/src/runtime/context.ts',
-      'packages/cli/src/runtime/environment.ts',
+      'packages/cli/src/runtime/presentation.ts',
     ]);
     const fetchAllow = new Set(['packages/core/src/ports/http.ts']);
     const uidAllow = new Set(['packages/core/src/ports/default.ts']);

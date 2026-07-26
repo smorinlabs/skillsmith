@@ -3,10 +3,10 @@ import { registry } from '../agents/registry.ts';
 import type { SupportedTool } from '../agents/types.ts';
 import { SCOPES, type Scope } from '../config/types.ts';
 import type { Logger } from '../env/logger.ts';
-import { noopLogger } from '../env/logger.ts';
 import type { SkillSmithError } from '../errors.ts';
 import { type InventoryMode, throwIfInventoryCancelled } from '../inventory-control.ts';
-import { type ObservationBundle, observationFromLegacyLogger } from '../observation/index.ts';
+import type { ObservationBundle } from '../observation/index.ts';
+import { resolveObservationBundle } from '../observation/logger-compat.ts';
 import { discoverPlugins } from '../plugins/discover.ts';
 import type { DiscoveredPlugin } from '../plugins/types.ts';
 import type { InventoryReadPorts, ResolvedRuntimeConfiguration } from '../ports/types.ts';
@@ -176,9 +176,9 @@ const scanSkillPlacements = async (
   project: (entries: SkillEntry[], scopes: readonly Scope[]) => SkillEntry[],
 ): Promise<Result<SkillEntry[], SkillSmithError>> => {
   const tools = opts.tools ?? (Object.keys(registry) as readonly SupportedTool[]);
-  const observation =
-    opts.observation ??
-    observationFromLegacyLogger(opts.logger ?? noopLogger, 'list-skills', [...new Set(tools)]);
+  const observation = resolveObservationBundle(opts.observation, opts.logger, 'list-skills', [
+    ...new Set(tools),
+  ]);
   const span = observation.emitter.begin(observation.context, {
     kind: 'operation.started',
     operationKind: 'inventory',

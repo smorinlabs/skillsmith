@@ -2359,15 +2359,7 @@ describe('EWP-P1-TS11', () => {
         scripts: ['test'],
       },
       'packages/cli/package.json': {
-        dependencies: [
-          '@bomb.sh/tab',
-          '@clack/prompts',
-          '@skillsmith/core',
-          'chalk',
-          'commander',
-          'consola',
-          'zod',
-        ],
+        dependencies: ['@bomb.sh/tab', '@clack/prompts', '@skillsmith/core', 'chalk', 'commander'],
         devDependencies: [],
         scripts: ['test'],
       },

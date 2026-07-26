@@ -1,16 +1,24 @@
 import type { Command } from 'commander';
 import { cliErrorFormatFromArgv, failCliError } from '../output/error-boundary.ts';
 import { CURRENT_COMMAND_SPECS, validateOptionInvocation } from '../spec/index.ts';
-import type { ColorFlag } from '../util/color.ts';
-import { applyRuntimeColorMode } from './environment.ts';
+import { type CliRuntimeIo, processRuntimeIo } from './io.ts';
 
 /** Validate root-global relations for action hooks and the zero-discovery eager-version path. */
-export const assertRootRuntimePreflight = (invocation: readonly string[]): void => {
+export const assertRootRuntimePreflight = (
+  invocation: readonly string[],
+  io: CliRuntimeIo = processRuntimeIo,
+): void => {
   const relation = validateOptionInvocation('skillsmith', invocation);
   if (!relation.ok)
-    failCliError(relation.error, cliErrorFormatFromArgv(invocation), {
-      exitCode: 2,
-    });
+    failCliError(
+      relation.error,
+      cliErrorFormatFromArgv(invocation),
+      {
+        exitCode: 2,
+      },
+      invocation,
+      io,
+    );
 };
 
 const commandPath = (command: Command): string => {
@@ -51,20 +59,18 @@ const commandArguments = (command: Command, rawArgs: readonly string[]): readonl
   return rawArgs;
 };
 
-export const installRuntimePreflight = (program: Command): void => {
-  program.hook('preAction', (thisCommand, actionCommand) => {
+export const installRuntimePreflight = (
+  program: Command,
+  io: CliRuntimeIo = processRuntimeIo,
+): void => {
+  program.hook('preAction', (_thisCommand, actionCommand) => {
     const rawArgs = (program as Command & { rawArgs?: string[] }).rawArgs ?? [];
     const invocation = rawArgs.slice(2);
     const format = cliErrorFormatFromArgv(invocation);
-    assertRootRuntimePreflight(invocation);
+    assertRootRuntimePreflight(invocation, io);
 
     const path = commandPath(actionCommand);
     const relation = validateOptionInvocation(path, commandArguments(actionCommand, invocation));
-    if (!relation.ok) return failCliError(relation.error, format, { exitCode: 2 });
-
-    const opts = thisCommand.optsWithGlobals() as { color?: string | false };
-    const raw = opts.color === false ? 'never' : (opts.color ?? 'auto');
-    const flag: ColorFlag = raw === 'always' || raw === 'never' || raw === 'auto' ? raw : 'auto';
-    applyRuntimeColorMode(flag);
+    if (!relation.ok) return failCliError(relation.error, format, { exitCode: 2 }, invocation, io);
   });
 };

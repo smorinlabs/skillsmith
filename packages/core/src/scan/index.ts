@@ -1,9 +1,9 @@
 import { getAgent, listSupportedTools, registry } from '../agents/registry.ts';
 import type { InstallRecord, SupportedTool } from '../agents/types.ts';
 import type { Logger } from '../env/logger.ts';
-import { noopLogger } from '../env/logger.ts';
 import { type SkillSmithError, unknownToolError } from '../errors.ts';
-import { type ObservationBundle, observationFromLegacyLogger } from '../observation/index.ts';
+import type { ObservationBundle } from '../observation/index.ts';
+import { resolveObservationBundle } from '../observation/logger-compat.ts';
 import type { DetectionPorts } from '../ports/types.ts';
 import { type Result, err, ok } from '../result.ts';
 
@@ -35,9 +35,9 @@ export const detectAll = async (
     if (!(t in registry)) return err(unknownToolError(t));
   }
 
-  const observation =
-    opts.observation ??
-    observationFromLegacyLogger(opts.logger ?? noopLogger, 'detect', [...new Set(tools)]);
+  const observation = resolveObservationBundle(opts.observation, opts.logger, 'detect', [
+    ...new Set(tools),
+  ]);
 
   const entries = await Promise.all(
     tools.map(async (t) => {

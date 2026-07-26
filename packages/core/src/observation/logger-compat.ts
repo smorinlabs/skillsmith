@@ -1,5 +1,5 @@
 import type { Logger } from '../env/logger.ts';
-import { createObservationEmitter } from './observer.ts';
+import { createObservationEmitter, noopObserver } from './observer.ts';
 import { createOperationContext } from './operation-context.ts';
 import { redactObservationValue } from './redaction.ts';
 import type { ObservationBundle, ObserverEvent, ObserverPort } from './types.ts';
@@ -68,5 +68,30 @@ export const observationFromLegacyLogger = (
   return Object.freeze({
     context,
     emitter: createObservationEmitter({ observer: legacyObserver(logger, activity), toolIds }),
+  });
+};
+
+export const resolveObservationBundle = (
+  observation: ObservationBundle | undefined,
+  logger: Logger | undefined,
+  activity: LegacyObservationActivity,
+  toolIds: readonly string[] = [],
+): ObservationBundle => {
+  if (observation !== undefined) return observation;
+  if (logger !== undefined) return observationFromLegacyLogger(logger, activity, toolIds);
+  const clock = Object.freeze({
+    wallNowIso: () => LEGACY_WALL_TIME,
+    monotonicMilliseconds: () => 0,
+  });
+  const context = createOperationContext({
+    operationId: 'noop-observation',
+    command: 'direct-scan',
+    workflow: activity,
+    clock,
+    id: { nextId: () => 'unused' },
+  });
+  return Object.freeze({
+    context,
+    emitter: createObservationEmitter({ observer: noopObserver, toolIds }),
   });
 };

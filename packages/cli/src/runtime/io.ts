@@ -2,6 +2,7 @@ import type { ExitCode } from '../util/exit-codes.ts';
 
 /** A deliberately small output capability owned by the CLI composition root. */
 export interface CliOutputPort {
+  readonly isTTY?: boolean;
   write(value: string): void;
 }
 
@@ -24,8 +25,18 @@ export const emitCommandOutput = (io: CliRuntimeIo, output: RenderedCommandOutpu
 
 /** The sole production process-stream adapter; command modules receive only CliRuntimeIo. */
 export const processRuntimeIo: CliRuntimeIo = {
-  stdout: { write: (value) => process.stdout.write(value) },
-  stderr: { write: (value) => process.stderr.write(value) },
+  stdout: {
+    get isTTY() {
+      return Boolean(process.stdout.isTTY);
+    },
+    write: (value) => process.stdout.write(value),
+  },
+  stderr: {
+    get isTTY() {
+      return Boolean(process.stderr.isTTY);
+    },
+    write: (value) => process.stderr.write(value),
+  },
   exit: (code) => {
     process.exitCode = code;
   },

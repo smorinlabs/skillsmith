@@ -23,15 +23,17 @@ describe('resolveColorMode', () => {
       resolveColorMode({ color: 'auto', noColor: false, isTTY: true, env: { TERM: 'dumb' } }),
     ).toBe('off');
   });
-  test('--color=always forces on even without TTY', () => {
-    expect(resolveColorMode({ color: 'always', noColor: false, isTTY: false, env: {} })).toBe('on');
+  test('--color=always never contaminates a non-TTY destination', () => {
+    expect(resolveColorMode({ color: 'always', noColor: false, isTTY: false, env: {} })).toBe(
+      'off',
+    );
   });
-  test('FORCE_COLOR forces on', () => {
+  test('FORCE_COLOR never contaminates a non-TTY destination', () => {
     expect(
       resolveColorMode({ color: 'auto', noColor: false, isTTY: false, env: { FORCE_COLOR: '1' } }),
-    ).toBe('on');
+    ).toBe('off');
   });
-  test('CLICOLOR_FORCE forces on', () => {
+  test('CLICOLOR_FORCE never contaminates a non-TTY destination', () => {
     expect(
       resolveColorMode({
         color: 'auto',
@@ -39,7 +41,16 @@ describe('resolveColorMode', () => {
         isTTY: false,
         env: { CLICOLOR_FORCE: '1' },
       }),
-    ).toBe('on');
+    ).toBe('off');
+  });
+  test('explicit force controls enable color on an eligible TTY', () => {
+    for (const input of [
+      { color: 'always' as const, env: {} },
+      { color: 'auto' as const, env: { FORCE_COLOR: '1' } },
+      { color: 'auto' as const, env: { CLICOLOR_FORCE: '1' } },
+    ]) {
+      expect(resolveColorMode({ ...input, noColor: false, isTTY: true })).toBe('on');
+    }
   });
   test('auto with TTY → on', () => {
     expect(resolveColorMode({ color: 'auto', noColor: false, isTTY: true, env: {} })).toBe('on');

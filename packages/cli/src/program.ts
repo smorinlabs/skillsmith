@@ -35,6 +35,11 @@ import { createCurrentRendererRegistry } from './runtime/current-renderers.ts';
 import { createCliDiagnosticObserver, resolveObservationVerbosity } from './runtime/diagnostics.ts';
 import { type CliRuntimeIo, processRuntimeIo } from './runtime/io.ts';
 import { assertRootRuntimePreflight, installRuntimePreflight } from './runtime/preflight.ts';
+import {
+  type PresentationPolicy,
+  presentHumanOutput,
+  presentationPolicyForIo,
+} from './runtime/presentation.ts';
 import { CURRENT_COMMAND_SPECS } from './spec/index.ts';
 import type { CommandSpecInput, NormalizedCommandSpec } from './spec/types.ts';
 
@@ -269,10 +274,16 @@ const invocationFromParse = (
 const eagerPresentationOptions = (
   invocation: readonly string[],
   valueOptionScopes: readonly (EagerValueOptionScope | undefined)[],
-): Readonly<{ quiet?: true; debug?: true; verbose: number }> => {
+): Readonly<{
+  quiet?: true;
+  debug?: true;
+  verbose: number;
+  color: 'auto' | 'always' | 'never' | false;
+}> => {
   let quiet = false;
   let debug = false;
   let verbose = 0;
+  let color: 'auto' | 'always' | 'never' | false = 'auto';
   for (let index = 0; index < invocation.length; index++) {
     const token = invocation[index];
     if (token === undefined) break;
@@ -282,6 +293,11 @@ const eagerPresentationOptions = (
     if (token === '--quiet') quiet = true;
     if (token === '--debug') debug = true;
     if (token === '--verbose') verbose++;
+    if (token === '--no-color') color = false;
+    const attachedColor = token.startsWith('--color=') ? token.slice('--color='.length) : undefined;
+    const selectedColor = token === '--color' ? invocation[index + 1] : attachedColor;
+    if (selectedColor === 'auto' || selectedColor === 'always' || selectedColor === 'never')
+      color = selectedColor;
     const longShape = longValueShape(valueOptions, token);
     if (longShape !== undefined) continue;
     if (!token.startsWith('-') || token.startsWith('--') || token === '-') continue;
@@ -298,6 +314,7 @@ const eagerPresentationOptions = (
     ...(quiet ? { quiet: true as const } : {}),
     ...(debug ? { debug: true as const } : {}),
     verbose,
+    color,
   };
 };
 
@@ -307,8 +324,8 @@ export const buildProgram = (
 ): Command => {
   const rootSpec = CURRENT_COMMAND_SPECS.find((spec) => spec.path === 'skillsmith');
   if (rootSpec === undefined) throw new Error('CommandSpec registry is missing skillsmith');
-  const program = withCliErrorBoundary(createCommandFromSpec(rootSpec));
   const runtimeIo = extensions.runtimePorts ?? processRuntimeIo;
+  const program = withCliErrorBoundary(createCommandFromSpec(rootSpec), runtimeIo);
   const operationPorts = extensions.operationPorts ?? {
     clock: defaultClockPort,
     id: defaultIdPort,
@@ -375,15 +392,24 @@ export const buildProgram = (
     };
   };
 
-  const failBeforeLifecycle = (error: unknown, format: 'human' | 'json'): void => {
+  const failBeforeLifecycle = (
+    error: unknown,
+    format: 'human' | 'json',
+    presentation: PresentationPolicy,
+  ): void => {
     const normalized = normalizeCliError(error);
     const rendered = renderCliError(normalized, format);
-    (format === 'json' ? runtimeIo.stdout : runtimeIo.stderr).write(rendered);
+    if (format === 'json') {
+      runtimeIo.stdout.write(rendered);
+    } else {
+      const output = presentHumanOutput({ stderr: rendered }, presentation, 'error');
+      runtimeIo.stderr.write(output.stderr ?? rendered);
+    }
     runtimeIo.exit(normalized.exitCode);
   };
 
   const actionFactory: CommandActionFactory = (spec, command) => {
-    withCliErrorBoundary(command);
+    withCliErrorBoundary(command, runtimeIo);
     return async (...values: unknown[]) => {
       const request = commandRequest(values);
       const application = request.options.version === true ? 'version' : spec.application;
@@ -393,6 +419,7 @@ export const buildProgram = (
           : { command: spec.path, workflow: spec.application };
       const verbosity = resolveObservationVerbosity(request.options);
       const format = requestedFormat(request);
+      const presentation = presentationPolicyForIo(request.options, format, runtimeIo);
       try {
         const prepared = createObservation(identity.command, identity.workflow, verbosity);
         const { observation } = prepared;
@@ -412,18 +439,19 @@ export const buildProgram = (
           context,
           observation,
           format,
+          presentation,
           quiet: verbosity === 'quiet',
           diagnosticBuffer: prepared.diagnosticBuffer,
         });
       } catch (error) {
-        failBeforeLifecycle(error, format);
+        failBeforeLifecycle(error, format, presentation);
       }
     };
   };
 
   program.action(actionFactory(rootSpec, program));
   attachCommandSpecs(program, CURRENT_COMMAND_SPECS, actionFactory);
-  installRuntimePreflight(program);
+  installRuntimePreflight(program, runtimeIo);
 
   const attachedAdditionalSpecs: NormalizedCommandSpec[] = [];
   for (const input of extensions.additionalSpecs ?? []) {
@@ -448,9 +476,10 @@ export const buildProgram = (
       new Set(attachedAdditionalSpecs),
     );
     if (requestsEagerVersion(invocation, valueOptionScopes)) {
-      assertRootRuntimePreflight(invocation);
+      assertRootRuntimePreflight(invocation, runtimeIo);
       const presentation = eagerPresentationOptions(invocation, valueOptionScopes);
       const verbosity = resolveObservationVerbosity(presentation);
+      const presentationPolicy = presentationPolicyForIo(presentation, 'human', runtimeIo);
       try {
         const prepared = createObservation('skillsmith version', 'version', verbosity);
         const { observation } = prepared;
@@ -464,11 +493,12 @@ export const buildProgram = (
           context: Object.freeze({ observation }),
           observation,
           format: 'human',
+          presentation: presentationPolicy,
           quiet: verbosity === 'quiet',
           diagnosticBuffer: prepared.diagnosticBuffer,
         });
       } catch (error) {
-        failBeforeLifecycle(error, 'human');
+        failBeforeLifecycle(error, 'human', presentationPolicy);
       }
       return program;
     }
