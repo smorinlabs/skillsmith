@@ -1,6 +1,6 @@
 import { VERSION } from '@skillsmith/core';
 import { CURRENT_COMMAND_SPECS } from '../spec/registry.ts';
-import type { CommandSpec } from '../spec/types.ts';
+import type { CommandSpecInput } from '../spec/types.ts';
 import {
   COMMAND_GROUP_HEADINGS,
   OPTION_HELP_FAMILY_ORDER,
@@ -9,9 +9,9 @@ import {
 } from './render.ts';
 import { HELP_TOPIC_NAMES } from './topics.ts';
 
-const commandName = (spec: CommandSpec): string => spec.path.slice('skillsmith '.length);
+const commandName = (spec: CommandSpecInput): string => spec.path.slice('skillsmith '.length);
 
-const renderCommand = (spec: CommandSpec): string => {
+const renderCommand = (spec: CommandSpecInput): string => {
   const aliases =
     spec.aliases.length > 0
       ? `\nAliases: ${spec.aliases.map((alias) => `\`${alias}\``).join(', ')}\n`
@@ -72,7 +72,7 @@ const renderCommand = (spec: CommandSpec): string => {
 };
 
 export const renderCommandReference = (
-  specs: readonly CommandSpec[] = CURRENT_COMMAND_SPECS,
+  specs: readonly CommandSpecInput[] = CURRENT_COMMAND_SPECS,
   version: string = VERSION,
 ): string => {
   const publicSpecs = specs

@@ -7,8 +7,15 @@ import {
   optionHelpHeading,
   renderCommandHelp,
   renderRootHelp,
+  workflowsForSpec,
 } from '../help/render.ts';
-import type { CommandArgumentSpec, CommandOptionSpec, CommandSpec } from '../spec/types.ts';
+import type {
+  CommandArgumentSpec,
+  CommandOptionSpec,
+  CommandOptionSpecInput,
+  CommandSpecInput,
+  NormalizedCommandSpec,
+} from '../spec/types.ts';
 
 const optionChoices = (spec: CommandOptionSpec): readonly string[] => spec.parserValues ?? [];
 
@@ -48,11 +55,27 @@ const argumentForSpec = (spec: CommandArgumentSpec): Argument => {
   return argument;
 };
 
-export const leafName = (spec: Pick<CommandSpec, 'name' | 'path'>): string =>
+export const leafName = (spec: Pick<CommandSpecInput, 'name' | 'path'>): string =>
   (spec.path ?? spec.name).split(' ').at(-1) ?? spec.name;
 
+const normalizeCommandOptionSpec = (spec: CommandOptionSpecInput): CommandOptionSpec => ({
+  ...spec,
+  helpFamily: spec.helpFamily ?? 'automation-output',
+  helpLevel: spec.helpLevel ?? 'common',
+});
+
+/** Normalize backward-compatible extension declarations to one strict runtime form. */
+export const normalizeCommandSpec = (spec: CommandSpecInput): NormalizedCommandSpec => ({
+  ...spec,
+  helpOrder: spec.helpOrder ?? Number.MAX_SAFE_INTEGER,
+  options: spec.options.map(normalizeCommandOptionSpec),
+  minimalInvocations: spec.minimalInvocations ?? [spec.examples[0] ?? spec.path],
+  commonWorkflows: workflowsForSpec(spec),
+});
+
 /** Construct a fresh Commander node exclusively from one CommandSpec using public APIs. */
-export const createCommandFromSpec = (spec: CommandSpec): Command => {
+export const createCommandFromSpec = (input: CommandSpecInput): Command => {
+  const spec = normalizeCommandSpec(input);
   const command = new Command(leafName(spec)).allowExcessArguments(false);
   configureProgressiveHelp(command, spec);
   for (const alias of spec.aliases) command.alias(alias);
@@ -76,19 +99,20 @@ export const createCommandFromSpec = (spec: CommandSpec): Command => {
 };
 
 export type CommandActionFactory = (
-  spec: CommandSpec,
+  spec: NormalizedCommandSpec,
   command: Command,
 ) => (...values: unknown[]) => void | Promise<void>;
 
 /** Attach every non-root spec to a fresh path and bind exactly one generic action factory. */
 export const attachCommandSpecs = (
   root: Command,
-  specs: readonly CommandSpec[],
+  specs: readonly CommandSpecInput[],
   actionFactory: CommandActionFactory,
 ): Command => {
   const byPath = new Map<string, Command>([['skillsmith', root]]);
   const ordered = specs
     .filter((spec) => spec.path !== 'skillsmith')
+    .map(normalizeCommandSpec)
     .toSorted(
       (left, right) =>
         left.path.split(' ').length - right.path.split(' ').length ||

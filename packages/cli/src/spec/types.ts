@@ -49,6 +49,14 @@ export interface CommandOptionSpec {
   readonly description?: string;
 }
 
+/**
+ * Backward-compatible declaration accepted from CLI extensions. Help metadata
+ * added after the original CommandSpec contract is optional at this boundary
+ * and is normalized before a command is attached to Commander.
+ */
+export type CommandOptionSpecInput = Omit<CommandOptionSpec, 'helpFamily' | 'helpLevel'> &
+  Partial<Pick<CommandOptionSpec, 'helpFamily' | 'helpLevel'>>;
+
 export interface CommandWorkflowSpec {
   readonly label: string;
   readonly invocation: string;
@@ -61,24 +69,42 @@ export interface CommandExitCodeSpec {
   readonly meaning: string;
 }
 
-export interface CommandSpec {
+export interface CommandSpecInput {
   readonly name: string;
   readonly path: string;
   readonly aliases: readonly string[];
   readonly group: CommandGroup;
-  readonly helpOrder: number;
+  readonly helpOrder?: number;
   readonly primaryQuestion: string;
   readonly description: string;
   readonly arguments: readonly CommandArgumentSpec[];
-  readonly options: readonly CommandOptionSpec[];
-  readonly minimalInvocations: readonly string[];
-  readonly commonWorkflows: readonly CommandWorkflowSpec[];
+  readonly options: readonly CommandOptionSpecInput[];
+  readonly minimalInvocations?: readonly string[];
+  readonly commonWorkflows?: readonly CommandWorkflowSpec[];
   readonly examples: readonly string[];
   /** Command-specific meanings shown in generated help. */
   readonly exitCodes?: readonly CommandExitCodeSpec[];
   readonly capability: string;
   readonly application: string;
   readonly reportKind?: string;
+}
+
+/**
+ * Historical public name retained for source compatibility with extensions
+ * written before progressive-help fields were introduced.
+ */
+export type CommandSpec = CommandSpecInput;
+
+/** Strict internal form used after the extension boundary has been normalized. */
+export interface NormalizedCommandSpec
+  extends Omit<
+    CommandSpecInput,
+    'helpOrder' | 'options' | 'minimalInvocations' | 'commonWorkflows'
+  > {
+  readonly helpOrder: number;
+  readonly options: readonly CommandOptionSpec[];
+  readonly minimalInvocations: readonly string[];
+  readonly commonWorkflows: readonly CommandWorkflowSpec[];
 }
 
 interface OptionRelationBase {

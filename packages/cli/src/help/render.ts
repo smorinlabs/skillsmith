@@ -1,7 +1,7 @@
 import type { Command } from 'commander';
 import type {
   CommandOptionSpec,
-  CommandSpec,
+  CommandSpecInput,
   CommandWorkflowSpec,
   OptionHelpFamily,
 } from '../spec/types.ts';
@@ -54,7 +54,7 @@ export const optionHelpDescription = (option: CommandOptionSpec): string =>
     ? `Advanced — ${option.description ?? ''}`
     : (option.description ?? '');
 
-export const workflowsForSpec = (spec: CommandSpec): readonly CommandWorkflowSpec[] =>
+export const workflowsForSpec = (spec: CommandSpecInput): readonly CommandWorkflowSpec[] =>
   spec.commonWorkflows ??
   spec.examples.map((invocation, index) => ({
     label: index === 0 ? 'Start here' : 'Workflow',
@@ -68,7 +68,7 @@ export const workflowsForSpec = (spec: CommandSpec): readonly CommandWorkflowSpe
           : ('changes-state' as const),
   }));
 
-const workflowBlock = (spec: CommandSpec): string => {
+const workflowBlock = (spec: CommandSpecInput): string => {
   const workflows = workflowsForSpec(spec);
   if (spec.path === 'skillsmith' || workflows.length === 0) return spec.description;
   const rows = workflows.flatMap((workflow) => [
@@ -78,7 +78,7 @@ const workflowBlock = (spec: CommandSpec): string => {
   return `${spec.description}\n\nCOMMON WORKFLOWS\n${rows.join('\n')}`;
 };
 
-const exitCodeBlock = (spec: CommandSpec): string => {
+const exitCodeBlock = (spec: CommandSpecInput): string => {
   const rows =
     spec.exitCodes !== undefined && spec.exitCodes.length > 0
       ? spec.exitCodes.map(({ code, meaning }) => `  ${code.toString().padEnd(4)} ${meaning}`)
@@ -91,23 +91,30 @@ const headingStyle = (title: string): string => {
   return heading === 'GLOBAL OPTIONS' ? 'INHERITED GLOBALS' : heading;
 };
 
-export const configureProgressiveHelp = (command: Command, spec: CommandSpec): void => {
+const subcommandTerm = (command: Command): string => {
+  const names = [command.name(), ...command.aliases()].join('|');
+  const usage = command.usage();
+  return usage.length === 0 ? names : `${names} ${usage}`;
+};
+
+export const configureProgressiveHelp = (command: Command, spec: CommandSpecInput): void => {
   command
     .description(workflowBlock(spec))
     .summary(spec.description)
     .configureHelp({
       showGlobalOptions: spec.path !== 'skillsmith',
       styleTitle: headingStyle,
+      subcommandTerm,
     });
 };
 
-const renderProgressiveHelp = (spec: CommandSpec, commanderHelp: string): string => {
+const renderProgressiveHelp = (spec: CommandSpecInput, commanderHelp: string): string => {
   const aliases = spec.aliases.length > 0 ? `ALIASES\n  ${spec.aliases.join(', ')}\n\n` : '';
   return `PRIMARY QUESTION\n  ${spec.primaryQuestion}\n\n${aliases}${commanderHelp}\n${exitCodeBlock(spec)}\n`;
 };
 
-export const renderCommandHelp = (spec: CommandSpec, commanderHelp: string): string =>
+export const renderCommandHelp = (spec: CommandSpecInput, commanderHelp: string): string =>
   renderProgressiveHelp(spec, commanderHelp);
 
-export const renderRootHelp = (spec: CommandSpec, commanderHelp: string): string =>
+export const renderRootHelp = (spec: CommandSpecInput, commanderHelp: string): string =>
   renderProgressiveHelp(spec, commanderHelp);

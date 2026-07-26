@@ -28,6 +28,7 @@ import {
   type CommandActionFactory,
   attachCommandSpecs,
   createCommandFromSpec,
+  normalizeCommandSpec,
 } from './runtime/command-spec.ts';
 import { createCurrentApplicationContext } from './runtime/context.ts';
 import { createCurrentRendererRegistry } from './runtime/current-renderers.ts';
@@ -35,10 +36,10 @@ import { createCliDiagnosticObserver, resolveObservationVerbosity } from './runt
 import { type CliRuntimeIo, processRuntimeIo } from './runtime/io.ts';
 import { assertRootRuntimePreflight, installRuntimePreflight } from './runtime/preflight.ts';
 import { CURRENT_COMMAND_SPECS } from './spec/index.ts';
-import type { CommandSpec } from './spec/types.ts';
+import type { CommandSpecInput, NormalizedCommandSpec } from './spec/types.ts';
 
 export interface ProgramBuildExtensions {
-  readonly additionalSpecs?: readonly CommandSpec[];
+  readonly additionalSpecs?: readonly CommandSpecInput[];
   readonly applications?: ApplicationRegistry;
   readonly renderers?: RendererRegistry;
   readonly runtimePorts?: CliRuntimeIo & { readonly interaction?: InteractionPort };
@@ -100,7 +101,7 @@ interface EagerValueOptionScope {
   readonly active: ValueOptionSpellings;
 }
 
-const valueOptionSpellings = (specs: readonly CommandSpec[]): ValueOptionSpellings => {
+const valueOptionSpellings = (specs: readonly NormalizedCommandSpec[]): ValueOptionSpellings => {
   const long = new Map<string, 'required' | 'optional'>();
   const short = new Map<string, 'required' | 'optional'>();
   const longShapes = new Map<string, 'boolean' | 'required' | 'optional'>();
@@ -154,17 +155,20 @@ const shortValueShape = (
 
 const eagerValueOptionScopes = (
   invocation: readonly string[],
-  rootSpec: CommandSpec,
-  specs: readonly CommandSpec[],
-  attachedAdditionalSpecs: ReadonlySet<CommandSpec>,
+  rootSpec: NormalizedCommandSpec,
+  specs: readonly NormalizedCommandSpec[],
+  attachedAdditionalSpecs: ReadonlySet<NormalizedCommandSpec>,
 ): readonly (EagerValueOptionScope | undefined)[] => {
   const rootOptions = valueOptionSpellings([rootSpec]);
-  const optionsBySpec = new Map<CommandSpec, ValueOptionSpellings>();
+  const optionsBySpec = new Map<NormalizedCommandSpec, ValueOptionSpellings>();
   for (const spec of specs) {
     optionsBySpec.set(spec, spec === rootSpec ? rootOptions : valueOptionSpellings([spec]));
   }
 
-  const directChild = (parent: CommandSpec, token: string): CommandSpec | undefined =>
+  const directChild = (
+    parent: NormalizedCommandSpec,
+    token: string,
+  ): NormalizedCommandSpec | undefined =>
     specs.find((candidate) => {
       if (candidate === rootSpec) return false;
       const attachedAtRoot = parent === rootSpec && attachedAdditionalSpecs.has(candidate);
@@ -421,8 +425,9 @@ export const buildProgram = (
   attachCommandSpecs(program, CURRENT_COMMAND_SPECS, actionFactory);
   installRuntimePreflight(program);
 
-  const attachedAdditionalSpecs: CommandSpec[] = [];
-  for (const spec of extensions.additionalSpecs ?? []) {
+  const attachedAdditionalSpecs: NormalizedCommandSpec[] = [];
+  for (const input of extensions.additionalSpecs ?? []) {
+    const spec = normalizeCommandSpec(input);
     if (program.commands.some((command) => command.name() === spec.name)) continue;
     const command = createCommandFromSpec(spec);
     command.action(actionFactory(spec, command));

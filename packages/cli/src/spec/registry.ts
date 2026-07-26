@@ -4,9 +4,9 @@ import type {
   CommandArgumentSpec,
   CommandExitCodeSpec,
   CommandGroup,
-  CommandSpec,
   CommandWorkflowSafety,
   CommandWorkflowSpec,
+  NormalizedCommandSpec,
   OptionRelationSpec,
 } from './types.ts';
 
@@ -775,7 +775,7 @@ const argumentsForPath = (path: string): readonly CommandArgumentSpec[] =>
       };
     });
 
-export const CURRENT_COMMAND_SPECS: readonly CommandSpec[] = commandPaths.map((path) => {
+export const CURRENT_COMMAND_SPECS: readonly NormalizedCommandSpec[] = commandPaths.map((path) => {
   const profile = PROFILE[path];
   if (profile === undefined) throw new Error(`missing current CommandSpec profile for ${path}`);
   const description = DESCRIPTION[path];
@@ -1555,7 +1555,7 @@ export const validateCurrentOptionRelations = (): readonly string[] => {
 export const commandSpecInventory = (specs: readonly unknown[]): unknown =>
   specs.map((value) => {
     if (typeof value !== 'object' || value === null) return value;
-    const spec = value as Partial<CommandSpec>;
+    const spec = value as Partial<NormalizedCommandSpec>;
     return {
       name: spec.name,
       aliases: spec.aliases ?? [],

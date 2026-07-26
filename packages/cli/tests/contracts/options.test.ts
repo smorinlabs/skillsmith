@@ -25,6 +25,8 @@ import {
   canonicalizeCommanderTree,
 } from '../../src/contracts/commander-surface.ts';
 import { buildProgram } from '../../src/program.ts';
+import { normalizeCommandSpec } from '../../src/runtime/command-spec.ts';
+import type { CommandSpec, CommandSpecInput } from '../../src/spec/types.ts';
 import {
   NON_MUTATING_MODE_POLICIES,
   validateNonMutatingMode,
@@ -2073,6 +2075,56 @@ describe('EWP-OPT-TS05', () => {
       ((legacy.examples as readonly string[] | undefined)?.[0] ?? legacy.path) as string,
     );
     for (const option of publicSpecs[0]?.options ?? []) expect(rendered).toContain(option.flags);
+  });
+
+  test('legacy extension declarations normalize progressive-help defaults before attachment', () => {
+    const legacyFixture = {
+      name: 'legacy-fixture',
+      path: 'skillsmith legacy-fixture',
+      aliases: ['lf'],
+      group: 'maintain',
+      primaryQuestion: 'Does the original extension contract remain source compatible?',
+      description: 'Exercise a declaration created before progressive-help metadata existed.',
+      arguments: [],
+      options: [
+        {
+          flags: '--legacy-mode <mode>',
+          long: '--legacy-mode',
+          short: null,
+          attributeName: 'legacyMode',
+          valueShape: 'required',
+          knownValues: [],
+          allowedValues: [],
+          repeatable: false,
+          negated: false,
+          flagDefault: undefined,
+          parsedDefault: undefined,
+          description: 'Legacy extension mode',
+        },
+      ],
+      examples: ['skillsmith legacy-fixture --legacy-mode safe'],
+      capability: 'read',
+      application: 'help',
+    } as const satisfies CommandSpec;
+    const extensionInput: CommandSpecInput = legacyFixture;
+    const normalized = normalizeCommandSpec(extensionInput);
+
+    expect(normalized.helpOrder).toBe(Number.MAX_SAFE_INTEGER);
+    expect(normalized.minimalInvocations).toEqual([...legacyFixture.examples]);
+    expect(normalized.commonWorkflows.map(({ invocation }) => invocation)).toEqual([
+      ...legacyFixture.examples,
+    ]);
+    expect(normalized.options[0]).toMatchObject({
+      helpFamily: 'automation-output',
+      helpLevel: 'common',
+    });
+
+    const command = buildProgram(undefined, { additionalSpecs: [extensionInput] }).commands.find(
+      (candidate) => candidate.name() === legacyFixture.name,
+    );
+    expect(command?.aliases()).toEqual(['lf']);
+    expect(command?.helpInformation()).toContain('AUTOMATION AND OUTPUT');
+    expect(command?.helpInformation()).toContain(legacyFixture.examples[0]);
   });
 });
 

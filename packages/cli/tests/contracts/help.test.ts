@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { VERSION, runHelpApplication } from '@skillsmith/core';
 import rootPackage from '../../../../package.json' with { type: 'json' };
 import corePackage from '../../../core/package.json' with { type: 'json' };
@@ -8,7 +9,6 @@ import { hermeticGitEnv } from '../../../core/tests/fixtures/git-env.ts';
 import cliPackage from '../../package.json' with { type: 'json' };
 import { HELP_TOPIC_NAMES, renderTopic } from '../../src/help/topics.ts';
 import { buildProgram } from '../../src/program.ts';
-import { attachCommandSpecs, createCommandFromSpec } from '../../src/runtime/command-spec.ts';
 import { CURRENT_COMMAND_SPECS } from '../../src/spec/index.ts';
 import { CLI_ENTRYPOINT } from '../fixtures/cli.ts';
 
@@ -22,6 +22,7 @@ interface PlannedWorkflow {
 
 interface PlannedHelpSpec {
   readonly path: string;
+  readonly aliases?: readonly string[];
   readonly primaryQuestion: string;
   readonly minimalInvocations?: readonly string[];
   readonly commonWorkflows?: readonly PlannedWorkflow[];
@@ -42,20 +43,22 @@ const materializeMinimalInvocation = (invocation: string): string =>
     .replace('<A>', 'user')
     .replace('<B>', 'project');
 
-const parseWithoutApplications = async (invocation: string): Promise<string | undefined> => {
-  const rootSpec = CURRENT_COMMAND_SPECS.find((spec) => spec.path === 'skillsmith');
-  if (rootSpec === undefined) throw new Error('root CommandSpec is missing');
-  const root = createCommandFromSpec(rootSpec).exitOverride();
-  let routed: string | undefined;
-  root.action(() => {
-    routed = rootSpec.path;
-  });
-  attachCommandSpecs(root, CURRENT_COMMAND_SPECS, (spec) => () => {
-    routed = spec.path;
-  });
-  await root.parseAsync([...invocationArguments(invocation)], { from: 'user' });
-  return routed;
+const expectedWorkflowApplication = (path: string, invocation: string): string => {
+  if (path === 'skillsmith config') {
+    if (invocation.startsWith('skillsmith config get')) return 'configGet';
+    if (invocation.startsWith('skillsmith config list')) return 'configList';
+  }
+  const spec = CURRENT_COMMAND_SPECS.find((candidate) => candidate.path === path);
+  if (spec === undefined) throw new Error(`missing CommandSpec for ${path}`);
+  return spec.application;
 };
+
+const snapshotFixture = async (
+  root: string,
+): Promise<{ readonly entries: readonly string[]; readonly sentinel: string }> => ({
+  entries: (await readdir(root, { recursive: true, encoding: 'utf8' })).sort(),
+  sentinel: await readFile(join(root, 'sentinel.txt'), 'utf8'),
+});
 
 const runCli = async (args: readonly string[]) => {
   const proc = Bun.spawn(['bun', CLI_ENTRYPOINT, ...args], {
@@ -91,16 +94,17 @@ describe('EWP-CMD-HELP-TS01', () => {
       expect(indexes).toEqual([...indexes].sort((left, right) => left - right));
       for (const spec of publicSpecs()) {
         const name = spec.path.slice('skillsmith '.length);
-        const escaped = name.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+        const displayedName = kind === 'root' ? [name, ...(spec.aliases ?? [])].join('|') : name;
+        const escaped = displayedName.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
         const row =
           kind === 'root'
-            ? new RegExp(`^  ${escaped}(?:[|\\s])`, 'gmu')
+            ? new RegExp(`^  ${escaped}(?:\\s|$)`, 'gmu')
             : new RegExp(`^  \\$ skillsmith ${escaped}(?:\\s|$)`, 'gmu');
         expect(output.match(row)?.length ?? 0, name).toBe(1);
       }
     }
-    expect(rootHelp).toMatch(/dev[^\n]*demote/u);
-    expect(rootHelp).toMatch(/uninstall[^\n]*(?:rm|remove)/u);
+    expect(rootHelp).toMatch(/^ {2}dev\|demote\s/gmu);
+    expect(rootHelp).toMatch(/^ {2}uninstall\|remove\|rm\s/gmu);
   });
 });
 
@@ -180,23 +184,93 @@ describe('EWP-CMD-HELP-TS04', () => {
 describe('EWP-CMD-HELP-TS05', () => {
   test('all 23 commands declare bounded minimal invocations and runnable workflows', async () => {
     expect(publicSpecs()).toHaveLength(23);
-    for (const spec of publicSpecs()) {
-      expect(spec.minimalInvocations?.length ?? 0, spec.path).toBeGreaterThanOrEqual(1);
-      expect(spec.commonWorkflows?.length ?? 0, spec.path).toBeGreaterThanOrEqual(2);
-      expect(spec.commonWorkflows?.length ?? 0, spec.path).toBeLessThanOrEqual(3);
-      for (const invocation of spec.minimalInvocations ?? []) {
-        expect(invocation.startsWith(`${spec.path}`), invocation).toBeTrue();
-        const routed = await parseWithoutApplications(materializeMinimalInvocation(invocation));
-        expect(routed, invocation).toBe(
-          spec.path === 'skillsmith config' ? 'skillsmith config list' : spec.path,
-        );
+    const fixtureRoot = await mkdtemp(join(tmpdir(), 'skillsmith-help-workflows-'));
+    await writeFile(join(fixtureRoot, 'sentinel.txt'), 'unchanged\n');
+    const before = await snapshotFixture(fixtureRoot);
+    try {
+      for (const spec of publicSpecs()) {
+        expect(spec.minimalInvocations?.length ?? 0, spec.path).toBeGreaterThanOrEqual(1);
+        expect(spec.commonWorkflows?.length ?? 0, spec.path).toBeGreaterThanOrEqual(2);
+        expect(spec.commonWorkflows?.length ?? 0, spec.path).toBeLessThanOrEqual(3);
+        const invocations = [
+          ...(spec.minimalInvocations ?? []).map((invocation) => ({
+            kind: 'minimal',
+            invocation: materializeMinimalInvocation(invocation),
+          })),
+          ...(spec.commonWorkflows ?? []).map(({ invocation }) => ({
+            kind: 'workflow',
+            invocation,
+          })),
+        ] as const;
+        for (const { kind, invocation } of invocations) {
+          if (kind === 'minimal') {
+            expect(invocation.startsWith(`${spec.path}`), invocation).toBeTrue();
+          }
+          const expectedApplication = expectedWorkflowApplication(spec.path, invocation);
+          const calls: string[] = [];
+          const exits: number[] = [];
+          const stdout: string[] = [];
+          const stderr: string[] = [];
+          const applications = Object.fromEntries(
+            CURRENT_COMMAND_SPECS.map(({ application }) => [
+              application,
+              async () => {
+                calls.push(application);
+                return {
+                  report: { application },
+                  diagnostics: [],
+                  exitClass: 'success' as const,
+                  mutation: {
+                    kind: 'none' as const,
+                    planned: 0,
+                    changed: 0,
+                    unchanged: 0,
+                    failed: 0,
+                  },
+                  deprecations: [],
+                };
+              },
+            ]),
+          );
+          const renderers = Object.fromEntries(
+            CURRENT_COMMAND_SPECS.map((candidate) => [
+              candidate.reportKind ?? candidate.application,
+              { human: () => '', json: () => '' },
+            ]),
+          );
+          const program = buildProgram(undefined, {
+            applications,
+            renderers,
+            runtimePorts: {
+              stdout: { write: (value) => stdout.push(value) },
+              stderr: { write: (value) => stderr.push(value) },
+              exit: (code) => exits.push(code),
+              interaction: {
+                mode: 'noninteractive',
+                choose: async () => ({ status: 'refused', reason: 'not used by fixture' }),
+                confirm: async () => ({ status: 'refused', reason: 'not used by fixture' }),
+              },
+            },
+            operationPorts: {
+              clock: {
+                wallNowIso: () => '2026-07-26T00:00:00.000Z',
+                monotonicMilliseconds: () => 0,
+              },
+              id: { nextId: (purpose) => `help-${purpose}` },
+            },
+          });
+          await program.parseAsync(['-C', fixtureRoot, ...invocationArguments(invocation)], {
+            from: 'user',
+          });
+          expect(calls, `${kind}: ${invocation}`).toEqual([expectedApplication]);
+          expect(exits, `${kind}: ${invocation}`).toEqual([0]);
+          expect(stdout, `${kind}: ${invocation}`).toEqual([]);
+          expect(stderr, `${kind}: ${invocation}`).toEqual([]);
+        }
       }
-      for (const workflow of spec.commonWorkflows ?? []) {
-        expect(
-          await parseWithoutApplications(workflow.invocation),
-          workflow.invocation,
-        ).toBeString();
-      }
+      expect(await snapshotFixture(fixtureRoot)).toEqual(before);
+    } finally {
+      await rm(fixtureRoot, { recursive: true, force: true });
     }
     const byPath = new Map(CURRENT_COMMAND_SPECS.map((spec) => [spec.path, spec]));
     expect(byPath.get('skillsmith verify')?.commonWorkflows.map(({ safety }) => safety)).toEqual([
