@@ -1512,7 +1512,7 @@ Downstream coverage obligations: none.
 
 ## P17-G6-01 — Native assets, checksums, Homebrew/npm distribution, and clean installs
 
-Phase: 6; status: **planned**; dependencies: P17-G5-04, P17-G5-05.
+Phase: 6; status: **planned**; dependencies: P17-G6-02B, P17-G6-03.
 Required-now validations: EWP-P6-TS01.
 Downstream coverage obligations: EWP-WF01.
 
@@ -1610,7 +1610,7 @@ Downstream coverage obligations: EWP-WF01.
 
 ## P17-G6-03 — Rendering matrix, legacy cleanup, versions/capabilities, install/upgrade docs
 
-Phase: 6; status: **planned**; dependencies: P17-G5-04, P17-G5-05.
+Phase: 6; status: **planned**; dependencies: P17-G6-02A.
 Required-now validations: EWP-P6-TS03.
 Downstream coverage obligations: EWP-WF01.
 
@@ -1636,7 +1636,7 @@ Downstream coverage obligations: EWP-WF01.
 
 ## P17-G6-04 — Canonical PR/release recipes, exact-SHA publication gate, and final 1.0 evidence
 
-Phase: 6; status: **planned**; dependencies: P17-G6-01, P17-G6-02A, P17-G6-02B, P17-G6-03.
+Phase: 6; status: **planned**; dependencies: P17-G6-01.
 Required-now validations: EWP-P6-TS06, EWP-WF01.
 Downstream coverage obligations: none.
 

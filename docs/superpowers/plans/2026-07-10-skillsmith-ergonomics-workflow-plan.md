@@ -2305,6 +2305,24 @@ stable enough to package. **Exit:** Help/completion/docs are generated and curre
 distribution passes clean-machine validation, `just check` and exact-SHA `just release-check` pass,
 and no planned Phase-6 or required 1.0 validation entry remains.
 
+**Approved sequencing and completion dependency amendment (2026-07-25):** execute G6-02A first;
+then G6-02B and G6-03; then G6-01; and finish with G6-04. Packaging must consume the completed
+help, completion, rendering, and generated-document outputs. As the parser-compatibility precondition
+inside G6-02A, upgrade Commander from 12.1 to 15.x and explicitly preserve declared negated-option
+defaults; the Bun-only ESM build is the supported runtime boundary. G6-02B may add exactly pinned
+`@bomb.sh/tab` 0.0.21 behind a Skillsmith-owned adapter. Because the package is pre-1.0, upgrades
+require the same completion contract suite and a deliberate lockfile change.
+
+The live `@bomb.sh/tab/commander` adapter must not be attached directly when it changes the accepted
+surface. Skillsmith keeps exactly 23 public commands, `completion <bash|zsh|fish>`, adjacent aliases,
+command-specific allowed values, and no PowerShell or completion install/uninstall form in 1.0.
+Build the tab candidate graph from authoritative `CommandSpec` metadata (a detached Commander graph
+is allowed), add local path/skill/manifest providers through the thin adapter, and route shell
+tab-time requests through a bounded internal entrypoint before public Commander parsing. That
+internal transport is not a command or alias; it performs no network access or startup-file
+mutation, bounds local reads/output, and does not widen empty selections. Static script generation
+remains emit-only and byte-deterministic.
+
 - **EWP-P6-T01:** Native release assets/checksums.
 - **EWP-P6-T02:** Homebrew and npm/Bun distribution.
 - **EWP-P6-T03:** Recursive alias-aware completion.

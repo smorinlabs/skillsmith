@@ -377,6 +377,18 @@ describe('P17 immutable catalog and traceability baseline', () => {
     expect(documentation.secondaryGroups).toContain('P17-G6-04');
   });
 
+  test('locks the approved Phase-6 DAG independently of stable group-ID display order', () => {
+    const catalog = fixture();
+    expect(group(catalog, 'P17-G6-02A').dependsOn).toEqual(['P17-G5-04', 'P17-G5-05']);
+    expect(group(catalog, 'P17-G6-02B').dependsOn).toEqual(['P17-G6-02A']);
+    expect(group(catalog, 'P17-G6-03').dependsOn).toEqual(['P17-G6-02A']);
+    expect(group(catalog, 'P17-G6-01').dependsOn).toEqual(['P17-G6-02B', 'P17-G6-03']);
+    expect(group(catalog, 'P17-G6-04').dependsOn).toEqual(['P17-G6-01']);
+
+    const stableIds = catalog.groups.map((item) => item.id);
+    expect(stableIds.indexOf('P17-G6-01')).toBeLessThan(stableIds.indexOf('P17-G6-02A'));
+  });
+
   test('schedules WF03 and WF04 at the dependency-complete Phase-4B boundary', () => {
     const catalog = fixture();
     const wf03 = required(

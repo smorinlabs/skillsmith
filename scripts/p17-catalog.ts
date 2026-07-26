@@ -1675,14 +1675,7 @@ function validate(catalog: Catalog): void {
     for (const dependency of group.dependsOn) {
       if (!byGroup.has(dependency)) fail(`${group.id} depends on missing ${dependency}`);
       const dependencyGroup = byGroup.get(dependency);
-      const dependencyIndex = expected.groups.findIndex((item) => item.id === dependency);
-      const groupIndex = expected.groups.findIndex((item) => item.id === group.id);
-      if (
-        !dependencyGroup ||
-        phaseRank(dependencyGroup.phase) > phaseRank(group.phase) ||
-        (phaseRank(dependencyGroup.phase) === phaseRank(group.phase) &&
-          (dependencyIndex < 0 || dependencyIndex >= groupIndex))
-      ) {
+      if (!dependencyGroup || phaseRank(dependencyGroup.phase) > phaseRank(group.phase)) {
         fail(`${group.id} depends on future group ${dependency}`);
       }
     }
