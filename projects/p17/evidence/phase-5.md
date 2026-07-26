@@ -222,3 +222,33 @@
   renewed immutable G5-01 review and renewed whole-Phase-5 review.
 - **Phase-6 boundary:** five planned groups, 50 pending gates, 40 planned primary entities, zero
   owned paths, zero executable/current targets, and zero non-pristine entities. Phase 6 is excluded.
+
+## F07 expanded-boundary pre-edit review and F08 GC NO-GO — 2026-07-26
+
+- **Reviewed head/tree:** `9ef09be022aacf31327023e84721f209c318fcfe` /
+  `687991cdaa04714f8f7bcbd1098c797bbc11f854`; nine governance files only, with clean index and
+  worktree before and after review.
+- **Reviewer/verdict:** `/external-codex/019f9c56-26d4-7012-83b4-12c928714cc0`, **NO-GO at
+  0.995 confidence**. No product or test edit was approved at that head.
+- **Finding count:** F05 high/open for sync; F07 high/open for the shared update/undo/GC codec
+  defect; F08 high/open for missing GC first-run application validation; F06 medium and
+  governance-corrected, awaiting renewed review. Thus four review findings remain in the closure
+  record: three open high findings and one corrected medium finding.
+- **Direct F08 result:** GC dry-run and execute-no-op each returned success containing injected
+  `git://fixture.invalid/org/project`. `gc-service.ts` does not call `gcV1Codec`; recovery validation
+  covers persisted data only. A four-codec product patch therefore cannot make GC application
+  enforcement honestly green.
+- **Corrected implementation boundary:** five product files (four v1 codecs plus
+  `packages/core/src/application/gc-service.ts`) and eight tests (four CLI output plus four core
+  application owners). GC validation failure must yield failure/`invalid-gc-report`, null report,
+  and no mutation. No renderer, shared redaction, acquisition/source parser, DTO, wire, core
+  contract-test, catalog/lifecycle, ownership, or Phase-6 edit is authorized.
+- **Exact validation state:** G5-04 has 93/93 current owned paths, 16/16 signed primary entities,
+  ten required-now validations, 10/10 historical group gates, and **zero failing G5-04
+  validations**. Phase 5 has five groups, 446 ownership entries / 269 unique current paths, 70/70
+  signed primaries, 60 required-now validations, and 50/50 historical group gates. The separate
+  Phase-5 review gate is failed; approval and exit are pending.
+- **Current executable baseline:** the eight named future-red tests pass 44/44 with 177 assertions;
+  smoke passes 5/5; catalog and package checks pass. These tests are incomplete, not failing.
+- **Phase-6 boundary:** five pristine planned groups, 40 planned primaries, 50 pending gates, zero
+  owned/current paths, zero executable validations, and 0/50 gates passed. Phase 6 is excluded.
