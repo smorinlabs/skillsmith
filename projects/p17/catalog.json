@@ -7999,7 +7999,7 @@
       "phase": "6",
       "title": "Bash/zsh/fish completion generation and nested completion contracts",
       "dependsOn": ["P17-G6-02A"],
-      "status": "reviewed",
+      "status": "active",
       "owner": "root-goal",
       "ownedFiles": [
         "bun.lock",
@@ -8031,10 +8031,12 @@
         "packages/cli/tests/completion/walk.test.ts",
         "packages/cli/tests/completion/zsh.test.ts",
         "packages/cli/tests/contracts/completion.test.ts",
+        "packages/cli/tests/contracts/init.test.ts",
         "packages/cli/tests/contracts/options.test.ts",
         "projects/p17/evidence/P17-G6-02B.md",
         "projects/p17/plans/P17-G6-02B.md",
         "tests/ergonomics/phase/EWP-P1-TS07.test.ts",
+        "tests/ergonomics/phase/EWP-P1-TS09.test.ts",
         "tests/ergonomics/phase/EWP-P1-TS11.test.ts",
         "tests/ergonomics/phase/EWP-P6-TS02.test.ts"
       ],
@@ -8069,7 +8071,7 @@
         "bun test tests/ergonomics/phase/EWP-P6-TS02.test.ts --test-name-pattern EWP-P6-TS02"
       ],
       "implementers": ["root-codex-goal"],
-      "reviewer": "/root/g6_02b_ready_review",
+      "reviewer": null,
       "gates": {
         "mapped": {
           "status": "passed",
@@ -8103,10 +8105,8 @@
           "evidence": ["projects/p17/evidence/P17-G6-02B.md#refactor-result-at-3657662"]
         },
         "adversarial-review": {
-          "status": "passed",
-          "evidence": [
-            "projects/p17/evidence/P17-G6-02B.md#final-independent-adversarial-review-go-at-8509092"
-          ]
+          "status": "pending",
+          "evidence": []
         },
         "traceability-closure": {
           "status": "pending",
@@ -8134,7 +8134,8 @@
         "projects/p17/evidence/P17-G6-02B.md#targeted-green-at-3657662",
         "projects/p17/evidence/P17-G6-02B.md#impacted-green-at-3657662",
         "projects/p17/evidence/P17-G6-02B.md#refactor-result-at-3657662",
-        "projects/p17/evidence/P17-G6-02B.md#final-independent-adversarial-review-go-at-8509092"
+        "projects/p17/evidence/P17-G6-02B.md#final-independent-adversarial-review-go-at-8509092",
+        "projects/p17/evidence/P17-G6-02B.md#first-terminal-repository-gate-and-compatibility-ownership-amendment"
       ]
     },
     {

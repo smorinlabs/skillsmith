@@ -1577,7 +1577,7 @@ Downstream coverage obligations: EWP-CMD-COMPLETION-TS01, EWP-CMD-COMPLETION-TS0
 
 ## P17-G6-02B — Bash/zsh/fish completion generation and nested completion contracts
 
-Phase: 6; status: **reviewed**; dependencies: P17-G6-02A.
+Phase: 6; status: **active**; dependencies: P17-G6-02A.
 Required-now validations: EWP-CMD-COMPLETION-TS01, EWP-CMD-COMPLETION-TS02, EWP-CMD-COMPLETION-TS03, EWP-CMD-COMPLETION-TS04, EWP-CMD-COMPLETION-TS05, EWP-CMD-COMPLETION-TS06, EWP-P6-TS02.
 Downstream coverage obligations: EWP-WF01.
 
@@ -1590,7 +1590,7 @@ Downstream coverage obligations: EWP-WF01.
 - [x] P17-G6-02B:targeted-green _(passed)_
 - [x] P17-G6-02B:impacted-green _(passed)_
 - [x] P17-G6-02B:refactor _(passed)_
-- [x] P17-G6-02B:adversarial-review _(passed)_
+- [ ] P17-G6-02B:adversarial-review _(pending)_
 - [ ] P17-G6-02B:traceability-closure _(pending)_
 - [ ] P17-G6-02B:signed-off _(pending)_
 
