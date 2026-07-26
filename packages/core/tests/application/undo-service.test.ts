@@ -364,6 +364,42 @@ describe('undo application service', () => {
     expect(executed.value).toBe(0);
   });
 
+  test('rejects a source URL at the application DTO projection boundary', async () => {
+    const executed = { value: 0 };
+    const service = createUndoApplicationService({
+      prepare: (async () =>
+        ok(prepared(false, executed))) as UndoApplicationDependencies['prepare'],
+    });
+    const applicationContext = context(
+      interaction(async () => {
+        throw new Error('dry-run must not prompt');
+      }),
+    );
+    const poisonedContext: CurrentApplicationContext = {
+      ...applicationContext,
+      projectContext: {
+        ...applicationContext.projectContext,
+        projectIdentity: 'git://fixture.invalid/org/project',
+      } as NonNullable<CurrentApplicationContext['projectContext']>,
+    };
+
+    let rejected = false;
+    try {
+      await service(
+        {
+          arguments: [],
+          options: { all: true, tool: ['claude-code'], project: true, dryRun: true },
+        },
+        poisonedContext,
+      );
+    } catch {
+      rejected = true;
+    }
+
+    expect(rejected).toBeTrue();
+    expect(executed.value).toBe(0);
+  });
+
   test('JSON execution requires yes before approval and keeps the prepared plan unconsumed', async () => {
     const executed = { value: 0 };
     const service = createUndoApplicationService({

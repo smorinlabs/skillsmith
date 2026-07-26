@@ -526,4 +526,31 @@ describe('update application source lifecycle', () => {
     });
     expect(after.lock).not.toEqual(before.lock);
   });
+
+  test('rejects a source URL from an application-built filter-noop report', async () => {
+    const selected = await fleet();
+    const context = await contextFor(
+      selected,
+      {
+        mode: 'noninteractive',
+        choose: async () => ({ status: 'refused', reason: 'unused' }),
+        confirm: async () => {
+          throw new Error('filter-noop check must not request approval');
+        },
+      },
+      [],
+    );
+
+    const outcome = await runUpdateApplication(
+      { arguments: [['git://fixture.invalid/org/project']], options: { check: true } },
+      context,
+    );
+
+    expect(outcome).toMatchObject({
+      exitClass: 'failure',
+      report: { result: null },
+      diagnostics: [{ code: 'update-report-invalid' }],
+      mutation: { kind: 'none', planned: 0, changed: 0, unchanged: 0, failed: 0 },
+    });
+  });
 });

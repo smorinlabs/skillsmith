@@ -176,6 +176,54 @@ describe('sync application service', () => {
     expect(outcome.report.result?.mode).toBe('dry-run');
   });
 
+  test('rejects source URLs from both prepared and executed adapter reports', async () => {
+    const sourceUrl = 'git://fixture.invalid/org/project';
+    const sourceBearing = (mode: 'dry-run' | 'execute'): SyncReportV1Dto => {
+      const base = emptyReport(mode);
+      return {
+        ...base,
+        endpoints: {
+          ...base.endpoints,
+          to: { ...base.endpoints.to, projectRoot: sourceUrl },
+        },
+      };
+    };
+    const rejected = {
+      exitClass: 'failure',
+      report: { result: null },
+      diagnostics: [{ code: 'invalid-sync-report' }],
+      mutation: { kind: 'none', planned: 0, changed: 0, unchanged: 0, failed: 0 },
+    } as const;
+
+    let dryRunExecutions = 0;
+    const dryRun = await runSyncApplication(
+      { arguments: [[]], options: { from: 'user', to: 'project', dryRun: true } },
+      context({
+        prepare: async () => ok(Object.freeze({ report: sourceBearing('dry-run') })),
+        execute: async () => {
+          dryRunExecutions++;
+          return ok(emptyReport());
+        },
+      }),
+    );
+    expect(dryRun).toMatchObject(rejected);
+    expect(dryRunExecutions).toBe(0);
+
+    let executions = 0;
+    const execute = await runSyncApplication(
+      { arguments: [[]], options: { from: 'user', to: 'project' } },
+      context({
+        prepare: async () => ok(Object.freeze({ report: emptyReport() })),
+        execute: async () => {
+          executions++;
+          return ok(sourceBearing('execute'));
+        },
+      }),
+    );
+    expect(execute).toMatchObject(rejected);
+    expect(executions).toBe(1);
+  });
+
   test('refuses malformed endpoints before calling the injected port', async () => {
     let calls = 0;
     const port: SyncApplicationPort = {

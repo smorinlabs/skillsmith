@@ -52,6 +52,17 @@ const report: SyncReportV1Dto = {
   },
 };
 
+const forbiddenSources = [
+  'https://fixture.invalid/org/project',
+  'ssh://git@fixture.invalid/org/project',
+  'git@fixture.invalid:org/project',
+  'git://fixture.invalid/org/project',
+  'file:///fixture/project',
+  'custom+v1://fixture/project',
+] as const;
+
+const safeLocalPaths = ['./credential-store', '/fixture/token-cache'] as const;
+
 describe('sync output', () => {
   test('human and JSON expose the same exact option and selection facts', () => {
     const human = renderSyncHuman(report);
@@ -94,6 +105,40 @@ describe('sync output', () => {
       humanCredential: true,
       jsonCredential: true,
     });
+
+    for (const source of forbiddenSources) {
+      const sourceBearing: SyncReportV1Dto = {
+        ...report,
+        endpoints: {
+          ...report.endpoints,
+          to: { ...report.endpoints.to, selectedInput: source, projectRoot: source },
+        },
+      };
+      expect(syncV1Codec.validate(sourceBearing), source).toMatchObject({ ok: false });
+      expect(
+        refuses(() => renderSyncHuman(sourceBearing)),
+        source,
+      ).toBeTrue();
+      expect(
+        refuses(() => renderSyncJson(sourceBearing, syncV1Codec)),
+        source,
+      ).toBeTrue();
+    }
+
+    for (const path of safeLocalPaths) {
+      const localPathReport: SyncReportV1Dto = {
+        ...report,
+        endpoints: {
+          ...report.endpoints,
+          to: { ...report.endpoints.to, selectedInput: path, projectRoot: path },
+        },
+      };
+      expect(syncV1Codec.validate(localPathReport), path).toMatchObject({ ok: true });
+      expect(() => renderSyncHuman(localPathReport), path).not.toThrow();
+      expect(JSON.parse(renderSyncJson(localPathReport, syncV1Codec)), path).toEqual(
+        localPathReport,
+      );
+    }
   });
 
   test('current runtime binds sync to the strict mapped codec', () => {

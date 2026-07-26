@@ -46,6 +46,17 @@ const report: UndoReportV1Dto = {
   },
 };
 
+const forbiddenSources = [
+  'https://fixture.invalid/org/project',
+  'ssh://git@fixture.invalid/org/project',
+  'git@fixture.invalid:org/project',
+  'git://fixture.invalid/org/project',
+  'file:///fixture/project',
+  'custom+v1://fixture/project',
+] as const;
+
+const safeLocalPaths = ['./credential-store', '/fixture/token-cache'] as const;
+
 describe('undo output', () => {
   test('human and JSON expose the same exact selection and lifecycle facts', () => {
     const human = renderUndoHuman(report);
@@ -63,6 +74,28 @@ describe('undo output', () => {
     };
     expect(() => renderUndoHuman(unsafe)).toThrow();
     expect(() => renderUndoJson(unsafe, undoV1Codec)).toThrow();
+
+    for (const source of forbiddenSources) {
+      const sourceBearing: UndoReportV1Dto = {
+        ...report,
+        project: { ...report.project, root: source },
+      };
+      expect(undoV1Codec.validate(sourceBearing), source).toMatchObject({ ok: false });
+      expect(() => renderUndoHuman(sourceBearing), source).toThrow();
+      expect(() => renderUndoJson(sourceBearing, undoV1Codec), source).toThrow();
+    }
+
+    for (const path of safeLocalPaths) {
+      const localPathReport: UndoReportV1Dto = {
+        ...report,
+        project: { ...report.project, root: path },
+      };
+      expect(undoV1Codec.validate(localPathReport), path).toMatchObject({ ok: true });
+      expect(() => renderUndoHuman(localPathReport), path).not.toThrow();
+      expect(JSON.parse(renderUndoJson(localPathReport, undoV1Codec)), path).toEqual(
+        localPathReport,
+      );
+    }
   });
 
   test('binds the current command to strict undo@1 with terminal LF', () => {

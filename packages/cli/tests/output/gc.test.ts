@@ -95,6 +95,17 @@ const report: GcReportV1Dto = {
   },
 };
 
+const forbiddenSources = [
+  'https://fixture.invalid/org/project',
+  'ssh://git@fixture.invalid/org/project',
+  'git@fixture.invalid:org/project',
+  'git://fixture.invalid/org/project',
+  'file:///fixture/project',
+  'custom+v1://fixture/project',
+] as const;
+
+const safeLocalPaths = ['./credential-store', '/fixture/token-cache'] as const;
+
 describe('gc output', () => {
   test('human and JSON render the same strict public GC facts', () => {
     const human = renderGcHuman(report);
@@ -125,6 +136,26 @@ describe('gc output', () => {
     expect(() => renderGcJson(invalid as GcReportV1Dto, gcV1Codec)).toThrow();
     expect(() => renderGcHuman(credentialBearing)).toThrow();
     expect(() => renderGcJson(credentialBearing, gcV1Codec)).toThrow();
+
+    for (const source of forbiddenSources) {
+      const sourceBearing: GcReportV1Dto = {
+        ...report,
+        project: { ...report.project, identity: source },
+      };
+      expect(gcV1Codec.validate(sourceBearing), source).toMatchObject({ ok: false });
+      expect(() => renderGcHuman(sourceBearing), source).toThrow();
+      expect(() => renderGcJson(sourceBearing, gcV1Codec), source).toThrow();
+    }
+
+    for (const path of safeLocalPaths) {
+      const localPathReport: GcReportV1Dto = {
+        ...report,
+        project: { ...report.project, identity: path },
+      };
+      expect(gcV1Codec.validate(localPathReport), path).toMatchObject({ ok: true });
+      expect(() => renderGcHuman(localPathReport), path).not.toThrow();
+      expect(JSON.parse(renderGcJson(localPathReport, gcV1Codec)), path).toEqual(localPathReport);
+    }
   });
 
   test('current runtime binds GC to the canonical strict codec and renderers', () => {

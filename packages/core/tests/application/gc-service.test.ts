@@ -1,6 +1,29 @@
-import { describe, expect, test } from 'bun:test';
-import { gcExecutionExitClass, gcMutationFor } from '../../src/application/gc-service.ts';
+import { afterEach, describe, expect, test } from 'bun:test';
+import {
+  type GcFleet,
+  createGcFleet,
+  destroyGcFleet,
+} from '../../../../tests/ergonomics/fixtures/p5-gc/fleet.ts';
+import {
+  gcExecutionExitClass,
+  gcMutationFor,
+  runGcApplication,
+} from '../../src/application/gc-service.ts';
+import { type CurrentApplicationContext, NO_MUTATION } from '../../src/application/types.ts';
+import { resolveRuntimeConfiguration } from '../../src/config/runtime.ts';
 import type { GcReportV1Dto } from '../../src/contracts/v1/gc.ts';
+import {
+  createObservationEmitter,
+  createOperationContext,
+  noopObserver,
+} from '../../src/observation/index.ts';
+import { defaultRuntimePorts } from '../../src/ports/default.ts';
+
+const fleets: GcFleet[] = [];
+
+afterEach(async () => {
+  await Promise.all(fleets.splice(0).map(destroyGcFleet));
+});
 
 const id = (character: string): string => character.repeat(64);
 
@@ -91,5 +114,62 @@ describe('GC application outcome accounting', () => {
     );
     expect(gcExecutionExitClass('GC approved candidate changed after approval')).toBe('state');
     expect(gcExecutionExitClass('GC atomic cleanup failed')).toBe('failure');
+  });
+
+  test('rejects source URLs from dry-run and execute-no-op application reports', async () => {
+    const selected = await createGcFleet();
+    fleets.push(selected);
+    const ports = await defaultRuntimePorts();
+    const sourceUrl = 'git://fixture.invalid/org/project';
+    const context: CurrentApplicationContext = {
+      ports,
+      artifactCoordinator: {} as CurrentApplicationContext['artifactCoordinator'],
+      configuration: resolveRuntimeConfiguration(selected.env),
+      invocationCwd: selected.cwd,
+      globalOptions: {},
+      projectContext: {
+        invocationCwd: selected.cwd,
+        effectiveCwd: selected.cwd,
+        projectRoot: selected.cwd,
+        projectIdentity: sourceUrl,
+        projectKind: 'git',
+        discoveredConfigPath: null,
+        explicitConfigPath: null,
+      },
+      interaction: {
+        mode: 'noninteractive',
+        choose: async () => ({ status: 'refused', reason: 'unused' }),
+        confirm: async () => ({ status: 'refused', reason: 'unused' }),
+      },
+      observation: {
+        context: createOperationContext({
+          command: 'skillsmith gc',
+          workflow: 'gc-report-validation',
+          clock: {
+            wallNowIso: () => '2026-07-25T00:00:00.000Z',
+            monotonicMilliseconds: () => 0,
+          },
+          id: { nextId: (purpose) => `gc-report-validation-${purpose}` },
+        }),
+        emitter: createObservationEmitter({
+          observer: noopObserver,
+          toolIds: ['claude-code', 'codex'],
+        }),
+      },
+    };
+
+    for (const dryRun of [true, false]) {
+      const outcome = await runGcApplication(
+        { arguments: [], options: { dryRun, yes: false, json: false, prompt: false } },
+        context,
+      );
+      expect(outcome).toMatchObject({
+        exitClass: 'failure',
+        report: { result: null },
+        diagnostics: [{ code: 'invalid-gc-report' }],
+      });
+      expect(outcome.mutation).toEqual(NO_MUTATION);
+      expect(JSON.stringify(outcome)).not.toContain(sourceUrl);
+    }
   });
 });

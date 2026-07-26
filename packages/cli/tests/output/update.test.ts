@@ -55,6 +55,17 @@ const report: UpdateReportV1Dto = {
   },
 };
 
+const forbiddenSources = [
+  'https://fixture.invalid/org/project',
+  'ssh://git@fixture.invalid/org/project',
+  'git@fixture.invalid:org/project',
+  'git://fixture.invalid/org/project',
+  'file:///fixture/project',
+  'custom+v1://fixture/project',
+] as const;
+
+const safeLocalPaths = ['./credential-store', '/fixture/token-cache'] as const;
+
 describe('update output', () => {
   test('human and JSON expose the same exact update facts', () => {
     const human = renderUpdateHuman(report);
@@ -75,6 +86,28 @@ describe('update output', () => {
     };
     expect(() => renderUpdateHuman(unsafe)).toThrow();
     expect(() => renderUpdateJson(unsafe, updateV1Codec)).toThrow();
+
+    for (const source of forbiddenSources) {
+      const sourceBearing: UpdateReportV1Dto = {
+        ...report,
+        artifactPair: { ...report.artifactPair, manifestPath: source },
+      };
+      expect(updateV1Codec.validate(sourceBearing), source).toMatchObject({ ok: false });
+      expect(() => renderUpdateHuman(sourceBearing), source).toThrow();
+      expect(() => renderUpdateJson(sourceBearing, updateV1Codec), source).toThrow();
+    }
+
+    for (const path of safeLocalPaths) {
+      const localPathReport: UpdateReportV1Dto = {
+        ...report,
+        artifactPair: { ...report.artifactPair, manifestPath: path },
+      };
+      expect(updateV1Codec.validate(localPathReport), path).toMatchObject({ ok: true });
+      expect(() => renderUpdateHuman(localPathReport), path).not.toThrow();
+      expect(JSON.parse(renderUpdateJson(localPathReport, updateV1Codec)), path).toEqual(
+        localPathReport,
+      );
+    }
   });
 
   test('current runtime binds update to the strict mapped codec', () => {
