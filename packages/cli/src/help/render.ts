@@ -50,7 +50,7 @@ export const optionHelpDescription = (option: CommandOptionSpec): string =>
 const workflowBlock = (spec: CommandSpec): string => {
   if (spec.path === 'skillsmith' || spec.commonWorkflows.length === 0) return spec.description;
   const rows = spec.commonWorkflows.flatMap((workflow) => [
-    `  ${workflow.label} [${workflow.safety}]`,
+    `  ${workflow.label} [${workflow.safety}] — ${workflow.description}`,
     `    $ ${workflow.invocation}`,
   ]);
   return `${spec.description}\n\nCOMMON WORKFLOWS\n${rows.join('\n')}`;
@@ -74,7 +74,6 @@ export const configureProgressiveHelp = (command: Command, spec: CommandSpec): v
     .description(workflowBlock(spec))
     .summary(spec.description)
     .configureHelp({
-      helpWidth: 120,
       showGlobalOptions: spec.path !== 'skillsmith',
       styleTitle: headingStyle,
     });

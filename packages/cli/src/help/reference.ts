@@ -16,8 +16,23 @@ const renderCommand = (spec: CommandSpec): string => {
       ? `\nAliases: ${spec.aliases.map((alias) => `\`${alias}\``).join(', ')}\n`
       : '';
   const workflows = spec.commonWorkflows
-    .map((workflow) => `- **${workflow.label}** (${workflow.safety}): \`${workflow.invocation}\``)
+    .map(
+      (workflow) =>
+        `- **${workflow.label}** (${workflow.safety}): ${workflow.description} — \`${workflow.invocation}\``,
+    )
     .join('\n');
+  const argumentsSection =
+    spec.arguments.length === 0
+      ? []
+      : [
+          '#### Arguments',
+          '',
+          ...spec.arguments.map((argument) => {
+            const term = `${argument.required ? '<' : '['}${argument.name}${argument.variadic ? '...' : ''}${argument.required ? '>' : ']'}`;
+            return `- \`${term}\` — ${argument.description}`;
+          }),
+          '',
+        ];
   const optionGroups = OPTION_HELP_FAMILY_ORDER.flatMap((family) => {
     const options = spec.options.filter((option) => option.helpFamily === family);
     if (options.length === 0) return [];
@@ -44,7 +59,12 @@ const renderCommand = (spec: CommandSpec): string => {
     '',
     workflows,
     '',
+    ...argumentsSection,
     optionGroups,
+    '#### Exit codes',
+    '',
+    ...(spec.exitCodes ?? []).map(({ code, meaning }) => `- \`${code}\` — ${meaning}`),
+    '',
   ].join('\n');
 };
 

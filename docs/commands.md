@@ -30,8 +30,8 @@ Minimal invocation: `skillsmith agents`
 
 #### Common workflows
 
-- **Start here** (read-only): `skillsmith agents --detected-only`
-- **Focused workflow** (read-only): `skillsmith agents --format json`
+- **Start here** (read-only): List only coding tools detected on this machine. — `skillsmith agents --detected-only`
+- **Focused workflow** (read-only): Emit the supported-tool capability inventory as JSON. — `skillsmith agents --format json`
 
 #### TARGETS AND SCOPE
 
@@ -48,6 +48,13 @@ Minimal invocation: `skillsmith agents`
 - `--json` — Emit the versioned agents JSON report
 - `-h, --help` — Show help for this command
 
+#### Exit codes
+
+- `0` — tool detection completed successfully
+- `1` — tool detection failed
+- `2` — invalid tool or output selection
+- `130` — cancelled by SIGINT
+
 
 ### `list`
 
@@ -61,8 +68,12 @@ Minimal invocation: `skillsmith list`
 
 #### Common workflows
 
-- **Start here** (read-only): `skillsmith list`
-- **Focused workflow** (read-only): `skillsmith list "review-*" --tool codex --long`
+- **Start here** (read-only): List installed skills using the default bounds. — `skillsmith list`
+- **Focused workflow** (read-only): Find detailed Codex placements whose names begin with review-. — `skillsmith list "review-*" --tool codex --long`
+
+#### Arguments
+
+- `[glob...]` — Glob filters for installed skill names
 
 #### TARGETS AND SCOPE
 
@@ -95,6 +106,14 @@ Minimal invocation: `skillsmith list`
 - `-h, --help` — Show help for this command
 - `-l, --long` — Show paths and details
 
+#### Exit codes
+
+- `0` — request completed successfully
+- `1` — command failed
+- `2` — invalid command usage
+- `3` — configuration is unreadable
+- `130` — cancelled by SIGINT
+
 
 ### `commands`
 
@@ -106,8 +125,12 @@ Minimal invocation: `skillsmith commands`
 
 #### Common workflows
 
-- **Start here** (read-only): `skillsmith commands`
-- **Focused workflow** (read-only): `skillsmith commands "git-*" --project --long`
+- **Start here** (read-only): List installed slash commands using the default bounds. — `skillsmith commands`
+- **Focused workflow** (read-only): Find detailed project commands whose names begin with git-. — `skillsmith commands "git-*" --project --long`
+
+#### Arguments
+
+- `[glob...]` — Glob filters for installed command names
 
 #### TARGETS AND SCOPE
 
@@ -128,6 +151,14 @@ Minimal invocation: `skillsmith commands`
 - `-h, --help` — Show help for this command
 - `-l, --long` — Show paths and details
 
+#### Exit codes
+
+- `0` — request completed successfully
+- `1` — command failed
+- `2` — invalid command usage
+- `3` — configuration is unreadable
+- `130` — cancelled by SIGINT
+
 
 ### `status`
 
@@ -139,8 +170,12 @@ Minimal invocation: `skillsmith status`
 
 #### Common workflows
 
-- **Start here** (read-only): `skillsmith status`
-- **Focused workflow** (read-only): `skillsmith status review --tool codex --check`
+- **Start here** (read-only): Compare desired, locked, ledger, and live state. — `skillsmith status`
+- **Focused workflow** (read-only): Check the Codex review placement and fail when it has drift. — `skillsmith status review --tool codex --check`
+
+#### Arguments
+
+- `[skill...]` — Skill names or exact placement paths
 
 #### TARGETS AND SCOPE
 
@@ -164,6 +199,18 @@ Minimal invocation: `skillsmith status`
 
 - `--json` — Emit a versioned JSON report on stdout
 
+#### Exit codes
+
+- `0` — selected status completed successfully
+- `1` — status observation failed
+- `2` — invalid usage or unmatched target
+- `3` — manifest, lock, or ledger state is invalid
+- `4` — a required read capability is unavailable
+- `5` — a signed source dependency failed
+- `6` — a selected path could not be read due to permissions
+- `7` — the selected status product contains drift
+- `130` — cancelled by SIGINT
+
 
 ## MANAGE
 
@@ -179,9 +226,13 @@ Minimal invocation: `skillsmith install <source>`
 
 #### Common workflows
 
-- **Start here** (requires-confirmation): `skillsmith install smorinlabs/smorinlabs-harness/factor-scan --user`
-- **Focused workflow** (requires-confirmation): `skillsmith install acme/agent-tools/review@v1.2.0 --project --pin`
-- **Advanced workflow** (requires-confirmation): `skillsmith install gitlab.com/acme/platform/tools//skills/review --tool claude-code`
+- **Start here** (requires-confirmation): Install factor-scan into user scope. — `skillsmith install smorinlabs/smorinlabs-harness/factor-scan --user`
+- **Focused workflow** (requires-confirmation): Install and pin an exact tagged review skill in project scope. — `skillsmith install acme/agent-tools/review@v1.2.0 --project --pin`
+- **Advanced workflow** (requires-confirmation): Install a nested GitLab skill path for Claude Code. — `skillsmith install gitlab.com/acme/platform/tools//skills/review --tool claude-code`
+
+#### Arguments
+
+- `<source...>` — owner/repo[/name], owner/repo//path, host/owner/repo[/name], or a git URL; append @ref when needed
 
 #### TARGETS AND SCOPE
 
@@ -218,6 +269,17 @@ Minimal invocation: `skillsmith install <source>`
 - `--json` — Emit a versioned JSON report on stdout
 - `-h, --help` — Show help for this command
 
+#### Exit codes
+
+- `0` — installed, or already at the resolved revision
+- `1` — verify gate, snapshot, or swap failed; state is recoverable
+- `2` — usage error or refusal, including non-interactive ambiguity
+- `3` — placements ledger is unreadable
+- `4` — requested target tool is unavailable
+- `5` — source, repository, revision, or skill is unresolvable
+- `6` — skills directory, store, or ledger is not writable
+- `130` — cancelled by SIGINT; state is recoverable
+
 
 ### `uninstall`
 
@@ -231,9 +293,13 @@ Minimal invocation: `skillsmith uninstall <skill>`
 
 #### Common workflows
 
-- **Start here** (requires-confirmation): `skillsmith uninstall factor-scan`
-- **Focused workflow** (requires-confirmation): `skillsmith uninstall review --project`
-- **Advanced workflow** (requires-confirmation): `skillsmith rm review --all-scopes --tool codex`
+- **Start here** (requires-confirmation): Remove the selected factor-scan placement. — `skillsmith uninstall factor-scan`
+- **Focused workflow** (requires-confirmation): Remove review from project scope. — `skillsmith uninstall review --project`
+- **Advanced workflow** (requires-confirmation): Use the rm alias to remove Codex review placements across scopes. — `skillsmith rm review --all-scopes --tool codex`
+
+#### Arguments
+
+- `<skill...>` — Installed skill names or placement paths; use scope or tool flags to disambiguate
 
 #### TARGETS AND SCOPE
 
@@ -264,6 +330,15 @@ Minimal invocation: `skillsmith uninstall <skill>`
 - `--json` — Emit a versioned JSON report on stdout
 - `-h, --help` — Show help for this command
 
+#### Exit codes
+
+- `0` — removed, or already absent
+- `1` — removal failed mid-flight; state is recoverable
+- `2` — usage error or refusal, including ambiguous or unmanaged placement
+- `3` — placements ledger is unreadable
+- `6` — skills directory or ledger is not writable
+- `130` — cancelled by SIGINT; state is recoverable
+
 
 ### `update`
 
@@ -275,9 +350,13 @@ Minimal invocation: `skillsmith update --check`
 
 #### Common workflows
 
-- **Start here** (preview): `skillsmith update --check`
-- **Focused workflow** (preview): `skillsmith update factor-scan --dry-run`
-- **Advanced workflow** (requires-confirmation): `skillsmith update factor-scan --ref main --pin`
+- **Start here** (preview): Check bounded declarations for newer revisions. — `skillsmith update --check`
+- **Focused workflow** (preview): Preview an update of factor-scan. — `skillsmith update factor-scan --dry-run`
+- **Advanced workflow** (requires-confirmation): Move factor-scan to main and pin the resolved revision. — `skillsmith update factor-scan --ref main --pin`
+
+#### Arguments
+
+- `[skill...]` — Declared skill names or globs; omitted is valid only for bounded check or with --all
 
 #### TARGETS AND SCOPE
 
@@ -307,6 +386,18 @@ Minimal invocation: `skillsmith update --check`
 - `--json` — Emit the strict update@1 report
 - `-h, --help` — Show help for this command
 
+#### Exit codes
+
+- `0` — selected declarations are current, skipped, previewed, or updated
+- `1` — verification, execution, integrity, or partial update failed
+- `2` — invalid selection, option, or approval policy
+- `3` — selected manifest, lock, ledger, or execution guard is invalid or stale
+- `4` — a required update or selected-tool capability is unavailable
+- `5` — a selected source or exact remote ref could not be resolved
+- `6` — a selected artifact or placement path is permission denied
+- `7` — a valid --check evaluation contains available changes
+- `130` — cancelled by SIGINT
+
 
 ### `undo`
 
@@ -318,9 +409,13 @@ Minimal invocation: `skillsmith undo <skill>`
 
 #### Common workflows
 
-- **Start here** (preview): `skillsmith undo factor-scan --dry-run`
-- **Focused workflow** (requires-confirmation): `skillsmith undo factor-scan --tool codex --project`
-- **Advanced workflow** (requires-confirmation): `skillsmith undo --all --scope user --yes`
+- **Start here** (preview): Preview reversal of the latest eligible factor-scan operation. — `skillsmith undo factor-scan --dry-run`
+- **Focused workflow** (requires-confirmation): Reverse the Codex project placement for factor-scan. — `skillsmith undo factor-scan --tool codex --project`
+- **Advanced workflow** (requires-confirmation): Approve reversal of every eligible user-scope operation. — `skillsmith undo --all --scope user --yes`
+
+#### Arguments
+
+- `[skill...]` — Skill names whose latest eligible retained operations should be reversed
 
 #### TARGETS AND SCOPE
 
@@ -341,6 +436,16 @@ Minimal invocation: `skillsmith undo <skill>`
 - `--json` — Emit the strict undo@1 report
 - `-h, --help` — Show help for this command
 
+#### Exit codes
+
+- `0` — selected work was previewed, already reversed, filtered to no-op, or safely undone
+- `1` — one or more selected reversals failed
+- `2` — invalid target, --all, scope, approval, or option usage
+- `3` — selected history, retained state, ledger, or execution guard is invalid
+- `4` — a selected tool does not support the required undo capability
+- `6` — a selected retained artifact or placement path is permission denied
+- `130` — cancelled by SIGINT
+
 
 ## DEVELOP
 
@@ -356,9 +461,13 @@ Minimal invocation: `skillsmith dev <skill> --source <path>`
 
 #### Common workflows
 
-- **Start here** (requires-confirmation): `skillsmith dev factor-scan`
-- **Focused workflow** (requires-confirmation): `skillsmith dev gh-fix-ci --tool codex --source ~/c/gh-fix-ci/skills/gh-fix-ci`
-- **Advanced workflow** (requires-confirmation): `skillsmith dev --rollback factor-scan`
+- **Start here** (requires-confirmation): Return factor-scan to its recorded live development source. — `skillsmith dev factor-scan`
+- **Focused workflow** (requires-confirmation): Adopt an explicit local checkout as the gh-fix-ci development source. — `skillsmith dev gh-fix-ci --tool codex --source ~/c/gh-fix-ci/skills/gh-fix-ci`
+- **Advanced workflow** (requires-confirmation): Roll back the latest eligible factor-scan development operation. — `skillsmith dev --rollback factor-scan`
+
+#### Arguments
+
+- `[skill...]` — Skill names or placement paths
 
 #### TARGETS AND SCOPE
 
@@ -390,6 +499,17 @@ Minimal invocation: `skillsmith dev <skill> --source <path>`
 - `--json` — Emit a versioned JSON report on stdout
 - `-h, --help` — Show help for this command
 
+#### Exit codes
+
+- `0` — demoted, or already in dev mode
+- `1` — placement flip failed; state is recoverable
+- `2` — usage error or refusal, including a missing recorded source
+- `3` — placements ledger is unreadable
+- `4` — requested skill or tool has no placement
+- `5` — recorded development source no longer exists
+- `6` — skills directory or ledger is not writable
+- `130` — cancelled by SIGINT; state is recoverable
+
 
 ### `verify`
 
@@ -401,8 +521,12 @@ Minimal invocation: `skillsmith verify <path>`
 
 #### Common workflows
 
-- **Start here** (requires-confirmation): `skillsmith verify ./skills/review`
-- **Focused workflow** (requires-confirmation): `skillsmith verify ./plugin --deep --strict`
+- **Start here** (requires-confirmation): Verify one bare skill directory. — `skillsmith verify ./skills/review`
+- **Focused workflow** (requires-confirmation): Run deep, strict verification for a plugin directory. — `skillsmith verify ./plugin --deep --strict`
+
+#### Arguments
+
+- `<path>` — Plugin or bare skill directory
 
 #### TARGETS AND SCOPE
 
@@ -419,6 +543,14 @@ Minimal invocation: `skillsmith verify <path>`
 - `--json` — Emit a versioned JSON report on stdout
 - `-h, --help` — Show help for this command
 
+#### Exit codes
+
+- `0` — verification passed
+- `1` — verification failed or strict mode found warnings
+- `2` — path or option usage is invalid
+- `4` — requested target tool or verification mode is unavailable
+- `130` — cancelled by SIGINT
+
 
 ### `promote`
 
@@ -430,9 +562,13 @@ Minimal invocation: `skillsmith promote <skill>`
 
 #### Common workflows
 
-- **Start here** (requires-confirmation): `skillsmith promote factor-scan`
-- **Focused workflow** (preview): `skillsmith promote --all --dry-run`
-- **Advanced workflow** (requires-confirmation): `skillsmith promote factor-scan --tool claude-code --strict`
+- **Start here** (requires-confirmation): Snapshot factor-scan from development into managed state. — `skillsmith promote factor-scan`
+- **Focused workflow** (preview): Preview promotion of every eligible development placement. — `skillsmith promote --all --dry-run`
+- **Advanced workflow** (requires-confirmation): Strictly verify and promote factor-scan for Claude Code. — `skillsmith promote factor-scan --tool claude-code --strict`
+
+#### Arguments
+
+- `[skill...]` — Skill names or placement paths
 
 #### TARGETS AND SCOPE
 
@@ -460,6 +596,17 @@ Minimal invocation: `skillsmith promote <skill>`
 - `--json` — Emit a versioned JSON report on stdout
 - `-h, --help` — Show help for this command
 
+#### Exit codes
+
+- `0` — promoted, or already pinned
+- `1` — verify gate, snapshot, or swap failed; state is recoverable
+- `2` — usage error or refusal, including a disallowed dirty tree
+- `3` — placements ledger is unreadable
+- `4` — requested skill or tool has no placement
+- `5` — development source is unresolvable
+- `6` — skills directory, store, or ledger is not writable
+- `130` — cancelled by SIGINT; state is recoverable
+
 
 ## DECLARATIVE
 
@@ -473,9 +620,9 @@ Minimal invocation: `skillsmith init`
 
 #### Common workflows
 
-- **Start here** (requires-confirmation): `skillsmith init`
-- **Focused workflow** (requires-confirmation): `skillsmith init --project --tool codex`
-- **Advanced workflow** (preview): `skillsmith init --file ./team.toml --dry-run --json`
+- **Start here** (requires-confirmation): Create or migrate the default desired-state manifest. — `skillsmith init`
+- **Focused workflow** (requires-confirmation): Initialize a project manifest bounded to Codex. — `skillsmith init --project --tool codex`
+- **Advanced workflow** (preview): Preview an explicit team manifest and emit JSON. — `skillsmith init --file ./team.toml --dry-run --json`
 
 #### TARGETS AND SCOPE
 
@@ -498,6 +645,16 @@ Minimal invocation: `skillsmith init`
 - `--json` — Emit the strict init@1 report
 - `-h, --help` — Show help for this command
 
+#### Exit codes
+
+- `0` — manifest initialized, migrated, unchanged, or previewed
+- `1` — manifest execution or detection failed
+- `2` — invalid selection or unrepresentable configured path
+- `3` — configuration, existing manifest, or concurrent state is invalid
+- `4` — selected tool or scope is not writable by init
+- `6` — manifest or parent permission denied
+- `130` — cancelled by SIGINT
+
 
 ### `export`
 
@@ -509,9 +666,9 @@ Minimal invocation: `skillsmith export`
 
 #### Common workflows
 
-- **Start here** (requires-confirmation): `skillsmith export`
-- **Focused workflow** (requires-confirmation): `skillsmith export --project --file ./skillsmith.toml`
-- **Advanced workflow** (preview): `skillsmith export --tool claude-code --strict --dry-run`
+- **Start here** (requires-confirmation): Capture the default live fleet in portable desired state. — `skillsmith export`
+- **Focused workflow** (requires-confirmation): Write project-scoped desired state to an explicit manifest. — `skillsmith export --project --file ./skillsmith.toml`
+- **Advanced workflow** (preview): Preview a strict Claude Code export without writing files. — `skillsmith export --tool claude-code --strict --dry-run`
 
 #### TARGETS AND SCOPE
 
@@ -541,6 +698,16 @@ Minimal invocation: `skillsmith export`
 - `--dry-run` — Preview artifact effects without locking or writing
 - `--json` — Emit the strict export@1 report
 
+#### Exit codes
+
+- `0` — portable export completed or no portable rows remained
+- `1` — strict portability or execution failure
+- `2` — invalid selection or unresolved declaration conflict
+- `3` — artifact or ledger state is invalid or stale
+- `4` — required readable tool capability is unavailable
+- `6` — artifact or ledger permission denied
+- `130` — cancelled by SIGINT
+
 
 ### `plan`
 
@@ -552,9 +719,9 @@ Minimal invocation: `skillsmith plan`
 
 #### Common workflows
 
-- **Start here** (read-only): `skillsmith plan --locked`
-- **Focused workflow** (read-only): `skillsmith plan --project --prune`
-- **Advanced workflow** (read-only): `skillsmith plan --locked --check --json`
+- **Start here** (read-only): Plan convergence from exact locked desired state. — `skillsmith plan --locked`
+- **Focused workflow** (read-only): Plan project convergence including safe pruning. — `skillsmith plan --project --prune`
+- **Advanced workflow** (read-only): Check locked convergence for drift and emit JSON. — `skillsmith plan --locked --check --json`
 
 #### TARGETS AND SCOPE
 
@@ -584,6 +751,18 @@ Minimal invocation: `skillsmith plan`
 - `--json` — Emit the strict plan-report@1 report
 - `-h, --help` — Show help for this command
 
+#### Exit codes
+
+- `0` — valid convergence preview completed
+- `1` — planning or saved-output execution failed
+- `2` — invalid selection, option policy, or output request
+- `3` — manifest, lock, ledger, or selected state is invalid or stale
+- `4` — a required planner capability is unavailable
+- `5` — a selected source could not be resolved
+- `6` — a selected path could not be read or written due to permissions
+- `7` — a valid --check preview contains drift
+- `130` — cancelled by SIGINT
+
 
 ### `apply`
 
@@ -595,9 +774,9 @@ Minimal invocation: `skillsmith apply`
 
 #### Common workflows
 
-- **Start here** (requires-confirmation): `skillsmith apply`
-- **Focused workflow** (requires-confirmation): `skillsmith apply --project --prune`
-- **Advanced workflow** (preview): `skillsmith apply --plan review.skillsmith.plan --dry-run`
+- **Start here** (requires-confirmation): Converge live state from the default manifest. — `skillsmith apply`
+- **Focused workflow** (requires-confirmation): Converge project state including safe pruning. — `skillsmith apply --project --prune`
+- **Advanced workflow** (preview): Preview an exact previously reviewed saved plan. — `skillsmith apply --plan review.skillsmith.plan --dry-run`
 
 #### TARGETS AND SCOPE
 
@@ -628,6 +807,18 @@ Minimal invocation: `skillsmith apply`
 - `--dry-run` — Validate and render the exact plan without locking or writing
 - `--json` — Emit the strict apply-report@1 report
 
+#### Exit codes
+
+- `0` — selected state converged, or an exact valid plan was empty or previewed
+- `1` — execution, integrity, or partial convergence failed
+- `2` — invalid selection, mode, approval, or option policy
+- `3` — saved authorization or selected state is invalid, incompatible, or stale
+- `4` — a required apply capability is unavailable
+- `5` — a selected source could not be resolved
+- `6` — a selected path could not be read or written due to permissions
+- `7` — a valid --check plan contains changes
+- `130` — cancelled by SIGINT
+
 
 ### `sync`
 
@@ -639,9 +830,13 @@ Minimal invocation: `skillsmith sync --from <A> --to <B>`
 
 #### Common workflows
 
-- **Start here** (preview): `skillsmith sync --from user --to ./project-b --dry-run`
-- **Focused workflow** (requires-confirmation): `skillsmith sync lint --from ./project-a --to ./project-b --tool codex`
-- **Advanced workflow** (requires-confirmation): `skillsmith sync --from user --to project --delete --yes`
+- **Start here** (preview): Preview a user-to-project-directory reconciliation. — `skillsmith sync --from user --to ./project-b --dry-run`
+- **Focused workflow** (requires-confirmation): Sync the lint skill between two projects for Codex. — `skillsmith sync lint --from ./project-a --to ./project-b --tool codex`
+- **Advanced workflow** (requires-confirmation): Approve user-to-project reconciliation including deletions. — `skillsmith sync --from user --to project --delete --yes`
+
+#### Arguments
+
+- `[skill...]` — Skill-name or glob filters; omitted means bounded source membership
 
 #### TARGETS AND SCOPE
 
@@ -671,6 +866,16 @@ Minimal invocation: `skillsmith sync --from <A> --to <B>`
 - `--json` — Emit the strict sync@1 report
 - `-h, --help` — Show help for this command
 
+#### Exit codes
+
+- `0` — selected destination converged, was already current, filtered to no-op, or was previewed
+- `1` — execution, integrity, or partial convergence failed
+- `2` — invalid endpoint, selection, conflict, save, option, or approval policy
+- `3` — selected artifact, ledger, or precondition state is invalid or stale
+- `4` — a selected tool or destination sync capability is unavailable
+- `6` — a selected destination or artifact path is permission denied
+- `130` — cancelled by SIGINT
+
 
 ## MAINTAIN
 
@@ -684,8 +889,8 @@ Minimal invocation: `skillsmith doctor`
 
 #### Common workflows
 
-- **Start here** (read-only): `skillsmith doctor`
-- **Focused workflow** (read-only): `skillsmith doctor --all-tools --strict`
+- **Start here** (read-only): Diagnose the current SkillSmith environment. — `skillsmith doctor`
+- **Focused workflow** (read-only): Run strict readiness diagnostics for every supported tool. — `skillsmith doctor --all-tools --strict`
 
 #### TARGETS AND SCOPE
 
@@ -717,6 +922,16 @@ Minimal invocation: `skillsmith doctor`
 - `--json` — Emit a versioned JSON report on stdout
 - `-h, --help` — Show help for this command
 
+#### Exit codes
+
+- `0` — diagnostics completed without blocking findings
+- `1` — unhandled findings or repair failures remain
+- `2` — invalid selection, option policy, or repair approval
+- `3` — artifact state is invalid, corrupt, newer, or stale
+- `5` — source resolution required for repair failed
+- `6` — a selected repair path is not writable
+- `130` — cancelled by SIGINT
+
 
 ### `check`
 
@@ -728,8 +943,8 @@ Minimal invocation: `skillsmith check`
 
 #### Common workflows
 
-- **Start here** (read-only): `skillsmith check`
-- **Focused workflow** (read-only): `skillsmith check --all-tools --json`
+- **Start here** (read-only): Run the blocking health subset suitable for CI. — `skillsmith check`
+- **Focused workflow** (read-only): Emit all-tool blocking health results as JSON. — `skillsmith check --all-tools --json`
 
 #### TARGETS AND SCOPE
 
@@ -755,6 +970,14 @@ Minimal invocation: `skillsmith check`
 - `--json` — Emit a versioned JSON report on stdout
 - `-h, --help` — Show help for this command
 
+#### Exit codes
+
+- `0` — blocking checks passed, or --report-only was used
+- `1` — one or more error findings exist
+- `2` — invalid tool, scope, artifact, or exit-policy selection
+- `3` — configuration is unreadable
+- `130` — cancelled by SIGINT
+
 
 ### `gc`
 
@@ -766,9 +989,9 @@ Minimal invocation: `skillsmith gc`
 
 #### Common workflows
 
-- **Start here** (preview): `skillsmith gc --dry-run`
-- **Focused workflow** (preview): `skillsmith gc --older-than 30d --dry-run --json`
-- **Advanced workflow** (requires-confirmation): `skillsmith gc --forget-project /workspace/retired --yes`
+- **Start here** (preview): Preview every currently eligible store reclamation. — `skillsmith gc --dry-run`
+- **Focused workflow** (preview): Preview objects older than 30 days and emit JSON. — `skillsmith gc --older-than 30d --dry-run --json`
+- **Advanced workflow** (requires-confirmation): Approve forgetting a retired project before reclamation. — `skillsmith gc --forget-project /workspace/retired --yes`
 
 #### SOURCE, DESTINATION, AND ARTIFACTS
 
@@ -785,6 +1008,15 @@ Minimal invocation: `skillsmith gc`
 - `--json` — Emit the strict gc@1 report
 - `-h, --help` — Show help for this command
 
+#### Exit codes
+
+- `0` — GC was previewed, completed, or already converged
+- `1` — one or more approved GC actions failed
+- `2` — invalid duration, forget request, option, or approval policy
+- `3` — ledger, inventory, recovery, tombstone, or execution state is unsafe
+- `6` — a selected state path is permission denied
+- `130` — cancelled by SIGINT
+
 
 ### `config`
 
@@ -796,12 +1028,16 @@ Minimal invocation: `skillsmith config list`
 
 #### Common workflows
 
-- **Start here** (requires-confirmation): `skillsmith config list`
-- **Focused workflow** (requires-confirmation): `skillsmith config get tool`
+- **Start here** (read-only): List the effective merged configuration. — `skillsmith config list`
+- **Focused workflow** (read-only): Read the effective default tool. — `skillsmith config get tool`
 
 #### AUTOMATION AND OUTPUT
 
 - `-h, --help` — Show help for this command
+
+#### Exit codes
+
+- `0` — configuration help page emitted
 
 
 ### `completion`
@@ -814,12 +1050,21 @@ Minimal invocation: `skillsmith completion zsh`
 
 #### Common workflows
 
-- **Start here** (read-only): `skillsmith completion bash`
-- **Focused workflow** (read-only): `skillsmith completion zsh`
+- **Start here** (read-only): Emit the Bash completion script. — `skillsmith completion bash`
+- **Focused workflow** (read-only): Emit the zsh completion script. — `skillsmith completion zsh`
+
+#### Arguments
+
+- `<shell>` — Target shell: bash, zsh, or fish
 
 #### AUTOMATION AND OUTPUT
 
 - `-h, --help` — Show help for this command
+
+#### Exit codes
+
+- `0` — completion script emitted
+- `2` — required shell is missing or unsupported
 
 
 ### `version`
@@ -832,12 +1077,16 @@ Minimal invocation: `skillsmith version`
 
 #### Common workflows
 
-- **Start here** (read-only): `skillsmith version`
-- **Focused workflow** (read-only): `skillsmith --version`
+- **Start here** (read-only): Print the version through the explicit command. — `skillsmith version`
+- **Focused workflow** (read-only): Print the version through the global flag. — `skillsmith --version`
 
 #### AUTOMATION AND OUTPUT
 
 - `-h, --help` — Show help for this command
+
+#### Exit codes
+
+- `0` — version emitted
 
 
 ### `help`
@@ -850,9 +1099,18 @@ Minimal invocation: `skillsmith help workflows`
 
 #### Common workflows
 
-- **Start here** (read-only): `skillsmith help install`
-- **Focused workflow** (read-only): `skillsmith help exit-codes`
+- **Start here** (read-only): Open the install command guide. — `skillsmith help install`
+- **Focused workflow** (read-only): Open the cross-command exit-code guide. — `skillsmith help exit-codes`
+
+#### Arguments
+
+- `[topic]` — Command name or cross-cutting help topic
 
 #### AUTOMATION AND OUTPUT
 
 - `-h, --help` — Show help for this command
+
+#### Exit codes
+
+- `0` — help page emitted
+- `2` — unknown command or topic

@@ -347,6 +347,121 @@ const EXAMPLES: Readonly<Record<string, readonly string[]>> = {
   'skillsmith help': ['skillsmith help install', 'skillsmith help exit-codes'],
 };
 
+const WORKFLOW_DESCRIPTIONS: Readonly<Record<string, readonly string[]>> = {
+  skillsmith: ['Open the grouped command index.', 'Inspect installed skills with detailed rows.'],
+  'skillsmith agents': [
+    'List only coding tools detected on this machine.',
+    'Emit the supported-tool capability inventory as JSON.',
+  ],
+  'skillsmith config': [
+    'List the effective merged configuration.',
+    'Read the effective default tool.',
+  ],
+  'skillsmith config get': [
+    'Read the effective default tool.',
+    'Read the effective scope as JSON.',
+  ],
+  'skillsmith config set': ['Set Codex as the default tool.', 'Set project as the default scope.'],
+  'skillsmith config list': [
+    'List the effective merged configuration.',
+    'Emit project-scoped configuration as JSON.',
+  ],
+  'skillsmith config unset': [
+    'Remove the default-tool override.',
+    'Remove the project-scoped scope override.',
+  ],
+  'skillsmith list': [
+    'List installed skills using the default bounds.',
+    'Find detailed Codex placements whose names begin with review-.',
+  ],
+  'skillsmith commands': [
+    'List installed slash commands using the default bounds.',
+    'Find detailed project commands whose names begin with git-.',
+  ],
+  'skillsmith doctor': [
+    'Diagnose the current SkillSmith environment.',
+    'Run strict readiness diagnostics for every supported tool.',
+  ],
+  'skillsmith check': [
+    'Run the blocking health subset suitable for CI.',
+    'Emit all-tool blocking health results as JSON.',
+  ],
+  'skillsmith status': [
+    'Compare desired, locked, ledger, and live state.',
+    'Check the Codex review placement and fail when it has drift.',
+  ],
+  'skillsmith verify': [
+    'Verify one bare skill directory.',
+    'Run deep, strict verification for a plugin directory.',
+  ],
+  'skillsmith install': [
+    'Install factor-scan into user scope.',
+    'Install and pin an exact tagged review skill in project scope.',
+    'Install a nested GitLab skill path for Claude Code.',
+  ],
+  'skillsmith export': [
+    'Capture the default live fleet in portable desired state.',
+    'Write project-scoped desired state to an explicit manifest.',
+    'Preview a strict Claude Code export without writing files.',
+  ],
+  'skillsmith gc': [
+    'Preview every currently eligible store reclamation.',
+    'Preview objects older than 30 days and emit JSON.',
+    'Approve forgetting a retired project before reclamation.',
+  ],
+  'skillsmith init': [
+    'Create or migrate the default desired-state manifest.',
+    'Initialize a project manifest bounded to Codex.',
+    'Preview an explicit team manifest and emit JSON.',
+  ],
+  'skillsmith plan': [
+    'Plan convergence from exact locked desired state.',
+    'Plan project convergence including safe pruning.',
+    'Check locked convergence for drift and emit JSON.',
+  ],
+  'skillsmith apply': [
+    'Converge live state from the default manifest.',
+    'Converge project state including safe pruning.',
+    'Preview an exact previously reviewed saved plan.',
+  ],
+  'skillsmith sync': [
+    'Preview a user-to-project-directory reconciliation.',
+    'Sync the lint skill between two projects for Codex.',
+    'Approve user-to-project reconciliation including deletions.',
+  ],
+  'skillsmith update': [
+    'Check bounded declarations for newer revisions.',
+    'Preview an update of factor-scan.',
+    'Move factor-scan to main and pin the resolved revision.',
+  ],
+  'skillsmith undo': [
+    'Preview reversal of the latest eligible factor-scan operation.',
+    'Reverse the Codex project placement for factor-scan.',
+    'Approve reversal of every eligible user-scope operation.',
+  ],
+  'skillsmith uninstall': [
+    'Remove the selected factor-scan placement.',
+    'Remove review from project scope.',
+    'Use the rm alias to remove Codex review placements across scopes.',
+  ],
+  'skillsmith dev': [
+    'Return factor-scan to its recorded live development source.',
+    'Adopt an explicit local checkout as the gh-fix-ci development source.',
+    'Roll back the latest eligible factor-scan development operation.',
+  ],
+  'skillsmith promote': [
+    'Snapshot factor-scan from development into managed state.',
+    'Preview promotion of every eligible development placement.',
+    'Strictly verify and promote factor-scan for Claude Code.',
+  ],
+  'skillsmith version': [
+    'Print the version through the explicit command.',
+    'Print the version through the global flag.',
+  ],
+  'skillsmith completion': ['Emit the Bash completion script.', 'Emit the zsh completion script.'],
+  'skillsmith help': ['Open the install command guide.', 'Open the cross-command exit-code guide.'],
+};
+
 const PUBLIC_COMMAND_ORDER = [
   'skillsmith agents',
   'skillsmith list',
@@ -400,6 +515,7 @@ const MINIMAL_INVOCATIONS: Readonly<Record<(typeof PUBLIC_COMMAND_ORDER)[number]
 };
 
 const workflowSafety = (capability: string, invocation: string): CommandWorkflowSafety => {
+  if (/^skillsmith config (?:get|list)(?:\s|$)/u.test(invocation)) return 'read-only';
   if (capability === 'read' || capability === 'dispatch' || capability === 'plan')
     return 'read-only';
   if (invocation.includes('--dry-run') || invocation.includes('--check')) return 'preview';
@@ -407,16 +523,24 @@ const workflowSafety = (capability: string, invocation: string): CommandWorkflow
 };
 
 const commonWorkflows = (
+  path: string,
   capability: string,
-  description: string,
   examples: readonly string[],
-): readonly CommandWorkflowSpec[] =>
-  examples.slice(0, 3).map((invocation, index) => ({
-    label: ['Start here', 'Focused workflow', 'Advanced workflow'][index] ?? 'Workflow',
-    invocation,
-    description,
-    safety: workflowSafety(capability, invocation),
-  }));
+): readonly CommandWorkflowSpec[] => {
+  const descriptions = WORKFLOW_DESCRIPTIONS[path];
+  if (descriptions === undefined) throw new Error(`missing workflow descriptions for ${path}`);
+  return examples.slice(0, 3).map((invocation, index) => {
+    const description = descriptions[index];
+    if (description === undefined)
+      throw new Error(`missing workflow description ${index + 1} for ${path}`);
+    return {
+      label: ['Start here', 'Focused workflow', 'Advanced workflow'][index] ?? 'Workflow',
+      invocation,
+      description,
+      safety: workflowSafety(capability, invocation),
+    };
+  });
+};
 
 const exitCodes = (
   ...rows: readonly (readonly [number, string])[]
@@ -683,7 +807,7 @@ export const CURRENT_COMMAND_SPECS: readonly CommandSpec[] = commandPaths.map((p
     minimalInvocations: [
       MINIMAL_INVOCATIONS[path as (typeof PUBLIC_COMMAND_ORDER)[number]] ?? examples[0] ?? path,
     ],
-    commonWorkflows: commonWorkflows(profile.capability, description, examples),
+    commonWorkflows: commonWorkflows(path, profile.capability, examples),
     examples,
     exitCodes: commandExitCodes,
     capability: profile.capability,
@@ -1144,17 +1268,35 @@ export const CURRENT_OPTION_RELATIONS: readonly OptionRelationSpec[] =
 
 export const validateCurrentCommandSpecs = (): readonly string[] => {
   const errors: string[] = [];
+  const publicSpecs = CURRENT_COMMAND_SPECS.filter((spec) => spec.path.split(' ').length === 2);
   if (new Set(commandPaths).size !== commandPaths.length)
     errors.push('current command paths duplicate');
   if (CURRENT_COMMAND_SPECS.length !== commandPaths.length)
     errors.push('current command registry does not close the current command paths');
+  if (new Set(publicSpecs.map((spec) => spec.primaryQuestion)).size !== publicSpecs.length)
+    errors.push('public command primary questions must be unique');
+  if (
+    publicSpecs
+      .map((spec) => spec.helpOrder)
+      .toSorted((left, right) => left - right)
+      .some((order, index) => order !== index)
+  )
+    errors.push('public command help order must be a closed zero-based sequence');
   for (const spec of CURRENT_COMMAND_SPECS) {
     if (spec.primaryQuestion.length === 0) errors.push(`${spec.path} has no primary question`);
     if (spec.application.length === 0) errors.push(`${spec.path} has no application reference`);
     if (spec.description.length === 0) errors.push(`${spec.path} has no description`);
     if (spec.minimalInvocations.length === 0) errors.push(`${spec.path} has no minimal invocation`);
+    if (spec.minimalInvocations.some((invocation) => !invocation.startsWith(spec.path)))
+      errors.push(`${spec.path} has a minimal invocation outside its command path`);
     if (spec.commonWorkflows.length < 2 || spec.commonWorkflows.length > 3)
       errors.push(`${spec.path} must have two or three common workflows`);
+    for (const workflow of spec.commonWorkflows) {
+      if (!workflow.invocation.startsWith('skillsmith '))
+        errors.push(`${spec.path} has a workflow outside the skillsmith CLI`);
+      if (workflow.label.length === 0 || workflow.description.length === 0)
+        errors.push(`${spec.path} has incomplete workflow metadata`);
+    }
     if (spec.examples.length === 0) errors.push(`${spec.path} has no examples`);
     if (spec.exitCodes === undefined || spec.exitCodes.length === 0)
       errors.push(`${spec.path} has no exit-code help`);

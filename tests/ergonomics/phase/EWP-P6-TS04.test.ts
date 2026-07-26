@@ -2,8 +2,20 @@ import { describe, expect, test } from 'bun:test';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { buildProgram } from '../../../packages/cli/src/program.ts';
+import { CURRENT_COMMAND_SPECS } from '../../../packages/cli/src/spec/index.ts';
 
 const ROOT = resolve(import.meta.dir, '..', '..', '..');
+
+const commandSection = (reference: string, name: string): string => {
+  const marker = `### \`${name}\``;
+  const start = reference.indexOf(marker);
+  expect(start, marker).toBeGreaterThanOrEqual(0);
+  const tail = reference.slice(start);
+  const boundaries = [tail.indexOf('\n### ', marker.length), tail.indexOf('\n## ', marker.length)]
+    .filter((index) => index >= 0)
+    .toSorted((left, right) => left - right);
+  return tail.slice(0, boundaries[0] ?? tail.length);
+};
 
 describe('EWP-P6-TS04', () => {
   test('generated README/reference output closes against the live command tree', async () => {
@@ -21,6 +33,34 @@ describe('EWP-P6-TS04', () => {
     for (const command of buildProgram().commands) {
       expect(reference, command.name()).toContain(`\`${command.name()}\``);
       for (const alias of command.aliases()) expect(reference, alias).toContain(`\`${alias}\``);
+    }
+    for (const spec of CURRENT_COMMAND_SPECS.filter(
+      (candidate) => candidate.path.split(' ').length === 2,
+    )) {
+      const section = commandSection(reference, spec.path.slice('skillsmith '.length));
+      expect(section, spec.path).toContain(`Primary question: ${spec.primaryQuestion}`);
+      expect(section, spec.path).toContain(`Minimal invocation: \`${spec.minimalInvocations[0]}\``);
+      for (const alias of spec.aliases)
+        expect(section, `${spec.path} alias ${alias}`).toContain(alias);
+      for (const workflow of spec.commonWorkflows) {
+        expect(section, `${spec.path} workflow ${workflow.label}`).toContain(
+          `**${workflow.label}** (${workflow.safety}): ${workflow.description} — \`${workflow.invocation}\``,
+        );
+      }
+      for (const argument of spec.arguments) {
+        const term = `${argument.required ? '<' : '['}${argument.name}${argument.variadic ? '...' : ''}${argument.required ? '>' : ']'}`;
+        expect(section, `${spec.path} ${argument.name}`).toContain(
+          `\`${term}\` — ${argument.description}`,
+        );
+      }
+      for (const option of spec.options) {
+        expect(section, `${spec.path} ${option.long}`).toContain(`\`${option.flags}\``);
+      }
+      for (const exit of spec.exitCodes ?? []) {
+        expect(section, `${spec.path} exit ${exit.code}`).toContain(
+          `\`${exit.code}\` — ${exit.meaning}`,
+        );
+      }
     }
   });
 });
