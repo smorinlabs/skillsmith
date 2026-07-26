@@ -8148,7 +8148,7 @@
       "phase": "6",
       "title": "Rendering matrix, legacy cleanup, versions/capabilities, install/upgrade docs",
       "dependsOn": ["P17-G6-02A"],
-      "status": "mapped",
+      "status": "ready",
       "owner": "root-goal",
       "ownedFiles": [
         "README.md",
@@ -8202,8 +8202,11 @@
           "evidence": ["projects/p17/evidence/P17-G6-03.md#mapping-and-prerequisites"]
         },
         "ready": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G6-03.md#corrected-ready-review-at-201629f",
+            "projects/p17/evidence/P17-G6-03.md#accepted-ready-result"
+          ]
         },
         "test-first": {
           "status": "pending",
@@ -8245,7 +8248,9 @@
         "projects/p17/evidence/P17-G6-03.md#dependency-compatibility-and-native-size-audit",
         "projects/p17/evidence/P17-G6-03.md#documentation-and-capability-audit",
         "projects/p17/evidence/P17-G6-03.md#mapping-result",
-        "projects/p17/evidence/P17-G6-03.md#first-ready-review-at-2097fbf"
+        "projects/p17/evidence/P17-G6-03.md#first-ready-review-at-2097fbf",
+        "projects/p17/evidence/P17-G6-03.md#corrected-ready-review-at-201629f",
+        "projects/p17/evidence/P17-G6-03.md#accepted-ready-result"
       ]
     },
     {
@@ -25826,11 +25831,15 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G6-03",
-      "status": "planned",
+      "status": "ready",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-03",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G6-03.md#mapping-and-prerequisites",
+        "projects/p17/evidence/P17-G6-03.md#corrected-ready-review-at-201629f",
+        "projects/p17/evidence/P17-G6-03.md#accepted-ready-result"
+      ],
       "secondaryGroups": [],
       "implements": ["P2-08"],
       "validatedBy": ["EWP-P6-TS03"],
@@ -25845,11 +25854,15 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G6-03",
-      "status": "planned",
+      "status": "ready",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-03",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G6-03.md#mapping-and-prerequisites",
+        "projects/p17/evidence/P17-G6-03.md#corrected-ready-review-at-201629f",
+        "projects/p17/evidence/P17-G6-03.md#accepted-ready-result"
+      ],
       "secondaryGroups": ["P17-G6-04"],
       "implements": ["P2-08"],
       "validatedBy": ["EWP-P6-TS03", "EWP-WF01"],
