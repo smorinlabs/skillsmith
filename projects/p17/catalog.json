@@ -8148,20 +8148,57 @@
       "phase": "6",
       "title": "Rendering matrix, legacy cleanup, versions/capabilities, install/upgrade docs",
       "dependsOn": ["P17-G6-02A"],
-      "status": "planned",
+      "status": "mapped",
       "owner": "root-goal",
-      "ownedFiles": [],
-      "integrationOwner": null,
+      "ownedFiles": [
+        "README.md",
+        "bun.lock",
+        "packages/cli/README.md",
+        "packages/cli/package.json",
+        "packages/cli/src/help/topics.ts",
+        "packages/cli/src/output/error-boundary.ts",
+        "packages/cli/src/program.ts",
+        "packages/cli/src/runtime/adapter.ts",
+        "packages/cli/src/runtime/environment.ts",
+        "packages/cli/src/runtime/io.ts",
+        "packages/cli/src/runtime/preflight.ts",
+        "packages/cli/src/runtime/presentation.ts",
+        "packages/cli/src/util/color.ts",
+        "packages/cli/tests/contracts/agents.test.ts",
+        "packages/cli/tests/contracts/help.test.ts",
+        "packages/cli/tests/contracts/options.test.ts",
+        "packages/cli/tests/help/topics.test.ts",
+        "packages/cli/tests/runtime/adapter.test.ts",
+        "packages/cli/tests/util/color.test.ts",
+        "packages/core/src/doctor/checks/cross-scope-duplicate.ts",
+        "packages/core/src/observation/logger-compat.ts",
+        "packages/core/src/scan/index.ts",
+        "packages/core/src/scan/list-commands.ts",
+        "packages/core/src/scan/list-skills.ts",
+        "packages/core/tests/observation/logger-compat.test.ts",
+        "packages/core/tests/scan/list-commands.test.ts",
+        "packages/core/tests/scan/list-skills.test.ts",
+        "packages/core/tests/scan/scan.test.ts",
+        "projects/p17/evidence/P17-G6-03.md",
+        "projects/p17/plans/P17-G6-03.md",
+        "scripts/generate-command-reference.ts",
+        "tests/ergonomics/phase/EWP-P1-TS11.test.ts",
+        "tests/ergonomics/phase/EWP-P6-TS03.test.ts",
+        "tests/ergonomics/phase/EWP-P6-TS04.test.ts"
+      ],
+      "integrationOwner": "root-codex-goal",
       "impactedValidations": ["EWP-P6-TS03", "EWP-WF01"],
       "requiredNowValidations": ["EWP-P6-TS03"],
       "downstreamCoverage": ["EWP-WF01"],
-      "testCommands": [],
-      "implementers": [],
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P6-TS03.test.ts --test-name-pattern EWP-P6-TS03"
+      ],
+      "implementers": ["root-codex-goal"],
       "reviewer": null,
       "gates": {
         "mapped": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G6-03.md#mapping-and-prerequisites"]
         },
         "ready": {
           "status": "pending",
@@ -8200,7 +8237,14 @@
           "evidence": []
         }
       },
-      "evidence": []
+      "evidence": [
+        "projects/p17/plans/P17-G6-03.md",
+        "projects/p17/evidence/P17-G6-03.md#mapping-and-prerequisites",
+        "projects/p17/evidence/P17-G6-03.md#current-rendering-and-observation-characterization",
+        "projects/p17/evidence/P17-G6-03.md#dependency-compatibility-and-native-size-audit",
+        "projects/p17/evidence/P17-G6-03.md#documentation-and-capability-audit",
+        "projects/p17/evidence/P17-G6-03.md#mapping-result"
+      ]
     },
     {
       "id": "P17-G6-04",
@@ -27888,11 +27932,11 @@
       "designStatus": "retained",
       "stateModel": "coverage",
       "primaryGroup": "P17-G6-03",
-      "status": "planned",
+      "status": "mapped",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G6-03",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G6-03.md#mapping-and-prerequisites"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P6-TS03"],
