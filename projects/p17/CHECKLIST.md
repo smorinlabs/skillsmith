@@ -1549,7 +1549,7 @@ Downstream coverage obligations: EWP-CMD-COMPLETION-TS01, EWP-CMD-COMPLETION-TS0
 - [x] P17-G6-02A:test-first _(passed)_
 - [x] P17-G6-02A:minimal-implementation _(passed)_
 - [x] P17-G6-02A:targeted-green _(passed)_
-- [ ] P17-G6-02A:impacted-green _(pending)_
+- [x] P17-G6-02A:impacted-green _(passed)_
 - [ ] P17-G6-02A:refactor _(pending)_
 - [ ] P17-G6-02A:adversarial-review _(pending)_
 - [ ] P17-G6-02A:traceability-closure _(pending)_

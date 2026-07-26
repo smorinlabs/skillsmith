@@ -7945,8 +7945,8 @@
           ]
         },
         "impacted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G6-02A.md#impacted-green-at-112cafa"]
         },
         "refactor": {
           "status": "pending",
@@ -7978,7 +7978,8 @@
         "projects/p17/evidence/P17-G6-02A.md#corrected-lifecycle-ready-review-at-67854ce",
         "projects/p17/evidence/P17-G6-02A.md#renewed-ready-acceptance",
         "projects/p17/evidence/P17-G6-02A.md#test-first-evidence",
-        "projects/p17/evidence/P17-G6-02A.md#minimal-implementation-and-targeted-green-at-76b2354"
+        "projects/p17/evidence/P17-G6-02A.md#minimal-implementation-and-targeted-green-at-76b2354",
+        "projects/p17/evidence/P17-G6-02A.md#impacted-green-at-112cafa"
       ]
     },
     {
