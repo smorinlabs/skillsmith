@@ -366,22 +366,20 @@ describe('undo application service', () => {
 
   test('rejects a source URL at the application DTO projection boundary', async () => {
     const executed = { value: 0 };
+    const poisonedPrepared = prepared(false, executed);
     const service = createUndoApplicationService({
       prepare: (async () =>
-        ok(prepared(false, executed))) as UndoApplicationDependencies['prepare'],
+        ok({
+          ...poisonedPrepared,
+          observation: {
+            ...poisonedPrepared.observation,
+            projectContext: {
+              ...poisonedPrepared.observation.projectContext,
+              projectIdentity: 'git://fixture.invalid/org/project',
+            },
+          },
+        })) as UndoApplicationDependencies['prepare'],
     });
-    const applicationContext = context(
-      interaction(async () => {
-        throw new Error('dry-run must not prompt');
-      }),
-    );
-    const poisonedContext: CurrentApplicationContext = {
-      ...applicationContext,
-      projectContext: {
-        ...applicationContext.projectContext,
-        projectIdentity: 'git://fixture.invalid/org/project',
-      } as NonNullable<CurrentApplicationContext['projectContext']>,
-    };
 
     let rejected = false;
     try {
@@ -390,7 +388,11 @@ describe('undo application service', () => {
           arguments: [],
           options: { all: true, tool: ['claude-code'], project: true, dryRun: true },
         },
-        poisonedContext,
+        context(
+          interaction(async () => {
+            throw new Error('dry-run must not prompt');
+          }),
+        ),
       );
     } catch {
       rejected = true;
