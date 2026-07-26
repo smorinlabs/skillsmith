@@ -7949,8 +7949,8 @@
           "evidence": ["projects/p17/evidence/P17-G6-02A.md#impacted-green-at-112cafa"]
         },
         "refactor": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G6-02A.md#refactor-at-daca91f"]
         },
         "adversarial-review": {
           "status": "pending",
@@ -7979,7 +7979,8 @@
         "projects/p17/evidence/P17-G6-02A.md#renewed-ready-acceptance",
         "projects/p17/evidence/P17-G6-02A.md#test-first-evidence",
         "projects/p17/evidence/P17-G6-02A.md#minimal-implementation-and-targeted-green-at-76b2354",
-        "projects/p17/evidence/P17-G6-02A.md#impacted-green-at-112cafa"
+        "projects/p17/evidence/P17-G6-02A.md#impacted-green-at-112cafa",
+        "projects/p17/evidence/P17-G6-02A.md#refactor-at-daca91f"
       ]
     },
     {
