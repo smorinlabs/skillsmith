@@ -432,6 +432,29 @@ describe('P17-G6-02B completion contracts', () => {
       expect(nested).not.toContain('set');
       expect(nested).not.toContain('unset');
     }
+
+    const adapter = await completionAdapter();
+    expect(typeof adapter.parseCompletionGraph).toBe('function');
+    if (typeof adapter.parseCompletionGraph !== 'function') return;
+    const nestedOrder = new Map([
+      ['unset', 0],
+      ['list', 1],
+      ['set', 2],
+      ['get', 3],
+    ]);
+    const reorderedSpecs = CURRENT_COMMAND_SPECS.map((spec) => {
+      const action = spec.path.match(/^skillsmith config (get|set|list|unset)$/u)?.[1];
+      return action === undefined ? spec : { ...spec, helpOrder: nestedOrder.get(action) ?? 0 };
+    });
+    expect(
+      parseProtocol(
+        await adapter.parseCompletionGraph(
+          ['config', ''],
+          { cwd: ROOT, monotonicMilliseconds: () => 0 },
+          reorderedSpecs,
+        ),
+      ).candidates.map(({ value }) => value),
+    ).toEqual(['unset', 'list', 'set', 'get']);
   });
 
   test('EWP-CMD-COMPLETION-TS03 every canonical and alias path has exact local plus inherited flags', async () => {
@@ -620,6 +643,65 @@ describe('P17-G6-02B completion contracts', () => {
       ).toBe(FAIL_CLOSED);
       expect(racedContentReads).toBe(1);
 
+      const originalManifest = new TextEncoder().encode(manifest(['alpha']));
+      const substitutedManifest = new TextEncoder().encode(manifest(['omega']));
+      expect(substitutedManifest.byteLength).toBe(originalManifest.byteLength);
+      let unboundedDirectoryReads = 0;
+      const atomicBoundaryPorts = {
+        listDir: async () => {
+          unboundedDirectoryReads += 1;
+          return [];
+        },
+        listDirBounded: async () => [],
+        pathKind: async () => 'dir' as const,
+        readBytes: async () => substitutedManifest,
+        readFileMetadata: async (path: string) => ({
+          kind: path.endsWith('skillsmith.toml') ? ('file' as const) : ('absent' as const),
+          mode: 0o600,
+          identity: path.endsWith('skillsmith.toml') ? 'same-metadata' : null,
+          sizeBytes: path.endsWith('skillsmith.toml') ? originalManifest.byteLength : null,
+        }),
+        readFileSnapshotNoFollow: async () => ({
+          bytes: originalManifest,
+          metadata: {
+            kind: 'file' as const,
+            mode: 0o600,
+            identity: 'atomic-handle',
+            sizeBytes: originalManifest.byteLength,
+          },
+        }),
+      } as CompletionReadPorts & {
+        readonly listDirBounded: (path: string, maxEntries: number) => Promise<readonly string[]>;
+        readonly readFileSnapshotNoFollow: (
+          path: string,
+          maxBytes: number,
+        ) => Promise<{
+          readonly bytes: Uint8Array;
+          readonly metadata: {
+            readonly kind: 'file';
+            readonly mode: number;
+            readonly identity: string;
+            readonly sizeBytes: number;
+          };
+        }>;
+      };
+      expect(
+        await valuesFor(['update', ''], { cwd: '/atomic-boundary', ports: atomicBoundaryPorts }),
+      ).toContain('alpha');
+      expect(
+        await valuesFor(['update', ''], { cwd: '/atomic-boundary', ports: atomicBoundaryPorts }),
+      ).not.toContain('omega');
+      expect(unboundedDirectoryReads).toBe(0);
+
+      const productionReadPorts = (await defaultRuntimePorts()) as Awaited<
+        ReturnType<typeof defaultRuntimePorts>
+      > & {
+        readonly listDirBounded?: unknown;
+        readonly readFileSnapshotNoFollow?: unknown;
+      };
+      expect(typeof productionReadPorts.listDirBounded).toBe('function');
+      expect(typeof productionReadPorts.readFileSnapshotNoFollow).toBe('function');
+
       const unreadable = join(fixture, 'unreadable');
       await mkdir(unreadable);
       const unreadableManifest = join(unreadable, 'skillsmith.toml');
@@ -684,8 +766,11 @@ describe('P17-G6-02B completion contracts', () => {
         expect(first.stdout.length).toBeGreaterThan(0);
         expect(first.stdout).toContain('skillsmith complete --');
         expect(first.stdout).not.toMatch(/\beval\b|requestComp="[^"]*\$\{/);
+        expect(first.stdout).not.toContain('BASH_COMP_DEBUG_FILE');
+        expect(first.stdout).not.toMatch(/>>/u);
         scripts.set(shell, first.stdout);
       }
+      expect(scripts.get('fish')).not.toContain('complete --do-complete');
       expect(await snapshotTree(fixture)).toEqual(before);
 
       const bashScript = scripts.get('bash') ?? '';
@@ -767,6 +852,27 @@ describe('P17-G6-02B completion contracts', () => {
       expect(adapter.hardenCompletionScript('zsh', rawZsh)).toBe(scripts.get('zsh') ?? '');
       expect(adapter.hardenCompletionScript('fish', rawFish)).toBe(scripts.get('fish') ?? '');
 
+      const nonAnchorDrift = new Map([
+        [
+          'bash',
+          rawBash.replace(
+            '# Function to debug completion',
+            '# Function to debug completion\nprintf marker',
+          ),
+        ],
+        ['zsh', rawZsh.replace('#compdef skillsmith', '#compdef skillsmith\nprintf marker')],
+        [
+          'fish',
+          rawFish.replace(
+            '# fish completion for skillsmith',
+            '# fish completion for skillsmith\nprintf marker',
+          ),
+        ],
+      ] as const);
+      for (const [shell, source] of nonAnchorDrift) {
+        expect(() => adapter.hardenCompletionScript?.(shell, source)).toThrow();
+      }
+
       const evalLine = '    out=$(eval "$requestComp" 2>/dev/null)';
       const drifted = [
         rawBash.replace(evalLine, ''),
@@ -794,6 +900,9 @@ describe('P17-G6-02B completion contracts', () => {
         'alpha\tAlpha\n:16\n',
         'alpha\tAlpha\n:64\n',
         'alpha\tAlpha\n:4\npost\tdata\n',
+        ':2\n:4\n',
+        ':999\n:4\n',
+        ':5\n:4\n',
         'alpha\tAlpha\n',
         `${'x'.repeat(64 * 1024)}\tAlpha\n:4\n`,
       ]) {
