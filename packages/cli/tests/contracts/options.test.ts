@@ -38,10 +38,13 @@ const snapshotTree = async (root: string): Promise<readonly string[]> =>
   (await readdir(root, { recursive: true, encoding: 'utf8' })).sort();
 
 const EMPTY_COMPLETION_PORTS = Object.freeze({
-  listDir: async (): Promise<readonly string[]> => [],
+  listDirBounded: async (): Promise<readonly string[]> => [],
   pathKind: async () => 'dir' as const,
-  readBytes: async () => new Uint8Array(),
   readFileMetadata: async () => ({ kind: 'absent' as const, mode: null, identity: null }),
+  readFileSnapshotNoFollow: async () => ({
+    bytes: new Uint8Array(),
+    metadata: { kind: 'file' as const, mode: 0o600, identity: 'empty', sizeBytes: 0 },
+  }),
 });
 
 const runHermeticCli = async (

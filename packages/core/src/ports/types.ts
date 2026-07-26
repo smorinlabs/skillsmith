@@ -41,6 +41,21 @@ export interface FileMetadataReadPort {
   readFileMetadata(path: string): Promise<FileMetadata>;
 }
 
+export interface StableFileSnapshot {
+  readonly bytes: Uint8Array;
+  readonly metadata: FileMetadata & {
+    readonly kind: 'file';
+    readonly identity: string;
+    readonly sizeBytes: number;
+  };
+}
+
+/** Narrow read primitives whose bounds and no-follow guarantees are enforced by the adapter. */
+export interface BoundedFileReadPort {
+  listDirBounded(path: string, maxEntries: number): Promise<readonly string[]>;
+  readFileSnapshotNoFollow(path: string, maxBytes: number): Promise<StableFileSnapshot>;
+}
+
 /** Focused permission capability used only when staging a replacement file. */
 export interface FileModeWritePort {
   setFileMode(path: string, mode: number): Promise<void>;

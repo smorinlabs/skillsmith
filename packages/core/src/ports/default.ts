@@ -9,6 +9,7 @@ import {
   lstat,
   mkdir,
   open,
+  opendir,
   readFile,
   readdir,
   readlink,
@@ -26,6 +27,7 @@ import { isPortError, toPortError } from './errors.ts';
 import { type BinaryProcessPort, createGitPort } from './git.ts';
 import { createHttpPort } from './http.ts';
 import type {
+  BoundedFileReadPort,
   ClockPort,
   EffectiveUserPort,
   ExclusiveCreatePort,
@@ -97,7 +99,7 @@ const fsyncPath = (path: string): Promise<void> =>
     }
   });
 
-const createFileReadPort = (): FileReadPort & FileMetadataReadPort => ({
+const createFileReadPort = (): FileReadPort & FileMetadataReadPort & BoundedFileReadPort => ({
   fileExists: async (path) => {
     try {
       await stat(path);
@@ -140,10 +142,93 @@ const createFileReadPort = (): FileReadPort & FileMetadataReadPort => ({
       });
     }
   },
+  listDirBounded: async (path, maxEntries) => {
+    if (!Number.isSafeInteger(maxEntries) || maxEntries < 0) {
+      throw new RangeError('maxEntries must be a non-negative safe integer');
+    }
+    try {
+      const directory = await opendir(path);
+      const entries: string[] = [];
+      try {
+        while (true) {
+          const entry = await directory.read();
+          if (entry === null) break;
+          if (entries.length >= maxEntries) {
+            throw new RangeError('bounded directory entry limit exceeded');
+          }
+          entries.push(entry.name);
+        }
+      } finally {
+        try {
+          await directory.close();
+        } catch {}
+      }
+      return entries;
+    } catch (error) {
+      if (nodeCode(error) === 'ENOENT') return [];
+      throw toPortError(error, {
+        capability: 'file-read',
+        operation: 'listDirBounded',
+        context: { path, maxEntries: String(maxEntries) },
+      });
+    }
+  },
   readText: (path) =>
     fileOperation('file-read', 'readText', { path }, async () => readFile(path, 'utf8')),
   readBytes: (path) =>
     fileOperation('file-read', 'readBytes', { path }, async () => readFile(path)),
+  readFileSnapshotNoFollow: (path, maxBytes) =>
+    fileOperation('file-read', 'readFileSnapshotNoFollow', { path }, async () => {
+      if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) {
+        throw new RangeError('maxBytes must be a non-negative safe integer');
+      }
+      const handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+      try {
+        const before = await handle.stat({ bigint: true });
+        if (!before.isFile() || before.size < 0n || before.size > BigInt(maxBytes)) {
+          throw new Error('bounded file snapshot metadata is unsafe');
+        }
+        const buffer = new Uint8Array(maxBytes + 1);
+        let offset = 0;
+        while (offset < buffer.byteLength) {
+          const { bytesRead } = await handle.read(
+            buffer,
+            offset,
+            buffer.byteLength - offset,
+            offset,
+          );
+          if (bytesRead === 0) break;
+          offset += bytesRead;
+        }
+        if (offset > maxBytes) throw new Error('bounded file snapshot byte limit exceeded');
+        const after = await handle.stat({ bigint: true });
+        if (
+          !after.isFile() ||
+          before.dev !== after.dev ||
+          before.ino !== after.ino ||
+          before.size !== after.size ||
+          before.mtimeNs !== after.mtimeNs ||
+          before.ctimeNs !== after.ctimeNs ||
+          after.size !== BigInt(offset)
+        ) {
+          throw new Error('bounded file snapshot changed while reading');
+        }
+        return {
+          bytes: buffer.slice(0, offset),
+          metadata: {
+            kind: 'file',
+            mode: Number(after.mode & 0o7777n),
+            identity: `${after.dev}:${after.ino}`,
+            linkCount: Number(after.nlink),
+            uid: Number(after.uid),
+            gid: Number(after.gid),
+            sizeBytes: offset,
+          },
+        };
+      } finally {
+        await handle.close();
+      }
+    }),
   readLink: (path) => fileOperation('file-read', 'readLink', { path }, async () => readlink(path)),
   isExecutable: (path) =>
     fileOperation('file-read', 'isExecutable', { path }, async () => {
@@ -456,7 +541,7 @@ const createProcessPorts = (): {
   return { processPort, binaryProcessPort };
 };
 
-export const defaultRuntimePorts = async (): Promise<RuntimePorts> => {
+export const defaultRuntimePorts = async (): Promise<RuntimePorts & BoundedFileReadPort> => {
   const homeDir = homedir();
   const { processPort, binaryProcessPort } = createProcessPorts();
   return {

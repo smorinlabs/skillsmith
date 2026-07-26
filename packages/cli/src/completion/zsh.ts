@@ -1,3 +1,7 @@
+import { createHash } from 'node:crypto';
+
+const UPSTREAM_ZSH_SHA256 = 'e45bd3377bddad73eabee49a48eb0414d6e377d8e0b0dbe5ad6b6bf5742df88d';
+
 const occurrences = (source: string, value: string): number => source.split(value).length - 1;
 
 const replaceSection = (
@@ -20,6 +24,7 @@ const replaceSection = (
 /** Harden the exact @bomb.sh/tab 0.0.21 zsh skeleton without owning its command inventory. */
 export const hardenZshScript = (source: string): string => {
   if (
+    createHash('sha256').update(source).digest('hex') !== UPSTREAM_ZSH_SHA256 ||
     occurrences(source, '#compdef skillsmith') !== 1 ||
     occurrences(source, 'requestComp="skillsmith complete -- ${quoted_args[*]}"') !== 1 ||
     occurrences(source, 'out=$(eval ${requestComp} 2>/dev/null)') !== 1 ||
@@ -31,7 +36,16 @@ export const hardenZshScript = (source: string): string => {
     throw new Error('pinned zsh completion template fingerprint changed');
   }
 
-  let hardened = source.replace(
+  const debugHandler = [
+    '__skillsmith_debug() {',
+    '    local file="$BASH_COMP_DEBUG_FILE"',
+    '    if [[ -n ${file} ]]; then',
+    '        echo "$*" >> "${file}"',
+    '    fi',
+    '}',
+  ].join('\n');
+  let hardened = source.replace(debugHandler, '__skillsmith_debug() { :; }');
+  hardened = hardened.replace(
     '        flagPrefix="-P ${BASH_REMATCH}"',
     '        flagPrefix="${BASH_REMATCH}"',
   );

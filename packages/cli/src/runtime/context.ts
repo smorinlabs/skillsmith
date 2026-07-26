@@ -26,10 +26,10 @@ export const createCompletionRuntimeContext = async () => {
     cwd: process.cwd(),
     monotonicMilliseconds: () => ports.monotonicMilliseconds(),
     ports: Object.freeze({
-      listDir: ports.listDir,
+      listDirBounded: ports.listDirBounded,
       pathKind: ports.pathKind,
-      readBytes: ports.readBytes,
       readFileMetadata: ports.readFileMetadata,
+      readFileSnapshotNoFollow: ports.readFileSnapshotNoFollow,
     }),
   });
 };

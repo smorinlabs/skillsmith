@@ -24,8 +24,22 @@ export interface CompletionCandidate {
   readonly description: string;
 }
 
-export type CompletionReadPorts = Pick<FileReadPort, 'listDir' | 'pathKind' | 'readBytes'> &
-  FileMetadataReadPort;
+export type CompletionReadPorts = Pick<FileReadPort, 'pathKind'> &
+  FileMetadataReadPort & {
+    readonly listDirBounded: (path: string, maxEntries: number) => Promise<readonly string[]>;
+    readonly readFileSnapshotNoFollow: (
+      path: string,
+      maxBytes: number,
+    ) => Promise<{
+      readonly bytes: Uint8Array;
+      readonly metadata: {
+        readonly kind: 'file';
+        readonly mode: number | null;
+        readonly identity: string;
+        readonly sizeBytes: number;
+      };
+    }>;
+  };
 
 export interface CompletionProviderContext {
   readonly cwd: string;
@@ -74,11 +88,11 @@ const boundedEntries = async (
 ): Promise<readonly string[]> => {
   await assertSafeDirectory(directory, budget);
   checkDeadline(budget);
-  const entries = await budget.context.ports.listDir(directory);
+  const entries = await budget.context.ports.listDirBounded(
+    directory,
+    COMPLETION_PROVIDER_LIMITS.directoryEntries,
+  );
   checkDeadline(budget);
-  if (entries.length > COMPLETION_PROVIDER_LIMITS.directoryEntries) {
-    throw new Error('completion directory entry bound exceeded');
-  }
   return [...entries].sort(compareText);
 };
 
@@ -141,20 +155,21 @@ const manifestSkillNames = async (
       ) {
         throw new Error('completion manifest metadata is unsafe');
       }
-      const bytes = await context.ports.readBytes(manifestPath);
-      checkDeadline(budget);
-      const after = await context.ports.readFileMetadata(manifestPath);
+      const snapshot = await context.ports.readFileSnapshotNoFollow(
+        manifestPath,
+        COMPLETION_PROVIDER_LIMITS.manifestBytes,
+      );
       checkDeadline(budget);
       if (
-        bytes.byteLength > COMPLETION_PROVIDER_LIMITS.manifestBytes ||
-        bytes.byteLength !== before.sizeBytes ||
-        after.kind !== 'file' ||
-        after.identity !== before.identity ||
-        after.sizeBytes !== bytes.byteLength
+        snapshot.bytes.byteLength > COMPLETION_PROVIDER_LIMITS.manifestBytes ||
+        snapshot.bytes.byteLength !== before.sizeBytes ||
+        snapshot.metadata.kind !== 'file' ||
+        snapshot.metadata.identity !== before.identity ||
+        snapshot.metadata.sizeBytes !== snapshot.bytes.byteLength
       ) {
         throw new Error('completion manifest changed while reading');
       }
-      const decoded = manifestV1Codec.decode(bytes);
+      const decoded = manifestV1Codec.decode(snapshot.bytes);
       if (!decoded.ok) throw new Error('completion manifest is invalid');
       return decoded.value.model.skills.map((skill) => ({
         value: skill.name,

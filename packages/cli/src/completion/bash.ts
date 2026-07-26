@@ -1,3 +1,7 @@
+import { createHash } from 'node:crypto';
+
+const UPSTREAM_BASH_SHA256 = 'c472dbb6a4ad43caa97e1dbcb242e5510d53c97126a0a7be1c71d625af734603';
+
 const occurrences = (source: string, value: string): number => source.split(value).length - 1;
 
 const replaceSection = (
@@ -20,6 +24,7 @@ const replaceSection = (
 /** Harden the exact @bomb.sh/tab 0.0.21 Bash skeleton without owning its command inventory. */
 export const hardenBashScript = (source: string): string => {
   if (
+    createHash('sha256').update(source).digest('hex') !== UPSTREAM_BASH_SHA256 ||
     occurrences(source, '# bash completion for skillsmith') !== 1 ||
     occurrences(source, 'requestComp="skillsmith complete -- ${words[@]:1}"') !== 1 ||
     occurrences(source, 'eval "$requestComp"') !== 1 ||
@@ -27,6 +32,15 @@ export const hardenBashScript = (source: string): string => {
   ) {
     throw new Error('pinned Bash completion template fingerprint changed');
   }
+
+  const debugHandler = [
+    '__skillsmith_debug() {',
+    '    if [[ -n ${BASH_COMP_DEBUG_FILE:-} ]]; then',
+    '        echo "$*" >> "${BASH_COMP_DEBUG_FILE}"',
+    '    fi',
+    '}',
+  ].join('\n');
+  let hardened = source.replace(debugHandler, '__skillsmith_debug() { :; }');
 
   const request = [
     '    local out directive',
@@ -40,8 +54,8 @@ export const hardenBashScript = (source: string): string => {
     '    out=$("${requestComp[@]}" 2>/dev/null)',
     '',
   ].join('\n');
-  let hardened = replaceSection(
-    source,
+  hardened = replaceSection(
+    hardened,
     '    local requestComp out directive',
     '    # Extract directive if present',
     request,

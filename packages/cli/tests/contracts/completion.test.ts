@@ -34,8 +34,22 @@ interface CliResult {
   readonly stderr: string;
 }
 
-type CompletionReadPorts = Pick<FileReadPort, 'listDir' | 'pathKind' | 'readBytes'> &
-  FileMetadataReadPort;
+type CompletionReadPorts = Pick<FileReadPort, 'pathKind'> &
+  FileMetadataReadPort & {
+    readonly listDirBounded: (path: string, maxEntries: number) => Promise<readonly string[]>;
+    readonly readFileSnapshotNoFollow: (
+      path: string,
+      maxBytes: number,
+    ) => Promise<{
+      readonly bytes: Uint8Array;
+      readonly metadata: {
+        readonly kind: 'file';
+        readonly mode: number | null;
+        readonly identity: string;
+        readonly sizeBytes: number;
+      };
+    }>;
+  };
 
 interface CompletionContext {
   readonly cwd?: string;
@@ -107,10 +121,10 @@ let completionPortsPromise: Promise<CompletionReadPorts> | undefined;
 const completionPorts = (): Promise<CompletionReadPorts> => {
   completionPortsPromise ??= defaultRuntimePorts().then((ports) =>
     Object.freeze({
-      listDir: ports.listDir,
+      listDirBounded: ports.listDirBounded,
       pathKind: ports.pathKind,
-      readBytes: ports.readBytes,
       readFileMetadata: ports.readFileMetadata,
+      readFileSnapshotNoFollow: ports.readFileSnapshotNoFollow,
     }),
   );
   return completionPortsPromise;
@@ -598,11 +612,14 @@ describe('P17-G6-02B completion contracts', () => {
       for (const sizeBytes of [undefined, -1, Number.NaN, 256 * 1024 + 1]) {
         let contentReads = 0;
         const unsafeMetadataPorts: CompletionReadPorts = {
-          listDir: async () => [],
+          listDirBounded: async () => [],
           pathKind: async () => 'dir',
-          readBytes: async () => {
+          readFileSnapshotNoFollow: async () => {
             contentReads += 1;
-            return new Uint8Array();
+            return {
+              bytes: new Uint8Array(),
+              metadata: { kind: 'file', mode: 0o600, identity: 'unsafe', sizeBytes: 0 },
+            };
           },
           readFileMetadata: async () => ({
             kind: 'file',
@@ -622,11 +639,19 @@ describe('P17-G6-02B completion contracts', () => {
 
       let racedContentReads = 0;
       const changedDuringReadPorts: CompletionReadPorts = {
-        listDir: async () => [],
+        listDirBounded: async () => [],
         pathKind: async () => 'dir',
-        readBytes: async () => {
+        readFileSnapshotNoFollow: async () => {
           racedContentReads += 1;
-          return new Uint8Array([1, 2]);
+          return {
+            bytes: new Uint8Array([1, 2]),
+            metadata: {
+              kind: 'file',
+              mode: 0o600,
+              identity: 'changed-during-read',
+              sizeBytes: 2,
+            },
+          };
         },
         readFileMetadata: async () => ({
           kind: 'file',
@@ -666,7 +691,7 @@ describe('P17-G6-02B completion contracts', () => {
           metadata: {
             kind: 'file' as const,
             mode: 0o600,
-            identity: 'atomic-handle',
+            identity: 'same-metadata',
             sizeBytes: originalManifest.byteLength,
           },
         }),

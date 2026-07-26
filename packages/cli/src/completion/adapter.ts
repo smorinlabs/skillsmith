@@ -142,13 +142,6 @@ const attachSpec = (
   }
 };
 
-const configOrder = new Map([
-  ['get', 0],
-  ['set', 1],
-  ['list', 2],
-  ['unset', 3],
-]);
-
 const validateCompletionSpecs = (specs: readonly NormalizedCommandSpec[]): void => {
   const canonical = new Set<string>();
   for (const spec of specs) {
@@ -203,11 +196,7 @@ const createCompletionRoot = (
         (topLevelOrder.get(rightParts[1] ?? '') ?? right.helpOrder);
       if (topOrder !== 0) return topOrder;
       if (leftParts.length !== rightParts.length) return leftParts.length - rightParts.length;
-      const leftName = leftParts.at(-1) ?? '';
-      const rightName = rightParts.at(-1) ?? '';
-      const nestedOrder =
-        (configOrder.get(leftName) ?? left.helpOrder) -
-        (configOrder.get(rightName) ?? right.helpOrder);
+      const nestedOrder = left.helpOrder - right.helpOrder;
       return nestedOrder !== 0 ? nestedOrder : left.path.localeCompare(right.path);
     });
   for (const spec of commands) {

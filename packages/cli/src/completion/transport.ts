@@ -63,6 +63,7 @@ export const validateCompletionProtocol = (captured: string): string => {
   }
   if (lines.length > COMPLETION_TRANSPORT_LIMITS.candidates) return COMPLETION_FAIL_CLOSED;
   for (const line of lines) {
+    if (/^:\d+$/u.test(line)) return COMPLETION_FAIL_CLOSED;
     const firstTab = line.indexOf('\t');
     if (firstTab >= 0 && line.indexOf('\t', firstTab + 1) >= 0) return COMPLETION_FAIL_CLOSED;
     const value = firstTab < 0 ? line : line.slice(0, firstTab);
