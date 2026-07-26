@@ -11,15 +11,15 @@ Tracked entities: **426** across **45** change groups.
 
 | Kind | Total | Signed off | Active/open | Deferred |
 |---|---:|---:|---:|---:|
-| recommendation | 34 | 23 | 5 | 6 |
-| phase-task | 65 | 57 | 8 | 0 |
-| phase-test | 61 | 54 | 7 | 0 |
-| command-test | 157 | 136 | 21 | 0 |
+| recommendation | 34 | 24 | 4 | 6 |
+| phase-task | 65 | 58 | 7 | 0 |
+| phase-test | 61 | 55 | 6 | 0 |
+| command-test | 157 | 144 | 13 | 0 |
 | option-gate | 10 | 8 | 2 | 0 |
-| workflow | 16 | 13 | 3 | 0 |
-| command | 23 | 20 | 3 | 0 |
-| finding | 44 | 39 | 5 | 0 |
-| decision | 16 | 13 | 2 | 1 |
+| workflow | 16 | 14 | 2 | 0 |
+| command | 23 | 21 | 2 | 0 |
+| finding | 44 | 41 | 3 | 0 |
+| decision | 16 | 14 | 1 | 1 |
 
 ### Phases
 
@@ -30,7 +30,7 @@ Tracked entities: **426** across **45** change groups.
 | 2 | 5 | 32 | 32 | 0 |
 | 3 | 8 | 82 | 82 | 0 |
 | 4 | 7 | 105 | 105 | 0 |
-| 5 | 5 | 70 | 54 | 0 |
+| 5 | 5 | 70 | 70 | 0 |
 | 6 | 5 | 40 | 0 | 0 |
 | 7 | 1 | 7 | 0 | 7 |
 
@@ -113,7 +113,7 @@ Tracked entities: **426** across **45** change groups.
 | COMMAND:dev | P17-G3B-01 | signed-off | required-pr |
 | COMMAND:doctor | P17-G3B-03 | signed-off | required-pr |
 | COMMAND:export | P17-G4A-02 | signed-off | required-pr |
-| COMMAND:gc | P17-G5-04 | validated | required-pr |
+| COMMAND:gc | P17-G5-04 | signed-off | required-pr |
 | COMMAND:help | P17-G6-02A | planned | required-pr |
 | COMMAND:init | P17-G4A-03 | signed-off | required-pr |
 | COMMAND:install | P17-G4A-01 | signed-off | required-pr |
@@ -154,7 +154,7 @@ Tracked entities: **426** across **45** change groups.
 | P1-12 | P17-G6-01 | planned | release |
 | P2-01 | P17-G1-02A | signed-off | required-pr |
 | P2-02 | P17-G5-02 | signed-off | required-pr |
-| P2-03 | P17-G5-04 | validated | required-pr |
+| P2-03 | P17-G5-04 | signed-off | required-pr |
 | P2-04 | P17-G6-02B | planned | supported-platform |
 | P2-05 | P17-G6-02A | planned | required-pr |
 | P2-06 | P17-G1-05 | signed-off | required-pr |
@@ -186,7 +186,7 @@ Tracked entities: **426** across **45** change groups.
 | EWP-CF-013 | P17-G6-02A | planned | required-pr |
 | EWP-CF-014 | P17-G6-02B | planned | supported-platform |
 | EWP-CF-015 | P17-G4B-02 | signed-off | required-pr |
-| EWP-CF-016 | P17-G5-04 | validated | required-pr |
+| EWP-CF-016 | P17-G5-04 | signed-off | required-pr |
 | EWP-CF-017 | P17-G0-04 | signed-off | required-pr |
 | EWP-CF-018 | P17-G0-05 | signed-off | required-pr |
 | EWP-CF-019 | P17-G2-01 | signed-off | required-pr |
@@ -214,7 +214,7 @@ Tracked entities: **426** across **45** change groups.
 | EWP-CF-041 | P17-G4A-03 | signed-off | required-pr |
 | EWP-CF-042 | P17-G4B-02 | signed-off | required-pr |
 | EWP-CF-043 | P17-G1-02A | signed-off | required-pr |
-| EWP-CF-044 | P17-G5-04 | validated | required-pr |
+| EWP-CF-044 | P17-G5-04 | signed-off | required-pr |
 
 #### decision
 
@@ -231,7 +231,7 @@ Tracked entities: **426** across **45** change groups.
 | D-009 | P17-G3B-01 | signed-off | required-pr |
 | D-010 | P17-G3B-03 | signed-off | required-pr |
 | D-011 | P17-G5-02 | signed-off | required-pr |
-| D-012 | P17-G5-04 | validated | required-pr |
+| D-012 | P17-G5-04 | signed-off | required-pr |
 | D-013 | P17-G7-01 | deferred | deferred |
 | D-014 | P17-G4B-02 | signed-off | required-pr |
 | D-015 | P17-G4B-03 | signed-off | required-pr |
@@ -267,7 +267,7 @@ Tracked entities: **426** across **45** change groups.
 | EWP-WF09 | P17-G5-05 | signed-off | required-pr |
 | EWP-WF10 | P17-G5-01 | signed-off | required-pr |
 | EWP-WF11 | P17-G5-03 | signed-off | required-pr |
-| EWP-WF12 | P17-G5-04 | passing | required-pr |
+| EWP-WF12 | P17-G5-04 | signed-off | required-pr |
 | EWP-WF13 | P17-G5-05 | signed-off | required-pr |
 | EWP-WF14 | P17-G1-01 | signed-off | required-pr |
 | EWP-WF15 | P17-G1-02A | signed-off | required-pr |
@@ -1445,7 +1445,7 @@ Downstream coverage obligations: EWP-CMD-UNDO-TS03, EWP-CMD-UPDATE-TS07, EWP-WF0
 
 ## P17-G5-04 — Ledger-authoritative reachability, retention, explicit forget, and safe GC
 
-Phase: 5; status: **reviewed**; dependencies: P17-G4B-03.
+Phase: 5; status: **signed-off**; dependencies: P17-G4B-03.
 Required-now validations: EWP-CMD-GC-TS01, EWP-CMD-GC-TS02, EWP-CMD-GC-TS03, EWP-CMD-GC-TS04, EWP-CMD-GC-TS05, EWP-CMD-GC-TS06, EWP-CMD-GC-TS07, EWP-CMD-GC-TS08, EWP-P5-TS04, EWP-WF12.
 Downstream coverage obligations: none.
 
@@ -1459,27 +1459,27 @@ Downstream coverage obligations: none.
 - [x] P17-G5-04:impacted-green _(passed)_
 - [x] P17-G5-04:refactor _(passed)_
 - [x] P17-G5-04:adversarial-review _(passed)_
-- [ ] P17-G5-04:traceability-closure _(pending)_
-- [ ] P17-G5-04:signed-off _(pending)_
+- [x] P17-G5-04:traceability-closure _(passed)_
+- [x] P17-G5-04:signed-off _(passed)_
 
 ### Tracked entities
 
-- [ ] **COMMAND:gc** — Maintain — Which unreachable local store objects can be reclaimed? _(command; validated)_
-- [ ] **D-012** — Flat garbage collection with repair elsewhere _(decision; validated)_
-- [ ] **EWP-CF-016** — Make GC local, ledger-authoritative, and explicit about stale projects _(finding; validated)_
-- [ ] **EWP-CF-044** — Close GC inventory, measurement, action, and crash semantics _(finding; validated)_
-- [ ] **EWP-CMD-GC-TS01** — fixed configured store-root candidates with live/ledger-authoritative _(command-test; passing)_
-- [ ] **EWP-CMD-GC-TS02** — version-2 project-registration/no-crawl ledger authority, missing-project _(command-test; passing)_
-- [ ] **EWP-CMD-GC-TS03** — journal, backup, undo-window retention. _(command-test; passing)_
-- [ ] **EWP-CMD-GC-TS04** — age threshold and boundary timestamps. _(command-test; passing)_
-- [ ] **EWP-CMD-GC-TS05** — exact byte accounting and store/adapted overlays. _(command-test; passing)_
-- [ ] **EWP-CMD-GC-TS06** — dry-run/execution eligible-set equality, yes conflict before ledger reads, _(command-test; passing)_
-- [ ] **EWP-CMD-GC-TS07** — forget-project exact-path/current/existing/journal refusals plus _(command-test; passing)_
-- [ ] **EWP-CMD-GC-TS08** — crash/idempotence and zero reachable deletion invariant. _(command-test; passing)_
-- [ ] **EWP-P5-T06** — Reachability graph and GC retention. _(phase-task; green)_
-- [ ] **EWP-P5-TS04** — GC reachability/age/bytes matrix. _(phase-test; passing)_
-- [ ] **EWP-WF12** — Removal and GC _(workflow; passing)_
-- [ ] **P2-03** — `gc` _(recommendation; validated)_
+- [x] **COMMAND:gc** — Maintain — Which unreachable local store objects can be reclaimed? _(command; signed-off)_
+- [x] **D-012** — Flat garbage collection with repair elsewhere _(decision; signed-off)_
+- [x] **EWP-CF-016** — Make GC local, ledger-authoritative, and explicit about stale projects _(finding; signed-off)_
+- [x] **EWP-CF-044** — Close GC inventory, measurement, action, and crash semantics _(finding; signed-off)_
+- [x] **EWP-CMD-GC-TS01** — fixed configured store-root candidates with live/ledger-authoritative _(command-test; signed-off)_
+- [x] **EWP-CMD-GC-TS02** — version-2 project-registration/no-crawl ledger authority, missing-project _(command-test; signed-off)_
+- [x] **EWP-CMD-GC-TS03** — journal, backup, undo-window retention. _(command-test; signed-off)_
+- [x] **EWP-CMD-GC-TS04** — age threshold and boundary timestamps. _(command-test; signed-off)_
+- [x] **EWP-CMD-GC-TS05** — exact byte accounting and store/adapted overlays. _(command-test; signed-off)_
+- [x] **EWP-CMD-GC-TS06** — dry-run/execution eligible-set equality, yes conflict before ledger reads, _(command-test; signed-off)_
+- [x] **EWP-CMD-GC-TS07** — forget-project exact-path/current/existing/journal refusals plus _(command-test; signed-off)_
+- [x] **EWP-CMD-GC-TS08** — crash/idempotence and zero reachable deletion invariant. _(command-test; signed-off)_
+- [x] **EWP-P5-T06** — Reachability graph and GC retention. _(phase-task; signed-off)_
+- [x] **EWP-P5-TS04** — GC reachability/age/bytes matrix. _(phase-test; signed-off)_
+- [x] **EWP-WF12** — Removal and GC _(workflow; signed-off)_
+- [x] **P2-03** — `gc` _(recommendation; signed-off)_
 
 ## P17-G5-05 — Shared bulk approval, fail-fast/continue scheduling, cancellation, exits, and final artifact-option closure
 

@@ -7265,7 +7265,7 @@
       "phase": "5",
       "title": "Ledger-authoritative reachability, retention, explicit forget, and safe GC",
       "dependsOn": ["P17-G4B-03"],
-      "status": "reviewed",
+      "status": "signed-off",
       "owner": "root-goal",
       "ownedFiles": [
         "README.md",
@@ -7443,12 +7443,16 @@
           ]
         },
         "traceability-closure": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G5-04.md#post-f03-terminal-and-renewed-sign-off-at-4092eec"
+          ]
         },
         "signed-off": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G5-04.md#post-f03-terminal-and-renewed-sign-off-at-4092eec"
+          ]
         }
       },
       "evidence": [
@@ -8610,7 +8614,7 @@
       "title": "Maintain — Which unreachable local store objects can be reclaimed?",
       "stateModel": "coverage",
       "primaryGroup": "P17-G5-04",
-      "status": "validated",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "surface:gc",
       "target": null,
@@ -9799,7 +9803,7 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G5-04",
-      "status": "validated",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G5-04",
       "target": null,
@@ -10620,7 +10624,7 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G5-04",
-      "status": "validated",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G5-04",
       "target": null,
@@ -12646,7 +12650,7 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G5-04",
-      "status": "validated",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G5-04",
       "target": null,
@@ -15241,7 +15245,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-04",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-04:packages/cli/tests/contracts/gc.test.ts#EWP-CMD-GC-TS01",
       "target": {
@@ -15287,7 +15291,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-04",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-04:packages/cli/tests/contracts/gc.test.ts#EWP-CMD-GC-TS02",
       "target": {
@@ -15333,7 +15337,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-04",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-04:packages/cli/tests/contracts/gc.test.ts#EWP-CMD-GC-TS03",
       "target": {
@@ -15379,7 +15383,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-04",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-04:packages/cli/tests/contracts/gc.test.ts#EWP-CMD-GC-TS04",
       "target": {
@@ -15425,7 +15429,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-04",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-04:packages/cli/tests/contracts/gc.test.ts#EWP-CMD-GC-TS05",
       "target": {
@@ -15471,7 +15475,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-04",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-04:packages/cli/tests/contracts/gc.test.ts#EWP-CMD-GC-TS06",
       "target": {
@@ -15517,7 +15521,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-04",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-04:packages/cli/tests/contracts/gc.test.ts#EWP-CMD-GC-TS07",
       "target": {
@@ -15563,7 +15567,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-04",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-04:packages/cli/tests/contracts/gc.test.ts#EWP-CMD-GC-TS08",
       "target": {
@@ -25033,7 +25037,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G5-04",
-      "status": "green",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-04",
       "target": null,
@@ -25218,7 +25222,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-04",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-04:tests/ergonomics/phase/EWP-P5-TS04.test.ts#EWP-P5-TS04",
       "target": {
@@ -26179,7 +26183,7 @@
       "kind": "workflow",
       "stateModel": "validation",
       "primaryGroup": "P17-G5-04",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G5-04:tests/ergonomics/workflows/EWP-WF12.test.ts#EWP-WF12",
       "target": {
@@ -27276,7 +27280,7 @@
       "designStatus": "retained",
       "stateModel": "coverage",
       "primaryGroup": "P17-G5-04",
-      "status": "validated",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G5-04",
       "target": null,
