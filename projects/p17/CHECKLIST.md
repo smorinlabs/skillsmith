@@ -1577,14 +1577,14 @@ Downstream coverage obligations: EWP-CMD-COMPLETION-TS01, EWP-CMD-COMPLETION-TS0
 
 ## P17-G6-02B — Bash/zsh/fish completion generation and nested completion contracts
 
-Phase: 6; status: **mapped**; dependencies: P17-G6-02A.
+Phase: 6; status: **ready**; dependencies: P17-G6-02A.
 Required-now validations: EWP-CMD-COMPLETION-TS01, EWP-CMD-COMPLETION-TS02, EWP-CMD-COMPLETION-TS03, EWP-CMD-COMPLETION-TS04, EWP-CMD-COMPLETION-TS05, EWP-CMD-COMPLETION-TS06, EWP-P6-TS02.
 Downstream coverage obligations: EWP-WF01.
 
 ### Group gates
 
 - [x] P17-G6-02B:mapped _(passed)_
-- [ ] P17-G6-02B:ready _(pending)_
+- [x] P17-G6-02B:ready _(passed)_
 - [ ] P17-G6-02B:test-first _(pending)_
 - [ ] P17-G6-02B:minimal-implementation _(pending)_
 - [ ] P17-G6-02B:targeted-green _(pending)_
@@ -1604,7 +1604,7 @@ Downstream coverage obligations: EWP-WF01.
 - [ ] **EWP-CMD-COMPLETION-TS04** — enum choice completion from registries. _(command-test; planned)_
 - [ ] **EWP-CMD-COMPLETION-TS05** — local skill/path/manifest completion without network; empty target _(command-test; planned)_
 - [ ] **EWP-CMD-COMPLETION-TS06** — generated shell syntax validation, help-only manual install _(command-test; planned)_
-- [ ] **EWP-P6-T03** — Recursive alias-aware completion. _(phase-task; planned)_
+- [ ] **EWP-P6-T03** — Recursive alias-aware completion. _(phase-task; ready)_
 - [ ] **EWP-P6-TS02** — Bash/zsh/fish nested completion suite. _(phase-test; planned)_
 - [ ] **P2-04** — Completion _(recommendation; mapped)_
 

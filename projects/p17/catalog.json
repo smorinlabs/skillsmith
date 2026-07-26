@@ -7999,7 +7999,7 @@
       "phase": "6",
       "title": "Bash/zsh/fish completion generation and nested completion contracts",
       "dependsOn": ["P17-G6-02A"],
-      "status": "mapped",
+      "status": "ready",
       "owner": "root-goal",
       "ownedFiles": [
         "bun.lock",
@@ -8070,8 +8070,11 @@
           "evidence": ["projects/p17/evidence/P17-G6-02B.md#mapping-and-prerequisites"]
         },
         "ready": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G6-02B.md#corrected-ready-review-at-7c01c14",
+            "projects/p17/evidence/P17-G6-02B.md#accepted-ready-result"
+          ]
         },
         "test-first": {
           "status": "pending",
@@ -8113,7 +8116,9 @@
         "projects/p17/evidence/P17-G6-02B.md#dependency-and-package-verification",
         "projects/p17/evidence/P17-G6-02B.md#signed-dependency-and-current-surface-characterization",
         "projects/p17/evidence/P17-G6-02B.md#mapping-result",
-        "projects/p17/evidence/P17-G6-02B.md#ready-review-at-85be9bb"
+        "projects/p17/evidence/P17-G6-02B.md#ready-review-at-85be9bb",
+        "projects/p17/evidence/P17-G6-02B.md#corrected-ready-review-at-7c01c14",
+        "projects/p17/evidence/P17-G6-02B.md#accepted-ready-result"
       ]
     },
     {
@@ -25592,11 +25597,15 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G6-02B",
-      "status": "planned",
+      "status": "ready",
       "tier": "supported-platform",
       "plannedTarget": "planned:P17-G6-02B",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G6-02B.md#mapping-and-prerequisites",
+        "projects/p17/evidence/P17-G6-02B.md#corrected-ready-review-at-7c01c14",
+        "projects/p17/evidence/P17-G6-02B.md#accepted-ready-result"
+      ],
       "secondaryGroups": [],
       "implements": ["COMMAND:completion", "EWP-CF-014", "P2-04"],
       "validatedBy": [
