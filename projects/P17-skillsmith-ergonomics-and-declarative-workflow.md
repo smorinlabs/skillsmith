@@ -46,6 +46,6 @@ None.
 - [x] [P17-T03] Phase 2 portable artifact foundation approved.
 - [x] [P17-T04] Phase 3 inspection and operation foundation approved.
 - [x] [P17-T05] Phase 4 desired-state mutation, planner, and apply approved.
-- [ ] [P17-T06] Phase 5 sync, update, undo, and GC approved.
+- [x] [P17-T06] Phase 5 sync, update, undo, and GC approved.
 - [ ] [P17-T07] Phase 6 distribution and UX approved.
 - [ ] [P17-TS02] Final P17 validation, recorded standing user approval, and P14 handoff complete.

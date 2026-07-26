@@ -288,3 +288,61 @@
 - **Phase-6 boundary:** unchanged at five pristine planned groups, 40 planned primaries, 50 pending
   gates, zero owned/current paths, zero executable validations, and 0/50 passed gates. Stop before
   Phase 6 remains mandatory.
+
+## Renewed immutable reviews and Phase 5 finding closure 2026-07-26
+
+- **Immutable candidate:** `afa12541762e6829e1d79e09bd8f5ee09020c18e`, tree
+  `ef8e68462e2f3793edbddc387b6d7765f7eb004a`, descended from governance base
+  `7cc9df3a2b40c88a76eba8ce95f19543a96ffcf6`. All reviewers found the index and worktree clean
+  before and after review.
+- **Renewed group reviews:** G5-01 reviewer
+  `/external-codex/019f9cb3-120a-7b91-b9dc-1931e513beca` returned GO at 0.98 confidence; G5-04
+  reviewer `/external-codex/019f9cb3-1231-7140-a9ef-daa31bc85e7b` returned GO at 0.995. Neither
+  review opened a finding.
+- **Whole-phase review:** fresh external reviewer
+  `/external-codex/019f9cb3-1291-7ff1-8dfe-9ee4cecd2d68` returned **whole-Phase-5 GO at 0.99
+  confidence**, with no critical, high, medium, or low finding and no new finding ID.
+- **Finding decisions:** `P17-RV-P5-F05` is closed by recursive sync report validation at both
+  prepared and executed boundaries. `P17-RV-P5-F06` is confirmed corrected by exact one-owner
+  provenance for `internal-projections.ts`. `P17-RV-P5-F07` is closed across update, undo, and GC
+  codecs/output. `P17-RV-P5-F08` is closed by GC pre-approval/pre-mutation plan validation and
+  centralized validation of every non-null success/refusal report.
+- **Scope:** base-to-candidate changed exactly 16 existing files: eight tests, five product files,
+  and three evidence files. There was no addition, deletion, rename, renderer, redaction helper,
+  source-parser, DTO/wire, catalog/lifecycle, or Phase-6 change in the reviewed candidate.
+- **Independent red/green proof:** an archived replay of `154636d` reproduced exactly 40 pass,
+  eight intended failures, and 209 assertions; the candidate correction passed 48/48 with 286.
+  The serialized Phase-5 acceptance/workflow replay passed 11/11 with 546 assertions; normal smoke
+  passed 5/5 with 3,737 and recovery smoke passed 4/4 with 453.
+- **Contention classification:** simultaneous read-only reviewer matrices briefly competed for the
+  intentionally account-stable production coordinator lock and produced ledger-bootstrap/lock
+  errors. Once reviewer lanes were serialized, the affected G5-01 update selectors and
+  `EWP-CMD-UNDO-TS03` passed independently; the latter passed with 74 assertions. These transient
+  results are environmental review orchestration noise, not validation failures.
+- **Structural/security closure:** validator/package tests passed 74/74 with 316 assertions; Biome
+  checked 848 files; TypeScript, boundary lint, Actionlint, catalog/package, plan-structure, and
+  diff checks passed. A fresh Gitleaks scan checked 757 commits and found no leak. The recorded
+  canonical terminal remains 3,222 pass, 28 intentional skips, zero fail, 104,876 assertions,
+  3,250 tests across 353 files at exact implementation head `223377b`.
+- **Phase arithmetic:** five groups, 50/50 historical group gates, 70/70 signed primary entities,
+  60 required-now rows reducing to 56 unique current regular validation targets, 446 ownership
+  entries, 269 unique current regular paths, and 45 resolving gate-evidence anchors.
+- **Review result:** **PASS**. The Phase-5 review may advance from failed to passed; F05-F08 are all
+  closed and no review finding remains.
+- **Phase-6 boundary:** five groups remain planned, all 50 gates remain pending, all 40 primaries
+  remain planned, and there are zero owned/current paths, executable targets, or non-pristine
+  entities. Phase 6 was not entered and remains excluded.
+
+## Standing approval and Phase 5 exit 2026-07-26
+
+- **Human authority:** `projects/p17/evidence/standing-authorization.md`, catalog identity
+  `user-standing-authorization-2026-07-12`, explicitly authorizes Phase 0-6 boundary approvals only
+  after required automated, traceability, independent-review, repository, and PR gates pass.
+- **No waiver:** standing approval removes only the repeated human pause. All five group signoffs,
+  the three renewed immutable reviews, exact-head terminal receipt, catalog/package validation,
+  evidence, and finding closures passed independently.
+- **Result:** Phase 5 review, standing approval, and exit pass; Phase 5 is approved.
+- **Hard stop:** the user directed a pause before Phase 6 for a separate scope, inclusion,
+  exclusion, and priority review. Phase 6 therefore remains planned with entry pending; no G6 gate,
+  entity, validation, ownership, or product work advances as part of this exit.
+- **Recorded by:** root Codex goal, 2026-07-26 America/Los_Angeles.

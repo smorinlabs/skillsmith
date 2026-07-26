@@ -177,26 +177,28 @@
       "id": "5",
       "dependsOn": "4",
       "requiredGroups": ["P17-G5-01", "P17-G5-02", "P17-G5-03", "P17-G5-04", "P17-G5-05"],
-      "status": "blocked",
+      "status": "approved",
       "entry": {
         "status": "passed",
         "evidence": ["projects/p17/evidence/phase-5.md#entry-gate-2026-07-21"]
       },
       "review": {
-        "status": "failed",
+        "status": "passed",
         "evidence": [
-          "projects/p17/evidence/phase-5.md#whole-phase-adversarial-review-f04-no-go-2026-07-25"
+          "projects/p17/evidence/phase-5.md#renewed-immutable-reviews-and-phase-5-finding-closure-2026-07-26"
         ],
-        "reviewer": "/external-codex/019f9bd6-ebdf-7c03-a64e-693710eeefba"
+        "reviewer": "/external-codex/019f9cb3-1291-7ff1-8dfe-9ee4cecd2d68"
       },
       "approval": {
-        "status": "pending",
-        "evidence": [],
-        "approvedBy": null
+        "status": "passed",
+        "evidence": ["projects/p17/evidence/standing-authorization.md"],
+        "approvedBy": "user-standing-authorization-2026-07-12"
       },
       "exit": {
-        "status": "pending",
-        "evidence": []
+        "status": "passed",
+        "evidence": [
+          "projects/p17/evidence/phase-5.md#standing-approval-and-phase-5-exit-2026-07-26"
+        ]
       }
     },
     {
@@ -6784,7 +6786,7 @@
         "bun test tests/ergonomics/workflows/EWP-WF10.test.ts --test-name-pattern EWP-WF10"
       ],
       "implementers": ["root-codex-goal"],
-      "reviewer": "/root/g5_01_adversarial_review",
+      "reviewer": "/external-codex/019f9cb3-120a-7b91-b9dc-1931e513beca",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -6819,15 +6821,24 @@
         },
         "adversarial-review": {
           "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G5-01.md#adversarial-review"]
+          "evidence": [
+            "projects/p17/evidence/P17-G5-01.md#adversarial-review",
+            "projects/p17/evidence/P17-G5-01.md#renewed-immutable-g5-01-review-go-and-f05-f06-closure-2026-07-26"
+          ]
         },
         "traceability-closure": {
           "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G5-01.md#traceability-and-sign-off"]
+          "evidence": [
+            "projects/p17/evidence/P17-G5-01.md#traceability-and-sign-off",
+            "projects/p17/evidence/P17-G5-01.md#renewed-immutable-g5-01-review-go-and-f05-f06-closure-2026-07-26"
+          ]
         },
         "signed-off": {
           "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G5-01.md#traceability-and-sign-off"]
+          "evidence": [
+            "projects/p17/evidence/P17-G5-01.md#traceability-and-sign-off",
+            "projects/p17/evidence/P17-G5-01.md#renewed-immutable-g5-01-review-go-and-f05-f06-closure-2026-07-26"
+          ]
         }
       },
       "evidence": [
@@ -6839,7 +6850,8 @@
         "projects/p17/evidence/P17-G5-01.md#implementation-and-refactor",
         "projects/p17/evidence/P17-G5-01.md#validation",
         "projects/p17/evidence/P17-G5-01.md#adversarial-review",
-        "projects/p17/evidence/P17-G5-01.md#traceability-and-sign-off"
+        "projects/p17/evidence/P17-G5-01.md#traceability-and-sign-off",
+        "projects/p17/evidence/P17-G5-01.md#renewed-immutable-g5-01-review-go-and-f05-f06-closure-2026-07-26"
       ]
     },
     {
@@ -7404,7 +7416,7 @@
         "bun test tests/ergonomics/workflows/EWP-WF12.test.ts --test-name-pattern EWP-WF12"
       ],
       "implementers": ["root-codex-goal"],
-      "reviewer": "/external-codex/019f9bb0-cb94-7330-a0ee-8dc57878e679",
+      "reviewer": "/external-codex/019f9cb3-1231-7140-a9ef-daa31bc85e7b",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -7442,19 +7454,22 @@
         "adversarial-review": {
           "status": "passed",
           "evidence": [
-            "projects/p17/evidence/P17-G5-04.md#f03-final-adversarial-review-go-at-b94e7ad"
+            "projects/p17/evidence/P17-G5-04.md#f03-final-adversarial-review-go-at-b94e7ad",
+            "projects/p17/evidence/P17-G5-04.md#renewed-immutable-g5-04-review-go-and-f07-f08-closure-2026-07-26"
           ]
         },
         "traceability-closure": {
           "status": "passed",
           "evidence": [
-            "projects/p17/evidence/P17-G5-04.md#post-f03-terminal-and-renewed-sign-off-at-4092eec"
+            "projects/p17/evidence/P17-G5-04.md#post-f03-terminal-and-renewed-sign-off-at-4092eec",
+            "projects/p17/evidence/P17-G5-04.md#renewed-immutable-g5-04-review-go-and-f07-f08-closure-2026-07-26"
           ]
         },
         "signed-off": {
           "status": "passed",
           "evidence": [
-            "projects/p17/evidence/P17-G5-04.md#post-f03-terminal-and-renewed-sign-off-at-4092eec"
+            "projects/p17/evidence/P17-G5-04.md#post-f03-terminal-and-renewed-sign-off-at-4092eec",
+            "projects/p17/evidence/P17-G5-04.md#renewed-immutable-g5-04-review-go-and-f07-f08-closure-2026-07-26"
           ]
         }
       },
@@ -7472,7 +7487,8 @@
         "projects/p17/evidence/P17-G5-04.md#full-terminal-discovery-and-compatibility-correction",
         "projects/p17/evidence/P17-G5-04.md#full-terminal-gate",
         "projects/p17/evidence/P17-G5-04.md#f03-final-adversarial-review-go-at-b94e7ad",
-        "projects/p17/evidence/P17-G5-04.md#traceability-and-sign-off"
+        "projects/p17/evidence/P17-G5-04.md#traceability-and-sign-off",
+        "projects/p17/evidence/P17-G5-04.md#renewed-immutable-g5-04-review-go-and-f07-f08-closure-2026-07-26"
       ]
     },
     {
