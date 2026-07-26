@@ -55,11 +55,14 @@ describe('EWP-P0A-TS05 active documentation authority boundary', () => {
       'research/commands/verify.md',
     ]);
     expect(sections(copy(), 'packages/cli/src/help/topics.ts').map((row) => row.id)).toEqual([
-      'exit-codes',
-      'environment',
-      'scopes',
+      'workflows',
       'manifest',
-      'sources',
+      'lock',
+      'plan',
+      'source',
+      'environment',
+      'scope',
+      'exit-codes',
       'formatting',
     ]);
     for (const path of [
@@ -289,19 +292,16 @@ describe('EWP-P0A-TS05 active documentation authority boundary', () => {
     );
   });
 
-  test('EWP-P0A-TS05 keeps current exit codes separate from the canonical P17 target', () => {
+  test('EWP-P0A-TS05 keeps current exit codes bound to their live authority', () => {
     expect(
       mutateFile('packages/cli/src/help/topics.ts', (text) =>
         text.replace(
-          'Historical shipped reference only: research/skillsmith-cli-design.md §6.1. The canonical future taxonomy is the P17 target linked above.',
-          'Full reference: research/skillsmith-cli-design.md §6.1',
+          'P17 disposition: current behavior; authority: packages/cli/src/util/exit-codes.ts',
+          'P17 disposition: superseded target; authority: research/skillsmith-cli-design.md',
         ),
       ),
-    ).toEqual(
-      expect.arrayContaining([
-        'section packages/cli/src/help/topics.ts#exit-codes required current-behavior text is absent',
-        'section packages/cli/src/help/topics.ts#exit-codes forbidden text is present',
-      ]),
+    ).toContain(
+      'section packages/cli/src/help/topics.ts#exit-codes marker is not visible at its section',
     );
   });
 

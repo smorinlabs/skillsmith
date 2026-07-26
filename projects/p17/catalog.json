@@ -7846,6 +7846,7 @@
         "scripts/generate-command-reference.ts",
         "scripts/p17-documentation-drift.ts",
         "tests/ergonomics/fixtures/p6-help/fleet.ts",
+        "tests/ergonomics/phase/EWP-P0A-TS05.test.ts",
         "tests/ergonomics/phase/EWP-P6-TS04.test.ts",
         "tests/ergonomics/phase/EWP-P6-TS05.test.ts",
         "tests/ergonomics/workflows/EWP-WF16.test.ts"
