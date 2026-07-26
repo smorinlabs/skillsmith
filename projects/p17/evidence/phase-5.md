@@ -252,3 +252,39 @@
   smoke passes 5/5; catalog and package checks pass. These tests are incomplete, not failing.
 - **Phase-6 boundary:** five pristine planned groups, 40 planned primaries, 50 pending gates, zero
   owned/current paths, zero executable validations, and 0/50 gates passed. Phase 6 is excluded.
+
+## F05-F08 bounded correction and complete replay — 2026-07-26
+
+- **Immutable implementation head/tree:** `223377b87578f325e72343af00741645535f1157` /
+  `55f569959991628538050348a2c70ffe7cb2a278`, clean for every committed validation. The exact
+  correction history is `154636d` test-only red, `3ebf262` test-only undo observation-seam repair,
+  and `223377b` five-file product green.
+- **Scope conformance:** implementation changed exactly four existing v1 codecs and the existing
+  GC application service; tests changed exactly the four output and four application owners. The
+  undo follow-up corrected where the approved test injected its poisoned observation and did not
+  widen ownership. No renderer, redaction helper, source parser, DTO, public wire shape, catalog,
+  lifecycle, ownership, or Phase-6 product file changed.
+- **Red/green proof:** the targeted command first produced 40 pass, eight newly failing tests, and
+  209 assertions across 48 tests. After the minimum correction it produced 48 pass, zero fail, and
+  286 assertions. The full 17-file focused matrix passed 118 tests with 1,850 assertions.
+- **Exact validation closure:** all 60 required-now commands ran separately and passed: 12/12
+  G5-01, 11/11 G5-02, 13/13 G5-03, 10/10 G5-04, and 14/14 G5-05. The aggregate acceptance/workflow
+  replay passed 11/11 with 546 assertions; normal smoke passed 5/5 with 3,737 and recovery smoke
+  passed 4/4 with 453 assertions.
+- **Structural/security closure:** Biome checked 848 files; boundaries, TypeScript, Actionlint,
+  package/catalog structure, and diff checks passed. Validator self-tests passed 74/74 with 316
+  assertions. Gitleaks scanned 756 commits with no leak.
+- **Canonical terminal:** `bun run check -- --timeout 60000 --max-concurrency 1` passed at the exact
+  implementation head: 3,222 passed, 28 intentional live/network/environment skips, zero failed,
+  104,876 assertions, 3,250 tests across 353 files, and 1,691.46 seconds.
+- **Current arithmetic:** five Phase-5 groups retain 50/50 historical lifecycle gates, 70/70
+  signed primary entities, 60 required-now rows / 56 unique current validation targets, 446
+  ownership entries / 269 unique current paths, and 45 resolving gate-evidence anchors. G5-04
+  specifically remains 10/10 with zero failed group validations.
+- **Pending independent decision:** implementer evidence does not close review findings. F05, F07,
+  and F08 remain open and F06 remains governance-corrected until renewed immutable G5-01, G5-04,
+  and whole-phase review verdicts. The Phase-5 review gate remains failed; approval and exit remain
+  pending.
+- **Phase-6 boundary:** unchanged at five pristine planned groups, 40 planned primaries, 50 pending
+  gates, zero owned/current paths, zero executable validations, and 0/50 passed gates. Stop before
+  Phase 6 remains mandatory.
