@@ -1538,14 +1538,14 @@ Downstream coverage obligations: EWP-WF01.
 
 ## P17-G6-02A — Shared command metadata, five-group help, progressive options, workflows, and generated docs
 
-Phase: 6; status: **mapped**; dependencies: P17-G5-04, P17-G5-05.
+Phase: 6; status: **ready**; dependencies: P17-G5-04, P17-G5-05.
 Required-now validations: EWP-CMD-HELP-TS01, EWP-CMD-HELP-TS02, EWP-CMD-HELP-TS03, EWP-CMD-HELP-TS04, EWP-CMD-HELP-TS05, EWP-CMD-HELP-TS06, EWP-CMD-HELP-TS07, EWP-OPT-TS05, EWP-OPT-TS07, EWP-P1-TS05, EWP-P6-TS04, EWP-P6-TS05, EWP-WF05, EWP-WF15, EWP-WF16.
 Downstream coverage obligations: EWP-CMD-COMPLETION-TS01, EWP-CMD-COMPLETION-TS03, EWP-CMD-COMPLETION-TS05, EWP-WF01.
 
 ### Group gates
 
 - [x] P17-G6-02A:mapped _(passed)_
-- [ ] P17-G6-02A:ready _(pending)_
+- [x] P17-G6-02A:ready _(passed)_
 - [ ] P17-G6-02A:test-first _(pending)_
 - [ ] P17-G6-02A:minimal-implementation _(pending)_
 - [ ] P17-G6-02A:targeted-green _(pending)_
@@ -1569,7 +1569,7 @@ Downstream coverage obligations: EWP-CMD-COMPLETION-TS01, EWP-CMD-COMPLETION-TS0
 - [ ] **EWP-CMD-HELP-TS07** — version subcommand and -V agree with package/release metadata. _(command-test; planned)_
 - [ ] **EWP-OPT-TS05** — Generate command help option inventories from the same declarations and compare _(option-gate; planned)_
 - [ ] **EWP-OPT-TS07** — Generate help categories/order from option-family metadata; assert every option _(option-gate; planned)_
-- [ ] **EWP-P6-T04** — Discover/Manage/Develop/Declarative/Maintain root/docs grouping, _(phase-task; planned)_
+- [ ] **EWP-P6-T04** — Discover/Manage/Develop/Declarative/Maintain root/docs grouping, _(phase-task; ready)_
 - [ ] **EWP-P6-TS04** — Generated docs vs command tree gate. _(phase-test; planned)_
 - [ ] **EWP-P6-TS05** — Twenty-three-command primary-question uniqueness, five-group membership, _(phase-test; planned)_
 - [ ] **EWP-WF16** — Documentation-driven manual test _(workflow; planned)_

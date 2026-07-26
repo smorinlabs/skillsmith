@@ -7810,7 +7810,7 @@
       "phase": "6",
       "title": "Shared command metadata, five-group help, progressive options, workflows, and generated docs",
       "dependsOn": ["P17-G5-04", "P17-G5-05"],
-      "status": "mapped",
+      "status": "ready",
       "owner": "root-goal",
       "ownedFiles": [
         "README.md",
@@ -7914,8 +7914,11 @@
           "evidence": ["projects/p17/evidence/P17-G6-02A.md#mapping-and-prerequisites"]
         },
         "ready": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G6-02A.md#corrected-ready-review-at-eb90c00",
+            "projects/p17/evidence/P17-G6-02A.md#accepted-ready-result"
+          ]
         },
         "test-first": {
           "status": "pending",
@@ -7955,7 +7958,10 @@
         "projects/p17/evidence/P17-G6-02A.md#mapping-and-prerequisites",
         "projects/p17/evidence/P17-G6-02A.md#existing-implementation-and-gap-audit",
         "projects/p17/evidence/P17-G6-02A.md#signed-dependency-and-current-surface-characterization",
-        "projects/p17/evidence/P17-G6-02A.md#mapping-result"
+        "projects/p17/evidence/P17-G6-02A.md#mapping-result",
+        "projects/p17/evidence/P17-G6-02A.md#ready-review-at-a89674d",
+        "projects/p17/evidence/P17-G6-02A.md#corrected-ready-review-at-eb90c00",
+        "projects/p17/evidence/P17-G6-02A.md#accepted-ready-result"
       ]
     },
     {
@@ -25446,11 +25452,15 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G6-02A",
-      "status": "planned",
+      "status": "ready",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-02A",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G6-02A.md#mapping-and-prerequisites",
+        "projects/p17/evidence/P17-G6-02A.md#corrected-ready-review-at-eb90c00",
+        "projects/p17/evidence/P17-G6-02A.md#accepted-ready-result"
+      ],
       "secondaryGroups": [],
       "implements": ["COMMAND:help", "EWP-CF-013", "EWP-CF-032", "P2-05"],
       "validatedBy": [
