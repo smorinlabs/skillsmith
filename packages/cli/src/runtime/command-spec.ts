@@ -66,6 +66,9 @@ export const createCommandFromSpec = (spec: CommandSpec): Command => {
       command.helpOption(option.flags, option.description ?? 'display help for command');
     } else {
       command.addOption(optionForSpec(option));
+      if (option.negated && option.parsedDefault !== undefined) {
+        command.setOptionValueWithSource(option.attributeName, option.parsedDefault, 'default');
+      }
     }
   }
   const baseHelpInformation = command.helpInformation.bind(command);
