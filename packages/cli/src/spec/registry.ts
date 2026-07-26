@@ -5,6 +5,8 @@ import type {
   CommandExitCodeSpec,
   CommandGroup,
   CommandSpec,
+  CommandWorkflowSafety,
+  CommandWorkflowSpec,
   OptionRelationSpec,
 } from './types.ts';
 
@@ -27,13 +29,13 @@ const PROFILE: Readonly<
   },
   'skillsmith agents': {
     group: 'discover',
-    question: 'Which supported tools are available?',
+    question: 'Which coding tools are detected and what can Skillsmith do with them?',
     capability: 'read',
     application: 'agents',
   },
   'skillsmith config': {
     group: 'maintain',
-    question: 'Which configuration operation do you need?',
+    question: 'What defaults are active and how do I change them?',
     capability: 'config',
     application: 'configHelp',
   },
@@ -81,7 +83,7 @@ const PROFILE: Readonly<
   },
   'skillsmith doctor': {
     group: 'maintain',
-    question: 'Is the local SkillSmith environment healthy?',
+    question: 'What is unhealthy and what deterministic repair is available?',
     capability: 'read',
     application: 'doctor',
   },
@@ -93,7 +95,7 @@ const PROFILE: Readonly<
   },
   'skillsmith gc': {
     group: 'maintain',
-    question: 'Which unreachable local store objects can be reclaimed safely?',
+    question: 'Which unreachable local store objects can be reclaimed?',
     capability: 'gc',
     application: 'gc',
   },
@@ -111,79 +113,79 @@ const PROFILE: Readonly<
   },
   'skillsmith apply': {
     group: 'declarative',
-    question: 'How do I converge declared and live skill state?',
+    question: 'How do I execute the reviewed convergence plan?',
     capability: 'apply',
     application: 'apply',
   },
   'skillsmith sync': {
     group: 'declarative',
-    question: 'Which exact source and destination should converge?',
+    question: 'How do I reconcile one live location into another?',
     capability: 'sync',
     application: 'sync',
   },
   'skillsmith update': {
     group: 'manage',
-    question: 'Which declared skills should be evaluated for an update?',
+    question: 'How do I check or apply source revision changes?',
     capability: 'update',
     application: 'update',
   },
   'skillsmith undo': {
     group: 'manage',
-    question: 'Which exact retained operation should be safely reversed?',
+    question: 'How do I abort or reverse a selected retained operation?',
     capability: 'undo',
     application: 'undo',
   },
   'skillsmith check': {
     group: 'maintain',
-    question: 'Are blocking machine and project checks passing?',
+    question: 'Are blocking machine/project health checks passing?',
     capability: 'read',
     application: 'check',
   },
   'skillsmith verify': {
     group: 'develop',
-    question: 'Is this skill or plugin valid?',
+    question: 'Is this skill or plugin valid for the selected tools?',
     capability: 'verify',
     application: 'verify',
   },
   'skillsmith install': {
     group: 'manage',
-    question: 'Which skill source should be installed?',
+    question: 'How do I acquire and persist a remote skill?',
     capability: 'install',
     application: 'install',
   },
   'skillsmith uninstall': {
     group: 'manage',
-    question: 'Which installed skill should be removed?',
+    question: 'How do I remove a skill and its desired-state declaration?',
     capability: 'uninstall',
     application: 'uninstall',
   },
   'skillsmith dev': {
     group: 'develop',
-    question: 'Which skill should use its live development source?',
+    question: 'How do I use a local checkout as the live development source?',
     capability: 'dev',
     application: 'dev',
   },
   'skillsmith promote': {
     group: 'develop',
-    question: 'Which development skill should be pinned?',
+    question: 'How do I snapshot a development placement into managed state?',
     capability: 'promote',
     application: 'promote',
   },
   'skillsmith version': {
     group: 'maintain',
-    question: 'Which SkillSmith version is running?',
+    question: 'Which Skillsmith version is running?',
     capability: 'read',
     application: 'version',
   },
   'skillsmith completion': {
     group: 'maintain',
-    question: 'Which shell completion script should be emitted?',
+    question: 'How do I emit completion for a shell?',
     capability: 'read',
     application: 'completion',
   },
   'skillsmith help': {
     group: 'maintain',
-    question: 'Which command or topic needs explanation?',
+    question: 'How do I learn a command, topic, or workflow?',
     capability: 'read',
     application: 'help',
   },
@@ -214,7 +216,7 @@ const DESCRIPTION: Readonly<Record<string, string>> = {
   'skillsmith install': 'Install agent skills from a git host.',
   'skillsmith uninstall':
     'Remove installed skills (placements + ledger records; the store is never deleted).',
-  'skillsmith dev': 'Flip a skill from production (pinned copy) back to dev mode (symlink).',
+  'skillsmith dev': 'Demote a pinned skill back to a live development source.',
   'skillsmith promote': 'Promote a skill from dev mode (symlink) to production (pinned copy).',
   'skillsmith version': 'Print SkillSmith version',
   'skillsmith completion': 'Emit a shell completion script',
@@ -331,8 +333,8 @@ const EXAMPLES: Readonly<Record<string, readonly string[]>> = {
   'skillsmith dev': [
     'skillsmith dev factor-scan',
     'skillsmith dev gh-fix-ci --tool codex --source ~/c/gh-fix-ci/skills/gh-fix-ci',
-    'skillsmith dev --all',
     'skillsmith dev --rollback factor-scan',
+    'skillsmith dev --all',
   ],
   'skillsmith promote': [
     'skillsmith promote factor-scan',
@@ -344,6 +346,77 @@ const EXAMPLES: Readonly<Record<string, readonly string[]>> = {
   'skillsmith completion': ['skillsmith completion bash', 'skillsmith completion zsh'],
   'skillsmith help': ['skillsmith help install', 'skillsmith help exit-codes'],
 };
+
+const PUBLIC_COMMAND_ORDER = [
+  'skillsmith agents',
+  'skillsmith list',
+  'skillsmith commands',
+  'skillsmith status',
+  'skillsmith install',
+  'skillsmith uninstall',
+  'skillsmith update',
+  'skillsmith undo',
+  'skillsmith dev',
+  'skillsmith verify',
+  'skillsmith promote',
+  'skillsmith init',
+  'skillsmith export',
+  'skillsmith plan',
+  'skillsmith apply',
+  'skillsmith sync',
+  'skillsmith doctor',
+  'skillsmith check',
+  'skillsmith gc',
+  'skillsmith config',
+  'skillsmith completion',
+  'skillsmith version',
+  'skillsmith help',
+] as const;
+
+const MINIMAL_INVOCATIONS: Readonly<Record<(typeof PUBLIC_COMMAND_ORDER)[number], string>> = {
+  'skillsmith agents': 'skillsmith agents',
+  'skillsmith list': 'skillsmith list',
+  'skillsmith commands': 'skillsmith commands',
+  'skillsmith status': 'skillsmith status',
+  'skillsmith install': 'skillsmith install <source>',
+  'skillsmith uninstall': 'skillsmith uninstall <skill>',
+  'skillsmith update': 'skillsmith update --check',
+  'skillsmith undo': 'skillsmith undo <skill>',
+  'skillsmith dev': 'skillsmith dev <skill> --source <path>',
+  'skillsmith verify': 'skillsmith verify <path>',
+  'skillsmith promote': 'skillsmith promote <skill>',
+  'skillsmith init': 'skillsmith init',
+  'skillsmith export': 'skillsmith export',
+  'skillsmith plan': 'skillsmith plan',
+  'skillsmith apply': 'skillsmith apply',
+  'skillsmith sync': 'skillsmith sync --from <A> --to <B>',
+  'skillsmith doctor': 'skillsmith doctor',
+  'skillsmith check': 'skillsmith check',
+  'skillsmith gc': 'skillsmith gc',
+  'skillsmith config': 'skillsmith config list',
+  'skillsmith completion': 'skillsmith completion zsh',
+  'skillsmith version': 'skillsmith version',
+  'skillsmith help': 'skillsmith help workflows',
+};
+
+const workflowSafety = (capability: string, invocation: string): CommandWorkflowSafety => {
+  if (capability === 'read' || capability === 'dispatch' || capability === 'plan')
+    return 'read-only';
+  if (invocation.includes('--dry-run') || invocation.includes('--check')) return 'preview';
+  return 'requires-confirmation';
+};
+
+const commonWorkflows = (
+  capability: string,
+  description: string,
+  examples: readonly string[],
+): readonly CommandWorkflowSpec[] =>
+  examples.slice(0, 3).map((invocation, index) => ({
+    label: ['Start here', 'Focused workflow', 'Advanced workflow'][index] ?? 'Workflow',
+    invocation,
+    description,
+    safety: workflowSafety(capability, invocation),
+  }));
 
 const exitCodes = (
   ...rows: readonly (readonly [number, string])[]
@@ -599,10 +672,18 @@ export const CURRENT_COMMAND_SPECS: readonly CommandSpec[] = commandPaths.map((p
     path,
     aliases: aliasesForPath(path),
     group: profile.group,
+    helpOrder:
+      path === 'skillsmith'
+        ? -1
+        : PUBLIC_COMMAND_ORDER.indexOf(path as (typeof PUBLIC_COMMAND_ORDER)[number]),
     primaryQuestion: profile.question,
     description,
     arguments: argumentsForPath(path),
     options: optionsForPath(path),
+    minimalInvocations: [
+      MINIMAL_INVOCATIONS[path as (typeof PUBLIC_COMMAND_ORDER)[number]] ?? examples[0] ?? path,
+    ],
+    commonWorkflows: commonWorkflows(profile.capability, description, examples),
     examples,
     exitCodes: commandExitCodes,
     capability: profile.capability,
@@ -1071,6 +1152,9 @@ export const validateCurrentCommandSpecs = (): readonly string[] => {
     if (spec.primaryQuestion.length === 0) errors.push(`${spec.path} has no primary question`);
     if (spec.application.length === 0) errors.push(`${spec.path} has no application reference`);
     if (spec.description.length === 0) errors.push(`${spec.path} has no description`);
+    if (spec.minimalInvocations.length === 0) errors.push(`${spec.path} has no minimal invocation`);
+    if (spec.commonWorkflows.length < 2 || spec.commonWorkflows.length > 3)
+      errors.push(`${spec.path} must have two or three common workflows`);
     if (spec.examples.length === 0) errors.push(`${spec.path} has no examples`);
     if (spec.exitCodes === undefined || spec.exitCodes.length === 0)
       errors.push(`${spec.path} has no exit-code help`);
@@ -1081,6 +1165,8 @@ export const validateCurrentCommandSpecs = (): readonly string[] => {
     for (const option of spec.options) {
       if (option.description === undefined || option.description.length === 0)
         errors.push(`${spec.path} option ${option.long} has no description`);
+      if (option.helpFamily.length === 0 || option.helpLevel.length === 0)
+        errors.push(`${spec.path} option ${option.long} has incomplete help metadata`);
     }
     if (new Set(spec.options.map((option) => option.long)).size !== spec.options.length)
       errors.push(`${spec.path} has duplicate long options`);

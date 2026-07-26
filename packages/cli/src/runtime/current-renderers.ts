@@ -39,7 +39,7 @@ import type { UpdateReportV1Dto } from '@skillsmith/core/contracts/v1';
 import type { Command } from 'commander';
 import { runCompletion } from '../completion/run.ts';
 import { currentWireCodecs } from '../contracts/wire-contracts.ts';
-import { HELP_TOPIC_NAMES, renderTopic } from '../help/topics.ts';
+import { renderTopic } from '../help/topics.ts';
 import { renderAgentsJson } from '../output/agents-json.ts';
 import { renderAgentsMarkdown } from '../output/agents-markdown.ts';
 import { renderApplyHuman } from '../output/apply-human.ts';
@@ -302,10 +302,8 @@ const metadataRenderer = (root: Command) =>
       }
       const topic = value.request.arguments[0];
       if (typeof topic !== 'string') return root.helpInformation();
-      if ((HELP_TOPIC_NAMES as readonly string[]).includes(topic)) {
-        const rendered = renderTopic(topic);
-        return rendered.ok ? `${rendered.value}\n` : '';
-      }
+      const rendered = renderTopic(topic);
+      if (rendered.ok) return `${rendered.value}\n`;
       return root.commands.find((command) => command.name() === topic)?.helpInformation() ?? '';
     },
     (value) => JSON.stringify(value),

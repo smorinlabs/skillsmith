@@ -50,7 +50,10 @@ describe('EWP-CMD-HELP-TS01', () => {
     expect(workflows.ok).toBeTrue();
     if (!workflows.ok) throw new Error('workflows topic is missing');
 
-    for (const output of [rootHelp, workflows.value]) {
+    for (const [kind, output] of [
+      ['root', rootHelp],
+      ['workflows', workflows.value],
+    ] as const) {
       const indexes = ['DISCOVER', 'MANAGE', 'DEVELOP', 'DECLARATIVE', 'MAINTAIN'].map((heading) =>
         output.indexOf(heading),
       );
@@ -61,7 +64,12 @@ describe('EWP-CMD-HELP-TS01', () => {
       expect(indexes).toEqual([...indexes].sort((left, right) => left - right));
       for (const spec of publicSpecs()) {
         const name = spec.path.slice('skillsmith '.length);
-        expect(output.match(new RegExp(`\\b${name}\\b`, 'gu'))?.length ?? 0, name).toBe(1);
+        const escaped = name.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+        const row =
+          kind === 'root'
+            ? new RegExp(`^  ${escaped}(?:[|\\s])`, 'gmu')
+            : new RegExp(`^  \\$ skillsmith ${escaped}(?:\\s|$)`, 'gmu');
+        expect(output.match(row)?.length ?? 0, name).toBe(1);
       }
     }
     expect(rootHelp).toMatch(/dev[^\n]*demote/u);

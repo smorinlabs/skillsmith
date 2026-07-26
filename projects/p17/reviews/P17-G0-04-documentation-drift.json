@@ -111,21 +111,46 @@
     {
       "path": "packages/cli/src/help/topics.ts",
       "documentClass": "current-help-source",
-      "summary": "Current help topics identify current behavior and defer target rewrites to Phase 1.",
+      "summary": "Current canonical help topics close against shipped command, artifact, and runtime behavior.",
       "sections": [
         {
-          "id": "exit-codes",
-          "selector": "'exit-codes':",
+          "id": "workflows",
+          "selector": "workflows:",
           "disposition": "current-behavior",
-          "marker": "P17 disposition: current behavior; target authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#811-global-exit-code-taxonomy-and-precedence",
-          "authority": {
-            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
-            "anchor": "811-global-exit-code-taxonomy-and-precedence"
-          }
+          "marker": "P17 disposition: current behavior; authority: packages/cli/src/spec/registry.ts",
+          "authority": { "path": "packages/cli/src/spec/registry.ts", "anchor": null }
+        },
+        {
+          "id": "manifest",
+          "selector": "manifest: TOPIC_CONTENT.manifest",
+          "disposition": "current-behavior",
+          "marker": "P17 disposition: current behavior; authority: packages/core/src/artifacts/manifest-codec.ts",
+          "authority": { "path": "packages/core/src/artifacts/manifest-codec.ts", "anchor": null }
+        },
+        {
+          "id": "lock",
+          "selector": "lock: TOPIC_CONTENT.lock",
+          "disposition": "current-behavior",
+          "marker": "P17 disposition: current behavior; authority: packages/core/src/artifacts/lock-codec.ts",
+          "authority": { "path": "packages/core/src/artifacts/lock-codec.ts", "anchor": null }
+        },
+        {
+          "id": "plan",
+          "selector": "plan: TOPIC_CONTENT.plan",
+          "disposition": "current-behavior",
+          "marker": "P17 disposition: current behavior; authority: packages/core/src/artifacts/plan-codec.ts",
+          "authority": { "path": "packages/core/src/artifacts/plan-codec.ts", "anchor": null }
+        },
+        {
+          "id": "source",
+          "selector": "source: TOPIC_CONTENT.source",
+          "disposition": "current-behavior",
+          "marker": "P17 disposition: current behavior; authority: packages/core/src/acquire/source.ts",
+          "authority": { "path": "packages/core/src/acquire/source.ts", "anchor": null }
         },
         {
           "id": "environment",
-          "selector": "environment:",
+          "selector": "environment: TOPIC_CONTENT.environment",
           "disposition": "current-behavior",
           "marker": "P17 disposition: current behavior; authorities: packages/cli/src/util/color.ts, packages/core/src/config/env.ts, packages/core/src/place/paths.ts",
           "authority": [
@@ -135,44 +160,25 @@
           ]
         },
         {
-          "id": "scopes",
-          "selector": "scopes:",
+          "id": "scope",
+          "selector": "scope: TOPIC_CONTENT.scope",
           "disposition": "current-behavior",
-          "marker": "P17 disposition: current behavior; target authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#81-global",
-          "authority": {
-            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
-            "anchor": "81-global"
-          }
+          "marker": "P17 disposition: current behavior; authority: packages/cli/src/spec/options.ts",
+          "authority": { "path": "packages/cli/src/spec/options.ts", "anchor": null }
         },
         {
-          "id": "manifest",
-          "selector": "manifest:",
-          "disposition": "superseded-target",
-          "marker": "P17 disposition: superseded target; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#2-canonical-state-and-artifact-model",
-          "authority": {
-            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
-            "anchor": "2-canonical-state-and-artifact-model"
-          }
-        },
-        {
-          "id": "sources",
-          "selector": "sources:",
+          "id": "exit-codes",
+          "selector": "'exit-codes': TOPIC_CONTENT['exit-codes']",
           "disposition": "current-behavior",
-          "marker": "P17 disposition: current behavior; future target authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#86-install",
-          "authority": {
-            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
-            "anchor": "86-install"
-          }
+          "marker": "P17 disposition: current behavior; authority: packages/cli/src/util/exit-codes.ts",
+          "authority": { "path": "packages/cli/src/util/exit-codes.ts", "anchor": null }
         },
         {
           "id": "formatting",
-          "selector": "formatting:",
+          "selector": "formatting: TOPIC_CONTENT.formatting",
           "disposition": "current-behavior",
-          "marker": "P17 disposition: current behavior; target authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#p2-01-consistent-output-selection",
-          "authority": {
-            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
-            "anchor": "p2-01-consistent-output-selection"
-          }
+          "marker": "P17 disposition: current behavior; authority: packages/cli/src/runtime/io.ts",
+          "authority": { "path": "packages/cli/src/runtime/io.ts", "anchor": null }
         }
       ]
     },

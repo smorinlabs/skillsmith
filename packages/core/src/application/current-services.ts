@@ -70,6 +70,35 @@ const metadataService =
 export const runRootHelpApplication = metadataService('rootHelp');
 export const runConfigHelpApplication = metadataService('configHelp');
 export const runCompletionApplication = metadataService('completion');
+const editDistance = (left: string, right: string): number => {
+  let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (const [leftIndex, leftCharacter] of [...left].entries()) {
+    const current = [leftIndex + 1];
+    for (const [rightIndex, rightCharacter] of [...right].entries()) {
+      current.push(
+        Math.min(
+          (current[rightIndex] ?? 0) + 1,
+          (previous[rightIndex + 1] ?? 0) + 1,
+          (previous[rightIndex] ?? 0) + (leftCharacter === rightCharacter ? 0 : 1),
+        ),
+      );
+    }
+    previous = current;
+  }
+  return previous[right.length] ?? right.length;
+};
+
+const nearestHelpName = (topic: string, known: readonly string[]): string | undefined => {
+  const ranked = [...new Set(known)]
+    .map((name) => ({ name, distance: editDistance(topic, name) }))
+    .toSorted(
+      (left, right) => left.distance - right.distance || left.name.localeCompare(right.name),
+    );
+  const nearest = ranked[0];
+  const threshold = Math.max(1, Math.min(3, Math.floor(Math.max(topic.length, 3) / 3)));
+  return nearest !== undefined && nearest.distance <= threshold ? nearest.name : undefined;
+};
+
 export const runHelpApplication: ApplicationService<
   CurrentCommandRequest,
   CliMetadataReport
@@ -77,13 +106,17 @@ export const runHelpApplication: ApplicationService<
   const topic = request.arguments[0];
   const known = request.options.knownHelpNames;
   if (typeof topic === 'string' && Array.isArray(known) && !known.includes(topic)) {
+    const suggestion = nearestHelpName(
+      topic,
+      known.filter((name): name is string => typeof name === 'string'),
+    );
     return {
       report: { command: 'help', request },
       diagnostics: [
         {
           code: 'unknown-topic',
           severity: 'error',
-          message: `'${topic}' is not a known command or topic`,
+          message: `'${topic}' is not a known command or topic${suggestion === undefined ? '' : `. Did you mean '${suggestion}'?`}`,
         },
       ],
       exitClass: 'usage',

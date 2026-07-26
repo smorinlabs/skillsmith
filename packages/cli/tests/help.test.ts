@@ -133,7 +133,7 @@ describe('skillsmith help routing', () => {
       expect(result.code).toBe(0);
       expect(result.stderr).toBe('');
       expect(result.stdout).toContain('PRIMARY QUESTION');
-      expect(result.stdout).toContain('EXAMPLES');
+      expect(result.stdout).toContain('COMMON WORKFLOWS');
       expect(result.stdout).toContain('EXIT CODES');
       expect(result.stdout).not.toContain('See skillsmith help exit-codes.');
     }

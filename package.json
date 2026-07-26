@@ -22,7 +22,7 @@
     "fmt": "biome check --write",
     "actions-lint": "actionlint",
     "check:p17": "bun scripts/check-p17-package.ts --pr-openable",
-    "check": "bun run lint && bun run lint:boundaries && bun run typecheck && bun run actions-lint && bun run check:p17 && bun run test",
+    "check": "bun run lint && bun run lint:boundaries && bun run typecheck && bun scripts/generate-command-reference.ts --check && bun run actions-lint && bun run check:p17 && bun run test",
     "build:darwin-arm64": "bun build --compile --bytecode --target=bun-darwin-arm64 packages/cli/src/index.ts --outfile dist/skillsmith",
     "build:darwin-x64": "bun build --compile --bytecode --target=bun-darwin-x64 packages/cli/src/index.ts --outfile dist/skillsmith",
     "build:linux-x64": "bun build --compile --bytecode --target=bun-linux-x64 packages/cli/src/index.ts --outfile dist/skillsmith",

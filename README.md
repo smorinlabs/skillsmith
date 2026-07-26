@@ -6,8 +6,40 @@ Skills you write for one AI coding tool don't work in the others. Skillsmith uni
 and management across Claude Code, Codex, Kilo Code, and opencode.
 
 **Today:** `agents`, `config`, `list`, `ls`, `commands`, `doctor`, `check`, `verify`, `status`, `plan`, `apply`, `sync`, `update`, `undo`, `promote`, `dev`, `demote`, `install`, `i`, `uninstall`, `rm`, `remove`, `export`, `gc`, `init`, `version`, `completion`, and `help` are implemented.
-**P17 target:** consistent behavior across the retained command surface. The [consolidated P17 plan](docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md) is authoritative for the remaining work.
+**P17 target:** consistent behavior across the retained command surface, with generated public help and command documentation.
 
+
+<!-- skillsmith-command-index:start -->
+## Command orientation
+
+Choose a command by the question you need answered. This table and the full [command reference](docs/commands.md) are generated from the live CLI registry.
+
+| Group | Command | Primary question |
+|---|---|---|
+| DISCOVER | `agents` | Which coding tools are detected and what can Skillsmith do with them? |
+|  | `list` | Which skills are installed? |
+|  | `commands` | Which slash commands are installed? |
+|  | `status` | How do desired, locked, ledger, and live states relate? |
+| MANAGE | `install` | How do I acquire and persist a remote skill? |
+|  | `uninstall` | How do I remove a skill and its desired-state declaration? |
+|  | `update` | How do I check or apply source revision changes? |
+|  | `undo` | How do I abort or reverse a selected retained operation? |
+| DEVELOP | `dev` | How do I use a local checkout as the live development source? |
+|  | `verify` | Is this skill or plugin valid for the selected tools? |
+|  | `promote` | How do I snapshot a development placement into managed state? |
+| DECLARATIVE | `init` | How do I create or migrate the desired-state file? |
+|  | `export` | How do I capture the current fleet as portable desired state? |
+|  | `plan` | What would convergence change? |
+|  | `apply` | How do I execute the reviewed convergence plan? |
+|  | `sync` | How do I reconcile one live location into another? |
+| MAINTAIN | `doctor` | What is unhealthy and what deterministic repair is available? |
+|  | `check` | Are blocking machine/project health checks passing? |
+|  | `gc` | Which unreachable local store objects can be reclaimed? |
+|  | `config` | What defaults are active and how do I change them? |
+|  | `completion` | How do I emit completion for a shell? |
+|  | `version` | Which Skillsmith version is running? |
+|  | `help` | How do I learn a command, topic, or workflow? |
+<!-- skillsmith-command-index:end -->
 ## Example output
 
 ```sh

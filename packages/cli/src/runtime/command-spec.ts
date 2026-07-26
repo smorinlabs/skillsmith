@@ -1,4 +1,13 @@
 import { Argument, Command, InvalidArgumentError, Option } from 'commander';
+import {
+  COMMAND_GROUP_HEADINGS,
+  compareOptionHelpOrder,
+  configureProgressiveHelp,
+  optionHelpDescription,
+  optionHelpHeading,
+  renderCommandHelp,
+  renderRootHelp,
+} from '../help/render.ts';
 import type { CommandArgumentSpec, CommandOptionSpec, CommandSpec } from '../spec/types.ts';
 
 const optionChoices = (spec: CommandOptionSpec): readonly string[] => spec.parserValues ?? [];
@@ -9,7 +18,9 @@ const isSingular = (spec: CommandOptionSpec): boolean =>
 const optionForSpec = (spec: CommandOptionSpec): Option => {
   const choices = optionChoices(spec);
   const defaultValue = spec.parsedDefault;
-  let option = new Option(spec.flags, spec.description ?? '');
+  let option = new Option(spec.flags, optionHelpDescription(spec)).helpGroup(
+    optionHelpHeading(spec),
+  );
   if (choices.length > 0) option = option.choices([...choices]);
   if (spec.repeatable) {
     if (typeof defaultValue === 'number') {
@@ -40,30 +51,15 @@ const argumentForSpec = (spec: CommandArgumentSpec): Argument => {
 export const leafName = (spec: Pick<CommandSpec, 'name' | 'path'>): string =>
   (spec.path ?? spec.name).split(' ').at(-1) ?? spec.name;
 
-const generatedHelp = (spec: CommandSpec): string => {
-  const aliases = spec.aliases.length > 0 ? `ALIASES\n  ${spec.aliases.join(', ')}\n\n` : '';
-  const examples = spec.examples.length > 0 ? spec.examples : [spec.path];
-  const exitCodes =
-    spec.exitCodes !== undefined && spec.exitCodes.length > 0
-      ? spec.exitCodes
-          .map(({ code, meaning }) => `  ${code.toString().padEnd(4)} ${meaning}`)
-          .join('\n')
-      : '  See skillsmith help exit-codes.';
-  return `\n${aliases}PRIMARY QUESTION\n  ${spec.primaryQuestion}\n\nEXAMPLES\n${examples
-    .map((example) => `  $ ${example}`)
-    .join('\n')}\n\nEXIT CODES\n${exitCodes}\n`;
-};
-
 /** Construct a fresh Commander node exclusively from one CommandSpec using public APIs. */
 export const createCommandFromSpec = (spec: CommandSpec): Command => {
-  const command = new Command(leafName(spec))
-    .description(spec.description)
-    .allowExcessArguments(false);
+  const command = new Command(leafName(spec)).allowExcessArguments(false);
+  configureProgressiveHelp(command, spec);
   for (const alias of spec.aliases) command.alias(alias);
   for (const argument of spec.arguments) command.addArgument(argumentForSpec(argument));
-  for (const option of spec.options) {
+  for (const option of spec.options.toSorted(compareOptionHelpOrder)) {
     if (option.attributeName === 'help') {
-      command.helpOption(option.flags, option.description ?? 'display help for command');
+      command.addHelpOption(optionForSpec(option));
     } else {
       command.addOption(optionForSpec(option));
       if (option.negated && option.parsedDefault !== undefined) {
@@ -72,8 +68,10 @@ export const createCommandFromSpec = (spec: CommandSpec): Command => {
     }
   }
   const baseHelpInformation = command.helpInformation.bind(command);
-  const documentation = generatedHelp(spec);
-  command.helpInformation = () => `${baseHelpInformation()}${documentation}`;
+  command.helpInformation = () =>
+    spec.path === 'skillsmith'
+      ? renderRootHelp(spec, baseHelpInformation())
+      : renderCommandHelp(spec, baseHelpInformation());
   return command;
 };
 
@@ -91,9 +89,14 @@ export const attachCommandSpecs = (
   const byPath = new Map<string, Command>([['skillsmith', root]]);
   const ordered = specs
     .filter((spec) => spec.path !== 'skillsmith')
-    .toSorted((left, right) => left.path.split(' ').length - right.path.split(' ').length);
+    .toSorted(
+      (left, right) =>
+        left.path.split(' ').length - right.path.split(' ').length ||
+        left.helpOrder - right.helpOrder,
+    );
   for (const spec of ordered) {
     const command = createCommandFromSpec(spec);
+    command.helpGroup(COMMAND_GROUP_HEADINGS[spec.group]);
     command.action(actionFactory(spec, command));
     const parentPath = spec.path.split(' ').slice(0, -1).join(' ');
     const parent = byPath.get(parentPath);

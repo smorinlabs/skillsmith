@@ -107,9 +107,13 @@ interface PlannedSpec {
 
 describe('EWP-P6-TS05', () => {
   test('the exact 23-row complexity matrix is registry-owned', () => {
-    const specs = (CURRENT_COMMAND_SPECS as readonly PlannedSpec[]).filter(
-      (spec) => spec.path.split(' ').length === 2,
-    );
+    const specs = (CURRENT_COMMAND_SPECS as readonly PlannedSpec[])
+      .filter((spec) => spec.path.split(' ').length === 2)
+      .toSorted(
+        (left, right) =>
+          (left as PlannedSpec & { readonly helpOrder: number }).helpOrder -
+          (right as PlannedSpec & { readonly helpOrder: number }).helpOrder,
+      );
     const actual = specs.map((spec) => [
       spec.group,
       spec.path.slice('skillsmith '.length),

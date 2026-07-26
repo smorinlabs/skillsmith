@@ -65,13 +65,13 @@ describe('skillsmith dev — flag validation', () => {
     const r = await run(['dev', '--help']);
     expect(r.code).toBe(0);
     expect(r.stdout).toContain('demote');
-    expect(r.stdout).toContain('EXAMPLES');
+    expect(r.stdout).toContain('COMMON WORKFLOWS');
     expect(r.stdout).toContain('EXIT CODES');
   });
 
   test('demote alias resolves to the dev command', async () => {
     const r = await run(['demote', '--help']);
     expect(r.code).toBe(0);
-    expect(r.stdout).toContain('Flip a skill from production (pinned copy) back to dev mode');
+    expect(r.stdout).toContain('Demote a pinned skill back to a live development source');
   });
 });

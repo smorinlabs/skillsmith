@@ -75,8 +75,11 @@ only temporary pure compatibility exports required by existing consumers.
 - **G1-06:** introduce the canonical wire-contract/DTO registry and codec-owned JSON schemas. G1-03
   preserves current report and output bytes.
 - **G1-07:** add operation context, observer events, and the shared diagnostic sink.
-- **G6:** generate grouped/progressive help, completion, command references, and documentation from
-  command metadata. G1-03 records metadata without activating those UX changes.
+
+G6 subsequently activated the retained metadata boundary: Commander renders grouped progressive
+help from the same registry used by parsing, and generated public documentation closes against that
+registry. Completion remains a separate derived consumer so help changes do not silently broaden
+the completion grammar.
 
 ## Consequences
 

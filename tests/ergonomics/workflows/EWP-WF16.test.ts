@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import {
   type HelpFixture,
@@ -36,6 +36,6 @@ describe('EWP-WF16', () => {
     expect(reference).not.toContain('mapping placeholder');
     expect(reference).toContain('SkillSmith command reference');
     expect(`${architecture}\n${adr}`).not.toMatch(/G6[^\n]*(?:defer|future)/iu);
-    expect(await Bun.file(fixture.root).exists()).toBeTrue();
+    expect((await stat(fixture.root)).isDirectory()).toBeTrue();
   });
 });

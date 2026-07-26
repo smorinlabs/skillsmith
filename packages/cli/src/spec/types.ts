@@ -1,5 +1,14 @@
 export type CommandGroup = 'discover' | 'manage' | 'develop' | 'declarative' | 'maintain';
 export type OptionValueShape = 'boolean' | 'required' | 'optional';
+export type OptionHelpFamily =
+  | 'targets-scope'
+  | 'source-destination-artifacts'
+  | 'behavior-verification'
+  | 'safety-approval'
+  | 'automation-output'
+  | 'inherited-globals';
+export type OptionHelpLevel = 'common' | 'advanced';
+export type CommandWorkflowSafety = 'read-only' | 'preview' | 'requires-confirmation';
 export type OptionRelationKind =
   | 'conflicts'
   | 'requires'
@@ -33,7 +42,18 @@ export interface CommandOptionSpec {
   readonly flagDefault: unknown;
   /** Value presented to an application request after parser normalization. */
   readonly parsedDefault: unknown;
+  /** Stable progressive-help family; every option belongs to exactly one family. */
+  readonly helpFamily: OptionHelpFamily;
+  /** Advanced options remain visible, but follow common options within their family. */
+  readonly helpLevel: OptionHelpLevel;
   readonly description?: string;
+}
+
+export interface CommandWorkflowSpec {
+  readonly label: string;
+  readonly invocation: string;
+  readonly description: string;
+  readonly safety: CommandWorkflowSafety;
 }
 
 export interface CommandExitCodeSpec {
@@ -46,10 +66,13 @@ export interface CommandSpec {
   readonly path: string;
   readonly aliases: readonly string[];
   readonly group: CommandGroup;
+  readonly helpOrder: number;
   readonly primaryQuestion: string;
   readonly description: string;
   readonly arguments: readonly CommandArgumentSpec[];
   readonly options: readonly CommandOptionSpec[];
+  readonly minimalInvocations: readonly string[];
+  readonly commonWorkflows: readonly CommandWorkflowSpec[];
   readonly examples: readonly string[];
   /** Command-specific meanings shown in generated help. */
   readonly exitCodes?: readonly CommandExitCodeSpec[];

@@ -2,15 +2,23 @@ import { describe, expect, test } from 'bun:test';
 import { HELP_TOPIC_NAMES, renderTopic } from '../../src/help/topics.ts';
 
 describe('help topics', () => {
-  test('allowlist contains the 6 topics', () => {
+  test('allowlist contains the canonical nine topics in help-index order', () => {
     expect(HELP_TOPIC_NAMES).toEqual([
-      'exit-codes',
-      'environment',
-      'scopes',
+      'workflows',
       'manifest',
-      'sources',
+      'lock',
+      'plan',
+      'source',
+      'environment',
+      'scope',
+      'exit-codes',
       'formatting',
     ]);
+  });
+
+  test('legacy plural names remain compatibility aliases', () => {
+    expect(renderTopic('sources')).toEqual(renderTopic('source'));
+    expect(renderTopic('scopes')).toEqual(renderTopic('scope'));
   });
 
   test('renderTopic returns non-empty content for each known topic', () => {

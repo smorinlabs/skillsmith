@@ -48,10 +48,10 @@ describe('skillsmith promote — flag validation', () => {
     expect(r.code).toBe(2);
   });
 
-  test('--help exits 0 and includes EXAMPLES/EXIT CODES sections', async () => {
+  test('--help exits 0 and includes COMMON WORKFLOWS/EXIT CODES sections', async () => {
     const r = await run(['promote', '--help']);
     expect(r.code).toBe(0);
-    expect(r.stdout).toContain('EXAMPLES');
+    expect(r.stdout).toContain('COMMON WORKFLOWS');
     expect(r.stdout).toContain('EXIT CODES');
   });
 });

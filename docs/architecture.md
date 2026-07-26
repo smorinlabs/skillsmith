@@ -90,6 +90,12 @@ parser graph is reconstructed from `CommandSpec`; one action factory resolves ev
 through the public application registry and shared renderer/exit adapter. Legacy command-local
 runtime handlers have been removed.
 
+The same `CommandSpec` registry owns each command's primary question, minimal invocation, bounded
+common workflows, option help family/level, and exit meanings. Commander 15 renders the native
+command and option groups; the thin help layer adds Skillsmith's progressive section order. The
+README command index and `docs/commands.md` are generated from that registry, and repository checks
+reject drift rather than maintaining a second hand-written command catalog.
+
 `runStatusApplication` is the current correlated-read service. It validates target/tool/scope
 selection before I/O, resolves shared project/configuration context, selects one readable artifact
 context, and invokes the shared portable-pair resolver exactly once. The domain reader receives only
@@ -468,7 +474,7 @@ If you find yourself fighting these rules, that's usually a signal to move code,
 | Platform-specific env resolution | `packages/core/src/env/default.ts` |
 | A new core error code | `packages/core/src/errors.ts` + CLI `util/exit-codes.ts` |
 | CLI output format | `packages/cli/src/output/` |
-| CLI help text | `packages/cli/src/help/topics.ts` |
+| CLI command/help metadata | `packages/cli/src/spec/`, `packages/cli/src/help/` |
 | A public command use case or outcome type | `packages/core/src/application/` |
 | Update selection, ref inspection, source preparation, or planning | `packages/core/src/update/` + `packages/core/src/application/update-service.ts` |
 | Enforced architectural rules | `eslint.config.js` (and a new ADR) |

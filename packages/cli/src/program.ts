@@ -13,7 +13,7 @@ import {
   toolRegistry,
 } from '@skillsmith/core';
 import type { Command } from 'commander';
-import { HELP_TOPIC_NAMES } from './help/topics.ts';
+import { HELP_TOPIC_LOOKUP_NAMES } from './help/topics.ts';
 import {
   normalizeCliError,
   renderCliError,
@@ -71,7 +71,7 @@ const commandRequest = (values: readonly unknown[]): CurrentCommandRequest => {
         ? {
             ...options,
             knownHelpNames: [
-              ...HELP_TOPIC_NAMES,
+              ...HELP_TOPIC_LOOKUP_NAMES,
               ...(command.parent?.commands.map((candidate) => candidate.name()) ?? []),
             ],
           }

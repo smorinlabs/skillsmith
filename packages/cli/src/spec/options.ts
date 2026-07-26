@@ -1,6 +1,6 @@
 import { SUPPORTED_TOOLS } from '@skillsmith/core';
 import currentState from '../contracts/commander-current-state-v0.json' with { type: 'json' };
-import type { CommandOptionSpec } from './types.ts';
+import type { CommandOptionSpec, OptionHelpFamily, OptionHelpLevel } from './types.ts';
 
 const KNOWN_SCOPES = ['system', 'user', 'project', 'managed'] as const;
 const KNOWN_COLORS = ['auto', 'always', 'never'] as const;
@@ -274,6 +274,130 @@ const decodeDefault = (value: string): unknown => {
   }
 };
 
+const OPTION_HELP_FAMILIES: Readonly<
+  Record<Exclude<OptionHelpFamily, 'inherited-globals'>, ReadonlySet<string>>
+> = {
+  'targets-scope': new Set([
+    '--all',
+    '--all-scopes',
+    '--all-tools',
+    '--detected-only',
+    '--managed',
+    '--project',
+    '--scope',
+    '--system',
+    '--tool',
+    '--user',
+  ]),
+  'source-destination-artifacts': new Set([
+    '--dest',
+    '--file',
+    '--forget-project',
+    '--from',
+    '--lockfile',
+    '--older-than',
+    '--out',
+    '--path',
+    '--pin',
+    '--plan',
+    '--ref',
+    '--source',
+    '--to',
+  ]),
+  'behavior-verification': new Set([
+    '--allow-dirty',
+    '--capabilities',
+    '--check',
+    '--deep',
+    '--delete',
+    '--description',
+    '--direct',
+    '--disabled',
+    '--duplicates',
+    '--enabled',
+    '--fix',
+    '--locked',
+    '--mode',
+    '--no-save',
+    '--no-verify',
+    '--offline',
+    '--prune',
+    '--report-only',
+    '--revision',
+    '--rollback',
+    '--save',
+    '--static',
+    '--strict',
+    '--unconfigured',
+    '--unverified',
+    '--verified',
+  ]),
+  'safety-approval': new Set(['--force', '--yes']),
+  'automation-output': new Set([
+    '--continue-on-error',
+    '--dry-run',
+    '--exit-code',
+    '--format',
+    '--help',
+    '--json',
+    '--long',
+  ]),
+};
+
+const ADVANCED_OPTIONS = new Set([
+  '--all-scopes',
+  '--all-tools',
+  '--allow-dirty',
+  '--continue-on-error',
+  '--debug',
+  '--delete',
+  '--description',
+  '--direct',
+  '--duplicates',
+  '--exit-code',
+  '--fix',
+  '--force',
+  '--forget-project',
+  '--locked',
+  '--lockfile',
+  '--mode',
+  '--no-save',
+  '--no-verify',
+  '--offline',
+  '--older-than',
+  '--out',
+  '--path',
+  '--pin',
+  '--plan',
+  '--prune',
+  '--report-only',
+  '--revision',
+  '--rollback',
+  '--save',
+  '--static',
+  '--unconfigured',
+]);
+
+const optionHelpMetadata = (
+  path: string,
+  long: string,
+): { readonly helpFamily: OptionHelpFamily; readonly helpLevel: OptionHelpLevel } => {
+  if (path === 'skillsmith') {
+    return {
+      helpFamily: 'inherited-globals',
+      helpLevel: ADVANCED_OPTIONS.has(long) ? 'advanced' : 'common',
+    };
+  }
+  const families = Object.entries(OPTION_HELP_FAMILIES).filter(([, options]) => options.has(long));
+  if (families.length !== 1) {
+    throw new Error(`option ${path} ${long} must belong to exactly one help family`);
+  }
+  return {
+    helpFamily: families[0]?.[0] as OptionHelpFamily,
+    helpLevel: ADVANCED_OPTIONS.has(long) ? 'advanced' : 'common',
+  };
+};
+
 const optionFromState = (path: string, option: StateOption): CommandOptionSpec => {
   const long = option.long ?? option.flags;
   const description = OPTION_DESCRIPTIONS[`${path}:${long}`] ?? DEFAULT_OPTION_DESCRIPTIONS[long];
@@ -288,6 +412,7 @@ const optionFromState = (path: string, option: StateOption): CommandOptionSpec =
       : option.negated
         ? true
         : decodeDefault(option.defaultValue);
+  const help = optionHelpMetadata(path, long);
   return {
     flags: option.flags,
     long,
@@ -311,6 +436,7 @@ const optionFromState = (path: string, option: StateOption): CommandOptionSpec =
     negated: option.negated,
     flagDefault: option.negated ? false : parsed,
     parsedDefault: parsed,
+    ...help,
     description,
   };
 };
