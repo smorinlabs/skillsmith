@@ -11,14 +11,14 @@ Tracked entities: **426** across **45** change groups.
 
 | Kind | Total | Signed off | Active/open | Deferred |
 |---|---:|---:|---:|---:|
-| recommendation | 34 | 25 | 3 | 6 |
-| phase-task | 65 | 59 | 6 | 0 |
-| phase-test | 61 | 57 | 4 | 0 |
-| command-test | 157 | 151 | 6 | 0 |
+| recommendation | 34 | 26 | 2 | 6 |
+| phase-task | 65 | 60 | 5 | 0 |
+| phase-test | 61 | 58 | 3 | 0 |
+| command-test | 157 | 157 | 0 | 0 |
 | option-gate | 10 | 10 | 0 | 0 |
 | workflow | 16 | 15 | 1 | 0 |
-| command | 23 | 22 | 1 | 0 |
-| finding | 44 | 43 | 1 | 0 |
+| command | 23 | 23 | 0 | 0 |
+| finding | 44 | 44 | 0 | 0 |
 | decision | 16 | 14 | 1 | 1 |
 
 ### Phases
@@ -31,7 +31,7 @@ Tracked entities: **426** across **45** change groups.
 | 3 | 8 | 82 | 82 | 0 |
 | 4 | 7 | 105 | 105 | 0 |
 | 5 | 5 | 70 | 70 | 0 |
-| 6 | 5 | 40 | 17 | 0 |
+| 6 | 5 | 40 | 28 | 0 |
 | 7 | 1 | 7 | 0 | 7 |
 
 ### Phase gates
@@ -108,7 +108,7 @@ Tracked entities: **426** across **45** change groups.
 | COMMAND:apply | P17-G4B-02 | signed-off | required-pr |
 | COMMAND:check | P17-G1-02B | signed-off | required-pr |
 | COMMAND:commands | P17-G3A-02 | signed-off | required-pr |
-| COMMAND:completion | P17-G6-02B | validated | supported-platform |
+| COMMAND:completion | P17-G6-02B | signed-off | supported-platform |
 | COMMAND:config | P17-G2-01 | signed-off | required-pr |
 | COMMAND:dev | P17-G3B-01 | signed-off | required-pr |
 | COMMAND:doctor | P17-G3B-03 | signed-off | required-pr |
@@ -155,7 +155,7 @@ Tracked entities: **426** across **45** change groups.
 | P2-01 | P17-G1-02A | signed-off | required-pr |
 | P2-02 | P17-G5-02 | signed-off | required-pr |
 | P2-03 | P17-G5-04 | signed-off | required-pr |
-| P2-04 | P17-G6-02B | validated | supported-platform |
+| P2-04 | P17-G6-02B | signed-off | supported-platform |
 | P2-05 | P17-G6-02A | signed-off | required-pr |
 | P2-06 | P17-G1-05 | signed-off | required-pr |
 | P2-07 | P17-G3B-03 | signed-off | required-pr |
@@ -184,7 +184,7 @@ Tracked entities: **426** across **45** change groups.
 | EWP-CF-011 | P17-G4A-02 | signed-off | required-pr |
 | EWP-CF-012 | P17-G2-03 | signed-off | required-pr |
 | EWP-CF-013 | P17-G6-02A | signed-off | required-pr |
-| EWP-CF-014 | P17-G6-02B | validated | supported-platform |
+| EWP-CF-014 | P17-G6-02B | signed-off | supported-platform |
 | EWP-CF-015 | P17-G4B-02 | signed-off | required-pr |
 | EWP-CF-016 | P17-G5-04 | signed-off | required-pr |
 | EWP-CF-017 | P17-G0-04 | signed-off | required-pr |
@@ -1577,7 +1577,7 @@ Downstream coverage obligations: EWP-CMD-COMPLETION-TS01, EWP-CMD-COMPLETION-TS0
 
 ## P17-G6-02B — Bash/zsh/fish completion generation and nested completion contracts
 
-Phase: 6; status: **reviewed**; dependencies: P17-G6-02A.
+Phase: 6; status: **signed-off**; dependencies: P17-G6-02A.
 Required-now validations: EWP-CMD-COMPLETION-TS01, EWP-CMD-COMPLETION-TS02, EWP-CMD-COMPLETION-TS03, EWP-CMD-COMPLETION-TS04, EWP-CMD-COMPLETION-TS05, EWP-CMD-COMPLETION-TS06, EWP-P6-TS02.
 Downstream coverage obligations: EWP-WF01.
 
@@ -1591,22 +1591,22 @@ Downstream coverage obligations: EWP-WF01.
 - [x] P17-G6-02B:impacted-green _(passed)_
 - [x] P17-G6-02B:refactor _(passed)_
 - [x] P17-G6-02B:adversarial-review _(passed)_
-- [ ] P17-G6-02B:traceability-closure _(pending)_
-- [ ] P17-G6-02B:signed-off _(pending)_
+- [x] P17-G6-02B:traceability-closure _(passed)_
+- [x] P17-G6-02B:signed-off _(passed)_
 
 ### Tracked entities
 
-- [ ] **COMMAND:completion** — Maintain — How do I emit completion for a shell? _(command; validated)_
-- [ ] **EWP-CF-014** — Keep completion emission pure and defer installer ownership _(finding; validated)_
-- [ ] **EWP-CMD-COMPLETION-TS01** — all 23 root commands and adjacent aliases for bash/zsh/fish, _(command-test; passing)_
-- [ ] **EWP-CMD-COMPLETION-TS02** — recursive config subcommands. _(command-test; passing)_
-- [ ] **EWP-CMD-COMPLETION-TS03** — every inherited and local flag regardless of common/advanced help _(command-test; passing)_
-- [ ] **EWP-CMD-COMPLETION-TS04** — enum choice completion from registries. _(command-test; passing)_
-- [ ] **EWP-CMD-COMPLETION-TS05** — local skill/path/manifest completion without network; empty target _(command-test; passing)_
-- [ ] **EWP-CMD-COMPLETION-TS06** — generated shell syntax validation, help-only manual install _(command-test; passing)_
-- [ ] **EWP-P6-T03** — Recursive alias-aware completion. _(phase-task; green)_
-- [ ] **EWP-P6-TS02** — Bash/zsh/fish nested completion suite. _(phase-test; passing)_
-- [ ] **P2-04** — Completion _(recommendation; validated)_
+- [x] **COMMAND:completion** — Maintain — How do I emit completion for a shell? _(command; signed-off)_
+- [x] **EWP-CF-014** — Keep completion emission pure and defer installer ownership _(finding; signed-off)_
+- [x] **EWP-CMD-COMPLETION-TS01** — all 23 root commands and adjacent aliases for bash/zsh/fish, _(command-test; signed-off)_
+- [x] **EWP-CMD-COMPLETION-TS02** — recursive config subcommands. _(command-test; signed-off)_
+- [x] **EWP-CMD-COMPLETION-TS03** — every inherited and local flag regardless of common/advanced help _(command-test; signed-off)_
+- [x] **EWP-CMD-COMPLETION-TS04** — enum choice completion from registries. _(command-test; signed-off)_
+- [x] **EWP-CMD-COMPLETION-TS05** — local skill/path/manifest completion without network; empty target _(command-test; signed-off)_
+- [x] **EWP-CMD-COMPLETION-TS06** — generated shell syntax validation, help-only manual install _(command-test; signed-off)_
+- [x] **EWP-P6-T03** — Recursive alias-aware completion. _(phase-task; signed-off)_
+- [x] **EWP-P6-TS02** — Bash/zsh/fish nested completion suite. _(phase-test; signed-off)_
+- [x] **P2-04** — Completion _(recommendation; signed-off)_
 
 ## P17-G6-03 — Rendering matrix, legacy cleanup, versions/capabilities, install/upgrade docs
 

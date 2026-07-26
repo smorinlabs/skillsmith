@@ -7999,7 +7999,7 @@
       "phase": "6",
       "title": "Bash/zsh/fish completion generation and nested completion contracts",
       "dependsOn": ["P17-G6-02A"],
-      "status": "reviewed",
+      "status": "signed-off",
       "owner": "root-goal",
       "ownedFiles": [
         "bun.lock",
@@ -8111,12 +8111,12 @@
           ]
         },
         "traceability-closure": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G6-02B.md#traceability-closure-and-sign-off"]
         },
         "signed-off": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G6-02B.md#traceability-closure-and-sign-off"]
         }
       },
       "evidence": [
@@ -8139,7 +8139,8 @@
         "projects/p17/evidence/P17-G6-02B.md#final-independent-adversarial-review-go-at-8509092",
         "projects/p17/evidence/P17-G6-02B.md#first-terminal-repository-gate-and-compatibility-ownership-amendment",
         "projects/p17/evidence/P17-G6-02B.md#corrected-terminal-repository-gate-at-bfe8458",
-        "projects/p17/evidence/P17-G6-02B.md#final-independent-adversarial-review-go-at-baafb56"
+        "projects/p17/evidence/P17-G6-02B.md#final-independent-adversarial-review-go-at-baafb56",
+        "projects/p17/evidence/P17-G6-02B.md#traceability-closure-and-sign-off"
       ]
     },
     {
@@ -8542,7 +8543,7 @@
       "title": "Maintain — How do I emit completion for a shell?",
       "stateModel": "coverage",
       "primaryGroup": "P17-G6-02B",
-      "status": "validated",
+      "status": "signed-off",
       "tier": "supported-platform",
       "plannedTarget": "surface:completion",
       "target": null,
@@ -10734,7 +10735,7 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G6-02B",
-      "status": "validated",
+      "status": "signed-off",
       "tier": "supported-platform",
       "plannedTarget": "coverage:P17-G6-02B",
       "target": null,
@@ -14258,7 +14259,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02B",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "supported-platform",
       "plannedTarget": "planned:P17-G6-02B:packages/cli/tests/contracts/completion.test.ts#EWP-CMD-COMPLETION-TS01",
       "target": {
@@ -14295,7 +14296,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02B",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "supported-platform",
       "plannedTarget": "planned:P17-G6-02B:packages/cli/tests/contracts/completion.test.ts#EWP-CMD-COMPLETION-TS02",
       "target": {
@@ -14332,7 +14333,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02B",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "supported-platform",
       "plannedTarget": "planned:P17-G6-02B:packages/cli/tests/contracts/completion.test.ts#EWP-CMD-COMPLETION-TS03",
       "target": {
@@ -14369,7 +14370,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02B",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "supported-platform",
       "plannedTarget": "planned:P17-G6-02B:packages/cli/tests/contracts/completion.test.ts#EWP-CMD-COMPLETION-TS04",
       "target": {
@@ -14406,7 +14407,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02B",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "supported-platform",
       "plannedTarget": "planned:P17-G6-02B:packages/cli/tests/contracts/completion.test.ts#EWP-CMD-COMPLETION-TS05",
       "target": {
@@ -14443,7 +14444,7 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02B",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "supported-platform",
       "plannedTarget": "planned:P17-G6-02B:packages/cli/tests/contracts/completion.test.ts#EWP-CMD-COMPLETION-TS06",
       "target": {
@@ -25684,7 +25685,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G6-02B",
-      "status": "green",
+      "status": "signed-off",
       "tier": "supported-platform",
       "plannedTarget": "planned:P17-G6-02B",
       "target": null,
@@ -25855,7 +25856,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02B",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "supported-platform",
       "plannedTarget": "planned:P17-G6-02B:tests/ergonomics/phase/EWP-P6-TS02.test.ts#EWP-P6-TS02",
       "target": {
@@ -27729,7 +27730,7 @@
       "designStatus": "retained",
       "stateModel": "coverage",
       "primaryGroup": "P17-G6-02B",
-      "status": "validated",
+      "status": "signed-off",
       "tier": "supported-platform",
       "plannedTarget": "coverage:P17-G6-02B",
       "target": null,
