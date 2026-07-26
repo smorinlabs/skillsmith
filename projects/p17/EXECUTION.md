@@ -8,7 +8,7 @@ passed. Phase 1 is `approved`; its entry, whole-phase review, standing approval,
 Phase 2 is `approved`; its entry, whole-phase review, standing approval, and exit are passed.
 Phase 3 is `approved`; its entry, whole-phase review, standing approval, and exit are passed.
 Phase 4 is `approved`; its entry, whole-phase review, standing approval, and exit are passed.
-Phase 5 is `active`; its entry gate is passed.
+Phase 5 is `blocked`; its gates are entry=passed, review=failed, approval=pending, exit=pending.
 `catalog.json` is the machine-readable status authority.
 
 This file groups the consolidated plan into reviewable changes. It does not replace product
