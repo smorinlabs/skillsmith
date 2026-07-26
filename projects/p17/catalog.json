@@ -7999,7 +7999,7 @@
       "phase": "6",
       "title": "Bash/zsh/fish completion generation and nested completion contracts",
       "dependsOn": ["P17-G6-02A"],
-      "status": "ready",
+      "status": "active",
       "owner": "root-goal",
       "ownedFiles": [
         "bun.lock",
@@ -8077,8 +8077,8 @@
           ]
         },
         "test-first": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G6-02B.md#test-first-evidence"]
         },
         "minimal-implementation": {
           "status": "pending",
@@ -8118,7 +8118,8 @@
         "projects/p17/evidence/P17-G6-02B.md#mapping-result",
         "projects/p17/evidence/P17-G6-02B.md#ready-review-at-85be9bb",
         "projects/p17/evidence/P17-G6-02B.md#corrected-ready-review-at-7c01c14",
-        "projects/p17/evidence/P17-G6-02B.md#accepted-ready-result"
+        "projects/p17/evidence/P17-G6-02B.md#accepted-ready-result",
+        "projects/p17/evidence/P17-G6-02B.md#test-first-evidence"
       ]
     },
     {
@@ -14231,11 +14232,18 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02B",
-      "status": "planned",
+      "status": "failing",
       "tier": "supported-platform",
       "plannedTarget": "planned:P17-G6-02B:packages/cli/tests/contracts/completion.test.ts#EWP-CMD-COMPLETION-TS01",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/completion.test.ts",
+        "selector": "EWP-CMD-COMPLETION-TS01",
+        "command": "bun test packages/cli/tests/contracts/completion.test.ts --test-name-pattern EWP-CMD-COMPLETION-TS01"
+      },
+      "evidence": [
+        "projects/p17/evidence/P17-G6-02B.md#red-execution-receipt-ewp-cmd-completion-ts01"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-COMPLETION-TS01"],
@@ -14249,8 +14257,10 @@
         "EWP-P6-TS02"
       ],
       "affectedContracts": ["COMMAND:completion", "EWP-CF-014", "P2-04"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/completion.test.ts --test-name-pattern EWP-CMD-COMPLETION-TS01"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/completion.test.ts"]
     },
     {
       "id": "EWP-CMD-COMPLETION-TS02",
@@ -14258,11 +14268,18 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02B",
-      "status": "planned",
+      "status": "failing",
       "tier": "supported-platform",
       "plannedTarget": "planned:P17-G6-02B:packages/cli/tests/contracts/completion.test.ts#EWP-CMD-COMPLETION-TS02",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/completion.test.ts",
+        "selector": "EWP-CMD-COMPLETION-TS02",
+        "command": "bun test packages/cli/tests/contracts/completion.test.ts --test-name-pattern EWP-CMD-COMPLETION-TS02"
+      },
+      "evidence": [
+        "projects/p17/evidence/P17-G6-02B.md#red-execution-receipt-ewp-cmd-completion-ts02"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-COMPLETION-TS02"],
@@ -14276,8 +14293,10 @@
         "EWP-P6-TS02"
       ],
       "affectedContracts": ["COMMAND:completion", "EWP-CF-014", "P2-04"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/completion.test.ts --test-name-pattern EWP-CMD-COMPLETION-TS02"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/completion.test.ts"]
     },
     {
       "id": "EWP-CMD-COMPLETION-TS03",
@@ -14285,11 +14304,18 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02B",
-      "status": "planned",
+      "status": "failing",
       "tier": "supported-platform",
       "plannedTarget": "planned:P17-G6-02B:packages/cli/tests/contracts/completion.test.ts#EWP-CMD-COMPLETION-TS03",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/completion.test.ts",
+        "selector": "EWP-CMD-COMPLETION-TS03",
+        "command": "bun test packages/cli/tests/contracts/completion.test.ts --test-name-pattern EWP-CMD-COMPLETION-TS03"
+      },
+      "evidence": [
+        "projects/p17/evidence/P17-G6-02B.md#red-execution-receipt-ewp-cmd-completion-ts03"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-COMPLETION-TS03"],
@@ -14303,8 +14329,10 @@
         "EWP-P6-TS02"
       ],
       "affectedContracts": ["COMMAND:completion", "EWP-CF-014", "P2-04"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/completion.test.ts --test-name-pattern EWP-CMD-COMPLETION-TS03"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/completion.test.ts"]
     },
     {
       "id": "EWP-CMD-COMPLETION-TS04",
@@ -14312,11 +14340,18 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02B",
-      "status": "planned",
+      "status": "failing",
       "tier": "supported-platform",
       "plannedTarget": "planned:P17-G6-02B:packages/cli/tests/contracts/completion.test.ts#EWP-CMD-COMPLETION-TS04",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/completion.test.ts",
+        "selector": "EWP-CMD-COMPLETION-TS04",
+        "command": "bun test packages/cli/tests/contracts/completion.test.ts --test-name-pattern EWP-CMD-COMPLETION-TS04"
+      },
+      "evidence": [
+        "projects/p17/evidence/P17-G6-02B.md#red-execution-receipt-ewp-cmd-completion-ts04"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-COMPLETION-TS04"],
@@ -14330,8 +14365,10 @@
         "EWP-P6-TS02"
       ],
       "affectedContracts": ["COMMAND:completion", "EWP-CF-014", "P2-04"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/completion.test.ts --test-name-pattern EWP-CMD-COMPLETION-TS04"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/completion.test.ts"]
     },
     {
       "id": "EWP-CMD-COMPLETION-TS05",
@@ -14339,11 +14376,18 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02B",
-      "status": "planned",
+      "status": "failing",
       "tier": "supported-platform",
       "plannedTarget": "planned:P17-G6-02B:packages/cli/tests/contracts/completion.test.ts#EWP-CMD-COMPLETION-TS05",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/completion.test.ts",
+        "selector": "EWP-CMD-COMPLETION-TS05",
+        "command": "bun test packages/cli/tests/contracts/completion.test.ts --test-name-pattern EWP-CMD-COMPLETION-TS05"
+      },
+      "evidence": [
+        "projects/p17/evidence/P17-G6-02B.md#red-execution-receipt-ewp-cmd-completion-ts05"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-COMPLETION-TS05"],
@@ -14357,8 +14401,10 @@
         "EWP-P6-TS02"
       ],
       "affectedContracts": ["COMMAND:completion", "EWP-CF-014", "P2-04"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/completion.test.ts --test-name-pattern EWP-CMD-COMPLETION-TS05"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/completion.test.ts"]
     },
     {
       "id": "EWP-CMD-COMPLETION-TS06",
@@ -14366,11 +14412,18 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02B",
-      "status": "planned",
+      "status": "failing",
       "tier": "supported-platform",
       "plannedTarget": "planned:P17-G6-02B:packages/cli/tests/contracts/completion.test.ts#EWP-CMD-COMPLETION-TS06",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/completion.test.ts",
+        "selector": "EWP-CMD-COMPLETION-TS06",
+        "command": "bun test packages/cli/tests/contracts/completion.test.ts --test-name-pattern EWP-CMD-COMPLETION-TS06"
+      },
+      "evidence": [
+        "projects/p17/evidence/P17-G6-02B.md#red-execution-receipt-ewp-cmd-completion-ts06"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-COMPLETION-TS06"],
@@ -14384,8 +14437,10 @@
         "EWP-P6-TS02"
       ],
       "affectedContracts": ["COMMAND:completion", "EWP-CF-014", "P2-04"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/completion.test.ts --test-name-pattern EWP-CMD-COMPLETION-TS06"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/completion.test.ts"]
     },
     {
       "id": "EWP-CMD-CONFIG-TS01",
@@ -25597,14 +25652,15 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G6-02B",
-      "status": "ready",
+      "status": "red",
       "tier": "supported-platform",
       "plannedTarget": "planned:P17-G6-02B",
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G6-02B.md#mapping-and-prerequisites",
         "projects/p17/evidence/P17-G6-02B.md#corrected-ready-review-at-7c01c14",
-        "projects/p17/evidence/P17-G6-02B.md#accepted-ready-result"
+        "projects/p17/evidence/P17-G6-02B.md#accepted-ready-result",
+        "projects/p17/evidence/P17-G6-02B.md#test-first-evidence"
       ],
       "secondaryGroups": [],
       "implements": ["COMMAND:completion", "EWP-CF-014", "P2-04"],
@@ -25765,11 +25821,16 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02B",
-      "status": "planned",
+      "status": "failing",
       "tier": "supported-platform",
       "plannedTarget": "planned:P17-G6-02B:tests/ergonomics/phase/EWP-P6-TS02.test.ts#EWP-P6-TS02",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P6-TS02.test.ts",
+        "selector": "EWP-P6-TS02",
+        "command": "bun test tests/ergonomics/phase/EWP-P6-TS02.test.ts --test-name-pattern EWP-P6-TS02"
+      },
+      "evidence": ["projects/p17/evidence/P17-G6-02B.md#red-execution-receipt-ewp-p6-ts02"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P6-TS02"],
@@ -25783,8 +25844,10 @@
         "EWP-P6-TS02"
       ],
       "affectedContracts": ["COMMAND:completion", "EWP-CF-014", "P2-04"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P6-TS02.test.ts --test-name-pattern EWP-P6-TS02"
+      ],
+      "ownedFiles": ["tests/ergonomics/phase/EWP-P6-TS02.test.ts"]
     },
     {
       "id": "EWP-P6-TS03",

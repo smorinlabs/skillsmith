@@ -1577,7 +1577,7 @@ Downstream coverage obligations: EWP-CMD-COMPLETION-TS01, EWP-CMD-COMPLETION-TS0
 
 ## P17-G6-02B — Bash/zsh/fish completion generation and nested completion contracts
 
-Phase: 6; status: **ready**; dependencies: P17-G6-02A.
+Phase: 6; status: **active**; dependencies: P17-G6-02A.
 Required-now validations: EWP-CMD-COMPLETION-TS01, EWP-CMD-COMPLETION-TS02, EWP-CMD-COMPLETION-TS03, EWP-CMD-COMPLETION-TS04, EWP-CMD-COMPLETION-TS05, EWP-CMD-COMPLETION-TS06, EWP-P6-TS02.
 Downstream coverage obligations: EWP-WF01.
 
@@ -1585,7 +1585,7 @@ Downstream coverage obligations: EWP-WF01.
 
 - [x] P17-G6-02B:mapped _(passed)_
 - [x] P17-G6-02B:ready _(passed)_
-- [ ] P17-G6-02B:test-first _(pending)_
+- [x] P17-G6-02B:test-first _(passed)_
 - [ ] P17-G6-02B:minimal-implementation _(pending)_
 - [ ] P17-G6-02B:targeted-green _(pending)_
 - [ ] P17-G6-02B:impacted-green _(pending)_
@@ -1598,14 +1598,14 @@ Downstream coverage obligations: EWP-WF01.
 
 - [ ] **COMMAND:completion** — Maintain — How do I emit completion for a shell? _(command; mapped)_
 - [ ] **EWP-CF-014** — Keep completion emission pure and defer installer ownership _(finding; mapped)_
-- [ ] **EWP-CMD-COMPLETION-TS01** — all 23 root commands and adjacent aliases for bash/zsh/fish, _(command-test; planned)_
-- [ ] **EWP-CMD-COMPLETION-TS02** — recursive config subcommands. _(command-test; planned)_
-- [ ] **EWP-CMD-COMPLETION-TS03** — every inherited and local flag regardless of common/advanced help _(command-test; planned)_
-- [ ] **EWP-CMD-COMPLETION-TS04** — enum choice completion from registries. _(command-test; planned)_
-- [ ] **EWP-CMD-COMPLETION-TS05** — local skill/path/manifest completion without network; empty target _(command-test; planned)_
-- [ ] **EWP-CMD-COMPLETION-TS06** — generated shell syntax validation, help-only manual install _(command-test; planned)_
-- [ ] **EWP-P6-T03** — Recursive alias-aware completion. _(phase-task; ready)_
-- [ ] **EWP-P6-TS02** — Bash/zsh/fish nested completion suite. _(phase-test; planned)_
+- [ ] **EWP-CMD-COMPLETION-TS01** — all 23 root commands and adjacent aliases for bash/zsh/fish, _(command-test; failing)_
+- [ ] **EWP-CMD-COMPLETION-TS02** — recursive config subcommands. _(command-test; failing)_
+- [ ] **EWP-CMD-COMPLETION-TS03** — every inherited and local flag regardless of common/advanced help _(command-test; failing)_
+- [ ] **EWP-CMD-COMPLETION-TS04** — enum choice completion from registries. _(command-test; failing)_
+- [ ] **EWP-CMD-COMPLETION-TS05** — local skill/path/manifest completion without network; empty target _(command-test; failing)_
+- [ ] **EWP-CMD-COMPLETION-TS06** — generated shell syntax validation, help-only manual install _(command-test; failing)_
+- [ ] **EWP-P6-T03** — Recursive alias-aware completion. _(phase-task; red)_
+- [ ] **EWP-P6-TS02** — Bash/zsh/fish nested completion suite. _(phase-test; failing)_
 - [ ] **P2-04** — Completion _(recommendation; mapped)_
 
 ## P17-G6-03 — Rendering matrix, legacy cleanup, versions/capabilities, install/upgrade docs
