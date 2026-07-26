@@ -196,3 +196,29 @@
   G5-01 and whole-phase reviews are mandatory.
 - **Boundary:** Phase 6 remains five pristine planned groups, 50 pending lifecycle gates, 40 planned
   primary entities, zero owned paths, and zero executable targets. No Phase-6 work is authorized.
+
+## F05/F06 pre-edit review and F07 cross-command NO-GO — 2026-07-26
+
+- **Reviewed head/tree:** `3b3bde27c88ebd36ca4235b776ef48e6a371eb0e` /
+  `0b546cc90accfed18dafc8aa6d76c54fd11711cb`, clean before and after all read-only probes.
+- **Reviewer:** `/external-codex/019f9c46-1562-7af3-a440-e52b08541f1c`, **NO-GO at 0.99
+  confidence** for the proposed sync-only pre-edit boundary.
+- **Exact closure state:** G5-04 remains 10/10 gates and 16/16 entities; all five Phase-5 groups
+  retain 50/50 historical gates and 70/70 signed entities. The single Phase-5 review gate is failed;
+  approval and exit are pending. The focused baseline is 17 passed, zero failed, 64 assertions, but
+  it omits the proven source transports.
+- **Open findings:** F05 high/open for sync; F07 high/open for the identical update/undo/GC defect;
+  F06 medium/governance-corrected but awaiting renewed review. All four codecs and both renderers
+  accept and emit each of SSH/scp, `git://`, and `file://`; sync also crosses prepared dry-run and
+  executed application success. Credentials and `https://`/`ssh://` are refused, and benign local
+  paths remain accepted.
+- **Ownership:** G5-01 is now 78 product/test plus two governance paths = 80 unique catalog paths.
+  Phase 5 is 446 ownership entries / 269 unique current regular paths. Progressed ownership is 879
+  current regular paths plus the two exact recorded deletions.
+- **Required correction:** test-first regressions in the existing output/application owners for all
+  four commands, followed only by the four codec predicate changes. No renderer, application-service
+  production, shared redaction, source parser, DTO, wire, lifecycle, catalog, or feature change.
+- **Remaining reviews:** fresh expanded pre-edit review; after implementation and complete replay,
+  renewed immutable G5-01 review and renewed whole-Phase-5 review.
+- **Phase-6 boundary:** five planned groups, 50 pending gates, 40 planned primary entities, zero
+  owned paths, zero executable/current targets, and zero non-pristine entities. Phase 6 is excluded.
