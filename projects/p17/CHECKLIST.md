@@ -1538,7 +1538,7 @@ Downstream coverage obligations: EWP-WF01.
 
 ## P17-G6-02A — Shared command metadata, five-group help, progressive options, workflows, and generated docs
 
-Phase: 6; status: **active**; dependencies: P17-G5-04, P17-G5-05.
+Phase: 6; status: **reviewed**; dependencies: P17-G5-04, P17-G5-05.
 Required-now validations: EWP-CMD-HELP-TS01, EWP-CMD-HELP-TS02, EWP-CMD-HELP-TS03, EWP-CMD-HELP-TS04, EWP-CMD-HELP-TS05, EWP-CMD-HELP-TS06, EWP-CMD-HELP-TS07, EWP-OPT-TS05, EWP-OPT-TS07, EWP-P1-TS05, EWP-P6-TS04, EWP-P6-TS05, EWP-WF05, EWP-WF15, EWP-WF16.
 Downstream coverage obligations: EWP-CMD-COMPLETION-TS01, EWP-CMD-COMPLETION-TS03, EWP-CMD-COMPLETION-TS05, EWP-WF01.
 
@@ -1551,7 +1551,7 @@ Downstream coverage obligations: EWP-CMD-COMPLETION-TS01, EWP-CMD-COMPLETION-TS0
 - [x] P17-G6-02A:targeted-green _(passed)_
 - [x] P17-G6-02A:impacted-green _(passed)_
 - [x] P17-G6-02A:refactor _(passed)_
-- [ ] P17-G6-02A:adversarial-review _(pending)_
+- [x] P17-G6-02A:adversarial-review _(passed)_
 - [ ] P17-G6-02A:traceability-closure _(pending)_
 - [ ] P17-G6-02A:signed-off _(pending)_
 

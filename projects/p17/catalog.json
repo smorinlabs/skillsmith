@@ -7810,7 +7810,7 @@
       "phase": "6",
       "title": "Shared command metadata, five-group help, progressive options, workflows, and generated docs",
       "dependsOn": ["P17-G5-04", "P17-G5-05"],
-      "status": "active",
+      "status": "reviewed",
       "owner": "root-goal",
       "ownedFiles": [
         "README.md",
@@ -7914,7 +7914,7 @@
         "bun test tests/ergonomics/workflows/EWP-WF16.test.ts --test-name-pattern EWP-WF16"
       ],
       "implementers": ["root-codex-goal"],
-      "reviewer": null,
+      "reviewer": "/root/g5_05_f15_final_review",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -7958,8 +7958,10 @@
           ]
         },
         "adversarial-review": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G6-02A.md#final-independent-adversarial-review-go-at-5fe0bb9"
+          ]
         },
         "traceability-closure": {
           "status": "pending",
@@ -7987,7 +7989,8 @@
         "projects/p17/evidence/P17-G6-02A.md#impacted-green-at-112cafa",
         "projects/p17/evidence/P17-G6-02A.md#refactor-at-daca91f",
         "projects/p17/evidence/P17-G6-02A.md#renewed-refactor-after-independent-review-corrections-at-dbe57bc",
-        "projects/p17/evidence/P17-G6-02A.md#terminal-and-amended-refactor-green-at-1b6c1f4"
+        "projects/p17/evidence/P17-G6-02A.md#terminal-and-amended-refactor-green-at-1b6c1f4",
+        "projects/p17/evidence/P17-G6-02A.md#final-independent-adversarial-review-go-at-5fe0bb9"
       ]
     },
     {
