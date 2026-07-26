@@ -10,6 +10,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@bomb.sh/tab": "0.0.21",
     "@clack/prompts": "1.7.0",
     "@skillsmith/core": "workspace:*",
     "chalk": "^5.3.0",

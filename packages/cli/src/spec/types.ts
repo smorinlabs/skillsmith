@@ -9,6 +9,7 @@ export type OptionHelpFamily =
   | 'inherited-globals';
 export type OptionHelpLevel = 'common' | 'advanced';
 export type CommandWorkflowSafety = 'read-only' | 'preview' | 'changes-state';
+export type CompletionProviderKind = 'path' | 'manifest' | 'skill';
 export type OptionRelationKind =
   | 'conflicts'
   | 'requires'
@@ -24,6 +25,7 @@ export interface CommandArgumentSpec {
   readonly choices: readonly string[];
   readonly defaultValue: unknown;
   readonly description?: string;
+  readonly completionProvider?: CompletionProviderKind;
 }
 
 export interface CommandOptionSpec {
@@ -47,6 +49,7 @@ export interface CommandOptionSpec {
   /** Advanced options remain visible, but follow common options within their family. */
   readonly helpLevel: OptionHelpLevel;
   readonly description?: string;
+  readonly completionProvider?: CompletionProviderKind;
 }
 
 /**

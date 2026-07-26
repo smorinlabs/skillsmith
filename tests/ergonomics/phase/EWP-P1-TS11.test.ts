@@ -2360,6 +2360,7 @@ describe('EWP-P1-TS11', () => {
       },
       'packages/cli/package.json': {
         dependencies: [
+          '@bomb.sh/tab',
           '@clack/prompts',
           '@skillsmith/core',
           'chalk',

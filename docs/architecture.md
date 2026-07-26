@@ -36,7 +36,7 @@ packages/
   cli/           skillsmith — the CLI
     src/
       commands/      compatibility re-exports for the former command-module paths
-      completion/    shell completion renderers
+      completion/    detached candidate graph, bounded providers/protocol, shell hardening
       contracts/     reviewed command/option surface snapshots
       output/        pure human renderers and typed wire-codec adapters
       help/          topic-based help text
@@ -95,6 +95,17 @@ common workflows, option help family/level, and exit meanings. Commander 15 rend
 command and option groups; the thin help layer adds Skillsmith's progressive section order. The
 README command index and `docs/commands.md` are generated from that registry, and repository checks
 reject drift rather than maintaining a second hand-written command catalog.
+
+Completion is another derived registry consumer, not a second command catalog. A fresh detached
+`@bomb.sh/tab` root receives canonical paths, adjacent aliases, nested commands, local plus
+inherited flags, exact allowed values, and explicit local provider metadata from normalized
+`CommandSpec`. The hidden `skillsmith complete -- [tokens...]` transport is recognized before
+Commander and signal installation, is absent from public help/parser inventory, performs only
+bounded local reads, and emits a strict candidate/directive line protocol. Package-generated shell
+bytes are treated as untrusted adapter input: exact pinned Bash/zsh callback anchors are hardened
+to direct argv dispatch with no runtime `eval`, Fish's direct dispatch is validated, and any
+template drift fails closed without emitting a partial script. Public `completion` remains
+emit-only and never edits shell startup files.
 
 `runStatusApplication` is the current correlated-read service. It validates target/tool/scope
 selection before I/O, resolves shared project/configuration context, selects one readable artifact

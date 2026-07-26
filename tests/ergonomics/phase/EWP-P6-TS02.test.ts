@@ -9,6 +9,7 @@ import { CLI_ENTRYPOINT } from '../../../packages/cli/tests/fixtures/cli.ts';
 import { hermeticGitEnv } from '../../../packages/core/tests/fixtures/git-env.ts';
 
 const ROOT = resolve(import.meta.dir, '../../..');
+const TEST_BUN_CACHE = join(tmpdir(), 'skillsmith-test-bun-cache');
 
 const runCli = async (
   args: readonly string[],
@@ -16,7 +17,13 @@ const runCli = async (
 ) => {
   const child = Bun.spawn(['bun', 'run', CLI_ENTRYPOINT, ...args], {
     cwd: options.cwd ?? ROOT,
-    env: hermeticGitEnv({ CI: '1', NO_COLOR: '1', ...options.env }),
+    env: hermeticGitEnv({
+      BUN_INSTALL_CACHE_DIR: TEST_BUN_CACHE,
+      BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0',
+      CI: '1',
+      NO_COLOR: '1',
+      ...options.env,
+    }),
     stdout: 'pipe',
     stderr: 'pipe',
   });

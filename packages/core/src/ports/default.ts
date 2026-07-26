@@ -179,6 +179,7 @@ const createFileReadPort = (): FileReadPort & FileMetadataReadPort => ({
         linkCount: value.nlink,
         uid: value.uid,
         gid: value.gid,
+        sizeBytes: value.isFile() ? value.size : null,
       };
     } catch (error) {
       if (nodeCode(error) === 'ENOENT')

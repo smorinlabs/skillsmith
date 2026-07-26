@@ -16,11 +16,12 @@ const run = async (args: string[]) => {
 };
 
 describe('skillsmith completion', () => {
-  test('bash: exit 0, contains _skillsmith and agents', async () => {
+  test('bash: exit 0, contains hardened dynamic callback', async () => {
     const r = await run(['completion', 'bash']);
     expect(r.code).toBe(0);
     expect(r.stdout).toMatch(/_skillsmith/);
-    expect(r.stdout).toContain('agents');
+    expect(r.stdout).toContain('skillsmith complete --');
+    expect(r.stdout).not.toMatch(/\beval\b/);
   });
 
   test('zsh: exit 0, has #compdef header', async () => {

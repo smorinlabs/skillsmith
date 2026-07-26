@@ -19,6 +19,21 @@ export interface RuntimeContextOptions {
   readonly observation: ObservationBundle;
 }
 
+/** Compose the read-only ambient capabilities used by the hidden completion transport. */
+export const createCompletionRuntimeContext = async () => {
+  const ports = await defaultRuntimePorts();
+  return Object.freeze({
+    cwd: process.cwd(),
+    monotonicMilliseconds: () => ports.monotonicMilliseconds(),
+    ports: Object.freeze({
+      listDir: ports.listDir,
+      pathKind: ports.pathKind,
+      readBytes: ports.readBytes,
+      readFileMetadata: ports.readFileMetadata,
+    }),
+  });
+};
+
 /** Construct one capability-scoped application context per invocation. */
 export const createCurrentApplicationContext = async (
   command: Command,

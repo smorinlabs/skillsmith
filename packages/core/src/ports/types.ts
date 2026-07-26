@@ -32,6 +32,8 @@ export interface FileMetadata {
   readonly uid?: number | null;
   /** Effective numeric group when the adapter can prove it; safety consumers fail closed on null. */
   readonly gid?: number | null;
+  /** Regular-file byte size when the adapter can prove it without reading content. */
+  readonly sizeBytes?: number | null;
 }
 
 /** Focused metadata capability used only by lossless editors and transaction planners. */

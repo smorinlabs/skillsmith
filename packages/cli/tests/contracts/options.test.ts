@@ -13,7 +13,7 @@ import {
 } from '../../../core/src/selection/resolve.ts';
 import type { SelectionPolicy, SelectionRequest } from '../../../core/src/selection/types.ts';
 import { hermeticGitEnv } from '../../../core/tests/fixtures/git-env.ts';
-import { walk } from '../../src/completion/walk.ts';
+import { parseCompletionGraph } from '../../src/completion/adapter.ts';
 import {
   CLI_MIGRATION_PROVENANCE,
   assertClosedMigrationLedger,
@@ -26,6 +26,7 @@ import {
 } from '../../src/contracts/commander-surface.ts';
 import { buildProgram } from '../../src/program.ts';
 import { normalizeCommandSpec } from '../../src/runtime/command-spec.ts';
+import { CURRENT_COMMAND_SPECS } from '../../src/spec/index.ts';
 import type { CommandSpec, CommandSpecInput } from '../../src/spec/types.ts';
 import {
   NON_MUTATING_MODE_POLICIES,
@@ -35,6 +36,13 @@ import { CLI_ENTRYPOINT } from '../fixtures/cli.ts';
 
 const snapshotTree = async (root: string): Promise<readonly string[]> =>
   (await readdir(root, { recursive: true, encoding: 'utf8' })).sort();
+
+const EMPTY_COMPLETION_PORTS = Object.freeze({
+  listDir: async (): Promise<readonly string[]> => [],
+  pathKind: async () => 'dir' as const,
+  readBytes: async () => new Uint8Array(),
+  readFileMetadata: async () => ({ kind: 'absent' as const, mode: null, identity: null }),
+});
 
 const runHermeticCli = async (
   args: readonly string[],
@@ -1499,26 +1507,39 @@ describe('EWP-OPT-TS06', () => {
     }
   });
 
-  test('current help exposes target-or-all grammar while completion never invents positional all', () => {
+  test('current help exposes target-or-all grammar while completion never invents positional all', async () => {
     const program = buildProgram();
-    const completion = walk(program)[0];
-    if (!completion) throw new Error('completion root missing');
 
     for (const commandName of ['dev', 'promote'] as const) {
       const command = program.commands.find((candidate) => candidate.name() === commandName);
-      const completionCommand = completion.subcommands.find(
-        (candidate) => candidate.name === commandName,
+      const spec = CURRENT_COMMAND_SPECS.find(
+        (candidate) => candidate.path === `skillsmith ${commandName}`,
       );
-      if (!command || !completionCommand) throw new Error(`${commandName} command missing`);
+      if (!command || !spec) throw new Error(`${commandName} command missing`);
 
       expect(command.helpInformation()).toContain('[skill...]');
       expect(command.options.some((option) => option.long === '--all')).toBeTrue();
-      expect(completionCommand.args).toEqual([
-        expect.objectContaining({ name: 'skill', variadic: true, choices: null }),
+      expect(spec.arguments).toEqual([
+        expect.objectContaining({
+          name: 'skill',
+          variadic: true,
+          choices: [],
+          completionProvider: 'skill',
+        }),
       ]);
-      expect(completionCommand.args.flatMap((argument) => argument.choices ?? [])).not.toContain(
-        'all',
-      );
+      expect(spec.arguments.flatMap((argument) => argument.choices ?? [])).not.toContain('all');
+      const candidates = (
+        await parseCompletionGraph([commandName, ''], {
+          cwd: '/completion-fixture',
+          monotonicMilliseconds: () => 0,
+          ports: EMPTY_COMPLETION_PORTS,
+        })
+      )
+        .trimEnd()
+        .split('\n')
+        .filter((line) => !line.startsWith(':'))
+        .map((line) => line.split('\t', 1)[0]);
+      expect(candidates).not.toContain('all');
     }
   });
 });

@@ -10,6 +10,27 @@ import type {
   OptionRelationSpec,
 } from './types.ts';
 
+const completionProviderForArgument = (
+  path: string,
+  name: string,
+): CommandArgumentSpec['completionProvider'] => {
+  if (path === 'skillsmith verify' && name === 'path') return 'path';
+  if (
+    name === 'skill' &&
+    [
+      'skillsmith dev',
+      'skillsmith promote',
+      'skillsmith status',
+      'skillsmith uninstall',
+      'skillsmith undo',
+      'skillsmith update',
+    ].includes(path)
+  ) {
+    return 'skill';
+  }
+  return undefined;
+};
+
 const PROFILE: Readonly<
   Record<
     string,
@@ -219,7 +240,8 @@ const DESCRIPTION: Readonly<Record<string, string>> = {
   'skillsmith dev': 'Demote a pinned skill back to a live development source.',
   'skillsmith promote': 'Promote a skill from dev mode (symlink) to production (pinned copy).',
   'skillsmith version': 'Print SkillSmith version',
-  'skillsmith completion': 'Emit a shell completion script',
+  'skillsmith completion':
+    'Emit a deterministic shell completion script for manual sourcing or package-manager placement without changing startup files',
   'skillsmith help': 'Help about a command or cross-cutting topic',
 };
 
@@ -449,7 +471,10 @@ const WORKFLOW_DESCRIPTIONS: Readonly<Record<string, readonly string[]>> = {
     'Print the version through the explicit command.',
     'Print the version through the global flag.',
   ],
-  'skillsmith completion': ['Emit the Bash completion script.', 'Emit the zsh completion script.'],
+  'skillsmith completion': [
+    'Emit the Bash script for sourcing in the current shell session.',
+    'Emit the zsh script to save at the package-manager or user completion location.',
+  ],
   'skillsmith help': ['Open the install command guide.', 'Open the cross-command exit-code guide.'],
 };
 
@@ -765,6 +790,7 @@ const argumentsForPath = (path: string): readonly CommandArgumentSpec[] =>
       const description = ARGUMENT_DESCRIPTIONS[`${path}:${name}`];
       if (description === undefined)
         throw new Error(`missing current argument description for ${path} ${name}`);
+      const completionProvider = completionProviderForArgument(path, name);
       return {
         name,
         required: row.argument.required,
@@ -772,6 +798,7 @@ const argumentsForPath = (path: string): readonly CommandArgumentSpec[] =>
         choices: row.argument.choices,
         defaultValue: row.argument.defaultValue === 'null' ? undefined : row.argument.defaultValue,
         description,
+        ...(completionProvider === undefined ? {} : { completionProvider }),
       };
     });
 

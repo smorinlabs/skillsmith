@@ -14,13 +14,19 @@ import {
 import { tmpdir } from 'node:os';
 import { basename, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import {
+  type FileMetadataReadPort,
+  type FileReadPort,
+  defaultRuntimePorts,
+} from '@skillsmith/core';
 import { hermeticGitEnv } from '../../../core/tests/fixtures/git-env.ts';
 import { CURRENT_COMMAND_SPECS } from '../../src/spec/index.ts';
-import type { NormalizedCommandSpec } from '../../src/spec/types.ts';
+import type { CommandSpecInput, NormalizedCommandSpec } from '../../src/spec/types.ts';
 import { CLI_ENTRYPOINT } from '../fixtures/cli.ts';
 
 const ROOT = resolve(import.meta.dir, '../../../..');
 const FAIL_CLOSED = ':5\n';
+const TEST_BUN_CACHE = join(tmpdir(), 'skillsmith-test-bun-cache');
 
 interface CliResult {
   readonly exitCode: number;
@@ -28,21 +34,36 @@ interface CliResult {
   readonly stderr: string;
 }
 
+type CompletionReadPorts = Pick<FileReadPort, 'listDir' | 'pathKind' | 'readBytes'> &
+  FileMetadataReadPort;
+
 interface CompletionContext {
   readonly cwd?: string;
   readonly monotonicMilliseconds?: () => number;
+  readonly ports?: CompletionReadPorts;
+}
+
+interface ResolvedCompletionContext {
+  readonly cwd: string;
+  readonly monotonicMilliseconds: () => number;
+  readonly ports: CompletionReadPorts;
 }
 
 interface CompletionTransportModule {
   readonly resolveCompletionRequest?: (
     tokens: readonly string[],
-    context?: CompletionContext,
+    context: ResolvedCompletionContext,
   ) => string | Promise<string>;
   readonly validateCompletionProtocol?: (captured: string) => string;
 }
 
 interface CompletionAdapterModule {
   readonly hardenCompletionScript?: (shell: 'bash' | 'zsh' | 'fish', source: string) => string;
+  readonly parseCompletionGraph?: (
+    tokens: readonly string[],
+    context: { readonly cwd: string; readonly monotonicMilliseconds: () => number },
+    specs?: readonly CommandSpecInput[],
+  ) => Promise<string>;
 }
 
 interface ProtocolCandidate {
@@ -56,7 +77,13 @@ const runCli = async (
 ): Promise<CliResult> => {
   const child = Bun.spawn(['bun', 'run', CLI_ENTRYPOINT, ...args], {
     cwd: options.cwd ?? ROOT,
-    env: hermeticGitEnv({ CI: '1', NO_COLOR: '1', ...options.env }),
+    env: hermeticGitEnv({
+      BUN_INSTALL_CACHE_DIR: TEST_BUN_CACHE,
+      BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0',
+      CI: '1',
+      NO_COLOR: '1',
+      ...options.env,
+    }),
     stdout: 'pipe',
     stderr: 'pipe',
   });
@@ -74,6 +101,19 @@ const completionTransport = async (): Promise<CompletionTransportModule> => {
     `${pathToFileURL(join(ROOT, 'packages/cli/src/completion/transport.ts')).href}?ewp-g6-02b`
   ) as Promise<CompletionTransportModule>;
   return transportPromise;
+};
+
+let completionPortsPromise: Promise<CompletionReadPorts> | undefined;
+const completionPorts = (): Promise<CompletionReadPorts> => {
+  completionPortsPromise ??= defaultRuntimePorts().then((ports) =>
+    Object.freeze({
+      listDir: ports.listDir,
+      pathKind: ports.pathKind,
+      readBytes: ports.readBytes,
+      readFileMetadata: ports.readFileMetadata,
+    }),
+  );
+  return completionPortsPromise;
 };
 
 let adapterPromise: Promise<CompletionAdapterModule> | undefined;
@@ -94,7 +134,12 @@ const resolveCompletion = async (
     'completion transport must export resolveCompletionRequest',
   ).toBe('function');
   if (typeof module.resolveCompletionRequest !== 'function') return FAIL_CLOSED;
-  return module.resolveCompletionRequest(Object.freeze([...tokens]), context);
+  const ports = context.ports ?? (await completionPorts());
+  return module.resolveCompletionRequest(Object.freeze([...tokens]), {
+    cwd: context.cwd ?? ROOT,
+    monotonicMilliseconds: context.monotonicMilliseconds ?? (() => performance.now()),
+    ports,
+  });
 };
 
 const parseProtocol = (
@@ -260,7 +305,10 @@ describe('P17-G6-02B completion contracts', () => {
     const parsed = parseProtocol(result.stdout);
     expect(parsed.directive & 4).toBe(4);
 
-    const expected = topLevelSpecs.flatMap((spec) => [basename(spec.path), ...spec.aliases]);
+    const expected = topLevelSpecs.flatMap((spec) => [
+      spec.path.split(' ').at(-1) ?? spec.path,
+      ...spec.aliases,
+    ]);
     expect(topLevelSpecs).toHaveLength(23);
     expect(expected).toHaveLength(28);
     expect(parsed.candidates.map(({ value }) => value)).toEqual(expected);
@@ -271,6 +319,104 @@ describe('P17-G6-02B completion contracts', () => {
     expect(publicUnknown.stdout).toBe('');
     expect(publicUnknown.stderr).toContain('complete');
     expect(publicUnknown.stderr).toMatch(/unknown command|too many arguments/);
+
+    const adapter = await completionAdapter();
+    expect(
+      typeof adapter.parseCompletionGraph,
+      'completion adapter must export its generic CommandSpec graph boundary',
+    ).toBe('function');
+    if (typeof adapter.parseCompletionGraph !== 'function') return;
+    const extension: CommandSpecInput = {
+      name: 'fixture-extension',
+      path: 'skillsmith fixture-extension',
+      aliases: ['fixture-alias'],
+      group: 'develop',
+      helpOrder: Number.MAX_SAFE_INTEGER,
+      primaryQuestion: 'Can a downstream CommandSpec extend completion?',
+      description: 'Generic downstream completion fixture.',
+      arguments: [
+        {
+          name: 'target',
+          required: false,
+          variadic: false,
+          choices: ['alpha', 'beta'],
+          defaultValue: undefined,
+          description: 'Fixture target.',
+        },
+      ],
+      options: [],
+      examples: ['skillsmith fixture-extension alpha'],
+      capability: 'fixture',
+      application: 'fixture',
+    };
+    const nestedExtension: CommandSpecInput = {
+      ...extension,
+      name: 'nested',
+      path: 'skillsmith fixture-extension nested',
+      aliases: [],
+      arguments: [],
+      examples: ['skillsmith fixture-extension nested'],
+    };
+    const deepExtension: CommandSpecInput = {
+      ...extension,
+      name: 'deep',
+      path: 'skillsmith fixture-extension nested deep',
+      aliases: [],
+      arguments: [
+        {
+          name: 'leaf',
+          required: false,
+          variadic: false,
+          choices: ['omega'],
+          defaultValue: undefined,
+          description: 'Deep fixture leaf.',
+        },
+      ],
+      examples: ['skillsmith fixture-extension nested deep omega'],
+    };
+    const extensionSpecs = [...CURRENT_COMMAND_SPECS, extension, nestedExtension, deepExtension];
+    const graphContext = { cwd: ROOT, monotonicMilliseconds: () => 0 };
+    const extensionRoot = parseProtocol(
+      await adapter.parseCompletionGraph([''], graphContext, extensionSpecs),
+    ).candidates.map(({ value }) => value);
+    expect(extensionRoot).toContain('fixture-extension');
+    expect(extensionRoot).toContain('fixture-alias');
+    const canonical = parseProtocol(
+      await adapter.parseCompletionGraph(['fixture-extension', 'a'], graphContext, extensionSpecs),
+    ).candidates.map(({ value }) => value);
+    const aliased = parseProtocol(
+      await adapter.parseCompletionGraph(['fixture-alias', 'a'], graphContext, extensionSpecs),
+    ).candidates.map(({ value }) => value);
+    expect(canonical).toEqual(['alpha']);
+    expect(aliased).toEqual(canonical);
+    expect(
+      parseProtocol(
+        await adapter.parseCompletionGraph(
+          ['fixture-extension', 'nested', ''],
+          graphContext,
+          extensionSpecs,
+        ),
+      ).candidates.map(({ value }) => value),
+    ).toContain('deep');
+    expect(
+      parseProtocol(
+        await adapter.parseCompletionGraph(
+          ['fixture-extension', 'nested', 'deep', ''],
+          graphContext,
+          extensionSpecs,
+        ),
+      ).candidates.map(({ value }) => value),
+    ).toEqual(['omega']);
+
+    const duplicateAlias: CommandSpecInput = {
+      ...extension,
+      name: 'duplicate-alias',
+      path: 'skillsmith duplicate-alias',
+      aliases: ['fixture-alias'],
+    };
+    await expect(
+      adapter.parseCompletionGraph([''], graphContext, [...extensionSpecs, duplicateAlias]),
+    ).rejects.toThrow(/duplicate completion alias/u);
   }, 30_000);
 
   test('EWP-CMD-COMPLETION-TS02 nested config paths resolve recursively without sibling leakage', async () => {
@@ -356,7 +502,9 @@ describe('P17-G6-02B completion contracts', () => {
       await mkdir(join(fixture, 'local-one'));
       await writeFile(join(fixture, 'local-one', 'SKILL.md'), '# Local one\n');
       await mkdir(join(outside, 'linked-skill'));
+      await mkdir(join(outside, 'linked-skill', 'nested'));
       await writeFile(join(outside, 'linked-skill', 'SKILL.md'), '# Must not traverse\n');
+      await writeFile(join(outside, 'linked-skill', 'nested', 'outside.txt'), 'must not read\n');
       await symlink(join(outside, 'linked-skill'), join(fixture, 'linked'));
       await writeFile(join(fixture, 'skillsmith.toml'), manifest(['alpha', 'beta']));
 
@@ -375,6 +523,13 @@ describe('P17-G6-02B completion contracts', () => {
       expect(skills).not.toContain('--all');
       expect(skills).not.toContain('*');
       expect(skills).not.toContain('undeclared');
+      expect(await resolveCompletion(['verify', 'linked/'], { cwd: fixture })).toBe(FAIL_CLOSED);
+      expect(await resolveCompletion(['verify', 'linked/nested/'], { cwd: fixture })).toBe(
+        FAIL_CLOSED,
+      );
+      expect(await resolveCompletion(['update', ''], { cwd: join(fixture, 'linked') })).toBe(
+        FAIL_CLOSED,
+      );
       expect(await snapshotTree(fixture)).toEqual(before);
 
       expect(
@@ -416,6 +571,54 @@ describe('P17-G6-02B completion contracts', () => {
       await mkdir(oversized);
       await writeFile(join(oversized, 'skillsmith.toml'), `#${'x'.repeat(256 * 1024)}\n`);
       expect(await resolveCompletion(['update', ''], { cwd: oversized })).toBe(FAIL_CLOSED);
+
+      for (const sizeBytes of [undefined, -1, Number.NaN, 256 * 1024 + 1]) {
+        let contentReads = 0;
+        const unsafeMetadataPorts: CompletionReadPorts = {
+          listDir: async () => [],
+          pathKind: async () => 'dir',
+          readBytes: async () => {
+            contentReads += 1;
+            return new Uint8Array();
+          },
+          readFileMetadata: async () => ({
+            kind: 'file',
+            mode: 0o600,
+            identity: 'unsafe-metadata',
+            ...(sizeBytes === undefined ? {} : { sizeBytes }),
+          }),
+        };
+        expect(
+          await resolveCompletion(['update', ''], {
+            cwd: '/completion-metadata-fixture',
+            ports: unsafeMetadataPorts,
+          }),
+        ).toBe(FAIL_CLOSED);
+        expect(contentReads).toBe(0);
+      }
+
+      let racedContentReads = 0;
+      const changedDuringReadPorts: CompletionReadPorts = {
+        listDir: async () => [],
+        pathKind: async () => 'dir',
+        readBytes: async () => {
+          racedContentReads += 1;
+          return new Uint8Array([1, 2]);
+        },
+        readFileMetadata: async () => ({
+          kind: 'file',
+          mode: 0o600,
+          identity: 'changed-during-read',
+          sizeBytes: 1,
+        }),
+      };
+      expect(
+        await resolveCompletion(['update', ''], {
+          cwd: '/completion-metadata-fixture',
+          ports: changedDuringReadPorts,
+        }),
+      ).toBe(FAIL_CLOSED);
+      expect(racedContentReads).toBe(1);
 
       const unreadable = join(fixture, 'unreadable');
       await mkdir(unreadable);

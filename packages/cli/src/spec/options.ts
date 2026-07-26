@@ -1,6 +1,11 @@
 import { SUPPORTED_TOOLS } from '@skillsmith/core';
 import currentState from '../contracts/commander-current-state-v0.json' with { type: 'json' };
-import type { CommandOptionSpec, OptionHelpFamily, OptionHelpLevel } from './types.ts';
+import type {
+  CommandOptionSpec,
+  CompletionProviderKind,
+  OptionHelpFamily,
+  OptionHelpLevel,
+} from './types.ts';
 
 const KNOWN_SCOPES = ['system', 'user', 'project', 'managed'] as const;
 const KNOWN_COLORS = ['auto', 'always', 'never'] as const;
@@ -413,6 +418,20 @@ const optionFromState = (path: string, option: StateOption): CommandOptionSpec =
         ? true
         : decodeDefault(option.defaultValue);
   const help = optionHelpMetadata(path, long);
+  const completionProvider: CompletionProviderKind | undefined =
+    long === '--file'
+      ? 'manifest'
+      : long === '--config' ||
+          long === '--cd' ||
+          long === '--lockfile' ||
+          long === '--plan' ||
+          long === '--out' ||
+          long === '--path' ||
+          (path === 'skillsmith dev' && (long === '--source' || long === '--dest')) ||
+          (path === 'skillsmith sync' && (long === '--from' || long === '--to')) ||
+          (path === 'skillsmith gc' && long === '--forget-project')
+        ? 'path'
+        : undefined;
   return {
     flags: option.flags,
     long,
@@ -438,6 +457,7 @@ const optionFromState = (path: string, option: StateOption): CommandOptionSpec =
     parsedDefault: parsed,
     ...help,
     description,
+    ...(completionProvider === undefined ? {} : { completionProvider }),
   };
 };
 

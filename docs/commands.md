@@ -1042,7 +1042,7 @@ Minimal invocation: `skillsmith config list`
 
 ### `completion`
 
-Emit a shell completion script
+Emit a deterministic shell completion script for manual sourcing or package-manager placement without changing startup files
 
 Primary question: How do I emit completion for a shell?
 
@@ -1050,8 +1050,8 @@ Minimal invocation: `skillsmith completion zsh`
 
 #### Common workflows
 
-- **Start here** (read-only): Emit the Bash completion script. — `skillsmith completion bash`
-- **Focused workflow** (read-only): Emit the zsh completion script. — `skillsmith completion zsh`
+- **Start here** (read-only): Emit the Bash script for sourcing in the current shell session. — `skillsmith completion bash`
+- **Focused workflow** (read-only): Emit the zsh script to save at the package-manager or user completion location. — `skillsmith completion zsh`
 
 #### Arguments
 

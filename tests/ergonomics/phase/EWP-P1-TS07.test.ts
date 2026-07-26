@@ -2,12 +2,13 @@ import { describe, expect, test } from 'bun:test';
 import { readFile, readdir } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { walk } from '../../../packages/cli/src/completion/walk.ts';
+import { parseCompletionGraph } from '../../../packages/cli/src/completion/adapter.ts';
 import { canonicalizeCommanderTree } from '../../../packages/cli/src/contracts/commander-surface.ts';
 import { buildProgram } from '../../../packages/cli/src/program.ts';
 import type { RuntimeOutcome } from '../../../packages/cli/src/runtime/adapter.ts';
 import { createCommandFromSpec } from '../../../packages/cli/src/runtime/command-spec.ts';
 import { createCurrentRendererRegistry } from '../../../packages/cli/src/runtime/current-renderers.ts';
+import { CURRENT_COMMAND_SPECS } from '../../../packages/cli/src/spec/index.ts';
 import type { CommandSpec } from '../../../packages/cli/src/spec/types.ts';
 import { CLI_ENTRYPOINT } from '../../../packages/cli/tests/fixtures/cli.ts';
 import { hermeticGitEnv } from '../../../packages/core/tests/fixtures/git-env.ts';
@@ -882,11 +883,17 @@ describe('EWP-P1-TS07', () => {
     expect(command.helpInformation()).toContain(fixture.primaryQuestion);
     expect(command.helpInformation()).toContain(fixture.examples[0]);
 
-    const completion = walk(program)[0]?.subcommands.find((node) => node.name === 'fixture');
-    expect(completion).toBeDefined();
-    expect(completion?.options.map((option) => option.long)).toEqual(
-      expect.arrayContaining(['--mode', '--tag', '--json']),
-    );
+    const completion = (
+      await parseCompletionGraph(['fixture', '--'], { cwd: ROOT, monotonicMilliseconds: () => 0 }, [
+        ...CURRENT_COMMAND_SPECS,
+        fixture,
+      ])
+    )
+      .trimEnd()
+      .split('\n')
+      .filter((line) => !line.startsWith(':'))
+      .map((line) => line.split('\t', 1)[0]);
+    expect(completion).toEqual(expect.arrayContaining(['--mode', '--tag', '--json']));
 
     const loaded = await importFirst(SPEC_MODULES);
     expect(loaded).not.toBeNull();

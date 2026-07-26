@@ -1,51 +1,29 @@
 import { describe, expect, test } from 'bun:test';
-import { Argument, Command, Option } from 'commander';
-import { walk } from '../../src/completion/walk.ts';
-import { renderZsh } from '../../src/completion/zsh.ts';
+import { generateCompletionScript } from '../../src/completion/adapter.ts';
 
-const fixture = () => {
-  const p = new Command().name('sk').description('root');
-  p.command('agents')
-    .description('list')
-    .addOption(new Option('--format <f>', 'out format').choices(['md', 'json']));
-  p.command('completion')
-    .description('scripts')
-    .addArgument(new Argument('<shell>').choices(['bash', 'zsh']));
-  return walk(p);
-};
+describe('zsh completion adapter', () => {
+  const script = generateCompletionScript('zsh');
 
-describe('renderZsh', () => {
-  const out = renderZsh(fixture());
-
-  test('starts with #compdef header', () => {
-    expect(out).toMatch(/^#compdef sk\b/m);
+  test('retains the sourceable zsh registration shape', () => {
+    expect(script).toMatch(/^#compdef skillsmith/m);
+    expect(script).toContain('compdef _skillsmith skillsmith');
   });
 
-  test('uses _describe for subcommand completion', () => {
-    expect(out).toContain('_describe');
-    expect(out).toContain('agents');
-    expect(out).toContain('completion');
+  test('invokes the hidden transport with argv-preserving expansion', () => {
+    expect(script).toContain('skillsmith complete -- "${(@)args_to_complete}"');
   });
 
-  test('contains enum option and positional choices', () => {
-    expect(out).toContain('md');
-    expect(out).toContain('json');
-    expect(out).toContain('bash');
+  test('contains no runtime eval or joined request string', () => {
+    expect(script).not.toMatch(/\beval\b/);
+    expect(script).not.toContain('requestComp=');
   });
 
-  test('emits value-bearing _arguments spec for options with choices (BUG-05)', () => {
-    // Correct form: '--format=[desc]:value:(md json)'
-    // Incorrect (old): '--format=(md json)'  — zsh would treat as a flag with no value
-    expect(out).toMatch(/'--format=\[[^\]]*\]:value:\(md json\)'/);
-    expect(out).not.toMatch(/'--format=\(md json\)'/);
+  test('assembles _describe flags as an argv array', () => {
+    expect(script).toContain('local -a describeArgs');
+    expect(script).toContain('_describe "${describeArgs[@]}"');
   });
 
-  test('escapes colons in descriptions so _describe / _arguments do not truncate (BUG-08)', () => {
-    const p = new Command().name('sk');
-    p.command('apply').description('Apply skills: download and link');
-    const out2 = renderZsh(walk(p));
-    // A literal unescaped ':' between 'skills' and ' download' would truncate
-    // the description at _describe parse time.
-    expect(out2).toContain('skills\\: download and link');
+  test('preserves attached-value prefixes as one quoted value', () => {
+    expect(script).toContain('describeArgs+=(-P "$flagPrefix")');
   });
 });

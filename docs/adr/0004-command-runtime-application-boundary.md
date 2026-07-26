@@ -78,8 +78,13 @@ only temporary pure compatibility exports required by existing consumers.
 
 G6 subsequently activated the retained metadata boundary: Commander renders grouped progressive
 help from the same registry used by parsing, and generated public documentation closes against that
-registry. Completion remains a separate derived consumer so help changes do not silently broaden
-the completion grammar.
+registry. Completion is a separate detached `@bomb.sh/tab` consumer of normalized `CommandSpec`, so
+help changes do not silently broaden the completion grammar. Its internal `complete --` transport
+is handled before the public Commander graph and performs only bounded local reads. Generated shell
+templates cross an explicit CLI-owned trust boundary: pinned Bash/zsh request callbacks are
+hardened to direct argv invocation, Fish's direct form is validated, and template drift fails
+closed. No completion path is an application service, public command, startup-file installer, or
+network capability, and core remains unaware of the CLI-owned completion adapter.
 
 ## Consequences
 
