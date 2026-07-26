@@ -427,14 +427,17 @@ describe('EWP-P0A-TS05 active documentation authority boundary', () => {
     (phase5.review as JsonObject).status = 'passed';
     (phase5.approval as JsonObject).status = 'passed';
     (phase5.exit as JsonObject).status = 'passed';
-    phase6.status = 'active';
+    phase6.status = 'approved';
     (phase6.entry as JsonObject).status = 'passed';
+    (phase6.review as JsonObject).status = 'passed';
+    (phase6.approval as JsonObject).status = 'passed';
+    (phase6.exit as JsonObject).status = 'passed';
     const futureExecution = readFileSync(
       resolve(ROOT, 'projects/p17/EXECUTION.md'),
       'utf8',
     ).replace(
-      'Phase 5 is `approved`; its entry, whole-phase review, standing approval, and exit are passed.',
-      'Phase 5 is `approved`; its entry, whole-phase review, standing approval, and exit are passed. Phase 6 is `active`; its entry gate is passed.',
+      'Phase 6 is `active`; its entry gate is passed.',
+      'Phase 6 is `approved`; its entry, whole-phase review, standing approval, and exit are passed.',
     );
     expect(
       validateDocumentationDrift(copy(), {

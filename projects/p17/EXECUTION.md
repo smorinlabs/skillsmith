@@ -9,11 +9,12 @@ Phase 2 is `approved`; its entry, whole-phase review, standing approval, and exi
 Phase 3 is `approved`; its entry, whole-phase review, standing approval, and exit are passed.
 Phase 4 is `approved`; its entry, whole-phase review, standing approval, and exit are passed.
 Phase 5 is `approved`; its entry, whole-phase review, standing approval, and exit are passed.
+Phase 6 is `active`; its entry gate is passed.
 `catalog.json` is the machine-readable status authority.
 
-Phase 6 remains `planned` with entry, review, approval, and exit pending. The user-directed pre-G6
-scope, exclusion, prioritization, sequencing, and dependency review is recorded below and advances
-no Phase-6 gate by itself.
+The user-directed pre-G6 scope, exclusion, prioritization, sequencing, and dependency review is
+complete. P17-G6-02A is the lowest dependency-ready unfinished group; Phase-6 review, approval, and
+exit remain pending.
 
 This file groups the consolidated plan into reviewable changes. It does not replace product
 contracts in the consolidated plan or status in `catalog.json`. `CHECKLIST.md` is generated from

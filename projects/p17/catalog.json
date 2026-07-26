@@ -205,10 +205,10 @@
       "id": "6",
       "dependsOn": "5",
       "requiredGroups": ["P17-G6-01", "P17-G6-02A", "P17-G6-02B", "P17-G6-03", "P17-G6-04"],
-      "status": "planned",
+      "status": "active",
       "entry": {
-        "status": "pending",
-        "evidence": []
+        "status": "passed",
+        "evidence": ["projects/p17/evidence/phase-6.md#entry-gate-2026-07-26"]
       },
       "review": {
         "status": "pending",
