@@ -2026,3 +2026,60 @@ describe('update CommandSpec option contract', () => {
     ).toEqual({ ok: true });
   });
 });
+
+describe('EWP-OPT-TS05', () => {
+  test('one CommandSpec registry owns parser, help, docs, and generic fixture execution metadata', async () => {
+    const api = await requireOptionContractApi();
+    const specs = api.CURRENT_COMMAND_SPECS as readonly (CommandSpecContract & {
+      readonly primaryQuestion?: string;
+      readonly minimalInvocations?: readonly string[];
+      readonly commonWorkflows?: readonly { readonly invocation: string }[];
+    })[];
+    const publicSpecs = specs.filter((spec) => spec.path.split(' ').length === 2);
+    expect(publicSpecs).toHaveLength(23);
+    for (const spec of publicSpecs) {
+      expect(spec.primaryQuestion?.length ?? 0, spec.path).toBeGreaterThan(10);
+      expect(spec.minimalInvocations?.length ?? 0, spec.path).toBeGreaterThanOrEqual(1);
+      expect(spec.commonWorkflows?.length ?? 0, spec.path).toBeGreaterThanOrEqual(2);
+    }
+
+    const loadPlannedModule = async (path: string): Promise<Record<string, unknown>> =>
+      (await import(path)) as Record<string, unknown>;
+    const reference = await loadPlannedModule('../../src/help/reference.ts');
+    const help = await loadPlannedModule('../../src/help/render.ts');
+    expect(typeof reference.renderCommandReference).toBe('function');
+    expect(typeof help.renderCommandHelp).toBe('function');
+    expect(typeof help.renderRootHelp).toBe('function');
+  });
+});
+
+describe('EWP-OPT-TS07', () => {
+  test('every local option has one stable visible help family and level', async () => {
+    const api = await requireOptionContractApi();
+    const families = new Set([
+      'targets-scope',
+      'source-destination-artifacts',
+      'behavior-verification',
+      'safety-approval',
+      'automation-output',
+      'inherited-globals',
+    ]);
+    const levels = new Set(['common', 'advanced']);
+    for (const spec of api.CURRENT_COMMAND_SPECS) {
+      for (const option of spec.options as readonly (CommandSpecOptionContract & {
+        readonly helpFamily?: string;
+        readonly helpLevel?: string;
+      })[]) {
+        expect(families.has(option.helpFamily ?? ''), `${spec.path} ${option.long}`).toBeTrue();
+        expect(levels.has(option.helpLevel ?? ''), `${spec.path} ${option.long}`).toBeTrue();
+      }
+    }
+  });
+
+  test('Commander compatibility preserves explicit negated defaults before the upgrade', () => {
+    const program = buildProgram();
+    const install = program.commands.find((command) => command.name() === 'install');
+    expect(program.opts()).toMatchObject({ prompt: true });
+    expect(install?.optsWithGlobals()).toMatchObject({ prompt: true, verify: true });
+  });
+});

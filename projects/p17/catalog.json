@@ -7810,7 +7810,7 @@
       "phase": "6",
       "title": "Shared command metadata, five-group help, progressive options, workflows, and generated docs",
       "dependsOn": ["P17-G5-04", "P17-G5-05"],
-      "status": "ready",
+      "status": "active",
       "owner": "root-goal",
       "ownedFiles": [
         "README.md",
@@ -7923,8 +7923,8 @@
           ]
         },
         "test-first": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G6-02A.md#test-first-evidence"]
         },
         "minimal-implementation": {
           "status": "pending",
@@ -7966,7 +7966,8 @@
         "projects/p17/evidence/P17-G6-02A.md#accepted-ready-result",
         "projects/p17/evidence/P17-G6-02A.md#pre-implementation-lifecycle-audit-at-78ef17b",
         "projects/p17/evidence/P17-G6-02A.md#corrected-lifecycle-ready-review-at-67854ce",
-        "projects/p17/evidence/P17-G6-02A.md#renewed-ready-acceptance"
+        "projects/p17/evidence/P17-G6-02A.md#renewed-ready-acceptance",
+        "projects/p17/evidence/P17-G6-02A.md#test-first-evidence"
       ]
     },
     {
@@ -15696,11 +15697,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02A",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-02A:packages/cli/tests/contracts/help.test.ts#EWP-CMD-HELP-TS01",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/help.test.ts",
+        "selector": "EWP-CMD-HELP-TS01",
+        "command": "bun test packages/cli/tests/contracts/help.test.ts --test-name-pattern EWP-CMD-HELP-TS01"
+      },
+      "evidence": ["projects/p17/evidence/P17-G6-02A.md#red-execution-receipt-ewp-cmd-help-ts01"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-HELP-TS01"],
@@ -15719,8 +15725,10 @@
         "EWP-WF16"
       ],
       "affectedContracts": ["COMMAND:help", "EWP-CF-013", "EWP-CF-032", "P2-05"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/help.test.ts --test-name-pattern EWP-CMD-HELP-TS01"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/help.test.ts"]
     },
     {
       "id": "EWP-CMD-HELP-TS02",
@@ -15728,11 +15736,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02A",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-02A:packages/cli/tests/contracts/help.test.ts#EWP-CMD-HELP-TS02",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/help.test.ts",
+        "selector": "EWP-CMD-HELP-TS02",
+        "command": "bun test packages/cli/tests/contracts/help.test.ts --test-name-pattern EWP-CMD-HELP-TS02"
+      },
+      "evidence": ["projects/p17/evidence/P17-G6-02A.md#red-execution-receipt-ewp-cmd-help-ts02"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-HELP-TS02"],
@@ -15751,8 +15764,10 @@
         "EWP-WF16"
       ],
       "affectedContracts": ["COMMAND:help", "EWP-CF-013", "EWP-CF-032", "P2-05"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/help.test.ts --test-name-pattern EWP-CMD-HELP-TS02"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/help.test.ts"]
     },
     {
       "id": "EWP-CMD-HELP-TS03",
@@ -15760,11 +15775,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02A",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-02A:packages/cli/tests/contracts/help.test.ts#EWP-CMD-HELP-TS03",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/help.test.ts",
+        "selector": "EWP-CMD-HELP-TS03",
+        "command": "bun test packages/cli/tests/contracts/help.test.ts --test-name-pattern EWP-CMD-HELP-TS03"
+      },
+      "evidence": ["projects/p17/evidence/P17-G6-02A.md#red-execution-receipt-ewp-cmd-help-ts03"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-HELP-TS03"],
@@ -15783,8 +15803,10 @@
         "EWP-WF16"
       ],
       "affectedContracts": ["COMMAND:help", "EWP-CF-013", "EWP-CF-032", "P2-05"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/help.test.ts --test-name-pattern EWP-CMD-HELP-TS03"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/help.test.ts"]
     },
     {
       "id": "EWP-CMD-HELP-TS04",
@@ -15792,11 +15814,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02A",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-02A:packages/cli/tests/contracts/help.test.ts#EWP-CMD-HELP-TS04",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/help.test.ts",
+        "selector": "EWP-CMD-HELP-TS04",
+        "command": "bun test packages/cli/tests/contracts/help.test.ts --test-name-pattern EWP-CMD-HELP-TS04"
+      },
+      "evidence": ["projects/p17/evidence/P17-G6-02A.md#red-execution-receipt-ewp-cmd-help-ts04"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-HELP-TS04"],
@@ -15815,8 +15842,10 @@
         "EWP-WF16"
       ],
       "affectedContracts": ["COMMAND:help", "EWP-CF-013", "EWP-CF-032", "P2-05"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/help.test.ts --test-name-pattern EWP-CMD-HELP-TS04"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/help.test.ts"]
     },
     {
       "id": "EWP-CMD-HELP-TS05",
@@ -15824,11 +15853,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02A",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-02A:packages/cli/tests/contracts/help.test.ts#EWP-CMD-HELP-TS05",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/help.test.ts",
+        "selector": "EWP-CMD-HELP-TS05",
+        "command": "bun test packages/cli/tests/contracts/help.test.ts --test-name-pattern EWP-CMD-HELP-TS05"
+      },
+      "evidence": ["projects/p17/evidence/P17-G6-02A.md#red-execution-receipt-ewp-cmd-help-ts05"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-HELP-TS05"],
@@ -15847,8 +15881,10 @@
         "EWP-WF16"
       ],
       "affectedContracts": ["COMMAND:help", "EWP-CF-013", "EWP-CF-032", "P2-05"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/help.test.ts --test-name-pattern EWP-CMD-HELP-TS05"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/help.test.ts"]
     },
     {
       "id": "EWP-CMD-HELP-TS06",
@@ -15856,11 +15892,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02A",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-02A:packages/cli/tests/contracts/help.test.ts#EWP-CMD-HELP-TS06",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/help.test.ts",
+        "selector": "EWP-CMD-HELP-TS06",
+        "command": "bun test packages/cli/tests/contracts/help.test.ts --test-name-pattern EWP-CMD-HELP-TS06"
+      },
+      "evidence": ["projects/p17/evidence/P17-G6-02A.md#red-execution-receipt-ewp-cmd-help-ts06"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-HELP-TS06"],
@@ -15879,8 +15920,10 @@
         "EWP-WF16"
       ],
       "affectedContracts": ["COMMAND:help", "EWP-CF-013", "EWP-CF-032", "P2-05"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/help.test.ts --test-name-pattern EWP-CMD-HELP-TS06"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/help.test.ts"]
     },
     {
       "id": "EWP-CMD-HELP-TS07",
@@ -15888,11 +15931,16 @@
       "kind": "command-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02A",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-02A:packages/cli/tests/contracts/help.test.ts#EWP-CMD-HELP-TS07",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/help.test.ts",
+        "selector": "EWP-CMD-HELP-TS07",
+        "command": "bun test packages/cli/tests/contracts/help.test.ts --test-name-pattern EWP-CMD-HELP-TS07"
+      },
+      "evidence": ["projects/p17/evidence/P17-G6-02A.md#red-execution-receipt-ewp-cmd-help-ts07"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-CMD-HELP-TS07"],
@@ -15911,8 +15959,10 @@
         "EWP-WF16"
       ],
       "affectedContracts": ["COMMAND:help", "EWP-CF-013", "EWP-CF-032", "P2-05"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/help.test.ts --test-name-pattern EWP-CMD-HELP-TS07"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/help.test.ts"]
     },
     {
       "id": "EWP-CMD-INIT-TS01",
@@ -19795,11 +19845,16 @@
       "kind": "option-gate",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02A",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-02A:packages/cli/tests/contracts/options.test.ts#EWP-OPT-TS05",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/options.test.ts",
+        "selector": "EWP-OPT-TS05",
+        "command": "bun test packages/cli/tests/contracts/options.test.ts --test-name-pattern EWP-OPT-TS05"
+      },
+      "evidence": ["projects/p17/evidence/P17-G6-02A.md#red-execution-receipt-ewp-opt-ts05"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-OPT-TS05"],
@@ -19818,8 +19873,10 @@
         "EWP-WF16"
       ],
       "affectedContracts": ["COMMAND:help", "EWP-CF-013", "EWP-CF-032", "P2-05"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/options.test.ts --test-name-pattern EWP-OPT-TS05"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/options.test.ts"]
     },
     {
       "id": "EWP-OPT-TS06",
@@ -19859,11 +19916,16 @@
       "kind": "option-gate",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02A",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-02A:packages/cli/tests/contracts/options.test.ts#EWP-OPT-TS07",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "packages/cli/tests/contracts/options.test.ts",
+        "selector": "EWP-OPT-TS07",
+        "command": "bun test packages/cli/tests/contracts/options.test.ts --test-name-pattern EWP-OPT-TS07"
+      },
+      "evidence": ["projects/p17/evidence/P17-G6-02A.md#red-execution-receipt-ewp-opt-ts07"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-OPT-TS07"],
@@ -19882,8 +19944,10 @@
         "EWP-WF16"
       ],
       "affectedContracts": ["COMMAND:help", "EWP-CF-013", "EWP-CF-032", "P2-05"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/options.test.ts --test-name-pattern EWP-OPT-TS07"
+      ],
+      "ownedFiles": ["packages/cli/tests/contracts/options.test.ts"]
     },
     {
       "id": "EWP-OPT-TS08",
@@ -25457,7 +25521,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G6-02A",
-      "status": "ready",
+      "status": "red",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-02A",
       "target": null,
@@ -25466,7 +25530,8 @@
         "projects/p17/evidence/P17-G6-02A.md#corrected-ready-review-at-eb90c00",
         "projects/p17/evidence/P17-G6-02A.md#accepted-ready-result",
         "projects/p17/evidence/P17-G6-02A.md#corrected-lifecycle-ready-review-at-67854ce",
-        "projects/p17/evidence/P17-G6-02A.md#renewed-ready-acceptance"
+        "projects/p17/evidence/P17-G6-02A.md#renewed-ready-acceptance",
+        "projects/p17/evidence/P17-G6-02A.md#test-first-evidence"
       ],
       "secondaryGroups": [],
       "implements": ["COMMAND:help", "EWP-CF-013", "EWP-CF-032", "P2-05"],
@@ -25630,11 +25695,16 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02A",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-02A:tests/ergonomics/phase/EWP-P6-TS04.test.ts#EWP-P6-TS04",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P6-TS04.test.ts",
+        "selector": "EWP-P6-TS04",
+        "command": "bun test tests/ergonomics/phase/EWP-P6-TS04.test.ts --test-name-pattern EWP-P6-TS04"
+      },
+      "evidence": ["projects/p17/evidence/P17-G6-02A.md#red-execution-receipt-ewp-p6-ts04"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P6-TS04"],
@@ -25653,8 +25723,10 @@
         "EWP-WF16"
       ],
       "affectedContracts": ["COMMAND:help", "EWP-CF-013", "EWP-CF-032", "P2-05"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P6-TS04.test.ts --test-name-pattern EWP-P6-TS04"
+      ],
+      "ownedFiles": ["tests/ergonomics/phase/EWP-P6-TS04.test.ts"]
     },
     {
       "id": "EWP-P6-TS05",
@@ -25662,11 +25734,16 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02A",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-02A:tests/ergonomics/phase/EWP-P6-TS05.test.ts#EWP-P6-TS05",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P6-TS05.test.ts",
+        "selector": "EWP-P6-TS05",
+        "command": "bun test tests/ergonomics/phase/EWP-P6-TS05.test.ts --test-name-pattern EWP-P6-TS05"
+      },
+      "evidence": ["projects/p17/evidence/P17-G6-02A.md#red-execution-receipt-ewp-p6-ts05"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P6-TS05"],
@@ -25685,8 +25762,10 @@
         "EWP-WF16"
       ],
       "affectedContracts": ["COMMAND:help", "EWP-CF-013", "EWP-CF-032", "P2-05"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P6-TS05.test.ts --test-name-pattern EWP-P6-TS05"
+      ],
+      "ownedFiles": ["tests/ergonomics/phase/EWP-P6-TS05.test.ts"]
     },
     {
       "id": "EWP-P6-TS06",
@@ -26418,11 +26497,16 @@
       "kind": "workflow",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-02A",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-02A:tests/ergonomics/workflows/EWP-WF16.test.ts#EWP-WF16",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/workflows/EWP-WF16.test.ts",
+        "selector": "EWP-WF16",
+        "command": "bun test tests/ergonomics/workflows/EWP-WF16.test.ts --test-name-pattern EWP-WF16"
+      },
+      "evidence": ["projects/p17/evidence/P17-G6-02A.md#red-execution-receipt-ewp-wf16"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-WF16"],
@@ -26441,8 +26525,13 @@
         "EWP-WF16"
       ],
       "affectedContracts": ["COMMAND:help", "EWP-CF-013", "EWP-CF-032", "P2-05"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/workflows/EWP-WF16.test.ts --test-name-pattern EWP-WF16"
+      ],
+      "ownedFiles": [
+        "tests/ergonomics/fixtures/p6-help/fleet.ts",
+        "tests/ergonomics/workflows/EWP-WF16.test.ts"
+      ]
     },
     {
       "id": "P0-01",
