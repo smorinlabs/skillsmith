@@ -7953,7 +7953,8 @@
           "status": "passed",
           "evidence": [
             "projects/p17/evidence/P17-G6-02A.md#refactor-at-daca91f",
-            "projects/p17/evidence/P17-G6-02A.md#renewed-refactor-after-independent-review-corrections-at-dbe57bc"
+            "projects/p17/evidence/P17-G6-02A.md#renewed-refactor-after-independent-review-corrections-at-dbe57bc",
+            "projects/p17/evidence/P17-G6-02A.md#terminal-and-amended-refactor-green-at-1b6c1f4"
           ]
         },
         "adversarial-review": {
@@ -7985,7 +7986,8 @@
         "projects/p17/evidence/P17-G6-02A.md#minimal-implementation-and-targeted-green-at-76b2354",
         "projects/p17/evidence/P17-G6-02A.md#impacted-green-at-112cafa",
         "projects/p17/evidence/P17-G6-02A.md#refactor-at-daca91f",
-        "projects/p17/evidence/P17-G6-02A.md#renewed-refactor-after-independent-review-corrections-at-dbe57bc"
+        "projects/p17/evidence/P17-G6-02A.md#renewed-refactor-after-independent-review-corrections-at-dbe57bc",
+        "projects/p17/evidence/P17-G6-02A.md#terminal-and-amended-refactor-green-at-1b6c1f4"
       ]
     },
     {
