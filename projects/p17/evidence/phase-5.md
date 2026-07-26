@@ -106,3 +106,17 @@
   complete repository-local denylist and isolates global/system Git configuration, then prove the
   suite under poisoned Git variables and obtain fresh immutable review.
 - **Verdict:** **NO-GO at 0.99 confidence**. G5-04 remains 7/10; Phase 6 remains wholly planned.
+
+## G5-04 F03 final adversarial review GO — 2026-07-25
+
+- **Reviewed head:** `b94e7ade08c3e390e347558f9932e6e37288e270`.
+- **Reviewer:** fresh read-only external Codex session
+  `/external-codex/019f9bb0-cb94-7330-a0ee-8dc57878e679`.
+- **Verdict:** **GO at 0.99 confidence**, with no findings at any severity. The fixture-isolation
+  defect and combined P17-RV-P5-F03 are closed.
+- **Exact state:** 878 current unique ownership blobs plus two exact deletions; G5-04 93/93 blobs,
+  16 primary entities, ten required-now validations, and eight of ten gates after recording this
+  review; all 445 Phase-5 group ownership entries are blobs.
+- **Boundary:** Phase 6 remains five planned groups with zero owned files and zero passed gates.
+  Phase-5 review, standing approval, and exit remain pending until G5-04 traceability/sign-off and
+  fresh whole-phase review complete.

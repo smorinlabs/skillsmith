@@ -7265,7 +7265,7 @@
       "phase": "5",
       "title": "Ledger-authoritative reachability, retention, explicit forget, and safe GC",
       "dependsOn": ["P17-G4B-03"],
-      "status": "active",
+      "status": "reviewed",
       "owner": "root-goal",
       "ownedFiles": [
         "README.md",
@@ -7401,7 +7401,7 @@
         "bun test tests/ergonomics/workflows/EWP-WF12.test.ts --test-name-pattern EWP-WF12"
       ],
       "implementers": ["root-codex-goal"],
-      "reviewer": null,
+      "reviewer": "/external-codex/019f9bb0-cb94-7330-a0ee-8dc57878e679",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -7437,8 +7437,10 @@
           "evidence": ["projects/p17/evidence/P17-G5-04.md#second-correction-amendment"]
         },
         "adversarial-review": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G5-04.md#f03-final-adversarial-review-go-at-b94e7ad"
+          ]
         },
         "traceability-closure": {
           "status": "pending",
@@ -7462,6 +7464,7 @@
         "projects/p17/evidence/P17-G5-04.md#second-correction-amendment",
         "projects/p17/evidence/P17-G5-04.md#full-terminal-discovery-and-compatibility-correction",
         "projects/p17/evidence/P17-G5-04.md#full-terminal-gate",
+        "projects/p17/evidence/P17-G5-04.md#f03-final-adversarial-review-go-at-b94e7ad",
         "projects/p17/evidence/P17-G5-04.md#traceability-and-sign-off"
       ]
     },

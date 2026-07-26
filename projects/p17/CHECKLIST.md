@@ -1445,7 +1445,7 @@ Downstream coverage obligations: EWP-CMD-UNDO-TS03, EWP-CMD-UPDATE-TS07, EWP-WF0
 
 ## P17-G5-04 — Ledger-authoritative reachability, retention, explicit forget, and safe GC
 
-Phase: 5; status: **active**; dependencies: P17-G4B-03.
+Phase: 5; status: **reviewed**; dependencies: P17-G4B-03.
 Required-now validations: EWP-CMD-GC-TS01, EWP-CMD-GC-TS02, EWP-CMD-GC-TS03, EWP-CMD-GC-TS04, EWP-CMD-GC-TS05, EWP-CMD-GC-TS06, EWP-CMD-GC-TS07, EWP-CMD-GC-TS08, EWP-P5-TS04, EWP-WF12.
 Downstream coverage obligations: none.
 
@@ -1458,7 +1458,7 @@ Downstream coverage obligations: none.
 - [x] P17-G5-04:targeted-green _(passed)_
 - [x] P17-G5-04:impacted-green _(passed)_
 - [x] P17-G5-04:refactor _(passed)_
-- [ ] P17-G5-04:adversarial-review _(pending)_
+- [x] P17-G5-04:adversarial-review _(passed)_
 - [ ] P17-G5-04:traceability-closure _(pending)_
 - [ ] P17-G5-04:signed-off _(pending)_
 
