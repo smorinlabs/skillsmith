@@ -108,7 +108,7 @@ Tracked entities: **426** across **45** change groups.
 | COMMAND:apply | P17-G4B-02 | signed-off | required-pr |
 | COMMAND:check | P17-G1-02B | signed-off | required-pr |
 | COMMAND:commands | P17-G3A-02 | signed-off | required-pr |
-| COMMAND:completion | P17-G6-02B | planned | supported-platform |
+| COMMAND:completion | P17-G6-02B | mapped | supported-platform |
 | COMMAND:config | P17-G2-01 | signed-off | required-pr |
 | COMMAND:dev | P17-G3B-01 | signed-off | required-pr |
 | COMMAND:doctor | P17-G3B-03 | signed-off | required-pr |
@@ -155,7 +155,7 @@ Tracked entities: **426** across **45** change groups.
 | P2-01 | P17-G1-02A | signed-off | required-pr |
 | P2-02 | P17-G5-02 | signed-off | required-pr |
 | P2-03 | P17-G5-04 | signed-off | required-pr |
-| P2-04 | P17-G6-02B | planned | supported-platform |
+| P2-04 | P17-G6-02B | mapped | supported-platform |
 | P2-05 | P17-G6-02A | signed-off | required-pr |
 | P2-06 | P17-G1-05 | signed-off | required-pr |
 | P2-07 | P17-G3B-03 | signed-off | required-pr |
@@ -184,7 +184,7 @@ Tracked entities: **426** across **45** change groups.
 | EWP-CF-011 | P17-G4A-02 | signed-off | required-pr |
 | EWP-CF-012 | P17-G2-03 | signed-off | required-pr |
 | EWP-CF-013 | P17-G6-02A | signed-off | required-pr |
-| EWP-CF-014 | P17-G6-02B | planned | supported-platform |
+| EWP-CF-014 | P17-G6-02B | mapped | supported-platform |
 | EWP-CF-015 | P17-G4B-02 | signed-off | required-pr |
 | EWP-CF-016 | P17-G5-04 | signed-off | required-pr |
 | EWP-CF-017 | P17-G0-04 | signed-off | required-pr |
@@ -1577,13 +1577,13 @@ Downstream coverage obligations: EWP-CMD-COMPLETION-TS01, EWP-CMD-COMPLETION-TS0
 
 ## P17-G6-02B — Bash/zsh/fish completion generation and nested completion contracts
 
-Phase: 6; status: **planned**; dependencies: P17-G6-02A.
+Phase: 6; status: **mapped**; dependencies: P17-G6-02A.
 Required-now validations: EWP-CMD-COMPLETION-TS01, EWP-CMD-COMPLETION-TS02, EWP-CMD-COMPLETION-TS03, EWP-CMD-COMPLETION-TS04, EWP-CMD-COMPLETION-TS05, EWP-CMD-COMPLETION-TS06, EWP-P6-TS02.
 Downstream coverage obligations: EWP-WF01.
 
 ### Group gates
 
-- [ ] P17-G6-02B:mapped _(pending)_
+- [x] P17-G6-02B:mapped _(passed)_
 - [ ] P17-G6-02B:ready _(pending)_
 - [ ] P17-G6-02B:test-first _(pending)_
 - [ ] P17-G6-02B:minimal-implementation _(pending)_
@@ -1596,8 +1596,8 @@ Downstream coverage obligations: EWP-WF01.
 
 ### Tracked entities
 
-- [ ] **COMMAND:completion** — Maintain — How do I emit completion for a shell? _(command; planned)_
-- [ ] **EWP-CF-014** — Keep completion emission pure and defer installer ownership _(finding; planned)_
+- [ ] **COMMAND:completion** — Maintain — How do I emit completion for a shell? _(command; mapped)_
+- [ ] **EWP-CF-014** — Keep completion emission pure and defer installer ownership _(finding; mapped)_
 - [ ] **EWP-CMD-COMPLETION-TS01** — all 23 root commands and adjacent aliases for bash/zsh/fish, _(command-test; planned)_
 - [ ] **EWP-CMD-COMPLETION-TS02** — recursive config subcommands. _(command-test; planned)_
 - [ ] **EWP-CMD-COMPLETION-TS03** — every inherited and local flag regardless of common/advanced help _(command-test; planned)_
@@ -1606,7 +1606,7 @@ Downstream coverage obligations: EWP-WF01.
 - [ ] **EWP-CMD-COMPLETION-TS06** — generated shell syntax validation, help-only manual install _(command-test; planned)_
 - [ ] **EWP-P6-T03** — Recursive alias-aware completion. _(phase-task; planned)_
 - [ ] **EWP-P6-TS02** — Bash/zsh/fish nested completion suite. _(phase-test; planned)_
-- [ ] **P2-04** — Completion _(recommendation; planned)_
+- [ ] **P2-04** — Completion _(recommendation; mapped)_
 
 ## P17-G6-03 — Rendering matrix, legacy cleanup, versions/capabilities, install/upgrade docs
 

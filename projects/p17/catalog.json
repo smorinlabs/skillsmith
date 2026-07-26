@@ -7999,10 +7999,40 @@
       "phase": "6",
       "title": "Bash/zsh/fish completion generation and nested completion contracts",
       "dependsOn": ["P17-G6-02A"],
-      "status": "planned",
+      "status": "mapped",
       "owner": "root-goal",
-      "ownedFiles": [],
-      "integrationOwner": null,
+      "ownedFiles": [
+        "bun.lock",
+        "docs/adr/0004-command-runtime-application-boundary.md",
+        "docs/architecture.md",
+        "docs/commands.md",
+        "packages/cli/package.json",
+        "packages/cli/src/completion/adapter.ts",
+        "packages/cli/src/completion/bash.ts",
+        "packages/cli/src/completion/fish.ts",
+        "packages/cli/src/completion/providers.ts",
+        "packages/cli/src/completion/run.ts",
+        "packages/cli/src/completion/transport.ts",
+        "packages/cli/src/completion/types.ts",
+        "packages/cli/src/completion/walk.ts",
+        "packages/cli/src/completion/zsh.ts",
+        "packages/cli/src/index.ts",
+        "packages/cli/src/runtime/current-renderers.ts",
+        "packages/cli/src/spec/options.ts",
+        "packages/cli/src/spec/registry.ts",
+        "packages/cli/src/spec/types.ts",
+        "packages/cli/tests/completion/bash.test.ts",
+        "packages/cli/tests/completion/declaration-gate.test.ts",
+        "packages/cli/tests/completion/fish.test.ts",
+        "packages/cli/tests/completion/integration.test.ts",
+        "packages/cli/tests/completion/walk.test.ts",
+        "packages/cli/tests/completion/zsh.test.ts",
+        "packages/cli/tests/contracts/completion.test.ts",
+        "projects/p17/evidence/P17-G6-02B.md",
+        "projects/p17/plans/P17-G6-02B.md",
+        "tests/ergonomics/phase/EWP-P6-TS02.test.ts"
+      ],
+      "integrationOwner": "root-codex-goal",
       "impactedValidations": [
         "EWP-CMD-COMPLETION-TS01",
         "EWP-CMD-COMPLETION-TS02",
@@ -8023,13 +8053,21 @@
         "EWP-P6-TS02"
       ],
       "downstreamCoverage": ["EWP-WF01"],
-      "testCommands": [],
-      "implementers": [],
+      "testCommands": [
+        "bun test packages/cli/tests/contracts/completion.test.ts --test-name-pattern EWP-CMD-COMPLETION-TS01",
+        "bun test packages/cli/tests/contracts/completion.test.ts --test-name-pattern EWP-CMD-COMPLETION-TS02",
+        "bun test packages/cli/tests/contracts/completion.test.ts --test-name-pattern EWP-CMD-COMPLETION-TS03",
+        "bun test packages/cli/tests/contracts/completion.test.ts --test-name-pattern EWP-CMD-COMPLETION-TS04",
+        "bun test packages/cli/tests/contracts/completion.test.ts --test-name-pattern EWP-CMD-COMPLETION-TS05",
+        "bun test packages/cli/tests/contracts/completion.test.ts --test-name-pattern EWP-CMD-COMPLETION-TS06",
+        "bun test tests/ergonomics/phase/EWP-P6-TS02.test.ts --test-name-pattern EWP-P6-TS02"
+      ],
+      "implementers": ["root-codex-goal"],
       "reviewer": null,
       "gates": {
         "mapped": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G6-02B.md#mapping-and-prerequisites"]
         },
         "ready": {
           "status": "pending",
@@ -8068,7 +8106,14 @@
           "evidence": []
         }
       },
-      "evidence": []
+      "evidence": [
+        "projects/p17/plans/P17-G6-02B.md",
+        "projects/p17/evidence/P17-G6-02B.md#mapping-and-prerequisites",
+        "projects/p17/evidence/P17-G6-02B.md#existing-implementation-and-gap-audit",
+        "projects/p17/evidence/P17-G6-02B.md#dependency-and-package-verification",
+        "projects/p17/evidence/P17-G6-02B.md#signed-dependency-and-current-surface-characterization",
+        "projects/p17/evidence/P17-G6-02B.md#mapping-result"
+      ]
     },
     {
       "id": "P17-G6-03",
@@ -8470,11 +8515,11 @@
       "title": "Maintain — How do I emit completion for a shell?",
       "stateModel": "coverage",
       "primaryGroup": "P17-G6-02B",
-      "status": "planned",
+      "status": "mapped",
       "tier": "supported-platform",
       "plannedTarget": "surface:completion",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G6-02B.md#mapping-and-prerequisites"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": [
@@ -10659,11 +10704,11 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G6-02B",
-      "status": "planned",
+      "status": "mapped",
       "tier": "supported-platform",
       "plannedTarget": "coverage:P17-G6-02B",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G6-02B.md#mapping-and-prerequisites"],
       "secondaryGroups": ["P17-G6-04"],
       "implements": [],
       "validatedBy": [
@@ -27574,11 +27619,11 @@
       "designStatus": "retained",
       "stateModel": "coverage",
       "primaryGroup": "P17-G6-02B",
-      "status": "planned",
+      "status": "mapped",
       "tier": "supported-platform",
       "plannedTarget": "coverage:P17-G6-02B",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G6-02B.md#mapping-and-prerequisites"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": [
