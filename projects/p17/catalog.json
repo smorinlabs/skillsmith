@@ -8148,7 +8148,7 @@
       "phase": "6",
       "title": "Rendering matrix, legacy cleanup, versions/capabilities, install/upgrade docs",
       "dependsOn": ["P17-G6-02A"],
-      "status": "ready",
+      "status": "active",
       "owner": "root-goal",
       "ownedFiles": [
         "README.md",
@@ -8209,8 +8209,8 @@
           ]
         },
         "test-first": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G6-03.md#test-first-evidence"]
         },
         "minimal-implementation": {
           "status": "pending",
@@ -8250,7 +8250,8 @@
         "projects/p17/evidence/P17-G6-03.md#mapping-result",
         "projects/p17/evidence/P17-G6-03.md#first-ready-review-at-2097fbf",
         "projects/p17/evidence/P17-G6-03.md#corrected-ready-review-at-201629f",
-        "projects/p17/evidence/P17-G6-03.md#accepted-ready-result"
+        "projects/p17/evidence/P17-G6-03.md#accepted-ready-result",
+        "projects/p17/evidence/P17-G6-03.md#test-first-evidence"
       ]
     },
     {
@@ -25831,14 +25832,15 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G6-03",
-      "status": "ready",
+      "status": "red",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-03",
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G6-03.md#mapping-and-prerequisites",
         "projects/p17/evidence/P17-G6-03.md#corrected-ready-review-at-201629f",
-        "projects/p17/evidence/P17-G6-03.md#accepted-ready-result"
+        "projects/p17/evidence/P17-G6-03.md#accepted-ready-result",
+        "projects/p17/evidence/P17-G6-03.md#test-first-evidence"
       ],
       "secondaryGroups": [],
       "implements": ["P2-08"],
@@ -25854,14 +25856,15 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G6-03",
-      "status": "ready",
+      "status": "red",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-03",
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G6-03.md#mapping-and-prerequisites",
         "projects/p17/evidence/P17-G6-03.md#corrected-ready-review-at-201629f",
-        "projects/p17/evidence/P17-G6-03.md#accepted-ready-result"
+        "projects/p17/evidence/P17-G6-03.md#accepted-ready-result",
+        "projects/p17/evidence/P17-G6-03.md#test-first-evidence"
       ],
       "secondaryGroups": ["P17-G6-04"],
       "implements": ["P2-08"],
@@ -25952,18 +25955,25 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-03",
-      "status": "planned",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-03:tests/ergonomics/phase/EWP-P6-TS03.test.ts#EWP-P6-TS03",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P6-TS03.test.ts",
+        "selector": "EWP-P6-TS03",
+        "command": "bun test tests/ergonomics/phase/EWP-P6-TS03.test.ts --test-name-pattern EWP-P6-TS03"
+      },
+      "evidence": ["projects/p17/evidence/P17-G6-03.md#red-execution-receipt-ewp-p6-ts03"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P6-TS03"],
       "impactedValidations": ["EWP-P6-TS03"],
       "affectedContracts": ["P2-08"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P6-TS03.test.ts --test-name-pattern EWP-P6-TS03"
+      ],
+      "ownedFiles": ["tests/ergonomics/phase/EWP-P6-TS03.test.ts"]
     },
     {
       "id": "EWP-P6-TS04",

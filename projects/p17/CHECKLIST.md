@@ -1610,7 +1610,7 @@ Downstream coverage obligations: EWP-WF01.
 
 ## P17-G6-03 — Rendering matrix, legacy cleanup, versions/capabilities, install/upgrade docs
 
-Phase: 6; status: **ready**; dependencies: P17-G6-02A.
+Phase: 6; status: **active**; dependencies: P17-G6-02A.
 Required-now validations: EWP-P6-TS03.
 Downstream coverage obligations: EWP-WF01.
 
@@ -1618,7 +1618,7 @@ Downstream coverage obligations: EWP-WF01.
 
 - [x] P17-G6-03:mapped _(passed)_
 - [x] P17-G6-03:ready _(passed)_
-- [ ] P17-G6-03:test-first _(pending)_
+- [x] P17-G6-03:test-first _(passed)_
 - [ ] P17-G6-03:minimal-implementation _(pending)_
 - [ ] P17-G6-03:targeted-green _(pending)_
 - [ ] P17-G6-03:impacted-green _(pending)_
@@ -1629,9 +1629,9 @@ Downstream coverage obligations: EWP-WF01.
 
 ### Tracked entities
 
-- [ ] **EWP-P6-T05** — Color/observer, legacy-logger, and dependency cleanup. _(phase-task; ready)_
-- [ ] **EWP-P6-T06** — Version/capability matrix and install/upgrade docs. _(phase-task; ready)_
-- [ ] **EWP-P6-TS03** — TTY/pipe/color/quiet/JSON rendering suite. _(phase-test; planned)_
+- [ ] **EWP-P6-T05** — Color/observer, legacy-logger, and dependency cleanup. _(phase-task; red)_
+- [ ] **EWP-P6-T06** — Version/capability matrix and install/upgrade docs. _(phase-task; red)_
+- [ ] **EWP-P6-TS03** — TTY/pipe/color/quiet/JSON rendering suite. _(phase-test; failing)_
 - [ ] **P2-08** — Dependency/render cleanup _(recommendation; mapped)_
 
 ## P17-G6-04 — Canonical PR/release recipes, exact-SHA publication gate, and final 1.0 evidence
