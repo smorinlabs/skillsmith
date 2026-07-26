@@ -147,3 +147,27 @@
   gate and obtain renewed immutable G5-01 and whole-phase review.
 - **Boundary:** Phase 6 remains five planned groups, zero owned group paths, 0/50 gates, and 40
   planned primary entities. This correction authorizes no Phase-6 work.
+
+## F04 bounded correction terminal evidence — 2026-07-26
+
+- **Immutable product/test head:** `40dedefee4715e67cc167dd6bb0a3dd42d61ce3d`.
+- **Correction closure:** the sync codec recursively rejects source URLs and shared sensitive
+  material; the human renderer validates through the canonical codec before interpolation; the
+  focused output test proves invalid and schema-valid credential-bearing reports are refused by
+  both human and JSON paths. The separate execution-map correction makes active documentation
+  truthful to the blocked catalog without changing catalog or Phase-6 state.
+- **Impacted owners:** nine impacted-owner commands passed 150 tests with 56,047 assertions and no
+  failures; the complete 19-row recovery owner superseded its four-row smoke subset.
+- **Repository terminal:** the exact serialized command
+  `bun run check -- --timeout 60000 --max-concurrency 1` passed 3,218 tests, intentionally skipped
+  28 live/environment tests, failed zero, and made 104,767 assertions across 3,246 tests and 353
+  files. Every static stage passed.
+- **G5-01 required-now terminal:** all ten sync command selectors plus `EWP-P5-TS01` and `EWP-WF10`
+  passed as 12 independent ID-bound commands: 12 passed, zero failed, zero skipped, 743 assertions.
+- **Privacy/isolation:** required-now owners have no skip/todo; their only URLs are reserved
+  `fixture.invalid` fixtures; a full source/history gitleaks scan covered 749 commits and found no
+  leak.
+- **Remaining boundary:** execution evidence is complete, but Phase 5 remains blocked with
+  review=failed, approval=pending, and exit=pending until fresh immutable G5-01 and whole-phase
+  reviewers close `P17-RV-P5-F04`. Phase 6 remains five pristine planned groups, 0/50 passed gates,
+  and 40 planned primary entities.
