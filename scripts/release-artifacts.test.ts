@@ -179,32 +179,35 @@ describe('standard release artifact adapter', () => {
   });
 
   test('normalizes the exact standard GoReleaser inventory', () => {
+    const context = { workingDirectory: '/repository', outputRoot: '/repository/dist' };
     const artifacts = [
-      { type: 'Metadata', name: 'metadata.json', path: '/dist/metadata.json' },
+      { type: 'Metadata', name: 'metadata.json', path: 'dist/metadata.json' },
       ...RELEASE_TARGETS.flatMap((target) => [
         {
           type: 'Binary',
           name: 'skillsmith',
-          path: `/dist/${target.id}/skillsmith`,
+          path: `dist/${target.id}/skillsmith`,
           goos: target.goos,
           goarch: target.goarch,
         },
         {
           type: 'Archive',
           name: `skillsmith-v1.2.3-${target.id}.tar.gz`,
-          path: `/dist/skillsmith-v1.2.3-${target.id}.tar.gz`,
+          path: `dist/skillsmith-v1.2.3-${target.id}.tar.gz`,
           goos: target.goos,
           goarch: target.goarch,
         },
       ]),
-      { type: 'Checksum', name: 'SHA256SUMS', path: '/dist/SHA256SUMS' },
-      { type: 'Homebrew Cask', name: 'skillsmith.rb', path: '/dist/Casks/skillsmith.rb' },
+      { type: 'Checksum', name: 'SHA256SUMS', path: 'dist/SHA256SUMS' },
+      { type: 'Homebrew Cask', name: 'skillsmith.rb', path: 'dist/Casks/skillsmith.rb' },
     ];
-    const inventory = validateGoreleaserInventory(artifacts);
-    expect(inventory.binaries['linux-x64']).toBe('/dist/linux-x64/skillsmith');
-    expect(inventory.archives['darwin-arm64']).toBe('/dist/skillsmith-v1.2.3-darwin-arm64.tar.gz');
-    expect(inventory.checksumsPath).toBe('/dist/SHA256SUMS');
-    expect(() => validateGoreleaserInventory([...artifacts, artifacts[0]])).toThrow();
+    const inventory = validateGoreleaserInventory(artifacts, context);
+    expect(inventory.binaries['linux-x64']).toBe('/repository/dist/linux-x64/skillsmith');
+    expect(inventory.archives['darwin-arm64']).toBe(
+      '/repository/dist/skillsmith-v1.2.3-darwin-arm64.tar.gz',
+    );
+    expect(inventory.checksumsPath).toBe('/repository/dist/SHA256SUMS');
+    expect(() => validateGoreleaserInventory([...artifacts, artifacts[0]], context)).toThrow();
   });
 
   test('derives only bounded production cask URLs and validates lifecycle diffs', () => {
