@@ -1810,6 +1810,7 @@ describe('EWP-P6-TS01', () => {
     );
     expect(workflow).toContain('version: v2.17.1');
     expect(workflow).toContain('install-only: true');
+    expect(workflow).toContain('npm@12.0.1');
     expect(workflow).not.toMatch(/npm publish|gh release upload|attest-build-provenance|TAP_/u);
     expect(`${readme}\n${releases}\n${packaging}`).not.toMatch(/curl[^\n]*\|[^\n]*(?:sh|bash)/iu);
 

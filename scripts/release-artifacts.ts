@@ -481,7 +481,7 @@ const toolPath = (): string => {
   const ambientPath = process.env.PATH ?? '';
   const executables = [
     process.execPath,
-    ...['goreleaser', 'npm', 'git', 'tar'].flatMap((name) => {
+    ...['goreleaser', 'npm', 'node', 'git', 'tar'].flatMap((name) => {
       const path = Bun.which(name, { PATH: ambientPath });
       return path === null ? [] : [path];
     }),

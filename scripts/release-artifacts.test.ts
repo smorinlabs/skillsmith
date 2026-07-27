@@ -143,6 +143,7 @@ describe('standard release artifact adapter', () => {
         '/Users/runner/.bun/bin/bun',
         '/Users/runner/hostedtoolcache/goreleaser/2.17.1/arm64/goreleaser',
         '/opt/homebrew/bin/npm',
+        '/opt/homebrew/bin/node',
         '/opt/homebrew/bin/git',
         '/usr/bin/tar',
       ]),
