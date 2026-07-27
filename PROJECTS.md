@@ -35,6 +35,7 @@
 
 ## Project index
 
+- [?] **P18** — [verify: validate against external consumer schemas (claude plugin validate parity)](projects/P18-verify-external-consumer-schema-validation-.md)
 - [~] **P17** — [Skillsmith Ergonomics and Declarative Workflow](projects/P17-skillsmith-ergonomics-and-declarative-workflow.md)
 
 ## [x] Project P16: Hermetic git fixtures — scrub inherited GIT_DIR (#17) (v0.7.0)
