@@ -8148,7 +8148,7 @@
       "phase": "6",
       "title": "Rendering matrix, legacy cleanup, versions/capabilities, install/upgrade docs",
       "dependsOn": ["P17-G6-02A"],
-      "status": "reviewed",
+      "status": "signed-off",
       "owner": "root-goal",
       "ownedFiles": [
         "README.md",
@@ -8242,12 +8242,12 @@
           ]
         },
         "traceability-closure": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G6-03.md#traceability-closure-and-sign-off"]
         },
         "signed-off": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G6-03.md#traceability-closure-and-sign-off"]
         }
       },
       "evidence": [
@@ -8285,7 +8285,8 @@
         "projects/p17/evidence/P17-G6-03.md#third-corrected-terminal-repository-gate-at-76a0a8e",
         "projects/p17/evidence/P17-G6-03.md#third-final-adversarial-review-no-go-at-bda7df7",
         "projects/p17/evidence/P17-G6-03.md#b06-evidence-only-correction",
-        "projects/p17/evidence/P17-G6-03.md#final-independent-adversarial-review-go-at-5d494af"
+        "projects/p17/evidence/P17-G6-03.md#final-independent-adversarial-review-go-at-5d494af",
+        "projects/p17/evidence/P17-G6-03.md#traceability-closure-and-sign-off"
       ]
     },
     {
@@ -25866,7 +25867,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G6-03",
-      "status": "green",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-03",
       "target": null,
@@ -25881,7 +25882,8 @@
         "projects/p17/evidence/P17-G6-03.md#renewed-green-execution-receipt-ewp-p6-ts03-at-d8f12ee",
         "projects/p17/evidence/P17-G6-03.md#second-adversarial-correction-red-execution-receipt-ewp-p6-ts03",
         "projects/p17/evidence/P17-G6-03.md#second-adversarial-correction-implementation-at-c18432b",
-        "projects/p17/evidence/P17-G6-03.md#second-renewed-green-execution-receipt-ewp-p6-ts03-at-c18432b"
+        "projects/p17/evidence/P17-G6-03.md#second-renewed-green-execution-receipt-ewp-p6-ts03-at-c18432b",
+        "projects/p17/evidence/P17-G6-03.md#traceability-closure-and-sign-off"
       ],
       "secondaryGroups": [],
       "implements": ["P2-08"],
@@ -25897,7 +25899,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G6-03",
-      "status": "green",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-03",
       "target": null,
@@ -25907,7 +25909,8 @@
         "projects/p17/evidence/P17-G6-03.md#accepted-ready-result",
         "projects/p17/evidence/P17-G6-03.md#test-first-evidence",
         "projects/p17/evidence/P17-G6-03.md#minimal-implementation-at-4b860c2",
-        "projects/p17/evidence/P17-G6-03.md#targeted-green-at-4b860c2"
+        "projects/p17/evidence/P17-G6-03.md#targeted-green-at-4b860c2",
+        "projects/p17/evidence/P17-G6-03.md#traceability-closure-and-sign-off"
       ],
       "secondaryGroups": ["P17-G6-04"],
       "implements": ["P2-08"],
@@ -25998,7 +26001,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-03",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-03:tests/ergonomics/phase/EWP-P6-TS03.test.ts#EWP-P6-TS03",
       "target": {
@@ -26013,7 +26016,8 @@
         "projects/p17/evidence/P17-G6-03.md#renewed-green-execution-receipt-ewp-p6-ts03-at-d8f12ee",
         "projects/p17/evidence/P17-G6-03.md#adversarial-correction-red-execution-receipt-ewp-p6-ts03",
         "projects/p17/evidence/P17-G6-03.md#green-execution-receipt-ewp-p6-ts03",
-        "projects/p17/evidence/P17-G6-03.md#red-execution-receipt-ewp-p6-ts03"
+        "projects/p17/evidence/P17-G6-03.md#red-execution-receipt-ewp-p6-ts03",
+        "projects/p17/evidence/P17-G6-03.md#traceability-closure-and-sign-off"
       ],
       "secondaryGroups": [],
       "implements": [],
@@ -28007,7 +28011,7 @@
       "designStatus": "retained",
       "stateModel": "coverage",
       "primaryGroup": "P17-G6-03",
-      "status": "validated",
+      "status": "signed-off",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G6-03",
       "target": null,
@@ -28016,7 +28020,8 @@
         "projects/p17/evidence/P17-G6-03.md#impacted-green-at-4b860c2",
         "projects/p17/evidence/P17-G6-03.md#renewed-impacted-green-at-d8f12ee",
         "projects/p17/evidence/P17-G6-03.md#second-final-adversarial-review-no-go-at-8b29e05",
-        "projects/p17/evidence/P17-G6-03.md#second-renewed-impacted-green-at-c18432b"
+        "projects/p17/evidence/P17-G6-03.md#second-renewed-impacted-green-at-c18432b",
+        "projects/p17/evidence/P17-G6-03.md#traceability-closure-and-sign-off"
       ],
       "secondaryGroups": [],
       "implements": [],

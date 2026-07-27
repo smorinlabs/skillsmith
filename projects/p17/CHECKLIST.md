@@ -11,9 +11,9 @@ Tracked entities: **426** across **45** change groups.
 
 | Kind | Total | Signed off | Active/open | Deferred |
 |---|---:|---:|---:|---:|
-| recommendation | 34 | 26 | 2 | 6 |
-| phase-task | 65 | 60 | 5 | 0 |
-| phase-test | 61 | 58 | 3 | 0 |
+| recommendation | 34 | 27 | 1 | 6 |
+| phase-task | 65 | 62 | 3 | 0 |
+| phase-test | 61 | 59 | 2 | 0 |
 | command-test | 157 | 157 | 0 | 0 |
 | option-gate | 10 | 10 | 0 | 0 |
 | workflow | 16 | 15 | 1 | 0 |
@@ -31,7 +31,7 @@ Tracked entities: **426** across **45** change groups.
 | 3 | 8 | 82 | 82 | 0 |
 | 4 | 7 | 105 | 105 | 0 |
 | 5 | 5 | 70 | 70 | 0 |
-| 6 | 5 | 40 | 28 | 0 |
+| 6 | 5 | 40 | 32 | 0 |
 | 7 | 1 | 7 | 0 | 7 |
 
 ### Phase gates
@@ -159,7 +159,7 @@ Tracked entities: **426** across **45** change groups.
 | P2-05 | P17-G6-02A | signed-off | required-pr |
 | P2-06 | P17-G1-05 | signed-off | required-pr |
 | P2-07 | P17-G3B-03 | signed-off | required-pr |
-| P2-08 | P17-G6-03 | validated | required-pr |
+| P2-08 | P17-G6-03 | signed-off | required-pr |
 | P3-01 | P17-G7-01 | deferred | deferred |
 | P3-02 | P17-G7-01 | deferred | deferred |
 | P3-03 | P17-G7-01 | deferred | deferred |
@@ -1610,7 +1610,7 @@ Downstream coverage obligations: EWP-WF01.
 
 ## P17-G6-03 — Rendering matrix, legacy cleanup, versions/capabilities, install/upgrade docs
 
-Phase: 6; status: **reviewed**; dependencies: P17-G6-02A.
+Phase: 6; status: **signed-off**; dependencies: P17-G6-02A.
 Required-now validations: EWP-P6-TS03.
 Downstream coverage obligations: EWP-WF01.
 
@@ -1624,15 +1624,15 @@ Downstream coverage obligations: EWP-WF01.
 - [x] P17-G6-03:impacted-green _(passed)_
 - [x] P17-G6-03:refactor _(passed)_
 - [x] P17-G6-03:adversarial-review _(passed)_
-- [ ] P17-G6-03:traceability-closure _(pending)_
-- [ ] P17-G6-03:signed-off _(pending)_
+- [x] P17-G6-03:traceability-closure _(passed)_
+- [x] P17-G6-03:signed-off _(passed)_
 
 ### Tracked entities
 
-- [ ] **EWP-P6-T05** — Color/observer, legacy-logger, and dependency cleanup. _(phase-task; green)_
-- [ ] **EWP-P6-T06** — Version/capability matrix and install/upgrade docs. _(phase-task; green)_
-- [ ] **EWP-P6-TS03** — TTY/pipe/color/quiet/JSON rendering suite. _(phase-test; passing)_
-- [ ] **P2-08** — Dependency/render cleanup _(recommendation; validated)_
+- [x] **EWP-P6-T05** — Color/observer, legacy-logger, and dependency cleanup. _(phase-task; signed-off)_
+- [x] **EWP-P6-T06** — Version/capability matrix and install/upgrade docs. _(phase-task; signed-off)_
+- [x] **EWP-P6-TS03** — TTY/pipe/color/quiet/JSON rendering suite. _(phase-test; signed-off)_
+- [x] **P2-08** — Dependency/render cleanup _(recommendation; signed-off)_
 
 ## P17-G6-04 — Canonical PR/release recipes, exact-SHA publication gate, and final 1.0 evidence
 
