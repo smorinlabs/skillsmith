@@ -45,6 +45,10 @@
         "tests/ergonomics/fixtures/p3a-ts01/*.golden.json"
       ],
       "formatter": { "enabled": false }
+    },
+    {
+      "include": ["packaging/npm/bin/skillsmith.cjs"],
+      "formatter": { "enabled": false }
     }
   ]
 }

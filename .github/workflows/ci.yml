@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-latest]
+        os: [macos-15, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -26,6 +26,16 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      - name: P17 G6-01 Homebrew supported-platform receipt
+        if: matrix.os == 'macos-15'
+        env:
+          P17_G6_01_HOMEBREW_RECEIPT: '1'
+        run: >-
+          bun test tests/ergonomics/phase/EWP-P6-TS01.test.ts
+          --timeout 300000
+          --max-concurrency 1
+          --test-name-pattern 'EWP-P6-TS01.*Homebrew supported-platform'
 
       - name: Biome (CI mode)
         run: bunx @biomejs/biome ci

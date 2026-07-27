@@ -86,9 +86,9 @@ The Source checkout is the currently available installation method. It requires
 | Distribution | Availability |
 |---|---|
 | Source checkout | Available |
-| Homebrew | Not yet published |
-| npm/Bun global | Not yet published |
-| native release assets | Not yet published |
+| Homebrew (`smorinlabs/tap/skillsmith`) | Candidate validated locally; not yet published |
+| npm/Bun global (`@smorinlabs/skillsmith`) | Candidate validated locally; not yet published |
+| native release assets | Candidate validated locally; not yet published |
 
 ```sh
 git clone https://github.com/smorinlabs/skillsmith.git
@@ -103,6 +103,11 @@ To produce a standalone binary:
 bun run build              # compiles for the current host; package.json also has explicit targets
 ./dist/skillsmith --help
 ```
+
+Maintainers can build the ignored four-target candidate set with `bun run build:release`. The
+candidate includes `release-manifest.json`, `SHA256SUMS`, direct archives, npm tarballs, and a
+Homebrew formula. Public availability remains gated by P17-G6-04; these candidate names are not an
+installation claim and source checkout remains the only published path.
 
 ## Upgrade
 

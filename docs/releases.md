@@ -72,11 +72,26 @@ If you must override what release-please generates (e.g. to collapse a noisy ser
 
 `bun run build` detects the host target via `scripts/build-native.ts` and invokes the matching script. Output lands in `dist/skillsmith`.
 
-Today, binaries are **not** attached to GitHub Releases automatically — that's a post-1.0 follow-up (see below).
+Today, binaries are **not** attached to GitHub Releases automatically. P17-G6-01 builds and tests a
+local candidate, while P17-G6-04 retains upload and public-availability authority.
+
+## Local distribution candidate
+
+`bun run build:release` creates all four native candidates without changing release-please-managed
+versions. Each native binary is compiled once and reused byte-for-byte by its direct archive,
+Homebrew branch, and npm/Bun payload. The release output root contains four
+`skillsmith-v<version>-<target>.tar.gz` archives, five scoped-package tarballs, `skillsmith.rb`,
+`release-manifest.json`, and `SHA256SUMS`.
+
+The candidate package identity is `@smorinlabs/skillsmith`; the formula identity is
+`smorinlabs/tap/skillsmith`. Neither is yet published. G6-01 clean-installs candidates from local
+loopback fixtures and never edits an external tap or shell startup file. Verify a candidate with
+`sha256sum -c SHA256SUMS`, extract only the archive matching the host, and run `skillsmith version`
+from an isolated prefix. Public install, upgrade, and uninstall commands remain gated by G6-04.
 
 ## What CI does on pushes & PRs
 
-Defined in `.github/workflows/ci.yml`. On every `push` to `main` and every `pull_request`, the matrix (`macos-latest`, `ubuntu-latest`) runs:
+Defined in `.github/workflows/ci.yml`. On every `push` to `main` and every `pull_request`, the matrix (`macos-15`, `ubuntu-latest`) runs:
 
 1. `bunx @biomejs/biome ci`
 2. `bun run lint:boundaries` (ESLint zones)

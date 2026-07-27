@@ -27,6 +27,7 @@
     "build:darwin-x64": "bun build --compile --bytecode --target=bun-darwin-x64 packages/cli/src/index.ts --outfile dist/skillsmith",
     "build:linux-x64": "bun build --compile --bytecode --target=bun-linux-x64 packages/cli/src/index.ts --outfile dist/skillsmith",
     "build:linux-arm64": "bun build --compile --bytecode --target=bun-linux-arm64 packages/cli/src/index.ts --outfile dist/skillsmith",
+    "build:release": "bun scripts/build-release.ts --target all",
     "build": "bun scripts/build-native.ts",
     "postinstall": "lefthook install || true"
   },
