@@ -268,9 +268,30 @@ const invocationFromParse = (
   argv: readonly string[] | undefined,
   from: 'node' | 'electron' | 'user' | undefined,
 ): readonly string[] => {
-  if (argv === undefined) return [];
-  if (from === 'user') return argv;
-  return argv.slice(from === 'electron' ? 1 : 2);
+  const effectiveArgv = argv ?? process.argv;
+  let effectiveFrom: 'node' | 'electron' | 'user' | 'eval' | undefined = from;
+
+  // Match Commander's _prepareUserArgs convention exactly before Commander parses, because eager
+  // version, preflight, color, and error-format routing all need the same user-argument view.
+  if (argv === undefined && effectiveFrom === undefined) {
+    if (process.versions?.electron) effectiveFrom = 'electron';
+    if (
+      (process.execArgv ?? []).some(
+        (argument) =>
+          argument === '-e' || argument === '--eval' || argument === '-p' || argument === '--print',
+      )
+    ) {
+      effectiveFrom = 'eval';
+    }
+  }
+
+  if (effectiveFrom === 'user') return effectiveArgv;
+  if (effectiveFrom === 'eval') return effectiveArgv.slice(1);
+  if (effectiveFrom === 'electron') {
+    const electronProcess = process as NodeJS.Process & { readonly defaultApp?: boolean };
+    return effectiveArgv.slice(electronProcess.defaultApp ? 2 : 1);
+  }
+  return effectiveArgv.slice(2);
 };
 
 const eagerPresentationOptions = (

@@ -231,9 +231,11 @@ export const renderCliError = (error: NormalizedCliError, format: CliErrorFormat
 export const cliErrorFormatFromArgv = (
   argv: readonly string[] = process.argv.slice(2),
 ): CliErrorFormat => {
-  if (argv.includes('--json') || argv.includes('--format=json')) return 'json';
-  const formatIndex = argv.lastIndexOf('--format');
-  return formatIndex >= 0 && argv[formatIndex + 1] === 'json' ? 'json' : 'human';
+  const terminatorIndex = argv.indexOf('--');
+  const optionArgv = terminatorIndex < 0 ? argv : argv.slice(0, terminatorIndex);
+  if (optionArgv.includes('--json') || optionArgv.includes('--format=json')) return 'json';
+  const formatIndex = optionArgv.lastIndexOf('--format');
+  return formatIndex >= 0 && optionArgv[formatIndex + 1] === 'json' ? 'json' : 'human';
 };
 
 /** Emit exactly one normalized error value to the format-owned stream without exiting. */
