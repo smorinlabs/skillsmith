@@ -1610,7 +1610,7 @@ Downstream coverage obligations: EWP-WF01.
 
 ## P17-G6-03 — Rendering matrix, legacy cleanup, versions/capabilities, install/upgrade docs
 
-Phase: 6; status: **active**; dependencies: P17-G6-02A.
+Phase: 6; status: **reviewed**; dependencies: P17-G6-02A.
 Required-now validations: EWP-P6-TS03.
 Downstream coverage obligations: EWP-WF01.
 
@@ -1623,7 +1623,7 @@ Downstream coverage obligations: EWP-WF01.
 - [x] P17-G6-03:targeted-green _(passed)_
 - [x] P17-G6-03:impacted-green _(passed)_
 - [x] P17-G6-03:refactor _(passed)_
-- [ ] P17-G6-03:adversarial-review _(pending)_
+- [x] P17-G6-03:adversarial-review _(passed)_
 - [ ] P17-G6-03:traceability-closure _(pending)_
 - [ ] P17-G6-03:signed-off _(pending)_
 

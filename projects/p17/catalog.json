@@ -8148,7 +8148,7 @@
       "phase": "6",
       "title": "Rendering matrix, legacy cleanup, versions/capabilities, install/upgrade docs",
       "dependsOn": ["P17-G6-02A"],
-      "status": "active",
+      "status": "reviewed",
       "owner": "root-goal",
       "ownedFiles": [
         "README.md",
@@ -8196,7 +8196,7 @@
         "bun test tests/ergonomics/phase/EWP-P6-TS03.test.ts --test-name-pattern EWP-P6-TS03"
       ],
       "implementers": ["root-codex-goal"],
-      "reviewer": null,
+      "reviewer": "/root/g6_02b_ready_review",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -8220,7 +8220,7 @@
         "targeted-green": {
           "status": "passed",
           "evidence": [
-            "projects/p17/evidence/P17-G6-03.md#renewed-green-execution-receipt-ewp-p6-ts03-at-d8f12ee"
+            "projects/p17/evidence/P17-G6-03.md#second-renewed-green-execution-receipt-ewp-p6-ts03-at-c18432b"
           ]
         },
         "impacted-green": {
@@ -8236,8 +8236,10 @@
           ]
         },
         "adversarial-review": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G6-03.md#final-independent-adversarial-review-go-at-5d494af"
+          ]
         },
         "traceability-closure": {
           "status": "pending",
@@ -8282,7 +8284,8 @@
         "projects/p17/evidence/P17-G6-03.md#second-renewed-refactor-result-at-c18432b",
         "projects/p17/evidence/P17-G6-03.md#third-corrected-terminal-repository-gate-at-76a0a8e",
         "projects/p17/evidence/P17-G6-03.md#third-final-adversarial-review-no-go-at-bda7df7",
-        "projects/p17/evidence/P17-G6-03.md#b06-evidence-only-correction"
+        "projects/p17/evidence/P17-G6-03.md#b06-evidence-only-correction",
+        "projects/p17/evidence/P17-G6-03.md#final-independent-adversarial-review-go-at-5d494af"
       ]
     },
     {
