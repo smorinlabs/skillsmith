@@ -409,9 +409,10 @@ describe('EWP-P6-TS03', () => {
     ]);
     expect(preflight).not.toContain('applyRuntimeColorMode');
     expect(environment, 'the process.env mutation module must be deleted').toBeNull();
-    expect(index).toContain("from './runtime/presentation.ts'");
-    expect(index).toMatch(/present\w*Human|write\w*Presented/);
+    expect(index).not.toContain("from './runtime/presentation.ts'");
+    expect(index).toContain('emitFinalCliError');
     expect(errorBoundary).toContain('../runtime/presentation.ts');
+    expect(errorBoundary).toContain('emitFinalCliError');
 
     const usage = runCli(['--color', 'always', '--definitely-unknown'], {
       ...withoutColorEnvironment(),
