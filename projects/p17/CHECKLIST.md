@@ -1522,7 +1522,7 @@ Downstream coverage obligations: EWP-WF01.
 - [x] P17-G6-01:ready _(passed)_
 - [x] P17-G6-01:test-first _(passed)_
 - [x] P17-G6-01:minimal-implementation _(passed)_
-- [ ] P17-G6-01:targeted-green _(pending)_
+- [x] P17-G6-01:targeted-green _(passed)_
 - [ ] P17-G6-01:impacted-green _(pending)_
 - [ ] P17-G6-01:refactor _(pending)_
 - [ ] P17-G6-01:adversarial-review _(pending)_
@@ -1531,9 +1531,9 @@ Downstream coverage obligations: EWP-WF01.
 
 ### Tracked entities
 
-- [ ] **EWP-P6-T01** — Native release assets/checksums. _(phase-task; red)_
-- [ ] **EWP-P6-T02** — Homebrew and npm/Bun distribution. _(phase-task; red)_
-- [ ] **EWP-P6-TS01** — Clean-machine install smoke per distribution. _(phase-test; failing)_
+- [ ] **EWP-P6-T01** — Native release assets/checksums. _(phase-task; green)_
+- [ ] **EWP-P6-T02** — Homebrew and npm/Bun distribution. _(phase-task; green)_
+- [ ] **EWP-P6-TS01** — Clean-machine install smoke per distribution. _(phase-test; passing)_
 - [ ] **P1-12** — Distribution _(recommendation; mapped)_
 
 ## P17-G6-02A — Shared command metadata, five-group help, progressive options, workflows, and generated docs

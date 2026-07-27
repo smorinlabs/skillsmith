@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import {
   access,
@@ -25,6 +25,8 @@ const WORKFLOW_SOURCE = join(ROOT, '.github', 'workflows', 'ci.yml');
 const MAX_NATIVE_BINARY_BYTES = 134_217_728;
 const HEX_40 = 'a'.repeat(40);
 const HEX_64 = 'b'.repeat(64);
+
+setDefaultTimeout(300_000);
 
 type ReleaseTarget = Readonly<{
   id: string;

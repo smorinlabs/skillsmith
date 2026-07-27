@@ -7811,8 +7811,10 @@
           "evidence": ["projects/p17/evidence/P17-G6-01.md#minimal-implementation-at-a72dc9c"]
         },
         "targeted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G6-01.md#ewp-p6-ts01-targeted-green-and-macos-receipt-at-b692aab"
+          ]
         },
         "impacted-green": {
           "status": "pending",
@@ -7860,7 +7862,8 @@
         "projects/p17/evidence/P17-G6-01.md#standard-tooling-ready-review-go-at-97ed756",
         "projects/p17/evidence/P17-G6-01.md#accepted-amended-ready-result",
         "projects/p17/evidence/P17-G6-01.md#revised-ewp-p6-ts01-standard-tooling-test-first-evidence-at-e7a3660",
-        "projects/p17/evidence/P17-G6-01.md#minimal-implementation-at-a72dc9c"
+        "projects/p17/evidence/P17-G6-01.md#minimal-implementation-at-a72dc9c",
+        "projects/p17/evidence/P17-G6-01.md#ewp-p6-ts01-targeted-green-and-macos-receipt-at-b692aab"
       ]
     },
     {
@@ -25792,7 +25795,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G6-01",
-      "status": "red",
+      "status": "green",
       "tier": "release",
       "plannedTarget": "planned:P17-G6-01",
       "target": null,
@@ -25801,7 +25804,8 @@
         "projects/p17/evidence/P17-G6-01.md#standard-tooling-ready-review-go-at-97ed756",
         "projects/p17/evidence/P17-G6-01.md#accepted-amended-ready-result",
         "projects/p17/evidence/P17-G6-01.md#revised-ewp-p6-ts01-standard-tooling-test-first-evidence-at-e7a3660",
-        "projects/p17/evidence/P17-G6-01.md#minimal-implementation-at-a72dc9c"
+        "projects/p17/evidence/P17-G6-01.md#minimal-implementation-at-a72dc9c",
+        "projects/p17/evidence/P17-G6-01.md#ewp-p6-ts01-targeted-green-and-macos-receipt-at-b692aab"
       ],
       "secondaryGroups": [],
       "implements": ["P1-12"],
@@ -25817,7 +25821,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G6-01",
-      "status": "red",
+      "status": "green",
       "tier": "release",
       "plannedTarget": "planned:P17-G6-01",
       "target": null,
@@ -25826,7 +25830,8 @@
         "projects/p17/evidence/P17-G6-01.md#standard-tooling-ready-review-go-at-97ed756",
         "projects/p17/evidence/P17-G6-01.md#accepted-amended-ready-result",
         "projects/p17/evidence/P17-G6-01.md#revised-ewp-p6-ts01-standard-tooling-test-first-evidence-at-e7a3660",
-        "projects/p17/evidence/P17-G6-01.md#minimal-implementation-at-a72dc9c"
+        "projects/p17/evidence/P17-G6-01.md#minimal-implementation-at-a72dc9c",
+        "projects/p17/evidence/P17-G6-01.md#ewp-p6-ts01-targeted-green-and-macos-receipt-at-b692aab"
       ],
       "secondaryGroups": ["P17-G6-04"],
       "implements": ["P1-12"],
@@ -26015,7 +26020,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-01",
-      "status": "failing",
+      "status": "passing",
       "tier": "release",
       "plannedTarget": "planned:P17-G6-01:tests/ergonomics/phase/EWP-P6-TS01.test.ts#EWP-P6-TS01",
       "target": {
@@ -26025,6 +26030,7 @@
         "command": "bun test tests/ergonomics/phase/EWP-P6-TS01.test.ts --test-name-pattern EWP-P6-TS01"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G6-01.md#ewp-p6-ts01-targeted-green-and-macos-receipt-at-b692aab",
         "projects/p17/evidence/P17-G6-01.md#revised-ewp-p6-ts01-standard-tooling-test-first-evidence-at-e7a3660",
         "projects/p17/evidence/P17-G6-01.md#minimal-implementation-at-a72dc9c"
       ],
