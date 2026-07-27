@@ -1430,7 +1430,7 @@ describe('EWP-P6-TS01', () => {
       await writeFile(caskPath, localCask, { mode: 0o644 });
       await chmod(caskPath, 0o644);
       await runBrew([ruby, '-c', caskPath]);
-      await runBrew([brew, 'install', '--cask', '--no-quarantine', qualifiedCask]);
+      await runBrew([brew, 'install', '--cask', qualifiedCask]);
       installed = true;
       const brewPrefix = await runBrew([brew, '--prefix']);
       const binary = join(brewPrefix, 'bin', 'skillsmith');
@@ -1466,7 +1466,7 @@ describe('EWP-P6-TS01', () => {
           installedBinarySha256: selected.binarySha256,
           skippedTests: 0,
           productionCaskUnchanged: true,
-          testSideNoQuarantineOnly: true,
+          quarantineBypass: false,
         })}\n`,
       );
     } finally {
@@ -1719,7 +1719,7 @@ describe('EWP-P6-TS01', () => {
       });
       await writeFile(caskPath, localCasks[0], { mode: 0o644 });
       await runBrew([ruby, '-c', caskPath]);
-      await runBrew([brew, 'install', '--cask', '--no-quarantine', qualifiedCask]);
+      await runBrew([brew, 'install', '--cask', qualifiedCask]);
       installed = true;
       const brewPrefix = await runBrew([brew, '--prefix']);
       const binary = join(brewPrefix, 'bin', 'skillsmith');
@@ -1727,7 +1727,7 @@ describe('EWP-P6-TS01', () => {
       expect(sha256(await readFile(binary))).toBe(first?.sha256);
       await writeFile(caskPath, localCasks[1], { mode: 0o644 });
       await runBrew([ruby, '-c', caskPath]);
-      await runBrew([brew, 'upgrade', '--cask', '--no-quarantine', qualifiedCask]);
+      await runBrew([brew, 'upgrade', '--cask', qualifiedCask]);
       expect(await runBrew([binary, 'version'])).toBe(candidates[1].version);
       expect(sha256(await readFile(binary))).toBe(second?.sha256);
       const completionPaths = {
@@ -1756,7 +1756,7 @@ describe('EWP-P6-TS01', () => {
           firstSha256: first?.sha256,
           secondSha256: second?.sha256,
           skippedTests: 0,
-          testSideNoQuarantineOnly: true,
+          quarantineBypass: false,
         })}\n`,
       );
     } finally {
