@@ -8183,6 +8183,7 @@
         "projects/p17/evidence/P17-G6-03.md",
         "projects/p17/plans/P17-G6-03.md",
         "scripts/generate-command-reference.ts",
+        "tests/ergonomics/phase/EWP-P1-TS08.test.ts",
         "tests/ergonomics/phase/EWP-P1-TS11.test.ts",
         "tests/ergonomics/phase/EWP-P6-TS03.test.ts",
         "tests/ergonomics/phase/EWP-P6-TS04.test.ts"
@@ -8256,7 +8257,9 @@
         "projects/p17/evidence/P17-G6-03.md#green-execution-receipt-ewp-p6-ts03",
         "projects/p17/evidence/P17-G6-03.md#targeted-green-at-4b860c2",
         "projects/p17/evidence/P17-G6-03.md#impacted-green-at-4b860c2",
-        "projects/p17/evidence/P17-G6-03.md#refactor-result-at-4b860c2"
+        "projects/p17/evidence/P17-G6-03.md#refactor-result-at-4b860c2",
+        "projects/p17/evidence/P17-G6-03.md#first-final-adversarial-review-no-go-at-a7ef5bb",
+        "projects/p17/evidence/P17-G6-03.md#approved-adversarial-correction-amendment"
       ]
     },
     {
