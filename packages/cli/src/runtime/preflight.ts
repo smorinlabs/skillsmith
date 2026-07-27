@@ -1,5 +1,9 @@
 import type { Command } from 'commander';
-import { cliErrorFormatFromArgv, failCliError } from '../output/error-boundary.ts';
+import {
+  cliErrorFormatFromArgv,
+  cliErrorInvocationForCommand,
+  failCliError,
+} from '../output/error-boundary.ts';
 import { CURRENT_COMMAND_SPECS, validateOptionInvocation } from '../spec/index.ts';
 import { type CliRuntimeIo, processRuntimeIo } from './io.ts';
 
@@ -64,8 +68,7 @@ export const installRuntimePreflight = (
   io: CliRuntimeIo = processRuntimeIo,
 ): void => {
   program.hook('preAction', (_thisCommand, actionCommand) => {
-    const rawArgs = (program as Command & { rawArgs?: string[] }).rawArgs ?? [];
-    const invocation = rawArgs.slice(2);
+    const invocation = cliErrorInvocationForCommand(program);
     const format = cliErrorFormatFromArgv(invocation);
     assertRootRuntimePreflight(invocation, io);
 

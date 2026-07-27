@@ -31,6 +31,23 @@ export interface CliErrorFallback {
 
 export type CliErrorFormat = 'human' | 'json';
 
+const CLI_BOUNDARY_EXIT = Symbol('CliBoundaryExit');
+
+/** Internal control-flow signal thrown only after an injected CLI exit has been recorded. */
+export class CliBoundaryExit extends Error {
+  readonly exitCode: CliErrorExitCode;
+  readonly [CLI_BOUNDARY_EXIT] = true;
+
+  constructor(exitCode: CliErrorExitCode) {
+    super(`CLI boundary handled exit ${exitCode}`);
+    this.name = 'CliBoundaryExit';
+    this.exitCode = exitCode;
+  }
+}
+
+export const isCliBoundaryExit = (error: unknown): error is CliBoundaryExit =>
+  error instanceof CliBoundaryExit && error[CLI_BOUNDARY_EXIT] === true;
+
 const SKILLSMITH_ERROR_CODES = new Set<SkillSmithError['code']>([
   'generic',
   'invalid-argument',
@@ -219,14 +236,14 @@ export const cliErrorFormatFromArgv = (
   return formatIndex >= 0 && argv[formatIndex + 1] === 'json' ? 'json' : 'human';
 };
 
-/** Emit exactly one normalized error value to the format-owned stream and terminate control flow. */
-export const failCliError = (
+/** Emit exactly one normalized error value to the format-owned stream without exiting. */
+export const emitCliError = (
   error: unknown,
   format: CliErrorFormat = cliErrorFormatFromArgv(),
   fallback?: string | CliErrorFallback,
   argv: readonly string[] = process.argv.slice(2),
   io: CliRuntimeIo = processRuntimeIo,
-): never => {
+): NormalizedCliError => {
   const normalized = normalizeCliError(error, fallback);
   const rendered = renderCliError(normalized, format);
   if (format === 'json') {
@@ -239,18 +256,56 @@ export const failCliError = (
     );
     io.stderr.write(presented.stderr ?? rendered);
   }
-  process.exit(normalized.exitCode);
+  return normalized;
 };
 
-const invocationForCommand = (command: Command): readonly string[] => {
+/** Composition-root helper for a rejected main promise; it emits but never owns process exit. */
+export const emitFinalCliError = (
+  error: unknown,
+  argv: readonly string[] = process.argv.slice(2),
+  io: CliRuntimeIo = processRuntimeIo,
+): NormalizedCliError => emitCliError(error, cliErrorFormatFromArgv(argv), undefined, argv, io);
+
+const exitCliBoundary = (exitCode: CliErrorExitCode, io: CliRuntimeIo): never => {
+  io.exit(exitCode);
+  throw new CliBoundaryExit(exitCode);
+};
+
+/** Emit one normalized error, route exit through injected IO, and terminate parser control flow. */
+export const failCliError = (
+  error: unknown,
+  format: CliErrorFormat = cliErrorFormatFromArgv(),
+  fallback?: string | CliErrorFallback,
+  argv: readonly string[] = process.argv.slice(2),
+  io: CliRuntimeIo = processRuntimeIo,
+): never => {
+  const normalized = emitCliError(error, format, fallback, argv, io);
+  return exitCliBoundary(normalized.exitCode, io);
+};
+
+const invocationByRoot = new WeakMap<Command, readonly string[]>();
+
+const rootCommand = (command: Command): Command => {
   let root = command;
   while (root.parent !== null) root = root.parent;
+  return root;
+};
+
+/** Bind the exact parse-mode-normalized argv used by Commander for the current invocation. */
+export const setCliErrorInvocation = (command: Command, invocation: readonly string[]): void => {
+  invocationByRoot.set(rootCommand(command), Object.freeze([...invocation]));
+};
+
+export const cliErrorInvocationForCommand = (command: Command): readonly string[] => {
+  const root = rootCommand(command);
+  const bound = invocationByRoot.get(root);
+  if (bound !== undefined) return bound;
   const state = root as Command & {
     readonly rawArgs?: readonly string[];
-    readonly _scriptPath?: string;
+    readonly _scriptPath?: string | null;
   };
   const rawArgs = state.rawArgs ?? process.argv;
-  return state._scriptPath === undefined ? rawArgs : rawArgs.slice(2);
+  return state._scriptPath == null ? rawArgs : rawArgs.slice(2);
 };
 
 /**
@@ -277,9 +332,9 @@ export const withCliErrorBoundary = <T extends Command>(
   });
   command.exitOverride((error) => {
     if (error.code === 'commander.helpDisplayed' || error.code === 'commander.version') {
-      process.exit(0);
+      return exitCliBoundary(0, io);
     }
-    const invocation = invocationForCommand(command);
+    const invocation = cliErrorInvocationForCommand(command);
     failCliError(error, cliErrorFormatFromArgv(invocation), undefined, invocation, io);
   });
   return command;

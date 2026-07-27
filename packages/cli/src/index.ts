@@ -1,14 +1,9 @@
 #!/usr/bin/env bun
 import { resolveCompletionRequest } from './completion/transport.ts';
-import {
-  cliErrorFormatFromArgv,
-  normalizeCliError,
-  renderCliError,
-} from './output/error-boundary.ts';
+import { emitFinalCliError } from './output/error-boundary.ts';
 import { buildProgram } from './program.ts';
 import { createCompletionRuntimeContext } from './runtime/context.ts';
 import { processRuntimeIo } from './runtime/io.ts';
-import { presentHumanOutput, presentationPolicyFromArgv } from './runtime/presentation.ts';
 import { installSignalHandler } from './util/signals.ts';
 
 const main = async (): Promise<number> => {
@@ -37,19 +32,7 @@ main().then(
   },
   (e) => {
     const invocation = process.argv.slice(2);
-    const format = cliErrorFormatFromArgv(invocation);
-    const error = normalizeCliError(e);
-    const rendered = renderCliError(error, format);
-    if (format === 'json') {
-      process.stdout.write(rendered);
-    } else {
-      const output = presentHumanOutput(
-        { stderr: rendered },
-        presentationPolicyFromArgv(invocation, format, processRuntimeIo),
-        'error',
-      );
-      process.stderr.write(output.stderr ?? rendered);
-    }
+    const error = emitFinalCliError(e, invocation, processRuntimeIo);
     process.exitCode = error.exitCode;
   },
 );

@@ -608,8 +608,14 @@ describe('EWP-P6-TS03', () => {
       expect(output.stderr?.replace(ANSI_SEQUENCE, ''), JSON.stringify(policy)).toBe(
         canonical.stderr,
       );
-      expect(hasUnsafeHumanControl(output.stdout ?? ''), JSON.stringify(policy)).toBeFalse();
-      expect(hasUnsafeHumanControl(output.stderr ?? ''), JSON.stringify(policy)).toBeFalse();
+      expect(
+        hasUnsafeHumanControl(output.stdout?.replace(ANSI_SEQUENCE, '') ?? ''),
+        JSON.stringify(policy),
+      ).toBeFalse();
+      expect(
+        hasUnsafeHumanControl(output.stderr?.replace(ANSI_SEQUENCE, '') ?? ''),
+        JSON.stringify(policy),
+      ).toBeFalse();
       expect(output.stdout?.includes(ESCAPE), JSON.stringify(policy)).toBe(
         policy.stdoutColor === 'on',
       );

@@ -22,8 +22,32 @@ const OFF_POLICY: PresentationPolicy = Object.freeze({
   stderrColor: 'off',
 });
 
-// eslint-disable-next-line skillsmith/capability-ownership -- This focused presentation adapter owns the read-only process color environment after the mutation adapter was removed.
-const processColorEnvironment = (): Readonly<Record<string, string | undefined>> => process.env;
+const COLOR_ENVIRONMENT_KEYS = [
+  'NO_COLOR',
+  'CLICOLOR',
+  'TERM',
+  'FORCE_COLOR',
+  'CLICOLOR_FORCE',
+] as const;
+
+type ColorEnvironmentKey = (typeof COLOR_ENVIRONMENT_KEYS)[number];
+
+/** Copy only color-policy inputs so invocation policy never retains ambient process authority. */
+export const snapshotColorEnvironment = (
+  env: Readonly<Record<string, string | undefined>>,
+): Readonly<Record<ColorEnvironmentKey, string | undefined>> =>
+  Object.freeze({
+    NO_COLOR: env.NO_COLOR,
+    CLICOLOR: env.CLICOLOR,
+    TERM: env.TERM,
+    FORCE_COLOR: env.FORCE_COLOR,
+    CLICOLOR_FORCE: env.CLICOLOR_FORCE,
+  });
+
+const processColorEnvironment = (): Readonly<Record<ColorEnvironmentKey, string | undefined>> => {
+  // eslint-disable-next-line skillsmith/capability-ownership -- This focused presentation adapter owns the read-only process color environment after the mutation adapter was removed.
+  return snapshotColorEnvironment(process.env);
+};
 
 export const resolvePresentationPolicy = (input: PresentationPolicyInput): PresentationPolicy => {
   if (input.format === 'json') return OFF_POLICY;
@@ -105,19 +129,32 @@ const OBSERVATION_LINE = /^(?:detail|trace|debug): /u;
 const HELP_HEADING =
   /^(?:PRIMARY QUESTION|USAGE|INHERITED GLOBALS|DISCOVER|MANAGE|DEVELOP|DECLARATIVE|MAINTAIN|EXIT CODES)\b/u;
 
+const isUnsafeHumanControl = (character: string): boolean => {
+  const codePoint = character.codePointAt(0) ?? 0;
+  return (
+    (codePoint >= 0 && codePoint <= 8) ||
+    (codePoint >= 11 && codePoint <= 31) ||
+    (codePoint >= 127 && codePoint <= 159)
+  );
+};
+
+const sanitizeHumanText = (value: string): string =>
+  [...stripVTControlCharacters(value)]
+    .filter((character) => !isUnsafeHumanControl(character))
+    .join('');
+
 const styleLine = (line: string, reportKind: string): string => {
-  const safe = stripVTControlCharacters(line);
-  if (OBSERVATION_LINE.test(safe)) return safe;
-  if (reportKind === 'version' && safe.length > 0) return chalk.cyan(safe);
-  if (/^#{1,6}(?:\s|$)/u.test(safe) || HELP_HEADING.test(safe)) return chalk.bold.cyan(safe);
-  if (safe.startsWith('error:')) return `${chalk.bold.red('error:')}${safe.slice('error:'.length)}`;
-  if (safe.startsWith('warning:'))
-    return `${chalk.bold.yellow('warning:')}${safe.slice('warning:'.length)}`;
-  if (/^(?:success|passed|ok):/iu.test(safe)) {
-    const delimiter = safe.indexOf(':') + 1;
-    return `${chalk.bold.green(safe.slice(0, delimiter))}${safe.slice(delimiter)}`;
+  if (OBSERVATION_LINE.test(line)) return line;
+  if (reportKind === 'version' && line.length > 0) return chalk.cyan(line);
+  if (/^#{1,6}(?:\s|$)/u.test(line) || HELP_HEADING.test(line)) return chalk.bold.cyan(line);
+  if (line.startsWith('error:')) return `${chalk.bold.red('error:')}${line.slice('error:'.length)}`;
+  if (line.startsWith('warning:'))
+    return `${chalk.bold.yellow('warning:')}${line.slice('warning:'.length)}`;
+  if (/^(?:success|passed|ok):/iu.test(line)) {
+    const delimiter = line.indexOf(':') + 1;
+    return `${chalk.bold.green(line.slice(0, delimiter))}${line.slice(delimiter)}`;
   }
-  return safe;
+  return line;
 };
 
 const styleText = (value: string, reportKind: string): string =>
@@ -139,13 +176,17 @@ export const presentHumanOutput = (
     ...(output.stdout === undefined
       ? {}
       : {
-          stdout:
-            policy.stdoutColor === 'on' ? styleText(output.stdout, reportKind) : output.stdout,
+          stdout: (() => {
+            const safe = sanitizeHumanText(output.stdout);
+            return policy.stdoutColor === 'on' ? styleText(safe, reportKind) : safe;
+          })(),
         }),
     ...(output.stderr === undefined
       ? {}
       : {
-          stderr:
-            policy.stderrColor === 'on' ? styleText(output.stderr, reportKind) : output.stderr,
+          stderr: (() => {
+            const safe = sanitizeHumanText(output.stderr);
+            return policy.stderrColor === 'on' ? styleText(safe, reportKind) : safe;
+          })(),
         }),
   });

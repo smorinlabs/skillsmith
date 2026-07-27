@@ -15,8 +15,10 @@ import {
 import type { Command } from 'commander';
 import { HELP_TOPIC_LOOKUP_NAMES } from './help/topics.ts';
 import {
+  isCliBoundaryExit,
   normalizeCliError,
   renderCliError,
+  setCliErrorInvocation,
   withCliErrorBoundary,
 } from './output/error-boundary.ts';
 import {
@@ -444,6 +446,7 @@ export const buildProgram = (
           diagnosticBuffer: prepared.diagnosticBuffer,
         });
       } catch (error) {
+        if (isCliBoundaryExit(error)) throw error;
         failBeforeLifecycle(error, format, presentation);
       }
     };
@@ -467,42 +470,50 @@ export const buildProgram = (
 
   const parseAsync = program.parseAsync.bind(program);
   program.parseAsync = (async (...args: Parameters<Command['parseAsync']>) => {
-    const [argv, options] = args;
-    const invocation = invocationFromParse(argv, options?.from);
-    const valueOptionScopes = eagerValueOptionScopes(
-      invocation,
-      rootSpec,
-      eagerSpecs,
-      new Set(attachedAdditionalSpecs),
-    );
-    if (requestsEagerVersion(invocation, valueOptionScopes)) {
-      assertRootRuntimePreflight(invocation, runtimeIo);
-      const presentation = eagerPresentationOptions(invocation, valueOptionScopes);
-      const verbosity = resolveObservationVerbosity(presentation);
-      const presentationPolicy = presentationPolicyForIo(presentation, 'human', runtimeIo);
-      try {
-        const prepared = createObservation('skillsmith version', 'version', verbosity);
-        const { observation } = prepared;
-        await runtime.execute({
-          application: 'version',
-          reportKind: 'version',
-          request: {
-            arguments: [],
-            options: { version: true, ...presentation },
-          },
-          context: Object.freeze({ observation }),
-          observation,
-          format: 'human',
-          presentation: presentationPolicy,
-          quiet: verbosity === 'quiet',
-          diagnosticBuffer: prepared.diagnosticBuffer,
-        });
-      } catch (error) {
-        failBeforeLifecycle(error, 'human', presentationPolicy);
+    try {
+      const [argv, options] = args;
+      const invocation = invocationFromParse(argv, options?.from);
+      setCliErrorInvocation(program, invocation);
+      const valueOptionScopes = eagerValueOptionScopes(
+        invocation,
+        rootSpec,
+        eagerSpecs,
+        new Set(attachedAdditionalSpecs),
+      );
+      if (requestsEagerVersion(invocation, valueOptionScopes)) {
+        assertRootRuntimePreflight(invocation, runtimeIo);
+        const presentation = eagerPresentationOptions(invocation, valueOptionScopes);
+        const verbosity = resolveObservationVerbosity(presentation);
+        const presentationPolicy = presentationPolicyForIo(presentation, 'human', runtimeIo);
+        try {
+          const prepared = createObservation('skillsmith version', 'version', verbosity);
+          const { observation } = prepared;
+          await runtime.execute({
+            application: 'version',
+            reportKind: 'version',
+            request: {
+              arguments: [],
+              options: { version: true, ...presentation },
+            },
+            context: Object.freeze({ observation }),
+            observation,
+            format: 'human',
+            presentation: presentationPolicy,
+            quiet: verbosity === 'quiet',
+            diagnosticBuffer: prepared.diagnosticBuffer,
+          });
+        } catch (error) {
+          if (isCliBoundaryExit(error)) throw error;
+          failBeforeLifecycle(error, 'human', presentationPolicy);
+        }
+        return program;
       }
-      return program;
+      const parsed = await parseAsync(...args);
+      return parsed;
+    } catch (error) {
+      if (isCliBoundaryExit(error)) return program;
+      throw error;
     }
-    return parseAsync(...args);
   }) as Command['parseAsync'];
   return program;
 };
