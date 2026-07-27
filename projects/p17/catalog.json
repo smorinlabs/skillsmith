@@ -7807,8 +7807,8 @@
           ]
         },
         "minimal-implementation": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G6-01.md#minimal-implementation-at-a72dc9c"]
         },
         "targeted-green": {
           "status": "pending",
@@ -7859,7 +7859,8 @@
         "projects/p17/evidence/P17-G6-01.md#f05-ready-correction",
         "projects/p17/evidence/P17-G6-01.md#standard-tooling-ready-review-go-at-97ed756",
         "projects/p17/evidence/P17-G6-01.md#accepted-amended-ready-result",
-        "projects/p17/evidence/P17-G6-01.md#revised-ewp-p6-ts01-standard-tooling-test-first-evidence-at-e7a3660"
+        "projects/p17/evidence/P17-G6-01.md#revised-ewp-p6-ts01-standard-tooling-test-first-evidence-at-e7a3660",
+        "projects/p17/evidence/P17-G6-01.md#minimal-implementation-at-a72dc9c"
       ]
     },
     {
@@ -25799,7 +25800,8 @@
         "projects/p17/evidence/P17-G6-01.md#standard-tooling-distribution-amendment-and-ready-reset",
         "projects/p17/evidence/P17-G6-01.md#standard-tooling-ready-review-go-at-97ed756",
         "projects/p17/evidence/P17-G6-01.md#accepted-amended-ready-result",
-        "projects/p17/evidence/P17-G6-01.md#revised-ewp-p6-ts01-standard-tooling-test-first-evidence-at-e7a3660"
+        "projects/p17/evidence/P17-G6-01.md#revised-ewp-p6-ts01-standard-tooling-test-first-evidence-at-e7a3660",
+        "projects/p17/evidence/P17-G6-01.md#minimal-implementation-at-a72dc9c"
       ],
       "secondaryGroups": [],
       "implements": ["P1-12"],
@@ -25823,7 +25825,8 @@
         "projects/p17/evidence/P17-G6-01.md#standard-tooling-distribution-amendment-and-ready-reset",
         "projects/p17/evidence/P17-G6-01.md#standard-tooling-ready-review-go-at-97ed756",
         "projects/p17/evidence/P17-G6-01.md#accepted-amended-ready-result",
-        "projects/p17/evidence/P17-G6-01.md#revised-ewp-p6-ts01-standard-tooling-test-first-evidence-at-e7a3660"
+        "projects/p17/evidence/P17-G6-01.md#revised-ewp-p6-ts01-standard-tooling-test-first-evidence-at-e7a3660",
+        "projects/p17/evidence/P17-G6-01.md#minimal-implementation-at-a72dc9c"
       ],
       "secondaryGroups": ["P17-G6-04"],
       "implements": ["P1-12"],
@@ -26022,7 +26025,8 @@
         "command": "bun test tests/ergonomics/phase/EWP-P6-TS01.test.ts --test-name-pattern EWP-P6-TS01"
       },
       "evidence": [
-        "projects/p17/evidence/P17-G6-01.md#revised-ewp-p6-ts01-standard-tooling-test-first-evidence-at-e7a3660"
+        "projects/p17/evidence/P17-G6-01.md#revised-ewp-p6-ts01-standard-tooling-test-first-evidence-at-e7a3660",
+        "projects/p17/evidence/P17-G6-01.md#minimal-implementation-at-a72dc9c"
       ],
       "secondaryGroups": [],
       "implements": [],

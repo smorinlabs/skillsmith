@@ -1521,7 +1521,7 @@ Downstream coverage obligations: EWP-WF01.
 - [x] P17-G6-01:mapped _(passed)_
 - [x] P17-G6-01:ready _(passed)_
 - [x] P17-G6-01:test-first _(passed)_
-- [ ] P17-G6-01:minimal-implementation _(pending)_
+- [x] P17-G6-01:minimal-implementation _(passed)_
 - [ ] P17-G6-01:targeted-green _(pending)_
 - [ ] P17-G6-01:impacted-green _(pending)_
 - [ ] P17-G6-01:refactor _(pending)_
