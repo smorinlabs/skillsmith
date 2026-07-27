@@ -7751,7 +7751,7 @@
       "phase": "6",
       "title": "Native assets, checksums, Homebrew/npm distribution, and clean installs",
       "dependsOn": ["P17-G6-02B", "P17-G6-03"],
-      "status": "ready",
+      "status": "active",
       "owner": "root-goal",
       "ownedFiles": [
         ".github/workflows/ci.yml",
@@ -7801,8 +7801,10 @@
           ]
         },
         "test-first": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G6-01.md#revised-ewp-p6-ts01-standard-tooling-test-first-evidence-at-e7a3660"
+          ]
         },
         "minimal-implementation": {
           "status": "pending",
@@ -7856,7 +7858,8 @@
         "projects/p17/evidence/P17-G6-01.md#f01-f04-ready-correction",
         "projects/p17/evidence/P17-G6-01.md#f05-ready-correction",
         "projects/p17/evidence/P17-G6-01.md#standard-tooling-ready-review-go-at-97ed756",
-        "projects/p17/evidence/P17-G6-01.md#accepted-amended-ready-result"
+        "projects/p17/evidence/P17-G6-01.md#accepted-amended-ready-result",
+        "projects/p17/evidence/P17-G6-01.md#revised-ewp-p6-ts01-standard-tooling-test-first-evidence-at-e7a3660"
       ]
     },
     {
@@ -25788,14 +25791,15 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G6-01",
-      "status": "ready",
+      "status": "red",
       "tier": "release",
       "plannedTarget": "planned:P17-G6-01",
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G6-01.md#standard-tooling-distribution-amendment-and-ready-reset",
         "projects/p17/evidence/P17-G6-01.md#standard-tooling-ready-review-go-at-97ed756",
-        "projects/p17/evidence/P17-G6-01.md#accepted-amended-ready-result"
+        "projects/p17/evidence/P17-G6-01.md#accepted-amended-ready-result",
+        "projects/p17/evidence/P17-G6-01.md#revised-ewp-p6-ts01-standard-tooling-test-first-evidence-at-e7a3660"
       ],
       "secondaryGroups": [],
       "implements": ["P1-12"],
@@ -25811,14 +25815,15 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G6-01",
-      "status": "ready",
+      "status": "red",
       "tier": "release",
       "plannedTarget": "planned:P17-G6-01",
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G6-01.md#standard-tooling-distribution-amendment-and-ready-reset",
         "projects/p17/evidence/P17-G6-01.md#standard-tooling-ready-review-go-at-97ed756",
-        "projects/p17/evidence/P17-G6-01.md#accepted-amended-ready-result"
+        "projects/p17/evidence/P17-G6-01.md#accepted-amended-ready-result",
+        "projects/p17/evidence/P17-G6-01.md#revised-ewp-p6-ts01-standard-tooling-test-first-evidence-at-e7a3660"
       ],
       "secondaryGroups": ["P17-G6-04"],
       "implements": ["P1-12"],
@@ -26007,18 +26012,27 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-01",
-      "status": "planned",
+      "status": "failing",
       "tier": "release",
       "plannedTarget": "planned:P17-G6-01:tests/ergonomics/phase/EWP-P6-TS01.test.ts#EWP-P6-TS01",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P6-TS01.test.ts",
+        "selector": "EWP-P6-TS01",
+        "command": "bun test tests/ergonomics/phase/EWP-P6-TS01.test.ts --test-name-pattern EWP-P6-TS01"
+      },
+      "evidence": [
+        "projects/p17/evidence/P17-G6-01.md#revised-ewp-p6-ts01-standard-tooling-test-first-evidence-at-e7a3660"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P6-TS01"],
       "impactedValidations": ["EWP-P6-TS01"],
       "affectedContracts": ["P1-12"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P6-TS01.test.ts --test-name-pattern EWP-P6-TS01"
+      ],
+      "ownedFiles": ["tests/ergonomics/phase/EWP-P6-TS01.test.ts"]
     },
     {
       "id": "EWP-P6-TS02",
