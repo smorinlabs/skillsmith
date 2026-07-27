@@ -7754,6 +7754,7 @@
       "status": "mapped",
       "owner": "root-goal",
       "ownedFiles": [
+        ".github/workflows/ci.yml",
         "README.md",
         "docs/releases.md",
         "package.json",
@@ -7829,7 +7830,9 @@
         "projects/p17/evidence/P17-G6-01.md#mapping-result",
         "projects/p17/evidence/P17-G6-01.md#mapping-validation",
         "projects/p17/evidence/P17-G6-01.md#first-ready-review-at-767acf4",
-        "projects/p17/evidence/P17-G6-01.md#corrected-ready-amendment"
+        "projects/p17/evidence/P17-G6-01.md#corrected-ready-amendment",
+        "projects/p17/evidence/P17-G6-01.md#second-ready-review-at-3ebb8bb",
+        "projects/p17/evidence/P17-G6-01.md#ci-receipt-ownership-amendment"
       ]
     },
     {
