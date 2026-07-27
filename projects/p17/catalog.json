@@ -8224,12 +8224,16 @@
           ]
         },
         "impacted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G6-03.md#second-renewed-impacted-green-at-c18432b"
+          ]
         },
         "refactor": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G6-03.md#second-renewed-refactor-result-at-c18432b"
+          ]
         },
         "adversarial-review": {
           "status": "pending",
@@ -8271,7 +8275,11 @@
         "projects/p17/evidence/P17-G6-03.md#renewed-refactor-result-at-d8f12ee",
         "projects/p17/evidence/P17-G6-03.md#corrected-terminal-repository-gate-at-8afcba1",
         "projects/p17/evidence/P17-G6-03.md#second-final-adversarial-review-no-go-at-8b29e05",
-        "projects/p17/evidence/P17-G6-03.md#second-adversarial-correction-red-execution-receipt-ewp-p6-ts03"
+        "projects/p17/evidence/P17-G6-03.md#second-adversarial-correction-red-execution-receipt-ewp-p6-ts03",
+        "projects/p17/evidence/P17-G6-03.md#second-adversarial-correction-implementation-at-c18432b",
+        "projects/p17/evidence/P17-G6-03.md#second-renewed-green-execution-receipt-ewp-p6-ts03-at-c18432b",
+        "projects/p17/evidence/P17-G6-03.md#second-renewed-impacted-green-at-c18432b",
+        "projects/p17/evidence/P17-G6-03.md#second-renewed-refactor-result-at-c18432b"
       ]
     },
     {
@@ -25852,7 +25860,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G6-03",
-      "status": "red",
+      "status": "green",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-03",
       "target": null,
@@ -25865,7 +25873,9 @@
         "projects/p17/evidence/P17-G6-03.md#targeted-green-at-4b860c2",
         "projects/p17/evidence/P17-G6-03.md#adversarial-correction-implementation-at-d8f12ee",
         "projects/p17/evidence/P17-G6-03.md#renewed-green-execution-receipt-ewp-p6-ts03-at-d8f12ee",
-        "projects/p17/evidence/P17-G6-03.md#second-adversarial-correction-red-execution-receipt-ewp-p6-ts03"
+        "projects/p17/evidence/P17-G6-03.md#second-adversarial-correction-red-execution-receipt-ewp-p6-ts03",
+        "projects/p17/evidence/P17-G6-03.md#second-adversarial-correction-implementation-at-c18432b",
+        "projects/p17/evidence/P17-G6-03.md#second-renewed-green-execution-receipt-ewp-p6-ts03-at-c18432b"
       ],
       "secondaryGroups": [],
       "implements": ["P2-08"],
@@ -25982,7 +25992,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-03",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-03:tests/ergonomics/phase/EWP-P6-TS03.test.ts#EWP-P6-TS03",
       "target": {
@@ -25992,6 +26002,7 @@
         "command": "bun test tests/ergonomics/phase/EWP-P6-TS03.test.ts --test-name-pattern EWP-P6-TS03"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G6-03.md#second-renewed-green-execution-receipt-ewp-p6-ts03-at-c18432b",
         "projects/p17/evidence/P17-G6-03.md#second-adversarial-correction-red-execution-receipt-ewp-p6-ts03",
         "projects/p17/evidence/P17-G6-03.md#renewed-green-execution-receipt-ewp-p6-ts03-at-d8f12ee",
         "projects/p17/evidence/P17-G6-03.md#adversarial-correction-red-execution-receipt-ewp-p6-ts03",
@@ -27990,7 +28001,7 @@
       "designStatus": "retained",
       "stateModel": "coverage",
       "primaryGroup": "P17-G6-03",
-      "status": "mapped",
+      "status": "validated",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G6-03",
       "target": null,
@@ -27998,7 +28009,8 @@
         "projects/p17/evidence/P17-G6-03.md#mapping-and-prerequisites",
         "projects/p17/evidence/P17-G6-03.md#impacted-green-at-4b860c2",
         "projects/p17/evidence/P17-G6-03.md#renewed-impacted-green-at-d8f12ee",
-        "projects/p17/evidence/P17-G6-03.md#second-final-adversarial-review-no-go-at-8b29e05"
+        "projects/p17/evidence/P17-G6-03.md#second-final-adversarial-review-no-go-at-8b29e05",
+        "projects/p17/evidence/P17-G6-03.md#second-renewed-impacted-green-at-c18432b"
       ],
       "secondaryGroups": [],
       "implements": [],
