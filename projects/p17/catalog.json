@@ -7751,20 +7751,36 @@
       "phase": "6",
       "title": "Native assets, checksums, Homebrew/npm distribution, and clean installs",
       "dependsOn": ["P17-G6-02B", "P17-G6-03"],
-      "status": "planned",
+      "status": "mapped",
       "owner": "root-goal",
-      "ownedFiles": [],
-      "integrationOwner": null,
+      "ownedFiles": [
+        "README.md",
+        "docs/releases.md",
+        "package.json",
+        "packaging/README.md",
+        "packaging/homebrew/skillsmith.rb.tmpl",
+        "packaging/npm/README.md",
+        "packaging/npm/bin/skillsmith.cjs",
+        "projects/p17/evidence/P17-G6-01.md",
+        "projects/p17/plans/P17-G6-01.md",
+        "scripts/build-release.ts",
+        "scripts/release-artifacts.test.ts",
+        "scripts/release-artifacts.ts",
+        "tests/ergonomics/phase/EWP-P6-TS01.test.ts"
+      ],
+      "integrationOwner": "root-codex-goal",
       "impactedValidations": ["EWP-P6-TS01", "EWP-WF01"],
       "requiredNowValidations": ["EWP-P6-TS01"],
       "downstreamCoverage": ["EWP-WF01"],
-      "testCommands": [],
-      "implementers": [],
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P6-TS01.test.ts --test-name-pattern EWP-P6-TS01"
+      ],
+      "implementers": ["root-codex-goal"],
       "reviewer": null,
       "gates": {
         "mapped": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G6-01.md#mapping-and-prerequisites"]
         },
         "ready": {
           "status": "pending",
@@ -7803,7 +7819,16 @@
           "evidence": []
         }
       },
-      "evidence": []
+      "evidence": [
+        "projects/p17/plans/P17-G6-01.md",
+        "projects/p17/evidence/P17-G6-01.md#mapping-and-prerequisites",
+        "projects/p17/evidence/P17-G6-01.md#current-distribution-and-release-characterization",
+        "projects/p17/evidence/P17-G6-01.md#registry-and-channel-identity-audit",
+        "projects/p17/evidence/P17-G6-01.md#native-and-completion-characterization",
+        "projects/p17/evidence/P17-G6-01.md#approved-efficiency-and-library-decisions",
+        "projects/p17/evidence/P17-G6-01.md#mapping-result",
+        "projects/p17/evidence/P17-G6-01.md#mapping-validation"
+      ]
     },
     {
       "id": "P17-G6-02A",
@@ -27715,11 +27740,11 @@
       "designStatus": "retained",
       "stateModel": "coverage",
       "primaryGroup": "P17-G6-01",
-      "status": "planned",
+      "status": "mapped",
       "tier": "release",
       "plannedTarget": "coverage:P17-G6-01",
       "target": null,
-      "evidence": [],
+      "evidence": ["projects/p17/evidence/P17-G6-01.md#mapping-and-prerequisites"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P6-TS01"],
