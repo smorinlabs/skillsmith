@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { TOOL_OPERATIONS, VERIFIED_AGAINST, VERSION, toolRegistry } from '@skillsmith/core';
+import { buildProgram } from '../../../packages/cli/src/program.ts';
 import {
   type RuntimeOutcome,
   createCliRuntimeAdapter,
@@ -23,6 +24,9 @@ type PresentationPolicy = Readonly<{
 }>;
 
 type PresentationModule = Readonly<{
+  snapshotColorEnvironment?: (
+    env: Readonly<Record<string, string | undefined>>,
+  ) => Readonly<Record<string, string | undefined>>;
   resolvePresentationPolicy?: (
     input: Readonly<{
       format: 'human' | 'json';
@@ -42,6 +46,17 @@ type PresentationModule = Readonly<{
 
 const presentationModule = async (): Promise<PresentationModule> =>
   (await import('../../../packages/cli/src/runtime/presentation.ts')) as PresentationModule;
+
+type ErrorBoundaryModule = Readonly<{
+  emitFinalCliError?: (
+    error: unknown,
+    argv: readonly string[],
+    io: CliRuntimeIo,
+  ) => Readonly<{ code: string; message: string; exitCode: number }>;
+}>;
+
+const errorBoundaryModule = async (): Promise<ErrorBoundaryModule> =>
+  (await import('../../../packages/cli/src/output/error-boundary.ts')) as ErrorBoundaryModule;
 
 const withoutColorEnvironment = (): Record<string, string> =>
   Object.fromEntries(
@@ -105,6 +120,16 @@ const markerBlock = (source: string, start: string, end: string): string => {
   expect(endIndex, end).toBeGreaterThan(startIndex);
   return source.slice(startIndex, endIndex + end.length);
 };
+
+const hasUnsafeHumanControl = (value: string): boolean =>
+  [...value].some((character) => {
+    const codePoint = character.codePointAt(0) ?? 0;
+    return (
+      (codePoint >= 0 && codePoint <= 8) ||
+      (codePoint >= 11 && codePoint <= 31) ||
+      (codePoint >= 127 && codePoint <= 159)
+    );
+  });
 
 describe('EWP-P6-TS03', () => {
   test('family 1: resolves JSON and each stdout/stderr TTY color policy without pipe contamination', async () => {
@@ -553,5 +578,151 @@ describe('EWP-P6-TS03', () => {
       expect(document).toContain('eligible TTY');
       expect(document).toContain('never through a pipe');
     }
+  });
+
+  test('family 8: sanitizes every human destination before styling and snapshots only color environment keys', async () => {
+    const presentation = await presentationModule();
+    expect(typeof presentation.presentHumanOutput).toBe('function');
+    const present = presentation.presentHumanOutput;
+    if (present === undefined) throw new Error('presentHumanOutput is absent');
+
+    const raw = {
+      stdout: `${ESCAPE}[35m# Result${ESCAPE}[0m\u0000\u0007\tready\n`,
+      stderr: `${ESCAPE}[31merror:${ESCAPE}[0m bad\u0000\u0007\n`,
+    };
+    const canonical = {
+      stdout: '# Result\tready\n',
+      stderr: 'error: bad\n',
+    };
+    for (const policy of [
+      { stdoutColor: 'off' as const, stderrColor: 'off' as const },
+      { stdoutColor: 'on' as const, stderrColor: 'on' as const },
+      { stdoutColor: 'off' as const, stderrColor: 'on' as const },
+      { stdoutColor: 'on' as const, stderrColor: 'off' as const },
+    ]) {
+      const output = present(raw, policy, 'fixture');
+      expect(output.stdout?.replace(ANSI_SEQUENCE, ''), JSON.stringify(policy)).toBe(
+        canonical.stdout,
+      );
+      expect(output.stderr?.replace(ANSI_SEQUENCE, ''), JSON.stringify(policy)).toBe(
+        canonical.stderr,
+      );
+      expect(hasUnsafeHumanControl(output.stdout ?? ''), JSON.stringify(policy)).toBeFalse();
+      expect(hasUnsafeHumanControl(output.stderr ?? ''), JSON.stringify(policy)).toBeFalse();
+      expect(output.stdout?.includes(ESCAPE), JSON.stringify(policy)).toBe(
+        policy.stdoutColor === 'on',
+      );
+      expect(output.stderr?.includes(ESCAPE), JSON.stringify(policy)).toBe(
+        policy.stderrColor === 'on',
+      );
+    }
+
+    expect(typeof presentation.snapshotColorEnvironment).toBe('function');
+    const snapshotEnvironment = presentation.snapshotColorEnvironment;
+    if (snapshotEnvironment === undefined) throw new Error('snapshotColorEnvironment is absent');
+    const source: Record<string, string | undefined> = {
+      NO_COLOR: '1',
+      CLICOLOR: '0',
+      TERM: 'xterm-256color',
+      FORCE_COLOR: 'false',
+      CLICOLOR_FORCE: '0',
+      SECRET_SHOULD_NOT_ESCAPE: 'private',
+    };
+    const snapshot = snapshotEnvironment(source);
+    expect(Object.keys(snapshot).sort()).toEqual(
+      ['NO_COLOR', 'CLICOLOR', 'TERM', 'FORCE_COLOR', 'CLICOLOR_FORCE'].sort(),
+    );
+    expect(snapshot).toEqual({
+      NO_COLOR: '1',
+      CLICOLOR: '0',
+      TERM: 'xterm-256color',
+      FORCE_COLOR: 'false',
+      CLICOLOR_FORCE: '0',
+    });
+    expect(Object.isFrozen(snapshot)).toBeTrue();
+    source.NO_COLOR = 'changed';
+    expect(snapshot.NO_COLOR).toBe('1');
+  });
+
+  test('family 9: Commander help, usage, JSON usage, and preflight use injected exit without terminating the host', async () => {
+    const originalExit = process.exit;
+    const globalExits: Array<number | undefined> = [];
+    process.exit = ((code?: number): never => {
+      globalExits.push(code);
+      throw new Error(`unexpected global process.exit(${String(code)})`);
+    }) as typeof process.exit;
+
+    try {
+      const cases = [
+        { name: 'help', args: ['--help'], expectedExit: 0, stream: 'stdout' as const },
+        {
+          name: 'human usage',
+          args: ['--definitely-unknown'],
+          expectedExit: 2,
+          stream: 'stderr' as const,
+        },
+        {
+          name: 'JSON usage',
+          args: ['--json', '--definitely-unknown'],
+          expectedExit: 2,
+          stream: 'stdout' as const,
+        },
+        {
+          name: 'root preflight',
+          args: ['version', '--quiet', '--verbose'],
+          expectedExit: 2,
+          stream: 'stderr' as const,
+        },
+      ];
+      for (const fixture of cases) {
+        const memory = memoryIo(true, true);
+        const program = buildProgram(undefined, { runtimePorts: memory.io });
+        await expect(
+          program.parseAsync(fixture.args, { from: 'user' }),
+          fixture.name,
+        ).resolves.toBe(program);
+        expect(memory.exits, fixture.name).toEqual([fixture.expectedExit]);
+        if (fixture.stream === 'stdout') {
+          expect(memory.stdout.join(''), fixture.name).not.toBe('');
+          expect(memory.stderr, fixture.name).toEqual([]);
+        } else {
+          expect(memory.stderr.join(''), fixture.name).not.toBe('');
+          expect(memory.stdout, fixture.name).toEqual([]);
+        }
+      }
+    } finally {
+      process.exit = originalExit;
+    }
+    expect(globalExits).toEqual([]);
+  });
+
+  test('family 10: dynamically exercises injected final rejected-main emission for human and JSON errors', async () => {
+    const boundary = await errorBoundaryModule();
+    expect(typeof boundary.emitFinalCliError).toBe('function');
+    const emitFinalError = boundary.emitFinalCliError;
+    if (emitFinalError === undefined) throw new Error('emitFinalCliError is absent');
+
+    const hostile = {
+      code: 'fixture',
+      message: `${ESCAPE}[31mbad${ESCAPE}[0m\u0000\u0007 failure`,
+    };
+    const human = memoryIo(false, true);
+    const humanError = emitFinalError(hostile, ['--color', 'always'], human.io);
+    expect(humanError).toMatchObject({ code: 'fixture', message: 'bad failure', exitCode: 1 });
+    expect(human.stdout).toEqual([]);
+    expect(human.stderr.join('').replace(ANSI_SEQUENCE, '')).toBe('error: bad failure\n');
+    expect(hasUnsafeHumanControl(human.stderr.join(''))).toBeFalse();
+
+    const json = memoryIo(true, true);
+    const jsonError = emitFinalError(hostile, ['--json', '--color', 'always'], json.io);
+    expect(jsonError).toEqual(humanError);
+    expect(json.stderr).toEqual([]);
+    expect(json.stdout).toHaveLength(1);
+    expect(json.stdout.join('')).not.toContain(ESCAPE);
+    expect(JSON.parse(json.stdout.join(''))).toMatchObject({
+      code: 'fixture',
+      message: 'bad failure',
+      exitCode: 1,
+    });
   });
 });

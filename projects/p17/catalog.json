@@ -8222,12 +8222,12 @@
           "evidence": ["projects/p17/evidence/P17-G6-03.md#targeted-green-at-4b860c2"]
         },
         "impacted-green": {
-          "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G6-03.md#impacted-green-at-4b860c2"]
+          "status": "pending",
+          "evidence": []
         },
         "refactor": {
-          "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G6-03.md#refactor-result-at-4b860c2"]
+          "status": "pending",
+          "evidence": []
         },
         "adversarial-review": {
           "status": "pending",
@@ -8260,7 +8260,8 @@
         "projects/p17/evidence/P17-G6-03.md#refactor-result-at-4b860c2",
         "projects/p17/evidence/P17-G6-03.md#first-final-adversarial-review-no-go-at-a7ef5bb",
         "projects/p17/evidence/P17-G6-03.md#approved-adversarial-correction-amendment",
-        "projects/p17/evidence/P17-G6-03.md#independent-correction-amendment-review-at-437d73e"
+        "projects/p17/evidence/P17-G6-03.md#independent-correction-amendment-review-at-437d73e",
+        "projects/p17/evidence/P17-G6-03.md#adversarial-correction-red-execution-receipt-ewp-p6-ts03"
       ]
     },
     {
@@ -25841,7 +25842,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G6-03",
-      "status": "green",
+      "status": "red",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-03",
       "target": null,
@@ -25968,7 +25969,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-03",
-      "status": "passing",
+      "status": "failing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-03:tests/ergonomics/phase/EWP-P6-TS03.test.ts#EWP-P6-TS03",
       "target": {
@@ -25978,6 +25979,7 @@
         "command": "bun test tests/ergonomics/phase/EWP-P6-TS03.test.ts --test-name-pattern EWP-P6-TS03"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G6-03.md#adversarial-correction-red-execution-receipt-ewp-p6-ts03",
         "projects/p17/evidence/P17-G6-03.md#green-execution-receipt-ewp-p6-ts03",
         "projects/p17/evidence/P17-G6-03.md#red-execution-receipt-ewp-p6-ts03"
       ],
@@ -27973,7 +27975,7 @@
       "designStatus": "retained",
       "stateModel": "coverage",
       "primaryGroup": "P17-G6-03",
-      "status": "validated",
+      "status": "mapped",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G6-03",
       "target": null,
