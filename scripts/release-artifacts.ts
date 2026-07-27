@@ -470,8 +470,24 @@ export const validateGoreleaserInventory = (input: unknown): GoreleaserInventory
   };
 };
 
-const toolPath = (): string =>
-  [dirname(process.execPath), '/usr/local/bin', '/usr/bin', '/bin'].join(':');
+export const resolveReleaseToolPath = (executables: readonly string[]): string => {
+  if (executables.length === 0 || executables.some((path) => !isAbsolute(path))) {
+    throw new Error('release tool paths must be nonempty absolute paths');
+  }
+  return [...new Set([...executables.map((path) => dirname(path)), '/usr/bin', '/bin'])].join(':');
+};
+
+const toolPath = (): string => {
+  const ambientPath = process.env.PATH ?? '';
+  const executables = [
+    process.execPath,
+    ...['goreleaser', 'npm', 'git', 'tar'].flatMap((name) => {
+      const path = Bun.which(name, { PATH: ambientPath });
+      return path === null ? [] : [path];
+    }),
+  ];
+  return resolveReleaseToolPath(executables);
+};
 
 const runChecked = (
   command: readonly string[],

@@ -21,6 +21,7 @@ import {
   deriveProductionCaskFixture,
   installDirectArchive,
   releaseArtifactNames,
+  resolveReleaseToolPath,
   validateArchiveEntries,
   validateGoreleaserInventory,
   validateNpmPackageEntries,
@@ -137,6 +138,19 @@ describe('standard release artifact adapter', () => {
     expect(() => assertNativeBinarySize(MAX_NATIVE_BINARY_BYTES - 1)).not.toThrow();
     expect(() => assertNativeBinarySize(MAX_NATIVE_BINARY_BYTES)).toThrow();
     expect(() => assertNativeBinarySize(MAX_NATIVE_BINARY_BYTES + 1)).toThrow();
+    expect(
+      resolveReleaseToolPath([
+        '/Users/runner/.bun/bin/bun',
+        '/Users/runner/hostedtoolcache/goreleaser/2.17.1/arm64/goreleaser',
+        '/opt/homebrew/bin/npm',
+        '/opt/homebrew/bin/git',
+        '/usr/bin/tar',
+      ]),
+    ).toBe(
+      '/Users/runner/.bun/bin:/Users/runner/hostedtoolcache/goreleaser/2.17.1/arm64:/opt/homebrew/bin:/usr/bin:/bin',
+    );
+    expect(() => resolveReleaseToolPath([])).toThrow();
+    expect(() => resolveReleaseToolPath(['goreleaser'])).toThrow();
   });
 
   test('accepts only order-independent closed archive and npm layouts', () => {
