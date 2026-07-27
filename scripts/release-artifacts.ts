@@ -417,14 +417,32 @@ export type GoreleaserInventory = Readonly<{
   caskPath: string;
 }>;
 
-const artifactPath = (artifact: GoreleaserArtifact, label: string): string => {
-  if (typeof artifact.path !== 'string' || !isAbsolute(artifact.path)) {
-    throw new Error(`${label} artifact path is not absolute`);
+type GoreleaserInventoryContext = Readonly<{
+  workingDirectory: string;
+  outputRoot: string;
+}>;
+
+const artifactPath = (
+  artifact: GoreleaserArtifact,
+  label: string,
+  context: GoreleaserInventoryContext,
+): string => {
+  if (typeof artifact.path !== 'string') {
+    throw new Error(`${label} artifact path is absent`);
   }
-  return artifact.path;
+  const outputRoot = resolve(context.outputRoot);
+  const path = resolve(context.workingDirectory, artifact.path);
+  const relation = relative(outputRoot, path);
+  if (!relation || relation === '..' || relation.startsWith('../') || isAbsolute(relation)) {
+    throw new Error(`${label} artifact path is outside the owned output root`);
+  }
+  return path;
 };
 
-export const validateGoreleaserInventory = (input: unknown): GoreleaserInventory => {
+export const validateGoreleaserInventory = (
+  input: unknown,
+  context: GoreleaserInventoryContext,
+): GoreleaserInventory => {
   if (!Array.isArray(input)) throw new Error('GoReleaser artifacts.json must be an array');
   const artifacts = input as GoreleaserArtifact[];
   const byType = (type: string) => artifacts.filter((artifact) => artifact.type === type);
@@ -455,7 +473,7 @@ export const validateGoreleaserInventory = (input: unknown): GoreleaserInventory
         if (matches.length !== 1) {
           throw new Error(`${label} inventory is not unique for ${target.id}`);
         }
-        return [target.id, artifactPath(matches[0] ?? {}, `${target.id} ${label}`)];
+        return [target.id, artifactPath(matches[0] ?? {}, `${target.id} ${label}`, context)];
       }),
     ) as Record<ReleaseTargetId, string>;
   if (checksums[0]?.name !== 'SHA256SUMS' || metadata[0]?.name !== 'metadata.json') {
@@ -464,9 +482,9 @@ export const validateGoreleaserInventory = (input: unknown): GoreleaserInventory
   return {
     binaries: selectTargets(binaries, 'binary'),
     archives: selectTargets(archives, 'archive'),
-    checksumsPath: artifactPath(checksums[0] ?? {}, 'checksum'),
-    metadataPath: artifactPath(metadata[0] ?? {}, 'metadata'),
-    caskPath: artifactPath(casks[0] ?? {}, 'cask'),
+    checksumsPath: artifactPath(checksums[0] ?? {}, 'checksum', context),
+    metadataPath: artifactPath(metadata[0] ?? {}, 'metadata', context),
+    caskPath: artifactPath(casks[0] ?? {}, 'cask', context),
   };
 };
 
@@ -882,6 +900,7 @@ export const buildReleaseCandidate = async (
     const artifactsPath = join(outputRoot, 'artifacts.json');
     const inventory = validateGoreleaserInventory(
       JSON.parse(await readFile(artifactsPath, 'utf8')) as unknown,
+      { workingDirectory: repositoryRoot, outputRoot },
     );
     const metadata = JSON.parse(await readFile(inventory.metadataPath, 'utf8')) as {
       version?: unknown;

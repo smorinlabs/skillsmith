@@ -98,7 +98,10 @@ type ReleaseArtifactsApi = Readonly<{
     kind: 'launcher' | 'payload',
     entries: readonly Readonly<{ path: string; mode: string }>[],
   ) => void;
-  validateGoreleaserInventory?: (input: unknown) => unknown;
+  validateGoreleaserInventory?: (
+    input: unknown,
+    context: Readonly<{ workingDirectory: string; outputRoot: string }>,
+  ) => unknown;
   assertCompletionIdentity?: (input: Readonly<Record<string, Uint8Array>>) => void;
   assertSingleLineage?: (input: Readonly<Record<string, string>>) => void;
   createControlledBuildEnvironment?: (
@@ -972,6 +975,49 @@ describe('EWP-P6-TS01', () => {
     expect(() => release.assertNativeBinarySize?.(MAX_NATIVE_BINARY_BYTES - 1)).not.toThrow();
     expect(() => release.assertNativeBinarySize?.(MAX_NATIVE_BINARY_BYTES)).toThrow();
     expect(() => release.assertNativeBinarySize?.(MAX_NATIVE_BINARY_BYTES + 1)).toThrow();
+
+    const workingDirectory = '/tmp/skillsmith-g6-inventory-repository';
+    const outputRoot = join(workingDirectory, 'dist', 'release');
+    const inventory = [
+      { type: 'Metadata', name: 'metadata.json', path: 'dist/release/metadata.json' },
+      ...EXPECTED_TARGETS.flatMap((target) => [
+        {
+          type: 'Binary',
+          name: 'skillsmith',
+          goos: target.goos,
+          goarch: target.goarch,
+          path: `dist/release/${target.id}/skillsmith`,
+        },
+        {
+          type: 'Archive',
+          name: `skillsmith-${target.id}.tar.gz`,
+          goos: target.goos,
+          goarch: target.goarch,
+          path: `dist/release/skillsmith-${target.id}.tar.gz`,
+        },
+      ]),
+      { type: 'Checksum', name: 'SHA256SUMS', path: 'dist/release/SHA256SUMS' },
+      {
+        type: 'Homebrew Cask',
+        name: 'skillsmith.rb',
+        path: 'dist/release/homebrew/Casks/skillsmith.rb',
+      },
+    ];
+    const normalized = release.validateGoreleaserInventory?.(inventory, {
+      workingDirectory,
+      outputRoot,
+    }) as { binaries?: Record<string, string> } | undefined;
+    expect(normalized?.binaries?.['darwin-arm64']).toBe(
+      join(outputRoot, 'darwin-arm64', 'skillsmith'),
+    );
+    expect(() =>
+      release.validateGoreleaserInventory?.(
+        inventory.map((artifact, index) =>
+          index === 0 ? { ...artifact, path: '../outside/metadata.json' } : artifact,
+        ),
+        { workingDirectory, outputRoot },
+      ),
+    ).toThrow();
   });
 
   test('family 3: standard GoReleaser inventory, four checksums, and no custom artifact graph', async () => {
@@ -998,6 +1044,7 @@ describe('EWP-P6-TS01', () => {
     ).toBeTrue();
     release.validateGoreleaserInventory?.(
       JSON.parse(await readFile(candidate.artifactsPath, 'utf8')),
+      { workingDirectory: ROOT, outputRoot: candidate.outputRoot },
     );
   });
 
