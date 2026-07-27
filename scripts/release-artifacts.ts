@@ -1,7 +1,8 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   chmod,
   copyFile,
+  link,
   lstat,
   mkdir,
   mkdtemp,
@@ -11,11 +12,20 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
+
+export const RELEASE_TOOLCHAIN = Object.freeze({
+  bun: '1.3.14',
+  goreleaser: '2.17.1',
+  npm: '12.0.1',
+  goreleaserAction: 'f06c13b6b1a9625abc9e6e439d9c05a8f2190e94',
+});
 
 export type ReleaseTarget = Readonly<{
   id: 'darwin-arm64' | 'darwin-x64' | 'linux-arm64' | 'linux-x64';
   bunTarget: 'bun-darwin-arm64' | 'bun-darwin-x64' | 'bun-linux-arm64' | 'bun-linux-x64';
+  goos: 'darwin' | 'linux';
+  goarch: 'arm64' | 'amd64';
   os: 'darwin' | 'linux';
   cpu: 'arm64' | 'x64';
   libc: 'glibc' | null;
@@ -25,6 +35,8 @@ export const RELEASE_TARGETS = [
   {
     id: 'darwin-arm64',
     bunTarget: 'bun-darwin-arm64',
+    goos: 'darwin',
+    goarch: 'arm64',
     os: 'darwin',
     cpu: 'arm64',
     libc: null,
@@ -32,6 +44,8 @@ export const RELEASE_TARGETS = [
   {
     id: 'darwin-x64',
     bunTarget: 'bun-darwin-x64',
+    goos: 'darwin',
+    goarch: 'amd64',
     os: 'darwin',
     cpu: 'x64',
     libc: null,
@@ -39,6 +53,8 @@ export const RELEASE_TARGETS = [
   {
     id: 'linux-arm64',
     bunTarget: 'bun-linux-arm64',
+    goos: 'linux',
+    goarch: 'arm64',
     os: 'linux',
     cpu: 'arm64',
     libc: 'glibc',
@@ -46,6 +62,8 @@ export const RELEASE_TARGETS = [
   {
     id: 'linux-x64',
     bunTarget: 'bun-linux-x64',
+    goos: 'linux',
+    goarch: 'amd64',
     os: 'linux',
     cpu: 'x64',
     libc: 'glibc',
@@ -77,7 +95,33 @@ const COMPLETION_CONTRACT = Object.freeze({
   },
 });
 
-const SEMVER =
+const ARCHIVE_LAYOUT = Object.freeze({
+  LICENSE: '0644',
+  'completions/_skillsmith': '0644',
+  'completions/skillsmith.bash': '0644',
+  'completions/skillsmith.fish': '0644',
+  skillsmith: '0755',
+});
+
+const NPM_PACKAGE_LAYOUTS = Object.freeze({
+  launcher: Object.freeze({
+    'package/LICENSE': '0644',
+    'package/README.md': '0644',
+    'package/bin/skillsmith.cjs': '0755',
+    'package/package.json': '0644',
+    'package/share/completions/_skillsmith': '0644',
+    'package/share/completions/skillsmith.bash': '0644',
+    'package/share/completions/skillsmith.fish': '0644',
+  }),
+  payload: Object.freeze({
+    'package/LICENSE': '0644',
+    'package/README.md': '0644',
+    'package/bin/skillsmith': '0755',
+    'package/package.json': '0644',
+  }),
+});
+
+const FULL_SEMVER =
   /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u;
 const LOWER_HEX_40 = /^[0-9a-f]{40}$/u;
 const LOWER_HEX_64 = /^[0-9a-f]{64}$/u;
@@ -86,8 +130,26 @@ const sha256Hex = (value: Uint8Array | string): string =>
   createHash('sha256').update(value).digest('hex');
 
 export const validateReleaseVersion = (version: string): string => {
-  if (!SEMVER.test(version)) throw new Error(`invalid release version: ${JSON.stringify(version)}`);
+  if (!FULL_SEMVER.test(version)) {
+    throw new Error(`invalid release version: ${JSON.stringify(version)}`);
+  }
   return version;
+};
+
+export const assertSourceRevision = (revision: string): void => {
+  if (!LOWER_HEX_40.test(revision)) {
+    throw new Error('source revision must be 40 lowercase hexadecimal characters');
+  }
+};
+
+export const assertReleaseToolVersions = (
+  input: Readonly<Record<'bun' | 'goreleaser' | 'npm', string>>,
+): void => {
+  for (const name of ['bun', 'goreleaser', 'npm'] as const) {
+    if (input[name] !== RELEASE_TOOLCHAIN[name]) {
+      throw new Error(`${name} ${input[name]} does not match ${RELEASE_TOOLCHAIN[name]}`);
+    }
+  }
 };
 
 export const releaseArtifactNames = (versionInput: string) => {
@@ -102,9 +164,10 @@ export const releaseArtifactNames = (versionInput: string) => {
         RELEASE_TARGETS.map(({ id }) => [id, `smorinlabs-skillsmith-${id}-${version}.tgz`]),
       ),
     } as Readonly<{ launcher: string } & Record<ReleaseTargetId, string>>,
-    formula: 'skillsmith.rb',
-    manifest: 'release-manifest.json',
     checksums: 'SHA256SUMS',
+    artifacts: 'artifacts.json',
+    metadata: 'metadata.json',
+    cask: 'homebrew/Casks/skillsmith.rb',
   } as const;
 };
 
@@ -126,123 +189,84 @@ export const assertOwnedOutputRoot = (
   }
 };
 
-export type ArchiveEntry = Readonly<{
-  path: string;
-  type: 'file' | 'directory' | 'symlink' | 'device';
-  size: number;
-  mode: string;
-}>;
-
-const ARCHIVE_LAYOUT = [
-  ['skillsmith', '0755'],
-  ['LICENSE', '0644'],
-  ['completions/skillsmith.bash', '0644'],
-  ['completions/_skillsmith', '0644'],
-  ['completions/skillsmith.fish', '0644'],
-] as const;
-
-const NPM_PACKAGE_LAYOUTS = Object.freeze({
-  launcher: Object.freeze({
-    'package/package.json': '0644',
-    'package/README.md': '0644',
-    'package/LICENSE': '0644',
-    'package/bin/skillsmith.cjs': '0755',
-    'package/share/completions/skillsmith.bash': '0644',
-    'package/share/completions/_skillsmith': '0644',
-    'package/share/completions/skillsmith.fish': '0644',
-  }),
-  payload: Object.freeze({
-    'package/package.json': '0644',
-    'package/README.md': '0644',
-    'package/LICENSE': '0644',
-    'package/bin/skillsmith': '0755',
-  }),
-});
-
-export const validateArchiveEntries = (entries: readonly ArchiveEntry[]): void => {
-  if (entries.length !== ARCHIVE_LAYOUT.length) {
-    throw new Error(`archive must contain exactly ${ARCHIVE_LAYOUT.length} entries`);
-  }
-  const seen = new Set<string>();
-  for (const [index, entry] of entries.entries()) {
-    const expected = ARCHIVE_LAYOUT[index];
-    if (expected === undefined) throw new Error('archive contains an extra entry');
-    if (
-      !entry.path ||
-      entry.path.startsWith('/') ||
-      entry.path.split('/').includes('..') ||
-      entry.path.includes('\\') ||
-      seen.has(entry.path)
-    ) {
-      throw new Error(`unsafe or duplicate archive entry: ${entry.path}`);
-    }
-    seen.add(entry.path);
-    if (entry.type !== 'file')
-      throw new Error(`archive entry is not a regular file: ${entry.path}`);
-    if (entry.path !== expected[0] || entry.mode !== expected[1]) {
-      throw new Error(`archive entry contract mismatch at index ${index}`);
-    }
-    if (
-      !Number.isSafeInteger(entry.size) ||
-      entry.size < 0 ||
-      entry.size >= MAX_NATIVE_BINARY_BYTES
-    ) {
-      throw new Error(`invalid archive entry size: ${entry.path}`);
-    }
-  }
-};
-
-export const validateNpmPackageEntries = (
-  kind: keyof typeof NPM_PACKAGE_LAYOUTS,
-  entries: readonly ArchiveEntry[],
-): void => {
-  const layout = NPM_PACKAGE_LAYOUTS[kind];
-  const expectedPaths = Object.keys(layout);
-  if (entries.length !== expectedPaths.length) {
-    throw new Error(`${kind} npm package must contain exactly ${expectedPaths.length} entries`);
-  }
-  const seen = new Set<string>();
-  for (const entry of entries) {
-    const expectedMode = layout[entry.path as keyof typeof layout];
-    if (
-      !entry.path ||
-      entry.path.startsWith('/') ||
-      entry.path.split('/').includes('..') ||
-      entry.path.includes('\\') ||
-      seen.has(entry.path) ||
-      expectedMode === undefined
-    ) {
-      throw new Error(`unsafe or unexpected npm package entry: ${entry.path}`);
-    }
-    seen.add(entry.path);
-    if (entry.type !== 'file') {
-      throw new Error(`npm package entry is not a regular file: ${entry.path}`);
-    }
-    if (entry.mode !== expectedMode) {
-      throw new Error(`npm package mode mismatch: ${entry.path}`);
-    }
-    if (
-      !Number.isSafeInteger(entry.size) ||
-      entry.size < 0 ||
-      entry.size >= MAX_NATIVE_BINARY_BYTES
-    ) {
-      throw new Error(`invalid npm package entry size: ${entry.path}`);
-    }
-  }
-};
-
 export const assertNativeBinarySize = (bytes: number): void => {
   if (!Number.isSafeInteger(bytes) || bytes < 0 || bytes >= MAX_NATIVE_BINARY_BYTES) {
     throw new Error(`native binary must be smaller than ${MAX_NATIVE_BINARY_BYTES} bytes`);
   }
 };
 
-export const createHermeticBuildEnvironment = (
-  input: Readonly<{
+export type ArchiveEntry = Readonly<{
+  path: string;
+  type: 'file' | 'directory' | 'symlink' | 'device';
+  size: number;
+  mode: string;
+  owner?: string;
+  group?: string;
+}>;
+
+const assertClosedLayout = (
+  layout: Readonly<Record<string, string>>,
+  entries: readonly Readonly<{
     path: string;
-    home: string;
-    tmpdir: string;
-  }>,
+    mode: string;
+    type?: ArchiveEntry['type'];
+    size?: number;
+    owner?: string;
+    group?: string;
+  }>[],
+  label: string,
+  requireRootOwnership = false,
+): void => {
+  if (entries.length !== Object.keys(layout).length) {
+    throw new Error(`${label} must contain exactly ${Object.keys(layout).length} entries`);
+  }
+  const seen = new Set<string>();
+  for (const entry of entries) {
+    if (
+      !entry.path ||
+      entry.path.startsWith('/') ||
+      entry.path.includes('\\') ||
+      entry.path.split('/').includes('..') ||
+      seen.has(entry.path)
+    ) {
+      throw new Error(`unsafe or duplicate ${label} entry: ${entry.path}`);
+    }
+    seen.add(entry.path);
+    const expectedMode = layout[entry.path];
+    if (expectedMode === undefined || entry.mode !== expectedMode) {
+      throw new Error(`unexpected ${label} entry or mode: ${entry.path}`);
+    }
+    if (entry.type !== undefined && entry.type !== 'file') {
+      throw new Error(`${label} entry is not a regular file: ${entry.path}`);
+    }
+    if (
+      entry.size !== undefined &&
+      (!Number.isSafeInteger(entry.size) || entry.size < 0 || entry.size >= MAX_NATIVE_BINARY_BYTES)
+    ) {
+      throw new Error(`invalid ${label} entry size: ${entry.path}`);
+    }
+    if (
+      (requireRootOwnership && entry.owner !== undefined && entry.owner !== 'root') ||
+      (requireRootOwnership && entry.group !== undefined && entry.group !== 'root')
+    ) {
+      throw new Error(`${label} entry ownership is not root/root: ${entry.path}`);
+    }
+  }
+};
+
+export const validateArchiveEntries = (entries: readonly ArchiveEntry[]): void => {
+  assertClosedLayout(ARCHIVE_LAYOUT, entries, 'archive', true);
+};
+
+export const validateNpmPackageEntries = (
+  kind: keyof typeof NPM_PACKAGE_LAYOUTS,
+  entries: readonly Readonly<{ path: string; mode: string }>[],
+): void => {
+  assertClosedLayout(NPM_PACKAGE_LAYOUTS[kind], entries, `${kind} npm package`);
+};
+
+export const createControlledBuildEnvironment = (
+  input: Readonly<{ path: string; home: string; tmpdir: string; tag: string }>,
 ): Readonly<Record<string, string>> => ({
   PATH: input.path,
   HOME: input.home,
@@ -254,12 +278,11 @@ export const createHermeticBuildEnvironment = (
   LC_ALL: 'C.UTF-8',
   TZ: 'UTC',
   NO_COLOR: '1',
+  GORELEASER_CURRENT_TAG: input.tag,
 });
 
-const containsBytes = (haystack: Uint8Array | string, needle: string): boolean => {
-  const bytes = typeof haystack === 'string' ? Buffer.from(haystack) : Buffer.from(haystack);
-  return bytes.indexOf(Buffer.from(needle)) >= 0;
-};
+const containsBytes = (haystack: Uint8Array | string, needle: string): boolean =>
+  Buffer.from(haystack).indexOf(Buffer.from(needle)) >= 0;
 
 export const assertNoReleaseLeaks = (
   input: Readonly<{
@@ -270,7 +293,9 @@ export const assertNoReleaseLeaks = (
   for (const canary of input.canaries) {
     if (!canary) throw new Error('release leak canary must be nonempty');
     for (const [name, output] of Object.entries(input.outputs)) {
-      if (containsBytes(output, canary)) throw new Error(`release output contains ${name} canary`);
+      if (containsBytes(output, canary)) {
+        throw new Error(`release output contains ${name} canary`);
+      }
     }
   }
 };
@@ -279,12 +304,25 @@ export const assertCompletionIdentity = (input: Readonly<Record<string, Uint8Arr
   for (const shell of ['bash', 'zsh', 'fish'] as const) {
     const bytes = input[shell];
     const expected = COMPLETION_CONTRACT[shell];
-    if (bytes === undefined) throw new Error(`missing ${shell} completion bytes`);
-    if (bytes.byteLength !== expected.bytes || sha256Hex(bytes) !== expected.sha256) {
+    if (
+      bytes === undefined ||
+      bytes.byteLength !== expected.bytes ||
+      sha256Hex(bytes) !== expected.sha256
+    ) {
       throw new Error(`${shell} completion bytes do not match the signed contract`);
     }
   }
   if (Object.keys(input).length !== 3) throw new Error('unexpected completion output');
+};
+
+export const assertSingleLineage = (input: Readonly<Record<string, string>>): void => {
+  const values = Object.values(input);
+  if (values.length < 2 || values.some((value) => !LOWER_HEX_64.test(value))) {
+    throw new Error('single-lineage proof requires at least two valid SHA-256 observations');
+  }
+  if (new Set(values).size !== 1) {
+    throw new Error('release channels do not contain one binary lineage');
+  }
 };
 
 const fixtureSource = (version: string): string => `#!/bin/sh
@@ -315,276 +353,125 @@ export const FIXTURE_EXECUTABLES = Object.freeze({
   ),
 });
 
-export const renderLauncherPackageJson = (versionInput: string) => {
-  const version = validateReleaseVersion(versionInput);
-  return {
-    name: '@smorinlabs/skillsmith',
-    version,
-    description: 'Cross-tool skill management CLI',
-    license: 'Apache-2.0',
-    bin: { skillsmith: 'bin/skillsmith.cjs' },
-    files: ['bin', 'share', 'README.md', 'LICENSE'],
-    optionalDependencies: Object.fromEntries(
-      RELEASE_TARGETS.map(({ id }) => [`@smorinlabs/skillsmith-${id}`, version]),
-    ),
-  };
-};
-
-export const renderPayloadPackageJson = (targetId: string, versionInput: string) => {
-  const version = validateReleaseVersion(versionInput);
-  const target = RELEASE_TARGETS.find(({ id }) => id === targetId);
-  if (target === undefined) throw new Error(`unsupported release target: ${targetId}`);
-  return {
-    name: `@smorinlabs/skillsmith-${target.id}`,
-    version,
-    description: `Skillsmith native payload for ${target.id}`,
-    license: 'Apache-2.0',
-    os: [target.os],
-    cpu: [target.cpu],
-    ...(target.libc === null ? {} : { libc: [target.libc] }),
-    files: ['bin/skillsmith', 'README.md', 'LICENSE'],
-  };
-};
-
-const assertSha256 = (value: string, label: string): string => {
-  if (!LOWER_HEX_64.test(value)) throw new Error(`${label} must be lowercase SHA-256`);
-  return value;
-};
-
-export const renderSha256Sums = (entries: Readonly<Record<string, string>>): string => {
-  const paths = Object.keys(entries).sort();
-  if (paths.length !== 11) throw new Error('SHA256SUMS must contain exactly 11 public files');
-  if (paths.includes('SHA256SUMS')) throw new Error('SHA256SUMS cannot hash itself');
-  for (const path of paths) {
-    if (!path || path.includes('/') || path.includes('\\') || path === '.' || path === '..') {
-      throw new Error(`checksum path must be an immediate relative child: ${path}`);
-    }
+export const deriveProductionCaskFixture = (
+  input: Readonly<{ cask: string; origin: string }>,
+): string => {
+  const version = input.cask.match(/^\s*version "([^"]+)"$/mu)?.[1];
+  if (version === undefined || !validateReleaseVersion(version)) {
+    throw new Error('production cask version is absent');
   }
-  return `${paths.map((path) => `${assertSha256(entries[path] ?? '', path)}  ${path}`).join('\n')}\n`;
-};
-
-export const assertSingleLineage = (input: Readonly<Record<string, string>>): void => {
-  const entries = Object.entries(input);
-  if (entries.length < 2)
-    throw new Error('single-lineage proof requires at least two observations');
-  for (const [name, digest] of entries) assertSha256(digest, name);
-  if (new Set(entries.map(([, digest]) => digest)).size !== 1) {
-    throw new Error('release channels do not contain one binary lineage');
+  let replacements = 0;
+  const transformed = input.cask.replace(
+    /^(\s*)url "https:\/\/github\.com\/smorinlabs\/skillsmith\/releases\/download\/v#\{version\}\/([^"]+)",\n\s*verified: "github\.com\/smorinlabs\/skillsmith\/"$/gmu,
+    (_match, indentation: string, artifact: string) => {
+      replacements += 1;
+      const filename = artifact.replaceAll('#{version}', version);
+      return `${indentation}url "${input.origin.replace(/\/$/u, '')}/${filename}"`;
+    },
+  );
+  if (replacements !== 4) {
+    throw new Error('production cask must contain exactly four bounded URL transformations');
   }
+  return transformed;
 };
 
-export type ReleaseManifestTargetInput = Readonly<{
-  id: ReleaseTargetId;
-  binary: Readonly<{ sha256: string; bytes: number }>;
-  archive: Readonly<{ path: string; sha256: string; bytes: number }>;
-  npm: Readonly<{ path: string; sha256: string; bytes: number }>;
-}>;
+const normalizeLifecycleCask = (value: string): string =>
+  value
+    .replace(/^\s*version "[^"]+"$/gmu, 'version "<VERSION>"')
+    .replace(/^\s*url "[^"]+"$/gmu, 'url "<URL>"')
+    .replace(/^\s*sha256 "[0-9a-f]{64}"$/gmu, 'sha256 "<SHA256>"');
 
-export type ReleaseManifestInput = Readonly<{
-  version: string;
-  sourceRevision: string;
-  targets: readonly ReleaseManifestTargetInput[];
-  launcher: Readonly<{ path: string; sha256: string; bytes: number }>;
-  formula: Readonly<{ sha256: string; bytes: number }>;
-  completions: Readonly<
-    Record<'bash' | 'zsh' | 'fish', Readonly<{ sha256: string; bytes: number }>>
-  >;
-}>;
-
-const assertByteCount = (value: number, label: string): number => {
-  if (!Number.isSafeInteger(value) || value < 0) throw new Error(`${label} has invalid byte count`);
-  return value;
-};
-
-export const renderReleaseManifest = (inputValue: unknown): string => {
-  const input = inputValue as ReleaseManifestInput;
-  const version = validateReleaseVersion(input.version);
-  if (!LOWER_HEX_40.test(input.sourceRevision)) {
-    throw new Error('source revision must be 40 lowercase hexadecimal characters');
-  }
+export const assertLifecycleCaskPair = (
+  input: Readonly<{
+    first: string;
+    second: string;
+    firstVersion: string;
+    secondVersion: string;
+  }>,
+): void => {
   if (
-    input.targets.length !== RELEASE_TARGETS.length ||
-    input.targets.some((target, index) => target.id !== RELEASE_TARGETS[index]?.id)
+    input.firstVersion === input.secondVersion ||
+    !input.first.includes(`version "${input.firstVersion}"`) ||
+    !input.second.includes(`version "${input.secondVersion}"`)
   ) {
-    throw new Error('release manifest target order is invalid');
+    throw new Error('lifecycle casks must declare two exact distinct versions');
   }
-  const names = releaseArtifactNames(version);
-  const manifest = {
-    schemaVersion: 1,
-    name: 'skillsmith',
-    version,
-    sourceRevision: input.sourceRevision,
-    targets: input.targets.map((value, index) => {
-      const target = RELEASE_TARGETS[index];
-      if (target === undefined) throw new Error('release target is absent');
-      if (value.archive.path !== names.archives[target.id]) {
-        throw new Error(`archive name mismatch for ${target.id}`);
-      }
-      if (value.npm.path !== names.npmTarballs[target.id]) {
-        throw new Error(`npm tarball name mismatch for ${target.id}`);
-      }
-      assertNativeBinarySize(value.binary.bytes);
-      return {
-        id: target.id,
-        bunTarget: target.bunTarget,
-        os: target.os,
-        cpu: target.cpu,
-        libc: target.libc,
-        binary: {
-          sha256: assertSha256(value.binary.sha256, `${target.id} binary`),
-          bytes: assertByteCount(value.binary.bytes, `${target.id} binary`),
-          mode: '0755',
-        },
-        archive: {
-          path: value.archive.path,
-          sha256: assertSha256(value.archive.sha256, `${target.id} archive`),
-          bytes: assertByteCount(value.archive.bytes, `${target.id} archive`),
-        },
-        npm: {
-          name: `@smorinlabs/skillsmith-${target.id}`,
-          path: value.npm.path,
-          sha256: assertSha256(value.npm.sha256, `${target.id} npm package`),
-          bytes: assertByteCount(value.npm.bytes, `${target.id} npm package`),
-        },
-      };
-    }),
-    launcher: {
-      name: '@smorinlabs/skillsmith',
-      path: input.launcher.path,
-      sha256: assertSha256(input.launcher.sha256, 'launcher'),
-      bytes: assertByteCount(input.launcher.bytes, 'launcher'),
-    },
-    formula: {
-      path: names.formula,
-      sha256: assertSha256(input.formula.sha256, 'formula'),
-      bytes: assertByteCount(input.formula.bytes, 'formula'),
-    },
-    completions: (['bash', 'zsh', 'fish'] as const).map((shell) => ({
-      shell,
-      path: COMPLETION_PATHS[shell],
-      sha256: assertSha256(input.completions[shell].sha256, `${shell} completion`),
-      bytes: assertByteCount(input.completions[shell].bytes, `${shell} completion`),
-    })),
+  if (normalizeLifecycleCask(input.first) !== normalizeLifecycleCask(input.second)) {
+    throw new Error('lifecycle casks differ outside version, URL, or SHA-256 fields');
+  }
+};
+
+type GoreleaserArtifact = Readonly<{
+  name?: unknown;
+  path?: unknown;
+  type?: unknown;
+  goos?: unknown;
+  goarch?: unknown;
+}>;
+
+export type GoreleaserInventory = Readonly<{
+  binaries: Readonly<Record<ReleaseTargetId, string>>;
+  archives: Readonly<Record<ReleaseTargetId, string>>;
+  checksumsPath: string;
+  metadataPath: string;
+  caskPath: string;
+}>;
+
+const artifactPath = (artifact: GoreleaserArtifact, label: string): string => {
+  if (typeof artifact.path !== 'string' || !isAbsolute(artifact.path)) {
+    throw new Error(`${label} artifact path is not absolute`);
+  }
+  return artifact.path;
+};
+
+export const validateGoreleaserInventory = (input: unknown): GoreleaserInventory => {
+  if (!Array.isArray(input)) throw new Error('GoReleaser artifacts.json must be an array');
+  const artifacts = input as GoreleaserArtifact[];
+  const byType = (type: string) => artifacts.filter((artifact) => artifact.type === type);
+  const binaries = byType('Binary');
+  const archives = byType('Archive');
+  const checksums = byType('Checksum');
+  const metadata = byType('Metadata');
+  const casks = byType('Homebrew Cask');
+  if (
+    binaries.length !== 4 ||
+    archives.length !== 4 ||
+    checksums.length !== 1 ||
+    metadata.length !== 1 ||
+    casks.length !== 1 ||
+    artifacts.length !== 11
+  ) {
+    throw new Error('GoReleaser inventory does not contain the exact 11-artifact contract');
+  }
+  const selectTargets = (
+    candidates: readonly GoreleaserArtifact[],
+    label: string,
+  ): Record<ReleaseTargetId, string> =>
+    Object.fromEntries(
+      RELEASE_TARGETS.map((target) => {
+        const matches = candidates.filter(
+          (candidate) => candidate.goos === target.goos && candidate.goarch === target.goarch,
+        );
+        if (matches.length !== 1) {
+          throw new Error(`${label} inventory is not unique for ${target.id}`);
+        }
+        return [target.id, artifactPath(matches[0] ?? {}, `${target.id} ${label}`)];
+      }),
+    ) as Record<ReleaseTargetId, string>;
+  if (checksums[0]?.name !== 'SHA256SUMS' || metadata[0]?.name !== 'metadata.json') {
+    throw new Error('GoReleaser checksum or metadata artifact name drifted');
+  }
+  return {
+    binaries: selectTargets(binaries, 'binary'),
+    archives: selectTargets(archives, 'archive'),
+    checksumsPath: artifactPath(checksums[0] ?? {}, 'checksum'),
+    metadataPath: artifactPath(metadata[0] ?? {}, 'metadata'),
+    caskPath: artifactPath(casks[0] ?? {}, 'cask'),
   };
-  if (input.launcher.path !== names.npmTarballs.launcher) {
-    throw new Error('launcher tarball name mismatch');
-  }
-  return `${JSON.stringify(manifest, null, 2)}\n`;
 };
 
-export type HomebrewFormulaInput = Readonly<{
-  version: string;
-  archiveSha256: Readonly<Record<ReleaseTargetId, string>>;
-  origin?: string;
-}>;
-
-export const renderHomebrewFormula = (input: HomebrewFormulaInput): string => {
-  const version = validateReleaseVersion(input.version);
-  const names = releaseArtifactNames(version);
-  const origin = (
-    input.origin ?? `https://github.com/smorinlabs/skillsmith/releases/download/v${version}`
-  ).replace(/\/$/u, '');
-  const branch = (id: ReleaseTargetId, indentation: string): string =>
-    `${indentation}url "${origin}/${names.archives[id]}"\n${indentation}sha256 "${assertSha256(input.archiveSha256[id], id)}"`;
-  return `class Skillsmith < Formula
-  desc "Cross-tool skill management CLI"
-  homepage "https://github.com/smorinlabs/skillsmith"
-  version "${version}"
-  license "Apache-2.0"
-
-  on_macos do
-    if Hardware::CPU.arm?
-${branch('darwin-arm64', '      ')}
-    else
-${branch('darwin-x64', '      ')}
-    end
-  end
-
-  on_linux do
-    if Hardware::CPU.arm?
-${branch('linux-arm64', '      ')}
-    else
-${branch('linux-x64', '      ')}
-    end
-  end
-
-  def install
-    bin.install "skillsmith"
-    bash_completion.install "completions/skillsmith.bash" => "skillsmith"
-    zsh_completion.install "completions/_skillsmith"
-    fish_completion.install "completions/skillsmith.fish"
-  end
-
-  test do
-    assert_equal version.to_s, shell_output("#{bin}/skillsmith version").strip
-  end
-end
-`;
-};
-
-export const REQUIRED_COMPILE_FLAGS = [
-  '--compile',
-  '--bytecode',
-  '--env=disable',
-  '--no-compile-autoload-dotenv',
-  '--no-compile-autoload-bunfig',
-] as const;
-
-export type BuildReleaseCandidateInput = Readonly<{
-  repositoryRoot: string;
-  stagingRoot: string;
-  outputRoot: string;
-  version: string;
-  sourceRevision: string;
-  target: 'all' | 'host' | ReleaseTargetId;
-  compileFlags: readonly string[];
-  fixture?: true;
-  binaryOverrides?: Partial<Record<ReleaseTargetId, Uint8Array>>;
-  canaries?: readonly string[];
-}>;
-
-export type BuiltReleaseTarget = Readonly<{
-  target: ReleaseTarget;
-  binarySha256: string;
-  binaryBytes: number;
-  archivePath: string;
-  archiveSha256: string;
-  npmPath: string;
-  npmSha256: string;
-}>;
-
-export type BuildReleaseCandidateResult = Readonly<{
-  outputRoot: string;
-  version: string;
-  sourceRevision: string;
-  targets: readonly BuiltReleaseTarget[];
-  manifestPath: string | null;
-  checksumsPath: string | null;
-  formulaPath: string | null;
-  launcherPath: string | null;
-}>;
-
-const hostTarget = (): ReleaseTarget => {
-  const id =
-    process.platform === 'darwin' && process.arch === 'arm64'
-      ? 'darwin-arm64'
-      : process.platform === 'darwin' && process.arch === 'x64'
-        ? 'darwin-x64'
-        : process.platform === 'linux' && process.arch === 'arm64'
-          ? 'linux-arm64'
-          : process.platform === 'linux' && process.arch === 'x64'
-            ? 'linux-x64'
-            : null;
-  const target = RELEASE_TARGETS.find((candidate) => candidate.id === id);
-  if (target === undefined)
-    throw new Error(`unsupported build host: ${process.platform}/${process.arch}`);
-  return target;
-};
-
-const toolPath = (): string => {
-  const bunDirectory = dirname(process.execPath);
-  return [bunDirectory, '/usr/local/bin', '/usr/bin', '/bin'].join(':');
-};
+const toolPath = (): string =>
+  [dirname(process.execPath), '/usr/local/bin', '/usr/bin', '/bin'].join(':');
 
 const runChecked = (
   command: readonly string[],
@@ -609,7 +496,9 @@ const runChecked = (
       Buffer.from(child.stderr).toString('utf8').trim() ||
       Buffer.from(child.stdout).toString('utf8').trim();
     throw new Error(
-      `release subprocess failed (${child.exitCode}): ${command[0] ?? 'unknown'}${detail ? `: ${detail.slice(0, 1000)}` : ''}`,
+      `release subprocess failed (${child.exitCode}): ${basename(command[0] ?? 'unknown')}${
+        detail ? `: ${detail.slice(0, 1000)}` : ''
+      }`,
     );
   }
   return { stdout: child.stdout, stderr: child.stderr };
@@ -626,61 +515,55 @@ const permissionMode = (permissions: string): string => {
   return `0${values.join('')}`;
 };
 
-const inspectTarball = async (
-  input: Readonly<{
-    path: string;
-    allowedPaths: readonly string[];
-    cwd: string;
-    env: Readonly<Record<string, string>>;
-    canaries: readonly string[];
-  }>,
-): Promise<ArchiveEntry[]> => {
-  const verbose = Buffer.from(
-    runChecked(['tar', '-tvzf', input.path], {
-      cwd: input.cwd,
-      env: input.env,
-      canaries: input.canaries,
-    }).stdout,
-  )
+const inspectTarball = (
+  path: string,
+  allowedPaths: readonly string[],
+  cwd: string,
+  env: Readonly<Record<string, string>>,
+): ArchiveEntry[] => {
+  const lines = Buffer.from(runChecked(['tar', '-tvzf', path], { cwd, env, canaries: [] }).stdout)
     .toString('utf8')
     .split(/\r?\n/u)
     .filter(Boolean);
-  if (verbose.length !== input.allowedPaths.length) {
+  if (lines.length !== allowedPaths.length) {
     throw new Error('tarball entry count does not match its closed layout');
   }
-  const entries = verbose.map((line) => {
-    const matches = input.allowedPaths.filter((path) => line.endsWith(` ${path}`));
-    if (matches.length !== 1) throw new Error('tarball contains an unexpected or ambiguous path');
-    const path = matches[0] ?? '';
+  const entries = lines.map((line) => {
+    const matches = allowedPaths.filter((candidate) => line.endsWith(` ${candidate}`));
+    if (matches.length !== 1) throw new Error('tarball contains an unexpected path');
+    const pathName = matches[0] ?? '';
     const metadata = line
-      .slice(10, -(path.length + 1))
+      .slice(10, -(pathName.length + 1))
       .trim()
       .split(/\s+/u);
-    // GNU tar emits `owner/group size date time`; BSD tar emits
-    // `links owner group size month day time`. Both are standard runner implementations.
-    const sizeText = metadata[0]?.includes('/') === true ? metadata[1] : metadata[3];
+    const ownerGroup = metadata.find((field) => field.includes('/'));
+    const sizeText = ownerGroup === undefined ? metadata[3] : metadata[1];
     if (sizeText === undefined || !/^\d+$/u.test(sizeText)) {
       throw new Error('tarball entry size is not an unsigned decimal integer');
     }
-    const size = Number(sizeText);
-    if (!Number.isSafeInteger(size)) throw new Error('tarball entry size is not a safe integer');
+    const [owner, group] = ownerGroup?.split('/') ?? [];
     return {
-      path,
+      path: pathName,
       type: 'file' as const,
-      size,
+      size: Number(sizeText),
       mode: permissionMode(line.slice(0, 10)),
+      ...(owner === undefined ? {} : { owner }),
+      ...(group === undefined ? {} : { group }),
     };
   });
-  if (new Set(entries.map(({ path }) => path)).size !== input.allowedPaths.length) {
+  if (new Set(entries.map(({ path: pathName }) => pathName)).size !== allowedPaths.length) {
     throw new Error('tarball contains a duplicate or missing path');
   }
   return entries;
 };
 
-const writeJson = async (path: string, value: unknown): Promise<void> => {
-  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o644 });
-  await chmod(path, 0o644);
-};
+const extractTarEntry = (
+  archivePath: string,
+  entryPath: string,
+  cwd: string,
+  env: Readonly<Record<string, string>>,
+): Uint8Array =>
+  runChecked(['tar', '-xOzf', archivePath, entryPath], { cwd, env, canaries: [] }).stdout;
 
 const fileDigest = async (path: string): Promise<Readonly<{ sha256: string; bytes: number }>> => {
   const bytes = await readFile(path);
@@ -690,144 +573,28 @@ const fileDigest = async (path: string): Promise<Readonly<{ sha256: string; byte
 const ensureExecutableHeader = async (path: string, target: ReleaseTarget): Promise<void> => {
   const bytes = await readFile(path);
   assertNativeBinarySize(bytes.byteLength);
-  const elf = bytes.subarray(0, 4).equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46]));
-  const magic = bytes.readUInt32BE(0);
-  const machO = new Set([0xfeedface, 0xfeedfacf, 0xcefaedfe, 0xcffaedfe, 0xcafebabe]).has(magic);
-  if ((target.os === 'linux' && !elf) || (target.os === 'darwin' && !machO)) {
+  if (target.goos === 'linux') {
+    if (!bytes.subarray(0, 4).equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46]))) {
+      throw new Error(`compiled binary header does not match ${target.id}`);
+    }
+    const machine = bytes.readUInt16LE(18);
+    if (machine !== (target.goarch === 'arm64' ? 183 : 62)) {
+      throw new Error(`compiled ELF architecture does not match ${target.id}`);
+    }
+    return;
+  }
+  if (bytes.readUInt32LE(0) !== 0xfeedfacf) {
     throw new Error(`compiled binary header does not match ${target.id}`);
   }
-};
-
-const copyCompletions = async (
-  root: string,
-  completions: Readonly<Record<'bash' | 'zsh' | 'fish', Uint8Array>>,
-): Promise<void> => {
-  const directory = join(root, 'completions');
-  await mkdir(directory, { recursive: true });
-  for (const shell of ['bash', 'zsh', 'fish'] as const) {
-    const path = join(root, COMPLETION_PATHS[shell]);
-    await writeFile(path, completions[shell], { mode: 0o644 });
-    await chmod(path, 0o644);
+  const cpu = bytes.readUInt32LE(4);
+  if (cpu !== (target.goarch === 'arm64' ? 0x0100000c : 0x01000007)) {
+    throw new Error(`compiled Mach-O architecture does not match ${target.id}`);
   }
-};
-
-const packDirectory = async (
-  directory: string,
-  outputRoot: string,
-  filename: string,
-  env: Readonly<Record<string, string>>,
-  canaries: readonly string[],
-): Promise<void> => {
-  const packedRoot = join(dirname(directory), '.packed');
-  await mkdir(packedRoot, { recursive: true });
-  runChecked(
-    [
-      process.execPath,
-      'pm',
-      'pack',
-      '--filename',
-      join(packedRoot, filename),
-      '--ignore-scripts',
-      '--quiet',
-    ],
-    { cwd: directory, env, canaries },
-  );
-  await copyFile(join(packedRoot, filename), join(outputRoot, filename));
-  await chmod(join(outputRoot, filename), 0o644);
-  await rm(packedRoot, { recursive: true, force: true });
-};
-
-const createArchive = (
-  directory: string,
-  outputPath: string,
-  env: Readonly<Record<string, string>>,
-  canaries: readonly string[],
-): void => {
-  runChecked(
-    [
-      'tar',
-      '-czf',
-      outputPath,
-      '-C',
-      directory,
-      'skillsmith',
-      'LICENSE',
-      'completions/skillsmith.bash',
-      'completions/_skillsmith',
-      'completions/skillsmith.fish',
-    ],
-    { cwd: directory, env, canaries },
-  );
-};
-
-const packagePayload = async (
-  input: Readonly<{
-    packageRoot: string;
-    outputRoot: string;
-    target: ReleaseTarget;
-    version: string;
-    binaryPath: string;
-    filename: string;
-    repositoryRoot: string;
-    env: Readonly<Record<string, string>>;
-    canaries: readonly string[];
-  }>,
-): Promise<void> => {
-  const root = join(input.packageRoot, `payload-${input.target.id}`);
-  await mkdir(join(root, 'bin'), { recursive: true });
-  await writeJson(
-    join(root, 'package.json'),
-    renderPayloadPackageJson(input.target.id, input.version),
-  );
-  await copyFile(
-    join(input.repositoryRoot, 'packaging', 'npm', 'README.md'),
-    join(root, 'README.md'),
-  );
-  await copyFile(join(input.repositoryRoot, 'LICENSE'), join(root, 'LICENSE'));
-  await chmod(join(root, 'README.md'), 0o644);
-  await chmod(join(root, 'LICENSE'), 0o644);
-  await copyFile(input.binaryPath, join(root, 'bin', 'skillsmith'));
-  await chmod(join(root, 'bin', 'skillsmith'), 0o755);
-  await packDirectory(root, input.outputRoot, input.filename, input.env, input.canaries);
-};
-
-const packageLauncher = async (
-  input: Readonly<{
-    packageRoot: string;
-    outputRoot: string;
-    version: string;
-    filename: string;
-    repositoryRoot: string;
-    completions: Readonly<Record<'bash' | 'zsh' | 'fish', Uint8Array>>;
-    env: Readonly<Record<string, string>>;
-    canaries: readonly string[];
-  }>,
-): Promise<void> => {
-  const root = join(input.packageRoot, 'launcher');
-  await mkdir(join(root, 'bin'), { recursive: true });
-  await mkdir(join(root, 'share'), { recursive: true });
-  await writeJson(join(root, 'package.json'), renderLauncherPackageJson(input.version));
-  await copyFile(
-    join(input.repositoryRoot, 'packaging', 'npm', 'README.md'),
-    join(root, 'README.md'),
-  );
-  await copyFile(join(input.repositoryRoot, 'LICENSE'), join(root, 'LICENSE'));
-  await chmod(join(root, 'README.md'), 0o644);
-  await chmod(join(root, 'LICENSE'), 0o644);
-  await copyFile(
-    join(input.repositoryRoot, 'packaging', 'npm', 'bin', 'skillsmith.cjs'),
-    join(root, 'bin', 'skillsmith.cjs'),
-  );
-  await chmod(join(root, 'bin', 'skillsmith.cjs'), 0o755);
-  await copyCompletions(join(root, 'share'), input.completions);
-  await packDirectory(root, input.outputRoot, input.filename, input.env, input.canaries);
 };
 
 const sourceCompletions = (
   repositoryRoot: string,
-  cwd: string,
   env: Readonly<Record<string, string>>,
-  canaries: readonly string[],
 ): Readonly<Record<'bash' | 'zsh' | 'fish', Uint8Array>> => {
   const output = Object.fromEntries(
     (['bash', 'zsh', 'fish'] as const).map((shell) => {
@@ -838,7 +605,7 @@ const sourceCompletions = (
           'completion',
           shell,
         ],
-        { cwd, env, canaries },
+        { cwd: repositoryRoot, env, canaries: [] },
       );
       return [shell, result.stdout];
     }),
@@ -847,6 +614,175 @@ const sourceCompletions = (
   return output;
 };
 
+const writeCompletionInputs = async (
+  repositoryRoot: string,
+  completions: Readonly<Record<'bash' | 'zsh' | 'fish', Uint8Array>>,
+): Promise<void> => {
+  const root = join(repositoryRoot, 'build', 'release-input', 'completions');
+  await mkdir(root, { recursive: true });
+  for (const shell of ['bash', 'zsh', 'fish'] as const) {
+    const path = join(repositoryRoot, 'build', 'release-input', COMPLETION_PATHS[shell]);
+    await writeFile(path, completions[shell], { mode: 0o644 });
+    await chmod(path, 0o644);
+  }
+};
+
+const readTrackedManifest = async (
+  path: string,
+  expectedName: string,
+): Promise<Record<string, unknown>> => {
+  const manifest = JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>;
+  if (
+    manifest.name !== expectedName ||
+    manifest.version !== '0.0.0' ||
+    manifest.scripts !== undefined
+  ) {
+    throw new Error(`tracked npm manifest is not a safe staging source: ${expectedName}`);
+  }
+  return manifest;
+};
+
+const writeJson = async (path: string, value: unknown): Promise<void> => {
+  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o644 });
+  await chmod(path, 0o644);
+};
+
+const packDirectory = (
+  directory: string,
+  outputRoot: string,
+  env: Readonly<Record<string, string>>,
+): string => {
+  const npm = Bun.which('npm', { PATH: env.PATH });
+  if (npm === null) throw new Error('npm is absent from the controlled tool path');
+  const result = runChecked(
+    [npm, 'pack', '--ignore-scripts', '--json', '--pack-destination', outputRoot],
+    { cwd: directory, env, canaries: [] },
+  );
+  const resultJson = JSON.parse(Buffer.from(result.stdout).toString('utf8')) as unknown;
+  const records = Array.isArray(resultJson)
+    ? resultJson
+    : resultJson !== null && typeof resultJson === 'object'
+      ? Object.values(resultJson)
+      : [];
+  if (records.length !== 1 || typeof (records[0] as { filename?: unknown }).filename !== 'string') {
+    throw new Error('npm pack did not report exactly one tarball');
+  }
+  return join(outputRoot, (records[0] as { filename: string }).filename);
+};
+
+const stageNpmPackages = async (
+  input: Readonly<{
+    repositoryRoot: string;
+    workRoot: string;
+    outputRoot: string;
+    version: string;
+    binaries: Readonly<Record<ReleaseTargetId, string>>;
+    completions: Readonly<Record<'bash' | 'zsh' | 'fish', Uint8Array>>;
+    env: Readonly<Record<string, string>>;
+  }>,
+): Promise<Readonly<{ launcher: string } & Record<ReleaseTargetId, string>>> => {
+  const npmRoot = join(input.outputRoot, 'npm');
+  const stageRoot = join(input.workRoot, 'npm');
+  await mkdir(npmRoot, { recursive: true });
+  await mkdir(stageRoot, { recursive: true });
+  const launcherRoot = join(stageRoot, 'launcher');
+  await mkdir(join(launcherRoot, 'bin'), { recursive: true });
+  await mkdir(join(launcherRoot, 'share', 'completions'), { recursive: true });
+  const launcherManifest = await readTrackedManifest(
+    join(input.repositoryRoot, 'packaging', 'npm', 'package.json'),
+    '@smorinlabs/skillsmith',
+  );
+  const optionalDependencies = launcherManifest.optionalDependencies as
+    | Record<string, unknown>
+    | undefined;
+  if (
+    optionalDependencies === undefined ||
+    Object.keys(optionalDependencies).length !== RELEASE_TARGETS.length ||
+    Object.values(optionalDependencies).some((value) => value !== '0.0.0')
+  ) {
+    throw new Error('tracked launcher optional dependencies are not exact staging versions');
+  }
+  await writeJson(join(launcherRoot, 'package.json'), {
+    ...launcherManifest,
+    version: input.version,
+    optionalDependencies: Object.fromEntries(
+      Object.keys(optionalDependencies).map((name) => [name, input.version]),
+    ),
+  });
+  await copyFile(
+    join(input.repositoryRoot, 'packaging', 'npm', 'README.md'),
+    join(launcherRoot, 'README.md'),
+  );
+  await copyFile(join(input.repositoryRoot, 'LICENSE'), join(launcherRoot, 'LICENSE'));
+  await chmod(join(launcherRoot, 'README.md'), 0o644);
+  await chmod(join(launcherRoot, 'LICENSE'), 0o644);
+  await copyFile(
+    join(input.repositoryRoot, 'packaging', 'npm', 'bin', 'skillsmith.cjs'),
+    join(launcherRoot, 'bin', 'skillsmith.cjs'),
+  );
+  await chmod(join(launcherRoot, 'bin', 'skillsmith.cjs'), 0o755);
+  for (const shell of ['bash', 'zsh', 'fish'] as const) {
+    const path = join(launcherRoot, 'share', COMPLETION_PATHS[shell]);
+    await writeFile(path, input.completions[shell], { mode: 0o644 });
+    await chmod(path, 0o644);
+  }
+  const launcher = packDirectory(launcherRoot, npmRoot, input.env);
+  const payloads = {} as Record<ReleaseTargetId, string>;
+  for (const target of RELEASE_TARGETS) {
+    const root = join(stageRoot, target.id);
+    await mkdir(join(root, 'bin'), { recursive: true });
+    const name = `@smorinlabs/skillsmith-${target.id}`;
+    const manifest = await readTrackedManifest(
+      join(input.repositoryRoot, 'packaging', 'npm', 'platform', target.id, 'package.json'),
+      name,
+    );
+    await writeJson(join(root, 'package.json'), { ...manifest, version: input.version });
+    await copyFile(
+      join(input.repositoryRoot, 'packaging', 'npm', 'README.md'),
+      join(root, 'README.md'),
+    );
+    await copyFile(join(input.repositoryRoot, 'LICENSE'), join(root, 'LICENSE'));
+    await chmod(join(root, 'README.md'), 0o644);
+    await chmod(join(root, 'LICENSE'), 0o644);
+    await link(input.binaries[target.id], join(root, 'bin', 'skillsmith'));
+    await chmod(join(root, 'bin', 'skillsmith'), 0o755);
+    payloads[target.id] = packDirectory(root, npmRoot, input.env);
+  }
+  return { launcher, ...payloads };
+};
+
+export type BuiltReleaseTarget = Readonly<{
+  id: ReleaseTargetId;
+  binaryPath: string;
+  archivePath: string;
+  npmPath: string;
+  binarySha256: string;
+  archiveSha256: string;
+  npmBinarySha256: string;
+}>;
+
+export type BuildReleaseCandidateInput = Readonly<{
+  repositoryRoot: string;
+  stagingRoot: string;
+  outputRoot: string;
+  version: string;
+  sourceRevision: string;
+  target: 'all';
+  canaries?: readonly string[];
+}>;
+
+export type BuildReleaseCandidateResult = Readonly<{
+  outputRoot: string;
+  version: string;
+  sourceRevision: string;
+  artifactsPath: string;
+  metadataPath: string;
+  checksumsPath: string;
+  caskPath: string;
+  launcherPath: string;
+  targets: readonly BuiltReleaseTarget[];
+}>;
+
 export const buildReleaseCandidate = async (
   input: BuildReleaseCandidateInput,
 ): Promise<BuildReleaseCandidateResult> => {
@@ -854,256 +790,210 @@ export const buildReleaseCandidate = async (
   const stagingRoot = resolve(input.stagingRoot);
   const outputRoot = resolve(input.outputRoot);
   const version = validateReleaseVersion(input.version);
-  if (!LOWER_HEX_40.test(input.sourceRevision)) throw new Error('invalid explicit source revision');
-  if (JSON.stringify(input.compileFlags) !== JSON.stringify(REQUIRED_COMPILE_FLAGS)) {
-    throw new Error('release compile hardening flags do not match the frozen contract');
-  }
-  if (input.binaryOverrides !== undefined && input.fixture !== true) {
-    throw new Error('binary overrides are permitted only for explicit lifecycle fixtures');
-  }
-  if (input.fixture === true && input.binaryOverrides === undefined) {
-    throw new Error('a lifecycle fixture must provide immutable binary overrides');
-  }
+  assertSourceRevision(input.sourceRevision);
+  if (input.target !== 'all')
+    throw new Error('standard release candidates require all four targets');
+  await mkdir(stagingRoot, { recursive: true });
   const existingEntries = await readdir(outputRoot).catch((error: unknown) => {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [] as string[];
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
     throw error;
   });
   assertOwnedOutputRoot({ outputRoot, stagingRoot, existingEntries });
 
-  const selectedTargets =
-    input.target === 'all'
-      ? [...RELEASE_TARGETS]
-      : input.target === 'host'
-        ? [hostTarget()]
-        : [
-            RELEASE_TARGETS.find(({ id }) => id === input.target) ??
-              (() => {
-                throw new Error(`unsupported release target: ${input.target}`);
-              })(),
-          ];
-  const canaries = [...(input.canaries ?? [])];
-  const workRoot = await mkdtemp(join(tmpdir(), 'skillsmith-release-'));
+  const workRoot = await mkdtemp(join(stagingRoot, '.release-work-'));
   const isolatedHome = join(workRoot, 'home');
-  const isolatedTmp = join(workRoot, 'tmp');
-  const env = createHermeticBuildEnvironment({
+  const isolatedTemp = join(workRoot, 'tmp');
+  await mkdir(isolatedHome, { recursive: true });
+  await mkdir(isolatedTemp, { recursive: true });
+  const env = createControlledBuildEnvironment({
     path: toolPath(),
     home: isolatedHome,
-    tmpdir: isolatedTmp,
+    tmpdir: isolatedTemp,
+    tag: `v${version}`,
   });
-  const names = releaseArtifactNames(version);
-  await mkdir(outputRoot, { recursive: true });
-  await mkdir(isolatedHome, { recursive: true });
-  await mkdir(isolatedTmp, { recursive: true });
+  const goreleaser = Bun.which('goreleaser', { PATH: env.PATH });
+  const npm = Bun.which('npm', { PATH: env.PATH });
+  if (goreleaser === null || npm === null) {
+    throw new Error('exact GoReleaser and npm tools must be installed before candidate build');
+  }
+  const goreleaserOutput = Buffer.from(
+    runChecked([goreleaser, '--version'], { cwd: repositoryRoot, env, canaries: [] }).stdout,
+  ).toString('utf8');
+  const goreleaserVersion = goreleaserOutput.match(/GitVersion:\s*v?([^\s]+)/u)?.[1];
+  const npmVersion = Buffer.from(
+    runChecked([npm, '--version'], { cwd: repositoryRoot, env, canaries: [] }).stdout,
+  )
+    .toString('utf8')
+    .trim();
+  assertReleaseToolVersions({
+    bun: Bun.version,
+    goreleaser: goreleaserVersion ?? '',
+    npm: npmVersion,
+  });
+
+  const revision = Buffer.from(
+    runChecked(['git', 'rev-parse', '--verify', 'HEAD'], {
+      cwd: repositoryRoot,
+      env,
+      canaries: [],
+    }).stdout,
+  )
+    .toString('utf8')
+    .trim();
+  if (revision !== input.sourceRevision) {
+    throw new Error('candidate source revision does not match repository HEAD');
+  }
 
   try {
-    const completions = sourceCompletions(repositoryRoot, workRoot, env, canaries);
-    const built: BuiltReleaseTarget[] = [];
-    const manifestTargets: ReleaseManifestTargetInput[] = [];
-    const archiveSha256 = {} as Record<ReleaseTargetId, string>;
-
-    for (const target of selectedTargets) {
-      const targetRoot = join(workRoot, target.id);
-      const binaryPath = join(targetRoot, 'skillsmith');
-      await mkdir(targetRoot, { recursive: true });
-      const override = input.binaryOverrides?.[target.id];
-      if (override === undefined) {
-        runChecked(
-          [
-            process.execPath,
-            'build',
-            ...input.compileFlags,
-            `--target=${target.bunTarget}`,
-            join(repositoryRoot, 'packages', 'cli', 'src', 'index.ts'),
-            '--outfile',
-            relative(workRoot, binaryPath),
-          ],
-          { cwd: workRoot, env, canaries },
-        );
-        await ensureExecutableHeader(binaryPath, target);
-      } else {
-        assertNativeBinarySize(override.byteLength);
-        await writeFile(binaryPath, override, { mode: 0o755 });
-      }
-      await chmod(binaryPath, 0o755);
-      const binary = await fileDigest(binaryPath);
-
-      if (target.id === hostTarget().id && override === undefined) {
-        for (const args of [['version'], ['--help']] as const) {
-          runChecked([binaryPath, ...args], { cwd: workRoot, env, canaries });
-        }
-        for (const shell of ['bash', 'zsh', 'fish'] as const) {
-          const native = runChecked([binaryPath, 'completion', shell], {
-            cwd: workRoot,
-            env,
-            canaries,
-          });
-          if (!Buffer.from(native.stdout).equals(Buffer.from(completions[shell]))) {
-            throw new Error(`${shell} native completion drifted from direct execution`);
-          }
-        }
-      }
-
-      const archiveRoot = join(targetRoot, 'archive');
-      await mkdir(archiveRoot, { recursive: true });
-      await copyFile(binaryPath, join(archiveRoot, 'skillsmith'));
-      await chmod(join(archiveRoot, 'skillsmith'), 0o755);
-      await copyFile(join(repositoryRoot, 'LICENSE'), join(archiveRoot, 'LICENSE'));
-      await chmod(join(archiveRoot, 'LICENSE'), 0o644);
-      await copyCompletions(archiveRoot, completions);
-      const archivePath = join(outputRoot, names.archives[target.id]);
-      createArchive(archiveRoot, archivePath, env, canaries);
-      await chmod(archivePath, 0o644);
-      validateArchiveEntries(
-        await inspectTarball({
-          path: archivePath,
-          allowedPaths: ARCHIVE_LAYOUT.map(([path]) => path),
-          cwd: workRoot,
-          env,
-          canaries,
-        }),
-      );
-      const archive = await fileDigest(archivePath);
-      archiveSha256[target.id] = archive.sha256;
-
-      const npmFilename = names.npmTarballs[target.id];
-      await packagePayload({
-        packageRoot: join(workRoot, 'packages'),
-        outputRoot,
-        target,
-        version,
-        binaryPath,
-        filename: npmFilename,
-        repositoryRoot,
-        env,
-        canaries,
-      });
-      validateNpmPackageEntries(
-        'payload',
-        await inspectTarball({
-          path: join(outputRoot, npmFilename),
-          allowedPaths: Object.keys(NPM_PACKAGE_LAYOUTS.payload),
-          cwd: workRoot,
-          env,
-          canaries,
-        }),
-      );
-      const npm = await fileDigest(join(outputRoot, npmFilename));
-      built.push({
-        target,
-        binarySha256: binary.sha256,
-        binaryBytes: binary.bytes,
-        archivePath,
-        archiveSha256: archive.sha256,
-        npmPath: join(outputRoot, npmFilename),
-        npmSha256: npm.sha256,
-      });
-      manifestTargets.push({
-        id: target.id,
-        binary,
-        archive: { path: names.archives[target.id], ...archive },
-        npm: { path: npmFilename, ...npm },
-      });
+    const completions = sourceCompletions(repositoryRoot, env);
+    await writeCompletionInputs(repositoryRoot, completions);
+    const sourceConfig = await readFile(join(repositoryRoot, '.goreleaser.yaml'), 'utf8');
+    if (!/^dist: dist\/release$/mu.test(sourceConfig)) {
+      throw new Error('GoReleaser source config has an unexpected dist root');
     }
+    const derivedConfig = sourceConfig.replace(
+      /^dist: dist\/release$/mu,
+      `dist: ${JSON.stringify(outputRoot)}`,
+    );
+    const configPath = join(workRoot, `goreleaser-${randomUUID()}.yaml`);
+    await writeFile(configPath, derivedConfig, { mode: 0o600 });
+    runChecked([goreleaser, 'release', '--snapshot', '--clean', '--config', configPath], {
+      cwd: repositoryRoot,
+      env,
+      canaries: input.canaries ?? [],
+    });
 
-    const launcherFilename = names.npmTarballs.launcher;
-    await packageLauncher({
-      packageRoot: join(workRoot, 'packages'),
+    const artifactsPath = join(outputRoot, 'artifacts.json');
+    const inventory = validateGoreleaserInventory(
+      JSON.parse(await readFile(artifactsPath, 'utf8')) as unknown,
+    );
+    const metadata = JSON.parse(await readFile(inventory.metadataPath, 'utf8')) as {
+      version?: unknown;
+      commit?: unknown;
+      tag?: unknown;
+    };
+    if (
+      metadata.version !== version ||
+      metadata.commit !== input.sourceRevision ||
+      metadata.tag !== `v${version}`
+    ) {
+      throw new Error('GoReleaser metadata does not match candidate identity');
+    }
+    const names = releaseArtifactNames(version);
+    for (const target of RELEASE_TARGETS) {
+      if (basename(inventory.archives[target.id]) !== names.archives[target.id]) {
+        throw new Error(`archive name drifted for ${target.id}`);
+      }
+      await ensureExecutableHeader(inventory.binaries[target.id], target);
+      validateArchiveEntries(
+        inspectTarball(
+          inventory.archives[target.id],
+          Object.keys(ARCHIVE_LAYOUT),
+          repositoryRoot,
+          env,
+        ),
+      );
+    }
+    const npmPackages = await stageNpmPackages({
+      repositoryRoot,
+      workRoot,
       outputRoot,
       version,
-      filename: launcherFilename,
-      repositoryRoot,
+      binaries: inventory.binaries,
       completions,
       env,
-      canaries,
     });
-    const launcherPath = join(outputRoot, launcherFilename);
+    const targets: BuiltReleaseTarget[] = [];
+    for (const target of RELEASE_TARGETS) {
+      const binary = await fileDigest(inventory.binaries[target.id]);
+      const archive = await fileDigest(inventory.archives[target.id]);
+      assertNativeBinarySize(binary.bytes);
+      validateNpmPackageEntries(
+        'payload',
+        inspectTarball(
+          npmPackages[target.id],
+          Object.keys(NPM_PACKAGE_LAYOUTS.payload),
+          repositoryRoot,
+          env,
+        ),
+      );
+      const npmBinary = extractTarEntry(
+        npmPackages[target.id],
+        'package/bin/skillsmith',
+        repositoryRoot,
+        env,
+      );
+      const archiveBinary = extractTarEntry(
+        inventory.archives[target.id],
+        'skillsmith',
+        repositoryRoot,
+        env,
+      );
+      assertSingleLineage({
+        raw: binary.sha256,
+        archive: sha256Hex(archiveBinary),
+        npm: sha256Hex(npmBinary),
+      });
+      targets.push({
+        id: target.id,
+        binaryPath: inventory.binaries[target.id],
+        archivePath: inventory.archives[target.id],
+        npmPath: npmPackages[target.id],
+        binarySha256: binary.sha256,
+        archiveSha256: archive.sha256,
+        npmBinarySha256: sha256Hex(npmBinary),
+      });
+    }
     validateNpmPackageEntries(
       'launcher',
-      await inspectTarball({
-        path: launcherPath,
-        allowedPaths: Object.keys(NPM_PACKAGE_LAYOUTS.launcher),
-        cwd: workRoot,
+      inspectTarball(
+        npmPackages.launcher,
+        Object.keys(NPM_PACKAGE_LAYOUTS.launcher),
+        repositoryRoot,
         env,
-        canaries,
-      }),
+      ),
     );
-
-    if (input.target !== 'all') {
-      return {
-        outputRoot,
-        version,
-        sourceRevision: input.sourceRevision,
-        targets: built,
-        manifestPath: null,
-        checksumsPath: null,
-        formulaPath: null,
-        launcherPath,
-      };
+    const checksumLines = (await readFile(inventory.checksumsPath, 'utf8')).trimEnd().split('\n');
+    const expectedArchives = Object.values(names.archives).toSorted();
+    if (
+      checksumLines.length !== 4 ||
+      checksumLines.some((line) => !/^[0-9a-f]{64} {2}[^\s]+$/u.test(line)) ||
+      checksumLines
+        .map((line) => line.slice(66))
+        .toSorted()
+        .join('\n') !== expectedArchives.join('\n')
+    ) {
+      throw new Error('GoReleaser checksum closure is invalid');
     }
-
-    const launcher = await fileDigest(launcherPath);
-    const formulaPath = join(outputRoot, names.formula);
-    await writeFile(formulaPath, renderHomebrewFormula({ version, archiveSha256 }), {
-      mode: 0o644,
-    });
-    await chmod(formulaPath, 0o644);
-    const formula = await fileDigest(formulaPath);
-    const completionManifest = Object.fromEntries(
-      (['bash', 'zsh', 'fish'] as const).map((shell) => [
-        shell,
-        { sha256: sha256Hex(completions[shell]), bytes: completions[shell].byteLength },
-      ]),
-    ) as Record<'bash' | 'zsh' | 'fish', { sha256: string; bytes: number }>;
-    const manifestPath = join(outputRoot, names.manifest);
-    await writeFile(
-      manifestPath,
-      renderReleaseManifest({
-        version,
-        sourceRevision: input.sourceRevision,
-        targets: manifestTargets,
-        launcher: { path: launcherFilename, ...launcher },
-        formula,
-        completions: completionManifest,
-      }),
-      { mode: 0o644 },
-    );
-    await chmod(manifestPath, 0o644);
-    const checksummedPaths = [
-      ...Object.values(names.archives),
-      ...Object.values(names.npmTarballs),
-      names.formula,
-      names.manifest,
-    ];
-    const checksums = Object.fromEntries(
-      await Promise.all(
-        checksummedPaths.map(async (path) => [
-          path,
-          (await fileDigest(join(outputRoot, path))).sha256,
-        ]),
-      ),
-    );
-    const checksumsPath = join(outputRoot, names.checksums);
-    await writeFile(checksumsPath, renderSha256Sums(checksums), { mode: 0o644 });
-    await chmod(checksumsPath, 0o644);
-    const publicOutputs = Object.fromEntries(
-      await Promise.all(
-        [...checksummedPaths, names.checksums].map(async (path) => [
-          path,
-          await readFile(join(outputRoot, path)),
-        ]),
-      ),
-    );
-    assertNoReleaseLeaks({ canaries, outputs: publicOutputs });
-
+    const cask = await readFile(inventory.caskPath, 'utf8');
+    if (
+      !cask.includes('binary "skillsmith"') ||
+      /preflight|postflight|xattr|quarantine|curl|system\s+["']sh/u.test(cask)
+    ) {
+      throw new Error('generated cask contains a missing binary stanza or forbidden bypass');
+    }
+    if ((input.canaries ?? []).length > 0) {
+      const outputFiles: Record<string, Uint8Array> = {};
+      const visit = async (directory: string): Promise<void> => {
+        for (const entry of await readdir(directory, { withFileTypes: true })) {
+          const path = join(directory, entry.name);
+          if (entry.isDirectory()) await visit(path);
+          else if (entry.isFile()) outputFiles[relative(outputRoot, path)] = await readFile(path);
+        }
+      };
+      await visit(outputRoot);
+      assertNoReleaseLeaks({ canaries: input.canaries ?? [], outputs: outputFiles });
+    }
     return {
       outputRoot,
       version,
       sourceRevision: input.sourceRevision,
-      targets: built,
-      manifestPath,
-      checksumsPath,
-      formulaPath,
-      launcherPath,
+      artifactsPath,
+      metadataPath: inventory.metadataPath,
+      checksumsPath: inventory.checksumsPath,
+      caskPath: inventory.caskPath,
+      launcherPath: npmPackages.launcher,
+      targets,
     };
   } catch (error) {
     await rm(outputRoot, { recursive: true, force: true });
@@ -1113,11 +1003,6 @@ export const buildReleaseCandidate = async (
   }
 };
 
-export type DirectArchiveInstallInput = Readonly<{
-  archivePath: string;
-  prefix: string;
-}>;
-
 const directInstallPaths = (prefix: string) => ({
   binary: join(prefix, 'bin', 'skillsmith'),
   bash: join(prefix, 'share', 'bash-completion', 'completions', 'skillsmith'),
@@ -1126,42 +1011,30 @@ const directInstallPaths = (prefix: string) => ({
 });
 
 export const installDirectArchive = async (
-  input: DirectArchiveInstallInput,
+  input: Readonly<{ archivePath: string; prefix: string }>,
 ): Promise<Readonly<Record<'binary' | 'bash' | 'zsh' | 'fish', string>>> => {
   const extractRoot = await mkdtemp(join(tmpdir(), 'skillsmith-direct-install-'));
-  const env = createHermeticBuildEnvironment({
+  const env = createControlledBuildEnvironment({
     path: toolPath(),
     home: join(extractRoot, 'home'),
     tmpdir: join(extractRoot, 'tmp'),
+    tag: 'v0.0.0',
   });
   try {
     validateArchiveEntries(
-      await inspectTarball({
-        path: resolve(input.archivePath),
-        allowedPaths: ARCHIVE_LAYOUT.map(([path]) => path),
-        cwd: extractRoot,
-        env,
-        canaries: [],
-      }),
+      inspectTarball(resolve(input.archivePath), Object.keys(ARCHIVE_LAYOUT), extractRoot, env),
     );
-    // Preserve the archive's signed modes even though this lifecycle runs under umask 077.
     runChecked(['tar', '-xpzf', resolve(input.archivePath), '-C', extractRoot], {
       cwd: extractRoot,
       env,
       canaries: [],
     });
-    const archiveEntries = await Promise.all(
-      ARCHIVE_LAYOUT.map(async ([path]) => {
-        const metadata = await lstat(join(extractRoot, path));
-        return {
-          path,
-          type: metadata.isFile() ? ('file' as const) : ('symlink' as const),
-          size: metadata.size,
-          mode: (metadata.mode & 0o777).toString(8).padStart(4, '0'),
-        };
-      }),
-    );
-    validateArchiveEntries(archiveEntries);
+    for (const path of Object.keys(ARCHIVE_LAYOUT)) {
+      const metadata = await lstat(join(extractRoot, path));
+      if (!metadata.isFile() || metadata.isSymbolicLink()) {
+        throw new Error(`extracted archive entry is not a regular file: ${path}`);
+      }
+    }
     const paths = directInstallPaths(resolve(input.prefix));
     await Promise.all(
       Object.values(paths).map((path) => mkdir(dirname(path), { recursive: true })),

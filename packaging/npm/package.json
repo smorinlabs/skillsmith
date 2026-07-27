@@ -1,1 +1,30 @@
-{}
+{
+  "name": "@smorinlabs/skillsmith",
+  "version": "0.0.0",
+  "description": "Cross-tool skill discovery and management CLI",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/smorinlabs/skillsmith.git"
+  },
+  "homepage": "https://github.com/smorinlabs/skillsmith#readme",
+  "bugs": "https://github.com/smorinlabs/skillsmith/issues",
+  "bin": {
+    "skillsmith": "bin/skillsmith.cjs"
+  },
+  "files": [
+    "bin/skillsmith.cjs",
+    "share/completions",
+    "README.md",
+    "LICENSE"
+  ],
+  "optionalDependencies": {
+    "@smorinlabs/skillsmith-darwin-arm64": "0.0.0",
+    "@smorinlabs/skillsmith-darwin-x64": "0.0.0",
+    "@smorinlabs/skillsmith-linux-arm64": "0.0.0",
+    "@smorinlabs/skillsmith-linux-x64": "0.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

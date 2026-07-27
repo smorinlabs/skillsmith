@@ -1,1 +1,16 @@
-{}
+{
+  "name": "@smorinlabs/skillsmith-darwin-arm64",
+  "version": "0.0.0",
+  "description": "Skillsmith native payload for macOS arm64",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/smorinlabs/skillsmith.git"
+  },
+  "os": ["darwin"],
+  "cpu": ["arm64"],
+  "files": ["bin/skillsmith", "README.md", "LICENSE"],
+  "publishConfig": {
+    "access": "public"
+  }
+}

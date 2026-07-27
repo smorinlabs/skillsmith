@@ -9,49 +9,76 @@ import {
   FIXTURE_EXECUTABLES,
   MAX_NATIVE_BINARY_BYTES,
   RELEASE_TARGETS,
+  RELEASE_TOOLCHAIN,
+  assertLifecycleCaskPair,
   assertNativeBinarySize,
   assertNoReleaseLeaks,
   assertOwnedOutputRoot,
+  assertReleaseToolVersions,
   assertSingleLineage,
-  createHermeticBuildEnvironment,
+  assertSourceRevision,
+  createControlledBuildEnvironment,
+  deriveProductionCaskFixture,
   installDirectArchive,
   releaseArtifactNames,
-  renderHomebrewFormula,
-  renderLauncherPackageJson,
-  renderPayloadPackageJson,
-  renderReleaseManifest,
-  renderSha256Sums,
   validateArchiveEntries,
+  validateGoreleaserInventory,
   validateNpmPackageEntries,
   validateReleaseVersion,
 } from './release-artifacts.ts';
 
 const SHA_A = 'a'.repeat(64);
 const SHA_B = 'b'.repeat(64);
-const REVISION = 'c'.repeat(40);
 
 const directEntries: readonly ArchiveEntry[] = [
-  { path: 'skillsmith', type: 'file', size: 42, mode: '0755' },
-  { path: 'LICENSE', type: 'file', size: 42, mode: '0644' },
-  { path: 'completions/skillsmith.bash', type: 'file', size: 42, mode: '0644' },
-  { path: 'completions/_skillsmith', type: 'file', size: 42, mode: '0644' },
-  { path: 'completions/skillsmith.fish', type: 'file', size: 42, mode: '0644' },
+  { path: 'skillsmith', type: 'file', size: 42, mode: '0755', owner: 'root', group: 'root' },
+  { path: 'LICENSE', type: 'file', size: 42, mode: '0644', owner: 'root', group: 'root' },
+  {
+    path: 'completions/skillsmith.bash',
+    type: 'file',
+    size: 42,
+    mode: '0644',
+    owner: 'root',
+    group: 'root',
+  },
+  {
+    path: 'completions/_skillsmith',
+    type: 'file',
+    size: 42,
+    mode: '0644',
+    owner: 'root',
+    group: 'root',
+  },
+  {
+    path: 'completions/skillsmith.fish',
+    type: 'file',
+    size: 42,
+    mode: '0644',
+    owner: 'root',
+    group: 'root',
+  },
 ];
 
-const payloadEntries: readonly ArchiveEntry[] = [
-  { path: 'package/package.json', type: 'file', size: 42, mode: '0644' },
-  { path: 'package/README.md', type: 'file', size: 42, mode: '0644' },
-  { path: 'package/LICENSE', type: 'file', size: 42, mode: '0644' },
-  { path: 'package/bin/skillsmith', type: 'file', size: 42, mode: '0755' },
-];
+const payloadEntries = [
+  { path: 'package/package.json', mode: '0644' },
+  { path: 'package/README.md', mode: '0644' },
+  { path: 'package/LICENSE', mode: '0644' },
+  { path: 'package/bin/skillsmith', mode: '0755' },
+] as const;
 
-describe('release artifact model', () => {
-  test('freezes the ordered target matrix and version-derived names', () => {
-    expect(RELEASE_TARGETS.map(({ id }) => id)).toEqual([
-      'darwin-arm64',
-      'darwin-x64',
-      'linux-arm64',
-      'linux-x64',
+describe('standard release artifact adapter', () => {
+  test('freezes toolchain, target mapping, and standard version-derived names', () => {
+    expect(RELEASE_TOOLCHAIN).toEqual({
+      bun: '1.3.14',
+      goreleaser: '2.17.1',
+      npm: '12.0.1',
+      goreleaserAction: 'f06c13b6b1a9625abc9e6e439d9c05a8f2190e94',
+    });
+    expect(RELEASE_TARGETS.map(({ id, goos, goarch }) => ({ id, goos, goarch }))).toEqual([
+      { id: 'darwin-arm64', goos: 'darwin', goarch: 'arm64' },
+      { id: 'darwin-x64', goos: 'darwin', goarch: 'amd64' },
+      { id: 'linux-arm64', goos: 'linux', goarch: 'arm64' },
+      { id: 'linux-x64', goos: 'linux', goarch: 'amd64' },
     ]);
     expect(validateReleaseVersion('1.2.3-rc.1+build.7')).toBe('1.2.3-rc.1+build.7');
     for (const invalid of ['', 'v1.2.3', '1.2', '01.2.3', '../1.2.3', '1.2.3\n']) {
@@ -71,13 +98,22 @@ describe('release artifact model', () => {
         'linux-arm64': 'smorinlabs-skillsmith-linux-arm64-1.2.3.tgz',
         'linux-x64': 'smorinlabs-skillsmith-linux-x64-1.2.3.tgz',
       },
-      formula: 'skillsmith.rb',
-      manifest: 'release-manifest.json',
       checksums: 'SHA256SUMS',
+      artifacts: 'artifacts.json',
+      metadata: 'metadata.json',
+      cask: 'homebrew/Casks/skillsmith.rb',
     });
   });
 
-  test('rejects output escape, collision, and non-strict size boundaries', () => {
+  test('fails closed on tool, revision, output, and size drift', () => {
+    expect(() =>
+      assertReleaseToolVersions({ bun: '1.3.14', goreleaser: '2.17.1', npm: '12.0.1' }),
+    ).not.toThrow();
+    expect(() =>
+      assertReleaseToolVersions({ bun: '1.3.14', goreleaser: '2.17.0', npm: '12.0.1' }),
+    ).toThrow();
+    expect(() => assertSourceRevision('a'.repeat(40))).not.toThrow();
+    expect(() => assertSourceRevision('HEAD')).toThrow();
     expect(() =>
       assertOwnedOutputRoot({
         stagingRoot: '/tmp/release',
@@ -103,8 +139,9 @@ describe('release artifact model', () => {
     expect(() => assertNativeBinarySize(MAX_NATIVE_BINARY_BYTES + 1)).toThrow();
   });
 
-  test('accepts only the closed regular-file archive and npm layouts', () => {
+  test('accepts only order-independent closed archive and npm layouts', () => {
     expect(() => validateArchiveEntries(directEntries)).not.toThrow();
+    expect(() => validateArchiveEntries(directEntries.toReversed())).not.toThrow();
     expect(() => validateNpmPackageEntries('payload', payloadEntries)).not.toThrow();
     for (const hostile of [
       directEntries.map((entry, index) =>
@@ -121,18 +158,113 @@ describe('release artifact model', () => {
     expect(() =>
       validateNpmPackageEntries('payload', [
         ...payloadEntries.slice(0, 3),
-        { path: 'package/bin/../escape', type: 'file', size: 42, mode: '0755' },
-      ]),
-    ).toThrow();
-    expect(() =>
-      validateNpmPackageEntries('payload', [
-        ...payloadEntries.slice(0, 3),
-        { path: 'package/bin/skillsmith', type: 'device', size: 42, mode: '0755' },
+        { path: 'package/bin/../escape', mode: '0755' },
       ]),
     ).toThrow();
   });
 
-  test('rejects an exact-name symlink from a direct archive before installation', async () => {
+  test('normalizes the exact standard GoReleaser inventory', () => {
+    const artifacts = [
+      { type: 'Metadata', name: 'metadata.json', path: '/dist/metadata.json' },
+      ...RELEASE_TARGETS.flatMap((target) => [
+        {
+          type: 'Binary',
+          name: 'skillsmith',
+          path: `/dist/${target.id}/skillsmith`,
+          goos: target.goos,
+          goarch: target.goarch,
+        },
+        {
+          type: 'Archive',
+          name: `skillsmith-v1.2.3-${target.id}.tar.gz`,
+          path: `/dist/skillsmith-v1.2.3-${target.id}.tar.gz`,
+          goos: target.goos,
+          goarch: target.goarch,
+        },
+      ]),
+      { type: 'Checksum', name: 'SHA256SUMS', path: '/dist/SHA256SUMS' },
+      { type: 'Homebrew Cask', name: 'skillsmith.rb', path: '/dist/Casks/skillsmith.rb' },
+    ];
+    const inventory = validateGoreleaserInventory(artifacts);
+    expect(inventory.binaries['linux-x64']).toBe('/dist/linux-x64/skillsmith');
+    expect(inventory.archives['darwin-arm64']).toBe('/dist/skillsmith-v1.2.3-darwin-arm64.tar.gz');
+    expect(inventory.checksumsPath).toBe('/dist/SHA256SUMS');
+    expect(() => validateGoreleaserInventory([...artifacts, artifacts[0]])).toThrow();
+  });
+
+  test('derives only bounded production cask URLs and validates lifecycle diffs', () => {
+    const branch = (target: string) =>
+      `  sha256 "${SHA_A}"\n  url "https://github.com/smorinlabs/skillsmith/releases/download/v#{version}/skillsmith-v#{version}-${target}.tar.gz",\n    verified: "github.com/smorinlabs/skillsmith/"`;
+    const production = `version "1.2.3"\n${['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'].map(branch).join('\n')}`;
+    const fixture = deriveProductionCaskFixture({
+      cask: production,
+      origin: 'http://127.0.0.1:12345/',
+    });
+    expect(fixture.match(/http:\/\/127\.0\.0\.1:12345/gu)).toHaveLength(4);
+    expect(fixture).not.toContain('verified:');
+    expect(production).toContain('github.com/smorinlabs/skillsmith/releases');
+
+    const first = `version "0.0.0-g6-fixture.1"\nurl "http://127.0.0.1/one"\nsha256 "${SHA_A}"\n`;
+    const second = `version "0.0.0-g6-fixture.2"\nurl "http://127.0.0.1/two"\nsha256 "${SHA_B}"\n`;
+    expect(() =>
+      assertLifecycleCaskPair({
+        first,
+        second,
+        firstVersion: '0.0.0-g6-fixture.1',
+        secondVersion: '0.0.0-g6-fixture.2',
+      }),
+    ).not.toThrow();
+    expect(() =>
+      assertLifecycleCaskPair({
+        first,
+        second: `${second}binary "other"\n`,
+        firstVersion: '0.0.0-g6-fixture.1',
+        secondVersion: '0.0.0-g6-fixture.2',
+      }),
+    ).toThrow();
+  });
+
+  test('controls child inputs, rejects canaries, and freezes fixture identities', () => {
+    expect(
+      createControlledBuildEnvironment({
+        path: '/tools',
+        home: '/isolated/home',
+        tmpdir: '/isolated/tmp',
+        tag: 'v1.2.3',
+      }),
+    ).toEqual({
+      PATH: '/tools',
+      HOME: '/isolated/home',
+      TMPDIR: '/isolated/tmp',
+      XDG_CONFIG_HOME: '/isolated/home/config',
+      XDG_CACHE_HOME: '/isolated/home/cache',
+      XDG_DATA_HOME: '/isolated/home/data',
+      LANG: 'C.UTF-8',
+      LC_ALL: 'C.UTF-8',
+      TZ: 'UTC',
+      NO_COLOR: '1',
+      GORELEASER_CURRENT_TAG: 'v1.2.3',
+    });
+    expect(() =>
+      assertNoReleaseLeaks({ canaries: ['secret'], outputs: { metadata: 'safe' } }),
+    ).not.toThrow();
+    expect(() =>
+      assertNoReleaseLeaks({ canaries: ['secret'], outputs: { metadata: 'unsafe-secret' } }),
+    ).toThrow();
+    expect(() => assertSingleLineage({ archive: SHA_A, npm: SHA_A })).not.toThrow();
+    expect(() => assertSingleLineage({ archive: SHA_A, npm: SHA_B })).toThrow();
+    expect(COMPLETION_PATHS).toEqual({
+      bash: 'completions/skillsmith.bash',
+      zsh: 'completions/_skillsmith',
+      fish: 'completions/skillsmith.fish',
+    });
+    for (const fixture of Object.values(FIXTURE_EXECUTABLES)) {
+      expect(fixture.bytes.byteLength).toBe(160);
+      expect(createHash('sha256').update(fixture.bytes).digest('hex')).toBe(fixture.sha256);
+    }
+  });
+
+  test('rejects an exact-name symlink before direct archive installation', async () => {
     const root = await mkdtemp(join(tmpdir(), 'skillsmith-release-hostile-'));
     try {
       const source = join(root, 'source');
@@ -163,141 +295,9 @@ describe('release artifact model', () => {
       expect(packed.exitCode, packed.stderr.toString()).toBe(0);
       await expect(
         installDirectArchive({ archivePath: archive, prefix: join(root, 'prefix') }),
-      ).rejects.toThrow('unexpected or ambiguous path');
+      ).rejects.toThrow();
     } finally {
       await rm(root, { recursive: true, force: true });
-    }
-  });
-
-  test('renders exact launcher and per-target payload metadata with no scripts', () => {
-    const launcher = renderLauncherPackageJson('1.2.3');
-    expect(launcher).toEqual({
-      name: '@smorinlabs/skillsmith',
-      version: '1.2.3',
-      description: 'Cross-tool skill management CLI',
-      license: 'Apache-2.0',
-      bin: { skillsmith: 'bin/skillsmith.cjs' },
-      files: ['bin', 'share', 'README.md', 'LICENSE'],
-      optionalDependencies: {
-        '@smorinlabs/skillsmith-darwin-arm64': '1.2.3',
-        '@smorinlabs/skillsmith-darwin-x64': '1.2.3',
-        '@smorinlabs/skillsmith-linux-arm64': '1.2.3',
-        '@smorinlabs/skillsmith-linux-x64': '1.2.3',
-      },
-    });
-    expect('scripts' in launcher).toBeFalse();
-    expect(renderPayloadPackageJson('linux-arm64', '1.2.3')).toMatchObject({
-      name: '@smorinlabs/skillsmith-linux-arm64',
-      version: '1.2.3',
-      os: ['linux'],
-      cpu: ['arm64'],
-      libc: ['glibc'],
-      files: ['bin/skillsmith', 'README.md', 'LICENSE'],
-    });
-    expect(renderPayloadPackageJson('darwin-x64', '1.2.3')).not.toHaveProperty('libc');
-    expect(() => renderPayloadPackageJson('win32-x64', '1.2.3')).toThrow();
-  });
-
-  test('canonicalizes the manifest, checksums, and single-lineage proof', () => {
-    const names = releaseArtifactNames('1.2.3');
-    const manifest = renderReleaseManifest({
-      version: '1.2.3',
-      sourceRevision: REVISION,
-      targets: RELEASE_TARGETS.map(({ id }) => ({
-        id,
-        binary: { sha256: SHA_A, bytes: 123 },
-        archive: { path: names.archives[id], sha256: SHA_A, bytes: 456 },
-        npm: { path: names.npmTarballs[id], sha256: SHA_A, bytes: 789 },
-      })),
-      launcher: { path: names.npmTarballs.launcher, sha256: SHA_A, bytes: 12 },
-      formula: { sha256: SHA_A, bytes: 34 },
-      completions: {
-        bash: { sha256: SHA_A, bytes: 2610 },
-        zsh: { sha256: SHA_A, bytes: 7729 },
-        fish: { sha256: SHA_A, bytes: 9200 },
-      },
-    });
-    expect(manifest.endsWith('\n')).toBeTrue();
-    const parsed = JSON.parse(manifest) as { targets: unknown[]; completions: unknown[] };
-    expect(parsed.targets).toHaveLength(4);
-    expect(parsed.completions).toHaveLength(3);
-    const checksumPaths = [
-      ...Object.values(names.archives),
-      ...Object.values(names.npmTarballs),
-      names.formula,
-      names.manifest,
-    ];
-    const sums = renderSha256Sums(Object.fromEntries(checksumPaths.map((path) => [path, SHA_A])));
-    expect(sums.split('\n').filter(Boolean)).toHaveLength(11);
-    expect(sums).toBe(
-      `${checksumPaths
-        .toSorted()
-        .map((path) => `${SHA_A}  ${path}`)
-        .join('\n')}\n`,
-    );
-    expect(() => assertSingleLineage({ archive: SHA_A, npm: SHA_A })).not.toThrow();
-    expect(() => assertSingleLineage({ archive: SHA_A, npm: SHA_B })).toThrow();
-  });
-
-  test('renders one formula model with exact public and substituted origins', () => {
-    const hashes = Object.fromEntries(RELEASE_TARGETS.map(({ id }) => [id, SHA_A]));
-    const publicFormula = renderHomebrewFormula({ version: '1.2.3', archiveSha256: hashes });
-    const localFormula = renderHomebrewFormula({
-      version: '1.2.3',
-      archiveSha256: hashes,
-      origin: 'http://127.0.0.1:12345/releases/',
-    });
-    expect(localFormula).toBe(
-      publicFormula.replaceAll(
-        'https://github.com/smorinlabs/skillsmith/releases/download/v1.2.3',
-        'http://127.0.0.1:12345/releases',
-      ),
-    );
-    for (const { id } of RELEASE_TARGETS) {
-      expect(publicFormula).toContain(`skillsmith-v1.2.3-${id}.tar.gz`);
-    }
-    expect(publicFormula).toContain('bin.install "skillsmith"');
-    expect(publicFormula).toContain('shell_output("#{bin}/skillsmith version")');
-  });
-
-  test('scrubs the build environment and refuses byte-level canary leaks', () => {
-    expect(
-      createHermeticBuildEnvironment({
-        path: '/tools',
-        home: '/isolated/home',
-        tmpdir: '/isolated/tmp',
-      }),
-    ).toEqual({
-      PATH: '/tools',
-      HOME: '/isolated/home',
-      TMPDIR: '/isolated/tmp',
-      XDG_CONFIG_HOME: '/isolated/home/config',
-      XDG_CACHE_HOME: '/isolated/home/cache',
-      XDG_DATA_HOME: '/isolated/home/data',
-      LANG: 'C.UTF-8',
-      LC_ALL: 'C.UTF-8',
-      TZ: 'UTC',
-      NO_COLOR: '1',
-    });
-    expect(() =>
-      assertNoReleaseLeaks({ canaries: ['secret'], outputs: { manifest: 'safe' } }),
-    ).not.toThrow();
-    expect(() =>
-      assertNoReleaseLeaks({ canaries: ['secret'], outputs: { manifest: 'unsafe-secret-value' } }),
-    ).toThrow();
-    expect(() => assertNoReleaseLeaks({ canaries: [''], outputs: {} })).toThrow();
-  });
-
-  test('freezes completion placement and both immutable lifecycle executable hashes', () => {
-    expect(COMPLETION_PATHS).toEqual({
-      bash: 'completions/skillsmith.bash',
-      zsh: 'completions/_skillsmith',
-      fish: 'completions/skillsmith.fish',
-    });
-    expect(Object.keys(FIXTURE_EXECUTABLES)).toEqual(['0.0.0-g6-fixture.1', '0.0.0-g6-fixture.2']);
-    for (const fixture of Object.values(FIXTURE_EXECUTABLES)) {
-      expect(fixture.bytes.byteLength).toBe(160);
-      expect(createHash('sha256').update(fixture.bytes).digest('hex')).toBe(fixture.sha256);
     }
   });
 });

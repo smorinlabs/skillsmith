@@ -13,5 +13,10 @@ Each payload contains only package metadata, README, license, and `bin/skillsmit
 Node when installed by npm and with Bun when Node is absent. There is no install hook, downloader,
 workspace dependency, or public JavaScript API.
 
+The five tracked manifests use the non-publishable staging version `0.0.0`. The release adapter
+copies them into an ignored candidate tree, stamps the validated release version and exact optional
+dependencies there, adds the already-built binary/completion bytes, and runs pinned npm with
+`--ignore-scripts`. It never edits these source manifests. GoReleaser's npm publisher is not used.
+
 These packages are built and clean-installed locally in G6-01. They are not yet published; G6-04
 must verify scope authority and trusted publishing before changing that statement.

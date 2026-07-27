@@ -61,16 +61,9 @@ If you must override what release-please generates (e.g. to collapse a noisy ser
 
 ## Supported binary targets
 
-`bun build --compile` produces a single-file native binary. Per-target scripts:
-
-| Target | Bun target flag | Script |
-|---|---|---|
-| macOS Apple Silicon | `bun-darwin-arm64` | `bun run build:darwin-arm64` |
-| macOS Intel | `bun-darwin-x64` | `bun run build:darwin-x64` |
-| Linux x86_64 | `bun-linux-x64` | `bun run build:linux-x64` |
-| Linux arm64 | `bun-linux-arm64` | `bun run build:linux-arm64` |
-
-`bun run build` detects the host target via `scripts/build-native.ts` and invokes the matching script. Output lands in `dist/skillsmith`.
+Pinned GoReleaser v2.17.1 drives Bun 1.3.14's compile builder for macOS arm64/x64 and glibc Linux
+arm64/x64. `bun run build` remains the fast host-only developer build; `bun run build:release`
+creates the complete four-target distribution candidate.
 
 Today, binaries are **not** attached to GitHub Releases automatically. P17-G6-01 builds and tests a
 local candidate, while P17-G6-04 retains upload and public-availability authority.
@@ -79,15 +72,22 @@ local candidate, while P17-G6-04 retains upload and public-availability authorit
 
 `bun run build:release` creates all four native candidates without changing release-please-managed
 versions. Each native binary is compiled once and reused byte-for-byte by its direct archive,
-Homebrew branch, and npm/Bun payload. The release output root contains four
-`skillsmith-v<version>-<target>.tar.gz` archives, five scoped-package tarballs, `skillsmith.rb`,
-`release-manifest.json`, and `SHA256SUMS`.
+Homebrew cask branch, and npm/Bun payload. The release output root contains four
+`skillsmith-v<version>-<target>.tar.gz` archives, five scoped-package tarballs, `SHA256SUMS`,
+GoReleaser's internal `artifacts.json`/`metadata.json`, and `homebrew/Casks/skillsmith.rb`.
 
-The candidate package identity is `@smorinlabs/skillsmith`; the formula identity is
+The candidate package identity is `@smorinlabs/skillsmith`; the cask identity is
 `smorinlabs/tap/skillsmith`. Neither is yet published. G6-01 clean-installs candidates from local
 loopback fixtures and never edits an external tap or shell startup file. Verify a candidate with
 `sha256sum -c SHA256SUMS`, extract only the archive matching the host, and run `skillsmith version`
 from an isolated prefix. Public install, upgrade, and uninstall commands remain gated by G6-04.
+
+GoReleaser replaces the hand-written compile matrix, archive construction, checksum generation,
+artifact graph, and Homebrew rendering. Release-please still owns version/changelog/tag identity;
+the Skillsmith adapter still owns tracked npm staging and project-specific validation; protected CI
+still owns signing, attestations, trusted npm publication, and the reviewed tap pull request. A cold
+Bun cross-target cache can download official target runtimes, so this is described as a controlled,
+credential-free build rather than an offline or reproducible build.
 
 ## What CI does on pushes & PRs
 
@@ -123,5 +123,4 @@ Reserve this for real emergencies — every manual release is one more thing tha
 Deliberately deferred until post-1.0:
 
 - Publishing `@skillsmith/core` to npm on release.
-- Building all four binary targets on release-created and attaching to the GitHub Release.
-- Signed releases and/or a Homebrew tap.
+- Additional distribution channels beyond GitHub assets, npm/Bun, and the existing Homebrew tap.

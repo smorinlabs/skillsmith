@@ -105,9 +105,10 @@ bun run build              # compiles for the current host; package.json also ha
 ```
 
 Maintainers can build the ignored four-target candidate set with `bun run build:release`. The
-candidate includes `release-manifest.json`, `SHA256SUMS`, direct archives, npm tarballs, and a
-Homebrew formula. Public availability remains gated by P17-G6-04; these candidate names are not an
-installation claim and source checkout remains the only published path.
+candidate uses pinned GoReleaser to create four direct archives, `SHA256SUMS`, standard internal
+artifact metadata, five npm tarballs, and a Homebrew cask candidate. Public availability remains
+gated by P17-G6-04; these candidate names are not an installation claim and source checkout remains
+the only published path.
 
 ## Upgrade
 

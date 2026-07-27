@@ -2,10 +2,11 @@
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { type BuildReleaseCandidateInput, buildReleaseCandidate } from './release-artifacts.ts';
+import { buildReleaseCandidate } from './release-artifacts.ts';
 
 const ROOT = resolve(import.meta.dir, '..');
-const COMPILE_FLAGS = [
+const GORELEASER_INVOCATION = ['goreleaser', 'release', '--snapshot', '--clean'] as const;
+const REQUIRED_COMPILE_FLAGS = [
   '--compile',
   '--bytecode',
   '--env=disable',
@@ -19,8 +20,8 @@ const argument = (name: string): string | undefined => {
 };
 
 const target = argument('--target') ?? 'all';
-if (!['all', 'host', 'darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'].includes(target)) {
-  throw new Error(`unsupported --target ${JSON.stringify(target)}`);
+if (target !== 'all') {
+  throw new Error('the standard release candidate must build all four targets');
 }
 const outputRoot = resolve(argument('--output') ?? resolve(ROOT, 'dist', 'release'));
 const packagePaths = [
@@ -30,68 +31,59 @@ const packagePaths = [
 ];
 const packageVersions = await Promise.all(
   packagePaths.map(async (path) => {
-    const value = JSON.parse(await readFile(path, 'utf8')) as { version?: string };
+    const value = JSON.parse(await readFile(path, 'utf8')) as { version?: unknown };
     if (typeof value.version !== 'string') throw new Error(`package version is absent: ${path}`);
     return value.version;
   }),
 );
-if (new Set(packageVersions).size !== 1)
+if (new Set(packageVersions).size !== 1) {
   throw new Error('release package versions are not lockstep');
+}
 const version = packageVersions[0];
 if (version === undefined) throw new Error('root package version is absent');
 
+const config = await readFile(resolve(ROOT, '.goreleaser.yaml'), 'utf8');
+if (!config.includes('builder: bun')) {
+  throw new Error(`${GORELEASER_INVOCATION.join(' ')} requires the configured Bun builder`);
+}
+for (const flag of REQUIRED_COMPILE_FLAGS) {
+  if (!config.includes(flag)) throw new Error(`GoReleaser compile flag is absent: ${flag}`);
+}
 const revisionResult = Bun.spawnSync(['git', 'rev-parse', '--verify', 'HEAD'], {
   cwd: ROOT,
   env: { PATH: process.env.PATH ?? '', LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8' },
   stdout: 'pipe',
   stderr: 'pipe',
 });
-if (revisionResult.exitCode !== 0)
+if (revisionResult.exitCode !== 0) {
   throw new Error('could not resolve the explicit source revision');
+}
 const sourceRevision = revisionResult.stdout.toString().trim();
-const secretCanary = `P17_G6_BUILD_SECRET_${randomUUID()}`;
-const input: BuildReleaseCandidateInput = {
+const credentialCanary = `P17_G6_CREDENTIAL_${randomUUID()}`;
+const result = await buildReleaseCandidate({
   repositoryRoot: ROOT,
   stagingRoot: resolve(ROOT, 'dist'),
   outputRoot,
   version,
   sourceRevision,
-  target: target as BuildReleaseCandidateInput['target'],
-  compileFlags: COMPILE_FLAGS,
-  canaries: [secretCanary, ROOT],
-};
-const result = await buildReleaseCandidate(input);
+  target: 'all',
+  canaries: [credentialCanary],
+});
 
-if (target === 'all') {
-  const leakScan = Bun.spawnSync(
-    [
-      'gitleaks',
-      'dir',
-      '--config',
-      resolve(ROOT, '.gitleaks.toml'),
-      '--redact',
-      '--no-banner',
-      outputRoot,
-    ],
-    { cwd: ROOT, stdout: 'pipe', stderr: 'pipe' },
-  );
-  if (leakScan.exitCode !== 0) throw new Error('release candidate failed the redacted leak scan');
+const leakScan = Bun.spawnSync(
+  [
+    'gitleaks',
+    'dir',
+    '--config',
+    resolve(ROOT, '.gitleaks.toml'),
+    '--redact',
+    '--no-banner',
+    outputRoot,
+  ],
+  { cwd: ROOT, stdout: 'pipe', stderr: 'pipe' },
+);
+if (leakScan.exitCode !== 0) {
+  throw new Error('release candidate failed the redacted leak scan');
 }
 
-process.stdout.write(
-  `${JSON.stringify({
-    outputRoot: result.outputRoot,
-    version: result.version,
-    sourceRevision: result.sourceRevision,
-    targets: result.targets.map(
-      ({ target: builtTarget, binarySha256, archiveSha256, npmSha256 }) => ({
-        id: builtTarget.id,
-        binarySha256,
-        archiveSha256,
-        npmSha256,
-      }),
-    ),
-    manifestPath: result.manifestPath,
-    checksumsPath: result.checksumsPath,
-  })}\n`,
-);
+process.stdout.write(`${JSON.stringify(result)}\n`);
