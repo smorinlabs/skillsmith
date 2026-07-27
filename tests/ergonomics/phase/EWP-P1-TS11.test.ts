@@ -2349,6 +2349,7 @@ describe('EWP-P1-TS11', () => {
           'build:darwin-x64',
           'build:linux-x64',
           'build:linux-arm64',
+          'build:release',
           'build',
           'postinstall',
         ],
