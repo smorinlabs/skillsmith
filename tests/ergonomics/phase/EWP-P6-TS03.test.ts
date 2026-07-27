@@ -732,4 +732,167 @@ describe('EWP-P6-TS03', () => {
       exitCode: 1,
     });
   });
+
+  test('family 11: omitted argv uses the exact process invocation for JSON and no-color errors', async () => {
+    const originalArgv = process.argv;
+    const originalExecArgv = process.execArgv;
+    const electronDescriptor = Object.getOwnPropertyDescriptor(process.versions, 'electron');
+    const defaultAppDescriptor = Object.getOwnPropertyDescriptor(process, 'defaultApp');
+    const colorEnvironmentKeys = [
+      'NO_COLOR',
+      'CLICOLOR',
+      'TERM',
+      'FORCE_COLOR',
+      'CLICOLOR_FORCE',
+    ] as const;
+    const originalColorEnvironment = Object.fromEntries(
+      colorEnvironmentKeys.map((key) => [key, process.env[key]]),
+    );
+
+    try {
+      process.execArgv = [];
+      Reflect.deleteProperty(process.versions, 'electron');
+      Reflect.deleteProperty(process, 'defaultApp');
+      for (const key of colorEnvironmentKeys) Reflect.deleteProperty(process.env, key);
+      process.env.TERM = 'xterm-256color';
+
+      process.argv = ['bun', 'skillsmith', 'agents', '--format', 'json', '--definitely-unknown'];
+      const json = memoryIo(true, true);
+      const jsonProgram = buildProgram(undefined, { runtimePorts: json.io });
+      await expect(jsonProgram.parseAsync()).resolves.toBe(jsonProgram);
+
+      process.argv = ['bun', 'skillsmith', '--no-color', '--definitely-unknown'];
+      const noColor = memoryIo(true, true);
+      const noColorProgram = buildProgram(undefined, { runtimePorts: noColor.io });
+      await expect(noColorProgram.parseAsync()).resolves.toBe(noColorProgram);
+
+      const jsonDocument = json.stdout.length === 0 ? null : JSON.parse(json.stdout.join(''));
+      expect({
+        jsonCode: jsonDocument?.code ?? null,
+        jsonExits: json.exits,
+        jsonStderr: json.stderr,
+        noColorExits: noColor.exits,
+        noColorStdout: noColor.stdout,
+        noColorHasAnsi: noColor.stderr.join('').includes(ESCAPE),
+      }).toEqual({
+        jsonCode: 'commander.unknownOption',
+        jsonExits: [2],
+        jsonStderr: [],
+        noColorExits: [2],
+        noColorStdout: [],
+        noColorHasAnsi: false,
+      });
+    } finally {
+      process.argv = originalArgv;
+      process.execArgv = originalExecArgv;
+      if (electronDescriptor === undefined) Reflect.deleteProperty(process.versions, 'electron');
+      else Object.defineProperty(process.versions, 'electron', electronDescriptor);
+      if (defaultAppDescriptor === undefined) Reflect.deleteProperty(process, 'defaultApp');
+      else Object.defineProperty(process, 'defaultApp', defaultAppDescriptor);
+      for (const key of colorEnvironmentKeys) {
+        const value = originalColorEnvironment[key];
+        if (value === undefined) Reflect.deleteProperty(process.env, key);
+        else process.env[key] = value;
+      }
+    }
+  });
+
+  test('family 12: user, node, packaged Electron, default-app Electron, and eval slicing match Commander', async () => {
+    const processWithElectron = process as NodeJS.Process & { defaultApp?: boolean };
+    const originalArgv = process.argv;
+    const originalExecArgv = process.execArgv;
+    const electronDescriptor = Object.getOwnPropertyDescriptor(process.versions, 'electron');
+    const defaultAppDescriptor = Object.getOwnPropertyDescriptor(process, 'defaultApp');
+
+    const classify = async (
+      argv: readonly string[] | undefined,
+      from?: 'node' | 'electron' | 'user',
+    ): Promise<Readonly<{ stream: 'json' | 'human' | 'none'; exits: readonly number[] }>> => {
+      const memory = memoryIo(true, true);
+      const program = buildProgram(undefined, { runtimePorts: memory.io });
+      if (argv === undefined) await program.parseAsync();
+      else await program.parseAsync(argv, from === undefined ? undefined : { from });
+      return {
+        stream: memory.stdout.length > 0 ? 'json' : memory.stderr.length > 0 ? 'human' : 'none',
+        exits: memory.exits,
+      };
+    };
+
+    try {
+      process.execArgv = [];
+      Reflect.deleteProperty(process.versions, 'electron');
+      processWithElectron.defaultApp = false;
+      const results = [
+        await classify(['--json', '--definitely-unknown'], 'user'),
+        await classify(['bun', '--json', '--definitely-unknown'], 'node'),
+        await classify(['electron', '--json', '--definitely-unknown'], 'electron'),
+      ];
+
+      processWithElectron.defaultApp = true;
+      results.push(await classify(['electron', '--json', '--definitely-unknown'], 'electron'));
+
+      Reflect.deleteProperty(process, 'defaultApp');
+      process.execArgv = ['--eval'];
+      process.argv = ['bun', '--json', '--definitely-unknown'];
+      results.push(await classify(undefined));
+
+      expect(results).toEqual([
+        { stream: 'json', exits: [2] },
+        { stream: 'human', exits: [2] },
+        { stream: 'json', exits: [2] },
+        { stream: 'human', exits: [2] },
+        { stream: 'json', exits: [2] },
+      ]);
+    } finally {
+      process.argv = originalArgv;
+      process.execArgv = originalExecArgv;
+      if (electronDescriptor === undefined) Reflect.deleteProperty(process.versions, 'electron');
+      else Object.defineProperty(process.versions, 'electron', electronDescriptor);
+      if (defaultAppDescriptor === undefined) Reflect.deleteProperty(process, 'defaultApp');
+      else Object.defineProperty(process, 'defaultApp', defaultAppDescriptor);
+    }
+  });
+
+  test('family 13: repeated mixed user and node parses replace invocation state on one program', async () => {
+    const memory = memoryIo(true, true);
+    const program = buildProgram(undefined, { runtimePorts: memory.io });
+    await program.parseAsync(['--json', '--definitely-unknown'], { from: 'user' });
+    await program.parseAsync(['bun', '--json', '--definitely-unknown'], { from: 'node' });
+    await program.parseAsync(['--format=json', '--definitely-unknown'], { from: 'user' });
+    await program.parseAsync(['bun', '--format=json', '--definitely-unknown'], { from: 'node' });
+
+    expect(memory.exits).toEqual([2, 2, 2, 2]);
+    expect(memory.stdout).toHaveLength(2);
+    expect(memory.stderr).toHaveLength(2);
+    for (const document of memory.stdout) {
+      expect(JSON.parse(document)).toMatchObject({ code: 'commander.unknownOption', exitCode: 2 });
+    }
+    for (const error of memory.stderr) expect(error).toStartWith('error: unknown option');
+  });
+
+  test('family 14: error-format detection stops at the Commander option terminator', async () => {
+    const human = memoryIo(true, true);
+    const humanProgram = buildProgram(undefined, { runtimePorts: human.io });
+    await humanProgram.parseAsync(['agents', '--', '--json'], { from: 'user' });
+
+    const json = memoryIo(true, true);
+    const jsonProgram = buildProgram(undefined, { runtimePorts: json.io });
+    await jsonProgram.parseAsync(['--json', 'agents', '--', '--format', 'human'], { from: 'user' });
+
+    expect({
+      humanExits: human.exits,
+      humanStdout: human.stdout,
+      humanStderr: human.stderr.length,
+      jsonExits: json.exits,
+      jsonStdout: json.stdout.length,
+      jsonStderr: json.stderr,
+    }).toEqual({
+      humanExits: [2],
+      humanStdout: [],
+      humanStderr: 1,
+      jsonExits: [2],
+      jsonStdout: 1,
+      jsonStderr: [],
+    });
+  });
 });
