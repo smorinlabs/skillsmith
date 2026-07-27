@@ -7751,7 +7751,7 @@
       "phase": "6",
       "title": "Native assets, checksums, Homebrew/npm distribution, and clean installs",
       "dependsOn": ["P17-G6-02B", "P17-G6-03"],
-      "status": "mapped",
+      "status": "ready",
       "owner": "root-goal",
       "ownedFiles": [
         ".github/workflows/ci.yml",
@@ -7794,8 +7794,11 @@
           ]
         },
         "ready": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G6-01.md#standard-tooling-ready-review-go-at-97ed756",
+            "projects/p17/evidence/P17-G6-01.md#accepted-amended-ready-result"
+          ]
         },
         "test-first": {
           "status": "pending",
@@ -7851,7 +7854,9 @@
         "projects/p17/evidence/P17-G6-01.md#standard-tooling-distribution-amendment-and-ready-reset",
         "projects/p17/evidence/P17-G6-01.md#standard-tooling-ready-review-no-go-at-29145b8",
         "projects/p17/evidence/P17-G6-01.md#f01-f04-ready-correction",
-        "projects/p17/evidence/P17-G6-01.md#f05-ready-correction"
+        "projects/p17/evidence/P17-G6-01.md#f05-ready-correction",
+        "projects/p17/evidence/P17-G6-01.md#standard-tooling-ready-review-go-at-97ed756",
+        "projects/p17/evidence/P17-G6-01.md#accepted-amended-ready-result"
       ]
     },
     {
@@ -25783,11 +25788,15 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G6-01",
-      "status": "planned",
+      "status": "ready",
       "tier": "release",
       "plannedTarget": "planned:P17-G6-01",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G6-01.md#standard-tooling-distribution-amendment-and-ready-reset",
+        "projects/p17/evidence/P17-G6-01.md#standard-tooling-ready-review-go-at-97ed756",
+        "projects/p17/evidence/P17-G6-01.md#accepted-amended-ready-result"
+      ],
       "secondaryGroups": [],
       "implements": ["P1-12"],
       "validatedBy": ["EWP-P6-TS01"],
@@ -25802,11 +25811,15 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G6-01",
-      "status": "planned",
+      "status": "ready",
       "tier": "release",
       "plannedTarget": "planned:P17-G6-01",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G6-01.md#standard-tooling-distribution-amendment-and-ready-reset",
+        "projects/p17/evidence/P17-G6-01.md#standard-tooling-ready-review-go-at-97ed756",
+        "projects/p17/evidence/P17-G6-01.md#accepted-amended-ready-result"
+      ],
       "secondaryGroups": ["P17-G6-04"],
       "implements": ["P1-12"],
       "validatedBy": ["EWP-P6-TS01", "EWP-WF01"],
