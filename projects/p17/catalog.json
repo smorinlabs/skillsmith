@@ -7751,7 +7751,7 @@
       "phase": "6",
       "title": "Native assets, checksums, Homebrew/npm distribution, and clean installs",
       "dependsOn": ["P17-G6-02B", "P17-G6-03"],
-      "status": "mapped",
+      "status": "ready",
       "owner": "root-goal",
       "ownedFiles": [
         ".github/workflows/ci.yml",
@@ -7784,8 +7784,11 @@
           "evidence": ["projects/p17/evidence/P17-G6-01.md#mapping-and-prerequisites"]
         },
         "ready": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G6-01.md#corrected-ready-review-at-528645f",
+            "projects/p17/evidence/P17-G6-01.md#accepted-ready-result"
+          ]
         },
         "test-first": {
           "status": "pending",
@@ -7832,7 +7835,9 @@
         "projects/p17/evidence/P17-G6-01.md#first-ready-review-at-767acf4",
         "projects/p17/evidence/P17-G6-01.md#corrected-ready-amendment",
         "projects/p17/evidence/P17-G6-01.md#second-ready-review-at-3ebb8bb",
-        "projects/p17/evidence/P17-G6-01.md#ci-receipt-ownership-amendment"
+        "projects/p17/evidence/P17-G6-01.md#ci-receipt-ownership-amendment",
+        "projects/p17/evidence/P17-G6-01.md#corrected-ready-review-at-528645f",
+        "projects/p17/evidence/P17-G6-01.md#accepted-ready-result"
       ]
     },
     {
@@ -25764,11 +25769,15 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G6-01",
-      "status": "planned",
+      "status": "ready",
       "tier": "release",
       "plannedTarget": "planned:P17-G6-01",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G6-01.md#mapping-and-prerequisites",
+        "projects/p17/evidence/P17-G6-01.md#corrected-ready-review-at-528645f",
+        "projects/p17/evidence/P17-G6-01.md#accepted-ready-result"
+      ],
       "secondaryGroups": [],
       "implements": ["P1-12"],
       "validatedBy": ["EWP-P6-TS01"],
@@ -25783,11 +25792,15 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G6-01",
-      "status": "planned",
+      "status": "ready",
       "tier": "release",
       "plannedTarget": "planned:P17-G6-01",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G6-01.md#mapping-and-prerequisites",
+        "projects/p17/evidence/P17-G6-01.md#corrected-ready-review-at-528645f",
+        "projects/p17/evidence/P17-G6-01.md#accepted-ready-result"
+      ],
       "secondaryGroups": ["P17-G6-04"],
       "implements": ["P1-12"],
       "validatedBy": ["EWP-P6-TS01", "EWP-WF01"],
