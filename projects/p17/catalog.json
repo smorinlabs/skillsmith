@@ -7756,6 +7756,7 @@
       "ownedFiles": [
         ".github/workflows/ci.yml",
         "README.md",
+        "biome.json",
         "docs/releases.md",
         "package.json",
         "packaging/README.md",
