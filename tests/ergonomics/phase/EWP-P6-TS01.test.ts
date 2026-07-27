@@ -497,12 +497,17 @@ const startArchiveServer = async (candidateInput: Candidate | readonly Candidate
       const url = new URL(request.url);
       requests.push(`${request.method} ${url.pathname}`);
       const filename = decodeURIComponent(url.pathname.slice(1));
-      const bytes = request.method === 'GET' ? archives.get(filename) : undefined;
-      if (bytes === undefined) {
+      const bytes = archives.get(filename);
+      if (bytes === undefined || !['GET', 'HEAD'].includes(request.method)) {
         unexpected.push(`${request.method} ${url.pathname}`);
         return new Response('unknown archive', { status: 404 });
       }
-      return new Response(bytes, { headers: { 'content-type': 'application/gzip' } });
+      return new Response(request.method === 'HEAD' ? null : bytes, {
+        headers: {
+          'content-length': String(bytes.byteLength),
+          'content-type': 'application/gzip',
+        },
+      });
     },
   });
   return {
@@ -1457,9 +1462,10 @@ describe('EWP-P6-TS01', () => {
       tapped = false;
       expect(archiveServer.unexpected).toEqual([]);
       expect(deny.requests).toEqual([]);
-      const expectedRoute = `GET /${selected.archivePath.split('/').at(-1) ?? ''}`;
-      expect(archiveServer.requests.length).toBeGreaterThanOrEqual(1);
-      expect(new Set(archiveServer.requests)).toEqual(new Set([expectedRoute]));
+      const archiveRoute = `/${selected.archivePath.split('/').at(-1) ?? ''}`;
+      expect(new Set(archiveServer.requests)).toEqual(
+        new Set([`HEAD ${archiveRoute}`, `GET ${archiveRoute}`]),
+      );
       process.stdout.write(
         `P17-G6-01-HOMEBREW-RECEIPT ${JSON.stringify({
           sourceRevision: candidate.sourceRevision,
@@ -1750,10 +1756,11 @@ describe('EWP-P6-TS01', () => {
       tapped = false;
       expect(archiveServer.unexpected).toEqual([]);
       expect(brewDeny.requests).toEqual([]);
-      const expectedRoutes = candidates.map((candidate) => {
+      const expectedRoutes = candidates.flatMap((candidate) => {
         const selected = candidate.targets.find(({ id }) => id === 'darwin-arm64');
         if (selected === undefined) throw new Error('Darwin arm64 lifecycle archive is absent');
-        return `GET /${selected.archivePath.split('/').at(-1) ?? ''}`;
+        const route = `/${selected.archivePath.split('/').at(-1) ?? ''}`;
+        return [`HEAD ${route}`, `GET ${route}`];
       });
       expect(new Set(archiveServer.requests)).toEqual(new Set(expectedRoutes));
       for (const route of expectedRoutes) {
