@@ -1512,7 +1512,7 @@ Downstream coverage obligations: none.
 
 ## P17-G6-01 — Native assets, checksums, Homebrew/npm distribution, and clean installs
 
-Phase: 6; status: **ready**; dependencies: P17-G6-02B, P17-G6-03.
+Phase: 6; status: **active**; dependencies: P17-G6-02B, P17-G6-03.
 Required-now validations: EWP-P6-TS01.
 Downstream coverage obligations: EWP-WF01.
 
@@ -1520,7 +1520,7 @@ Downstream coverage obligations: EWP-WF01.
 
 - [x] P17-G6-01:mapped _(passed)_
 - [x] P17-G6-01:ready _(passed)_
-- [ ] P17-G6-01:test-first _(pending)_
+- [x] P17-G6-01:test-first _(passed)_
 - [ ] P17-G6-01:minimal-implementation _(pending)_
 - [ ] P17-G6-01:targeted-green _(pending)_
 - [ ] P17-G6-01:impacted-green _(pending)_
@@ -1531,9 +1531,9 @@ Downstream coverage obligations: EWP-WF01.
 
 ### Tracked entities
 
-- [ ] **EWP-P6-T01** — Native release assets/checksums. _(phase-task; ready)_
-- [ ] **EWP-P6-T02** — Homebrew and npm/Bun distribution. _(phase-task; ready)_
-- [ ] **EWP-P6-TS01** — Clean-machine install smoke per distribution. _(phase-test; planned)_
+- [ ] **EWP-P6-T01** — Native release assets/checksums. _(phase-task; red)_
+- [ ] **EWP-P6-T02** — Homebrew and npm/Bun distribution. _(phase-task; red)_
+- [ ] **EWP-P6-TS01** — Clean-machine install smoke per distribution. _(phase-test; failing)_
 - [ ] **P1-12** — Distribution _(recommendation; mapped)_
 
 ## P17-G6-02A — Shared command metadata, five-group help, progressive options, workflows, and generated docs
