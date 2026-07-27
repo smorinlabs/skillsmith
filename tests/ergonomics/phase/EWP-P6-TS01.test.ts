@@ -127,6 +127,17 @@ type ReleaseArtifactsApi = Readonly<{
       secondVersion: string;
     }>,
   ) => void;
+  stageTrackedNpmPackages?: (
+    input: Readonly<{
+      repositoryRoot: string;
+      workRoot: string;
+      outputRoot: string;
+      version: string;
+      binaries: Readonly<Record<string, string>>;
+      completions: Readonly<Record<'bash' | 'zsh' | 'fish', Uint8Array>>;
+      env: Readonly<Record<string, string>>;
+    }>,
+  ) => Promise<Readonly<{ launcher: string } & Record<string, string>>>;
   buildReleaseCandidate?: (input: unknown) => Promise<Candidate>;
   installDirectArchive?: (
     input: Readonly<{ archivePath: string; prefix: string }>,
@@ -360,24 +371,36 @@ type RegistryHarness = Readonly<{
 const digest = (algorithm: 'sha1' | 'sha512', value: Uint8Array): Buffer =>
   createHash(algorithm).update(value).digest();
 
-const startRegistry = async (candidate: Candidate): Promise<RegistryHarness> => {
+const startRegistry = async (
+  candidateInput: Candidate | readonly Candidate[],
+): Promise<RegistryHarness> => {
+  const candidates = Array.isArray(candidateInput) ? candidateInput : [candidateInput];
   const requests: string[] = [];
   const unexpected: string[] = [];
-  const tarballPaths = [candidate.launcherPath, ...candidate.targets.map(({ npmPath }) => npmPath)];
+  const tarballPaths = candidates.flatMap((candidate) => [
+    candidate.launcherPath,
+    ...candidate.targets.map(({ npmPath }) => npmPath),
+  ]);
   const packages = new Map<
     string,
-    Readonly<{ manifest: Record<string, unknown>; filename: string; bytes: Uint8Array }>
+    Map<
+      string,
+      Readonly<{ manifest: Record<string, unknown>; filename: string; bytes: Uint8Array }>
+    >
   >();
   for (const path of tarballPaths) {
     const manifest = JSON.parse(
       Buffer.from(tarEntry(path, 'package/package.json')).toString('utf8'),
     ) as Record<string, unknown>;
     if (typeof manifest.name !== 'string') throw new Error('packed package name is absent');
-    packages.set(manifest.name, {
+    if (typeof manifest.version !== 'string') throw new Error('packed package version is absent');
+    const versions = packages.get(manifest.name) ?? new Map();
+    versions.set(manifest.version, {
       manifest,
       filename: path.split('/').at(-1) ?? '',
       bytes: await readFile(path),
     });
+    packages.set(manifest.name, versions);
   }
   let origin = '';
   const server = Bun.serve({
@@ -392,9 +415,9 @@ const startRegistry = async (candidate: Candidate): Promise<RegistryHarness> => 
       }
       if (url.pathname.startsWith('/tarballs/')) {
         const filename = decodeURIComponent(url.pathname.slice('/tarballs/'.length));
-        const record = [...packages.values()].find(
-          (candidatePackage) => candidatePackage.filename === filename,
-        );
+        const record = [...packages.values()]
+          .flatMap((versions) => [...versions.values()])
+          .find((candidatePackage) => candidatePackage.filename === filename);
         if (record === undefined) {
           unexpected.push(`GET ${url.pathname}`);
           return new Response('unknown tarball', { status: 404 });
@@ -404,23 +427,30 @@ const startRegistry = async (candidate: Candidate): Promise<RegistryHarness> => 
         });
       }
       const name = decodeURIComponent(url.pathname.slice(1));
-      const record = packages.get(name);
-      if (record === undefined) {
+      const versions = packages.get(name);
+      if (versions === undefined) {
         unexpected.push(`GET ${url.pathname}`);
         return new Response('unknown package', { status: 404 });
       }
-      const metadata = {
-        ...record.manifest,
-        dist: {
-          tarball: `${origin}/tarballs/${record.filename}`,
-          shasum: digest('sha1', record.bytes).toString('hex'),
-          integrity: `sha512-${digest('sha512', record.bytes).toString('base64')}`,
-        },
-      };
+      const metadata = Object.fromEntries(
+        [...versions.entries()].map(([version, record]) => [
+          version,
+          {
+            ...record.manifest,
+            dist: {
+              tarball: `${origin}/tarballs/${record.filename}`,
+              shasum: digest('sha1', record.bytes).toString('hex'),
+              integrity: `sha512-${digest('sha512', record.bytes).toString('base64')}`,
+            },
+          },
+        ]),
+      );
+      const latest = candidates.at(-1)?.version;
+      if (latest === undefined) throw new Error('registry has no candidate versions');
       return Response.json({
         name,
-        'dist-tags': { latest: candidate.version },
-        versions: { [candidate.version]: metadata },
+        'dist-tags': { latest },
+        versions: metadata,
       });
     },
   });
@@ -450,12 +480,15 @@ const startDenyServer = () => {
   };
 };
 
-const startArchiveServer = async (candidate: Candidate) => {
+const startArchiveServer = async (candidateInput: Candidate | readonly Candidate[]) => {
+  const candidates = Array.isArray(candidateInput) ? candidateInput : [candidateInput];
   const requests: string[] = [];
   const unexpected: string[] = [];
   const archives = new Map<string, Uint8Array>();
-  for (const target of candidate.targets) {
-    archives.set(target.archivePath.split('/').at(-1) ?? '', await readFile(target.archivePath));
+  for (const candidate of candidates) {
+    for (const target of candidate.targets) {
+      archives.set(target.archivePath.split('/').at(-1) ?? '', await readFile(target.archivePath));
+    }
   }
   const server = Bun.serve({
     hostname: '127.0.0.1',
@@ -478,6 +511,181 @@ const startArchiveServer = async (candidate: Candidate) => {
     unexpected,
     stop: () => server.stop(true),
   };
+};
+
+const lifecycleCask = (candidate: Candidate, origin: string): string => {
+  const targets = Object.fromEntries(candidate.targets.map((target) => [target.id, target]));
+  const branch = (targetId: string, indentation: string): string => {
+    const target = targets[targetId];
+    if (target === undefined) throw new Error(`fixture target is absent: ${targetId}`);
+    const filename = target.archivePath.split('/').at(-1);
+    if (filename === undefined) throw new Error(`fixture archive name is absent: ${targetId}`);
+    return `${indentation}url "${origin.replace(/\/$/u, '')}/${filename}"
+${indentation}sha256 "${target.archiveSha256}"`;
+  };
+  return `cask "skillsmith" do
+  version "${candidate.version}"
+
+  on_arm do
+    on_macos do
+${branch('darwin-arm64', '      ')}
+    end
+    on_linux do
+${branch('linux-arm64', '      ')}
+    end
+  end
+  on_intel do
+    on_macos do
+${branch('darwin-x64', '      ')}
+    end
+    on_linux do
+${branch('linux-x64', '      ')}
+    end
+  end
+
+  name "SkillSmith"
+  desc "Immutable G6 lifecycle fixture"
+  homepage "https://github.com/smorinlabs/skillsmith"
+
+  binary "skillsmith"
+  bash_completion "completions/skillsmith.bash"
+  zsh_completion "completions/_skillsmith"
+  fish_completion "completions/skillsmith.fish"
+end
+`;
+};
+
+const createLifecycleCandidate = async (
+  version: '0.0.0-g6-fixture.1' | '0.0.0-g6-fixture.2',
+): Promise<Candidate> => {
+  const release = await api();
+  const fixture = release.FIXTURE_EXECUTABLES?.[version];
+  if (fixture === undefined || release.stageTrackedNpmPackages === undefined) {
+    throw new Error('immutable lifecycle fixture adapter is absent');
+  }
+  const root = await mkdtemp(join(tmpdir(), `skillsmith-g6-${version}-`));
+  temporaryRoots.push(root);
+  const outputRoot = join(root, 'candidate');
+  const workRoot = join(root, 'work');
+  const home = join(root, 'home');
+  const temp = join(root, 'tmp');
+  await Promise.all(
+    [outputRoot, workRoot, home, temp].map((path) => mkdir(path, { recursive: true })),
+  );
+  const completions = {} as Record<'bash' | 'zsh' | 'fish', Uint8Array>;
+  for (const shell of ['bash', 'zsh', 'fish'] as const) {
+    const completion = runCli(['completion', shell]);
+    if (completion.exitCode !== 0)
+      throw new Error(`could not generate ${shell} fixture completion`);
+    completions[shell] = completion.stdout;
+  }
+  release.assertCompletionIdentity?.(completions);
+
+  const binaries = {} as Record<string, string>;
+  const targetDrafts: Array<Omit<CandidateTarget, 'npmPath'>> = [];
+  for (const target of EXPECTED_TARGETS) {
+    const binaryPath = join(outputRoot, 'raw', target.id, 'skillsmith');
+    const archiveRoot = join(workRoot, 'archives', target.id);
+    await mkdir(dirname(binaryPath), { recursive: true });
+    await mkdir(join(archiveRoot, 'completions'), { recursive: true });
+    await writeFile(binaryPath, fixture.bytes, { mode: 0o755 });
+    await writeFile(join(archiveRoot, 'skillsmith'), fixture.bytes, { mode: 0o755 });
+    await chmod(binaryPath, 0o755);
+    await chmod(join(archiveRoot, 'skillsmith'), 0o755);
+    await writeFile(join(archiveRoot, 'LICENSE'), await readFile(join(ROOT, 'LICENSE')), {
+      mode: 0o644,
+    });
+    await chmod(join(archiveRoot, 'LICENSE'), 0o644);
+    for (const shell of ['bash', 'zsh', 'fish'] as const) {
+      const path = join(archiveRoot, String(EXPECTED_COMPLETIONS[shell].path));
+      await writeFile(path, completions[shell], { mode: 0o644 });
+      await chmod(path, 0o644);
+    }
+    const archivePath = join(outputRoot, `skillsmith-v${version}-${target.id}.tar.gz`);
+    const ownership =
+      process.platform === 'darwin'
+        ? ['--uid', '0', '--gid', '0', '--uname', 'root', '--gname', 'root']
+        : ['--owner=root', '--group=root'];
+    const packed = Bun.spawnSync(
+      [
+        'tar',
+        ...ownership,
+        '-czf',
+        archivePath,
+        '-C',
+        archiveRoot,
+        'LICENSE',
+        'completions/_skillsmith',
+        'completions/skillsmith.bash',
+        'completions/skillsmith.fish',
+        'skillsmith',
+      ],
+      { cwd: root, stdout: 'pipe', stderr: 'pipe' },
+    );
+    if (packed.exitCode !== 0) {
+      throw new Error(`could not pack ${target.id} fixture: ${packed.stderr.toString()}`);
+    }
+    binaries[target.id] = binaryPath;
+    targetDrafts.push({
+      id: target.id,
+      binaryPath,
+      archivePath,
+      binarySha256: fixture.sha256,
+      archiveSha256: sha256(await readFile(archivePath)),
+      npmBinarySha256: fixture.sha256,
+    });
+  }
+  const env = {
+    PATH: process.env.PATH ?? '',
+    HOME: home,
+    TMPDIR: temp,
+    XDG_CONFIG_HOME: join(home, 'config'),
+    XDG_CACHE_HOME: join(home, 'cache'),
+    XDG_DATA_HOME: join(home, 'data'),
+    LANG: 'C.UTF-8',
+    LC_ALL: 'C.UTF-8',
+    TZ: 'UTC',
+    NO_COLOR: '1',
+  };
+  const npmPackages = await release.stageTrackedNpmPackages({
+    repositoryRoot: ROOT,
+    workRoot,
+    outputRoot,
+    version,
+    binaries,
+    completions,
+    env,
+  });
+  const targets: CandidateTarget[] = targetDrafts.map((target) => ({
+    ...target,
+    npmPath: npmPackages[target.id] ?? '',
+  }));
+  const checksumsPath = join(outputRoot, 'SHA256SUMS');
+  await writeFile(
+    checksumsPath,
+    `${targets
+      .map((target) => `${target.archiveSha256}  ${target.archivePath.split('/').at(-1) ?? ''}`)
+      .toSorted()
+      .join('\n')}\n`,
+  );
+  const artifactsPath = join(outputRoot, 'artifacts.json');
+  const metadataPath = join(outputRoot, 'metadata.json');
+  await writeFile(artifactsPath, '[]\n');
+  await writeFile(metadataPath, `${JSON.stringify({ version })}\n`);
+  const provisional: Candidate = {
+    outputRoot,
+    version,
+    sourceRevision: HEX_40,
+    artifactsPath,
+    metadataPath,
+    checksumsPath,
+    caskPath: join(outputRoot, 'homebrew', 'Casks', 'skillsmith.rb'),
+    launcherPath: npmPackages.launcher,
+    targets,
+  };
+  await mkdir(dirname(provisional.caskPath), { recursive: true });
+  await writeFile(provisional.caskPath, lifecycleCask(provisional, 'http://127.0.0.1'));
+  return provisional;
 };
 
 const createPrivateToolPath = async (tools: readonly ('bun' | 'node' | 'npm' | 'sh')[]) => {
@@ -511,6 +719,171 @@ const installedPackageNames = async (root: string): Promise<string[]> => {
   };
   await visit(root);
   return names.toSorted();
+};
+
+const installedPackageRoot = async (root: string, expectedName: string): Promise<string> => {
+  let match: string | undefined;
+  const visit = async (directory: string): Promise<void> => {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) await visit(path);
+      else if (entry.isFile() && entry.name === 'package.json') {
+        const metadata = JSON.parse(await readFile(path, 'utf8')) as { name?: string };
+        if (metadata.name === expectedName) {
+          if (match !== undefined)
+            throw new Error(`installed package is duplicated: ${expectedName}`);
+          match = directory;
+        }
+      }
+    }
+  };
+  await visit(root);
+  if (match === undefined) throw new Error(`installed package is absent: ${expectedName}`);
+  return match;
+};
+
+const runPackageUpgradeLane = async (
+  lane: 'npm' | 'bun',
+  candidates: readonly [Candidate, Candidate],
+  registry: RegistryHarness,
+  denyOrigin: string,
+): Promise<void> => {
+  const root = await mkdtemp(join(tmpdir(), `skillsmith-g6-${lane}-upgrade-`));
+  temporaryRoots.push(root);
+  const prefix = join(root, 'prefix');
+  const home = join(root, 'home');
+  const cache = join(root, 'cache');
+  const work = join(root, 'work');
+  const temp = join(root, 'tmp');
+  await Promise.all(
+    [prefix, home, cache, work, temp].map((path) => mkdir(path, { recursive: true })),
+  );
+  const toolPath = await createPrivateToolPath(
+    lane === 'npm' ? ['sh', 'node', 'npm'] : ['sh', 'bun'],
+  );
+  const environment = {
+    PATH: toolPath,
+    HOME: home,
+    TMPDIR: temp,
+    XDG_CONFIG_HOME: join(home, 'config'),
+    XDG_CACHE_HOME: join(home, 'cache'),
+    XDG_DATA_HOME: join(home, 'data'),
+    LANG: 'C.UTF-8',
+    LC_ALL: 'C.UTF-8',
+    TZ: 'UTC',
+    NO_COLOR: '1',
+    NO_PROXY: '127.0.0.1,localhost',
+    no_proxy: '127.0.0.1,localhost',
+    HTTP_PROXY: denyOrigin,
+    HTTPS_PROXY: denyOrigin,
+    http_proxy: denyOrigin,
+    https_proxy: denyOrigin,
+    NO_UPDATE_NOTIFIER: '1',
+    npm_config_update_notifier: 'false',
+    ...(lane === 'bun' ? { BUN_INSTALL: prefix } : {}),
+  };
+  const userConfig = join(root, 'npmrc');
+  await writeFile(userConfig, '', { mode: 0o600 });
+  const packageRoot =
+    lane === 'npm'
+      ? join(prefix, 'lib', 'node_modules')
+      : join(prefix, 'install', 'global', 'node_modules');
+  const executable = join(prefix, 'bin', 'skillsmith');
+  for (const candidate of candidates) {
+    const command =
+      lane === 'npm'
+        ? [
+            join(toolPath, 'npm'),
+            'install',
+            '--global',
+            '--prefix',
+            prefix,
+            '--registry',
+            registry.origin,
+            '--cache',
+            cache,
+            '--userconfig',
+            userConfig,
+            '--ignore-scripts',
+            '--no-audit',
+            '--no-fund',
+            '--loglevel',
+            'error',
+            `@smorinlabs/skillsmith@${candidate.version}`,
+          ]
+        : [
+            join(toolPath, 'bun'),
+            'add',
+            '--global',
+            '--exact',
+            '--registry',
+            registry.origin,
+            '--cache-dir',
+            cache,
+            '--ignore-scripts',
+            `@smorinlabs/skillsmith@${candidate.version}`,
+          ];
+    const install = await runAsync(command, { cwd: work, env: environment });
+    expect(install.exitCode, `${lane}/${candidate.version}: ${install.stderr.toString()}`).toBe(0);
+    expect(await installedPackageNames(packageRoot), `${lane}/${candidate.version}`).toEqual([
+      'skillsmith',
+      `skillsmith-${hostTargetId()}`,
+    ]);
+    const version = await runAsync([executable, 'version'], { cwd: work, env: environment });
+    expect(version.exitCode, `${lane}/${candidate.version}: ${version.stderr.toString()}`).toBe(0);
+    expect(version.stdout.toString().trim(), lane).toBe(candidate.version);
+    const expected = candidate.targets.find(({ id }) => id === hostTargetId());
+    expect(expected).toBeDefined();
+    const payloadRoot = await installedPackageRoot(
+      packageRoot,
+      `@smorinlabs/skillsmith-${hostTargetId()}`,
+    );
+    const payload = join(payloadRoot, 'bin', 'skillsmith');
+    expect(sha256(await readFile(payload)), `${lane}/${candidate.version}`).toBe(
+      expected?.binarySha256,
+    );
+    const launcherRoot = await installedPackageRoot(packageRoot, '@smorinlabs/skillsmith');
+    const completionRoot = join(launcherRoot, 'share');
+    for (const [shell, contract] of Object.entries(EXPECTED_COMPLETIONS)) {
+      expect(
+        sha256(await readFile(join(completionRoot, String(contract.path)))),
+        `${lane}/${candidate.version}/${shell}`,
+      ).toBe(contract.sha256);
+    }
+  }
+  const uninstallCommand =
+    lane === 'npm'
+      ? [
+          join(toolPath, 'npm'),
+          'uninstall',
+          '--global',
+          '--prefix',
+          prefix,
+          '--cache',
+          cache,
+          '--userconfig',
+          userConfig,
+          '--ignore-scripts',
+          '--no-audit',
+          '--no-fund',
+          '--loglevel',
+          'error',
+          '@smorinlabs/skillsmith',
+          `@smorinlabs/skillsmith-${hostTargetId()}`,
+        ]
+      : [
+          join(toolPath, 'bun'),
+          'remove',
+          '--global',
+          '--cache-dir',
+          cache,
+          '@smorinlabs/skillsmith',
+          `@smorinlabs/skillsmith-${hostTargetId()}`,
+        ];
+  const uninstall = await runAsync(uninstallCommand, { cwd: work, env: environment });
+  expect(uninstall.exitCode, `${lane}: ${uninstall.stderr.toString()}`).toBe(0);
+  expect(await installedPackageNames(packageRoot)).toEqual([]);
+  expect(await pathExists(executable)).toBeFalse();
 };
 
 describe('EWP-P6-TS01', () => {
@@ -1164,7 +1537,7 @@ describe('EWP-P6-TS01', () => {
     expect(buildSource).not.toContain('canaries: [secretCanary, ROOT]');
   });
 
-  test('family 9: immutable two-version fixtures and separately bounded cask upgrade lineage', async () => {
+  test('family 9: immutable two-version fixtures across direct/npm/Bun and Homebrew supported-platform upgrade', async () => {
     const release = await api();
     expect(Object.keys(release.FIXTURE_EXECUTABLES ?? {}).toSorted()).toEqual([
       '0.0.0-g6-fixture.1',
@@ -1192,6 +1565,216 @@ describe('EWP-P6-TS01', () => {
         secondVersion: '0.0.0-g6-fixture.2',
       }),
     ).toThrow();
+
+    const candidates = [
+      await createLifecycleCandidate('0.0.0-g6-fixture.1'),
+      await createLifecycleCandidate('0.0.0-g6-fixture.2'),
+    ] as const;
+    const fixtureCasks = await Promise.all(
+      candidates.map((candidate) => readFile(candidate.caskPath, 'utf8')),
+    );
+    release.assertLifecycleCaskPair?.({
+      first: fixtureCasks[0],
+      second: fixtureCasks[1],
+      firstVersion: candidates[0].version,
+      secondVersion: candidates[1].version,
+    });
+    for (const [index, cask] of fixtureCasks.entries()) {
+      expect(cask.match(/^\s*url "/gmu), `fixture ${index + 1}`).toHaveLength(4);
+      expect(cask.match(/^\s*sha256 "[0-9a-f]{64}"$/gmu), `fixture ${index + 1}`).toHaveLength(4);
+    }
+
+    if (
+      release.installDirectArchive === undefined ||
+      release.uninstallDirectArchive === undefined
+    ) {
+      throw new Error('direct archive lifecycle adapter is absent');
+    }
+    const directPrefix = await mkdtemp(join(tmpdir(), 'skillsmith-g6-direct-upgrade-'));
+    temporaryRoots.push(directPrefix);
+    let directPaths: Readonly<Record<'binary' | 'bash' | 'zsh' | 'fish', string>> | undefined;
+    for (const candidate of candidates) {
+      const selected = candidate.targets.find(({ id }) => id === hostTargetId());
+      if (selected === undefined) throw new Error('host lifecycle archive is absent');
+      directPaths = await release.installDirectArchive({
+        archivePath: selected.archivePath,
+        prefix: directPrefix,
+      });
+      const version = Bun.spawnSync([directPaths.binary, 'version'], {
+        cwd: directPrefix,
+        env: { PATH: '/usr/bin:/bin', HOME: directPrefix, LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8' },
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      expect(version.exitCode, version.stderr.toString()).toBe(0);
+      expect(version.stdout.toString().trim()).toBe(candidate.version);
+      expect(sha256(await readFile(directPaths.binary))).toBe(selected.binarySha256);
+      for (const [shell, path] of Object.entries(directPaths).filter(
+        ([name]) => name !== 'binary',
+      )) {
+        expect(sha256(await readFile(path)), shell).toBe(
+          EXPECTED_COMPLETIONS[shell as keyof typeof EXPECTED_COMPLETIONS].sha256,
+        );
+      }
+    }
+    await release.uninstallDirectArchive({ prefix: directPrefix });
+    if (directPaths === undefined) throw new Error('direct fixture lifecycle did not run');
+    for (const path of Object.values(directPaths)) expect(await pathExists(path)).toBeFalse();
+
+    const registry = await startRegistry(candidates);
+    const deny = startDenyServer();
+    try {
+      await runPackageUpgradeLane('npm', candidates, registry, deny.origin);
+      await runPackageUpgradeLane('bun', candidates, registry, deny.origin);
+      expect(registry.unexpected).toEqual([]);
+      expect(deny.requests).toEqual([]);
+    } finally {
+      registry.stop();
+      deny.stop();
+    }
+
+    const production = await getCandidate();
+    const leakOutputs: Record<string, Uint8Array | string> = {
+      checksums: await readFile(production.checksumsPath),
+      cask: await readFile(production.caskPath),
+    };
+    for (const target of production.targets) {
+      leakOutputs[`raw-${target.id}`] = await readFile(target.binaryPath);
+      leakOutputs[`archive-${target.id}`] = tarEntry(target.archivePath, 'skillsmith');
+      leakOutputs[`npm-${target.id}`] = tarEntry(target.npmPath, 'package/bin/skillsmith');
+    }
+    release.assertNoReleaseLeaks?.({
+      canaries: candidates.flatMap(({ version }) => [version]),
+      outputs: leakOutputs,
+    });
+
+    if (process.env.P17_G6_01_HOMEBREW_RECEIPT !== '1') return;
+    expect(process.env.RUNNER_OS).toBe('macOS');
+    expect(process.platform).toBe('darwin');
+    expect(process.arch).toBe('arm64');
+    const brew = Bun.which('brew');
+    const ruby = Bun.which('ruby');
+    if (brew === null || ruby === null)
+      throw new Error('Homebrew lifecycle requires brew and Ruby');
+    const receiptRoot = await mkdtemp(join(tmpdir(), 'skillsmith-g6-homebrew-upgrade-'));
+    temporaryRoots.push(receiptRoot);
+    const home = join(receiptRoot, 'home');
+    const cache = join(receiptRoot, 'cache');
+    const temp = join(receiptRoot, 'tmp');
+    await Promise.all([home, cache, temp].map((path) => mkdir(path, { recursive: true })));
+    const archiveServer = await startArchiveServer(candidates);
+    const brewDeny = startDenyServer();
+    const environment = {
+      PATH: [dirname(brew), '/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(':'),
+      HOME: home,
+      TMPDIR: temp,
+      XDG_CONFIG_HOME: join(home, 'config'),
+      XDG_CACHE_HOME: join(home, 'xdg-cache'),
+      XDG_DATA_HOME: join(home, 'data'),
+      LANG: 'C.UTF-8',
+      LC_ALL: 'C.UTF-8',
+      TZ: 'UTC',
+      NO_COLOR: '1',
+      HOMEBREW_CACHE: cache,
+      HOMEBREW_NO_AUTO_UPDATE: '1',
+      HOMEBREW_NO_INSTALL_FROM_API: '1',
+      HOMEBREW_NO_ANALYTICS: '1',
+      HOMEBREW_NO_ENV_HINTS: '1',
+      NO_PROXY: '127.0.0.1,localhost',
+      no_proxy: '127.0.0.1,localhost',
+      HTTP_PROXY: brewDeny.origin,
+      HTTPS_PROXY: brewDeny.origin,
+      http_proxy: brewDeny.origin,
+      https_proxy: brewDeny.origin,
+    };
+    const runBrew = async (command: readonly string[]): Promise<string> => {
+      const result = await runAsync(command, { cwd: receiptRoot, env: environment });
+      if (result.exitCode !== 0) {
+        throw new Error(
+          `Homebrew upgrade failed (${result.exitCode}): ${command.join(' ')}: ${result.stderr
+            .toString()
+            .slice(0, 2000)}`,
+        );
+      }
+      return result.stdout.toString().trim();
+    };
+    const tapName = 'p17/g6-lifecycle';
+    const qualifiedCask = `${tapName}/skillsmith`;
+    let tapped = false;
+    let installed = false;
+    try {
+      await runBrew([brew, 'tap-new', tapName]);
+      tapped = true;
+      const tapRoot = await runBrew([brew, '--repository', tapName]);
+      const caskPath = join(tapRoot, 'Casks', 'skillsmith.rb');
+      await mkdir(dirname(caskPath), { recursive: true });
+      const localCasks = candidates.map((candidate) =>
+        lifecycleCask(candidate, archiveServer.origin),
+      );
+      release.assertLifecycleCaskPair?.({
+        first: localCasks[0],
+        second: localCasks[1],
+        firstVersion: candidates[0].version,
+        secondVersion: candidates[1].version,
+      });
+      await writeFile(caskPath, localCasks[0], { mode: 0o644 });
+      await runBrew([ruby, '-c', caskPath]);
+      await runBrew([brew, 'install', '--cask', '--no-quarantine', qualifiedCask]);
+      installed = true;
+      const brewPrefix = await runBrew([brew, '--prefix']);
+      const binary = join(brewPrefix, 'bin', 'skillsmith');
+      expect(await runBrew([binary, 'version'])).toBe(candidates[0].version);
+      expect(sha256(await readFile(binary))).toBe(first?.sha256);
+      await writeFile(caskPath, localCasks[1], { mode: 0o644 });
+      await runBrew([ruby, '-c', caskPath]);
+      await runBrew([brew, 'upgrade', '--cask', '--no-quarantine', qualifiedCask]);
+      expect(await runBrew([binary, 'version'])).toBe(candidates[1].version);
+      expect(sha256(await readFile(binary))).toBe(second?.sha256);
+      const completionPaths = {
+        bash: join(brewPrefix, 'etc', 'bash_completion.d', 'skillsmith'),
+        zsh: join(brewPrefix, 'share', 'zsh', 'site-functions', '_skillsmith'),
+        fish: join(brewPrefix, 'share', 'fish', 'vendor_completions.d', 'skillsmith.fish'),
+      } as const;
+      for (const [shell, path] of Object.entries(completionPaths)) {
+        expect(sha256(await readFile(path)), shell).toBe(
+          EXPECTED_COMPLETIONS[shell as keyof typeof EXPECTED_COMPLETIONS].sha256,
+        );
+      }
+      await runBrew([brew, 'uninstall', '--cask', '--force', qualifiedCask]);
+      installed = false;
+      expect(await pathExists(binary)).toBeFalse();
+      for (const path of Object.values(completionPaths)) expect(await pathExists(path)).toBeFalse();
+      await runBrew([brew, 'untap', '--force', tapName]);
+      tapped = false;
+      expect(archiveServer.requests).toHaveLength(2);
+      expect(archiveServer.unexpected).toEqual([]);
+      expect(brewDeny.requests).toEqual([]);
+      process.stdout.write(
+        `P17-G6-01-HOMEBREW-UPGRADE-RECEIPT ${JSON.stringify({
+          firstVersion: candidates[0].version,
+          secondVersion: candidates[1].version,
+          firstSha256: first?.sha256,
+          secondSha256: second?.sha256,
+          skippedTests: 0,
+          testSideNoQuarantineOnly: true,
+        })}\n`,
+      );
+    } finally {
+      if (installed) {
+        await runAsync([brew, 'uninstall', '--cask', '--force', qualifiedCask], {
+          cwd: receiptRoot,
+          env: environment,
+        });
+      }
+      if (tapped) {
+        await runAsync([brew, 'untap', '--force', tapName], {
+          cwd: receiptRoot,
+          env: environment,
+        });
+      }
+      archiveServer.stop();
+      brewDeny.stop();
+    }
   });
 
   test('family 10: truthful guidance, immutable tracked manifests, and no premature publication', async () => {

@@ -670,7 +670,7 @@ const packDirectory = (
   return join(outputRoot, (records[0] as { filename: string }).filename);
 };
 
-const stageNpmPackages = async (
+export const stageTrackedNpmPackages = async (
   input: Readonly<{
     repositoryRoot: string;
     workRoot: string;
@@ -894,7 +894,7 @@ export const buildReleaseCandidate = async (
         ),
       );
     }
-    const npmPackages = await stageNpmPackages({
+    const npmPackages = await stageTrackedNpmPackages({
       repositoryRoot,
       workRoot,
       outputRoot,
