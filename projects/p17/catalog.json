@@ -7751,10 +7751,11 @@
       "phase": "6",
       "title": "Native assets, checksums, Homebrew/npm distribution, and clean installs",
       "dependsOn": ["P17-G6-02B", "P17-G6-03"],
-      "status": "active",
+      "status": "mapped",
       "owner": "root-goal",
       "ownedFiles": [
         ".github/workflows/ci.yml",
+        ".goreleaser.yaml",
         "README.md",
         "biome.json",
         "docs/releases.md",
@@ -7763,6 +7764,11 @@
         "packaging/homebrew/skillsmith.rb.tmpl",
         "packaging/npm/README.md",
         "packaging/npm/bin/skillsmith.cjs",
+        "packaging/npm/package.json",
+        "packaging/npm/platform/darwin-arm64/package.json",
+        "packaging/npm/platform/darwin-x64/package.json",
+        "packaging/npm/platform/linux-arm64/package.json",
+        "packaging/npm/platform/linux-x64/package.json",
         "projects/p17/evidence/P17-G6-01.md",
         "projects/p17/plans/P17-G6-01.md",
         "scripts/build-release.ts",
@@ -7782,19 +7788,18 @@
       "gates": {
         "mapped": {
           "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G6-01.md#mapping-and-prerequisites"]
-        },
-        "ready": {
-          "status": "passed",
           "evidence": [
-            "projects/p17/evidence/P17-G6-01.md#corrected-ready-review-at-528645f",
-            "projects/p17/evidence/P17-G6-01.md#accepted-ready-result",
-            "projects/p17/evidence/P17-G6-01.md#formatter-amendment-review-go-at-ded4f0a"
+            "projects/p17/evidence/P17-G6-01.md#mapping-and-prerequisites",
+            "projects/p17/evidence/P17-G6-01.md#standard-tooling-distribution-amendment-and-ready-reset"
           ]
         },
+        "ready": {
+          "status": "pending",
+          "evidence": []
+        },
         "test-first": {
-          "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G6-01.md#test-first-evidence"]
+          "status": "pending",
+          "evidence": []
         },
         "minimal-implementation": {
           "status": "pending",
@@ -7842,7 +7847,8 @@
         "projects/p17/evidence/P17-G6-01.md#accepted-ready-result",
         "projects/p17/evidence/P17-G6-01.md#test-first-evidence",
         "projects/p17/evidence/P17-G6-01.md#exact-launcher-formatter-ownership-amendment",
-        "projects/p17/evidence/P17-G6-01.md#formatter-amendment-review-go-at-ded4f0a"
+        "projects/p17/evidence/P17-G6-01.md#formatter-amendment-review-go-at-ded4f0a",
+        "projects/p17/evidence/P17-G6-01.md#standard-tooling-distribution-amendment-and-ready-reset"
       ]
     },
     {
@@ -25774,16 +25780,11 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G6-01",
-      "status": "red",
+      "status": "planned",
       "tier": "release",
       "plannedTarget": "planned:P17-G6-01",
       "target": null,
-      "evidence": [
-        "projects/p17/evidence/P17-G6-01.md#mapping-and-prerequisites",
-        "projects/p17/evidence/P17-G6-01.md#corrected-ready-review-at-528645f",
-        "projects/p17/evidence/P17-G6-01.md#accepted-ready-result",
-        "projects/p17/evidence/P17-G6-01.md#test-first-evidence"
-      ],
+      "evidence": [],
       "secondaryGroups": [],
       "implements": ["P1-12"],
       "validatedBy": ["EWP-P6-TS01"],
@@ -25798,16 +25799,11 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G6-01",
-      "status": "red",
+      "status": "planned",
       "tier": "release",
       "plannedTarget": "planned:P17-G6-01",
       "target": null,
-      "evidence": [
-        "projects/p17/evidence/P17-G6-01.md#mapping-and-prerequisites",
-        "projects/p17/evidence/P17-G6-01.md#corrected-ready-review-at-528645f",
-        "projects/p17/evidence/P17-G6-01.md#accepted-ready-result",
-        "projects/p17/evidence/P17-G6-01.md#test-first-evidence"
-      ],
+      "evidence": [],
       "secondaryGroups": ["P17-G6-04"],
       "implements": ["P1-12"],
       "validatedBy": ["EWP-P6-TS01", "EWP-WF01"],
@@ -25995,25 +25991,18 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-01",
-      "status": "failing",
+      "status": "planned",
       "tier": "release",
       "plannedTarget": "planned:P17-G6-01:tests/ergonomics/phase/EWP-P6-TS01.test.ts#EWP-P6-TS01",
-      "target": {
-        "kind": "test",
-        "path": "tests/ergonomics/phase/EWP-P6-TS01.test.ts",
-        "selector": "EWP-P6-TS01",
-        "command": "bun test tests/ergonomics/phase/EWP-P6-TS01.test.ts --test-name-pattern EWP-P6-TS01"
-      },
-      "evidence": ["projects/p17/evidence/P17-G6-01.md#red-execution-receipt-ewp-p6-ts01"],
+      "target": null,
+      "evidence": [],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P6-TS01"],
       "impactedValidations": ["EWP-P6-TS01"],
       "affectedContracts": ["P1-12"],
-      "testCommands": [
-        "bun test tests/ergonomics/phase/EWP-P6-TS01.test.ts --test-name-pattern EWP-P6-TS01"
-      ],
-      "ownedFiles": ["tests/ergonomics/phase/EWP-P6-TS01.test.ts"]
+      "testCommands": [],
+      "ownedFiles": []
     },
     {
       "id": "EWP-P6-TS02",
@@ -27776,7 +27765,10 @@
       "tier": "release",
       "plannedTarget": "coverage:P17-G6-01",
       "target": null,
-      "evidence": ["projects/p17/evidence/P17-G6-01.md#mapping-and-prerequisites"],
+      "evidence": [
+        "projects/p17/evidence/P17-G6-01.md#mapping-and-prerequisites",
+        "projects/p17/evidence/P17-G6-01.md#standard-tooling-distribution-amendment-and-ready-reset"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P6-TS01"],
