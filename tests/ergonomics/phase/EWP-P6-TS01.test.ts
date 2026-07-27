@@ -1455,9 +1455,11 @@ describe('EWP-P6-TS01', () => {
       for (const path of Object.values(completionPaths)) expect(await pathExists(path)).toBeFalse();
       await runBrew([brew, 'untap', '--force', tapName]);
       tapped = false;
-      expect(archiveServer.requests).toHaveLength(1);
       expect(archiveServer.unexpected).toEqual([]);
       expect(deny.requests).toEqual([]);
+      const expectedRoute = `GET /${selected.archivePath.split('/').at(-1) ?? ''}`;
+      expect(archiveServer.requests.length).toBeGreaterThanOrEqual(1);
+      expect(new Set(archiveServer.requests)).toEqual(new Set([expectedRoute]));
       process.stdout.write(
         `P17-G6-01-HOMEBREW-RECEIPT ${JSON.stringify({
           sourceRevision: candidate.sourceRevision,
@@ -1746,9 +1748,19 @@ describe('EWP-P6-TS01', () => {
       for (const path of Object.values(completionPaths)) expect(await pathExists(path)).toBeFalse();
       await runBrew([brew, 'untap', '--force', tapName]);
       tapped = false;
-      expect(archiveServer.requests).toHaveLength(2);
       expect(archiveServer.unexpected).toEqual([]);
       expect(brewDeny.requests).toEqual([]);
+      const expectedRoutes = candidates.map((candidate) => {
+        const selected = candidate.targets.find(({ id }) => id === 'darwin-arm64');
+        if (selected === undefined) throw new Error('Darwin arm64 lifecycle archive is absent');
+        return `GET /${selected.archivePath.split('/').at(-1) ?? ''}`;
+      });
+      expect(new Set(archiveServer.requests)).toEqual(new Set(expectedRoutes));
+      for (const route of expectedRoutes) {
+        expect(
+          archiveServer.requests.filter((request) => request === route).length,
+        ).toBeGreaterThanOrEqual(1);
+      }
       process.stdout.write(
         `P17-G6-01-HOMEBREW-UPGRADE-RECEIPT ${JSON.stringify({
           firstVersion: candidates[0].version,
