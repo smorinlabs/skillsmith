@@ -8219,15 +8219,17 @@
         },
         "targeted-green": {
           "status": "passed",
-          "evidence": ["projects/p17/evidence/P17-G6-03.md#targeted-green-at-4b860c2"]
+          "evidence": [
+            "projects/p17/evidence/P17-G6-03.md#renewed-green-execution-receipt-ewp-p6-ts03-at-d8f12ee"
+          ]
         },
         "impacted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G6-03.md#renewed-impacted-green-at-d8f12ee"]
         },
         "refactor": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G6-03.md#renewed-refactor-result-at-d8f12ee"]
         },
         "adversarial-review": {
           "status": "pending",
@@ -8262,7 +8264,11 @@
         "projects/p17/evidence/P17-G6-03.md#approved-adversarial-correction-amendment",
         "projects/p17/evidence/P17-G6-03.md#independent-correction-amendment-review-at-437d73e",
         "projects/p17/evidence/P17-G6-03.md#adversarial-correction-red-execution-receipt-ewp-p6-ts03",
-        "projects/p17/evidence/P17-G6-03.md#rejected-main-seam-red-refinement-at-09f0a27"
+        "projects/p17/evidence/P17-G6-03.md#rejected-main-seam-red-refinement-at-09f0a27",
+        "projects/p17/evidence/P17-G6-03.md#adversarial-correction-implementation-at-d8f12ee",
+        "projects/p17/evidence/P17-G6-03.md#renewed-green-execution-receipt-ewp-p6-ts03-at-d8f12ee",
+        "projects/p17/evidence/P17-G6-03.md#renewed-impacted-green-at-d8f12ee",
+        "projects/p17/evidence/P17-G6-03.md#renewed-refactor-result-at-d8f12ee"
       ]
     },
     {
@@ -25843,7 +25849,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G6-03",
-      "status": "red",
+      "status": "green",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-03",
       "target": null,
@@ -25853,7 +25859,9 @@
         "projects/p17/evidence/P17-G6-03.md#accepted-ready-result",
         "projects/p17/evidence/P17-G6-03.md#test-first-evidence",
         "projects/p17/evidence/P17-G6-03.md#minimal-implementation-at-4b860c2",
-        "projects/p17/evidence/P17-G6-03.md#targeted-green-at-4b860c2"
+        "projects/p17/evidence/P17-G6-03.md#targeted-green-at-4b860c2",
+        "projects/p17/evidence/P17-G6-03.md#adversarial-correction-implementation-at-d8f12ee",
+        "projects/p17/evidence/P17-G6-03.md#renewed-green-execution-receipt-ewp-p6-ts03-at-d8f12ee"
       ],
       "secondaryGroups": [],
       "implements": ["P2-08"],
@@ -25970,7 +25978,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-03",
-      "status": "failing",
+      "status": "passing",
       "tier": "required-pr",
       "plannedTarget": "planned:P17-G6-03:tests/ergonomics/phase/EWP-P6-TS03.test.ts#EWP-P6-TS03",
       "target": {
@@ -25980,6 +25988,7 @@
         "command": "bun test tests/ergonomics/phase/EWP-P6-TS03.test.ts --test-name-pattern EWP-P6-TS03"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G6-03.md#renewed-green-execution-receipt-ewp-p6-ts03-at-d8f12ee",
         "projects/p17/evidence/P17-G6-03.md#adversarial-correction-red-execution-receipt-ewp-p6-ts03",
         "projects/p17/evidence/P17-G6-03.md#green-execution-receipt-ewp-p6-ts03",
         "projects/p17/evidence/P17-G6-03.md#red-execution-receipt-ewp-p6-ts03"
@@ -27976,13 +27985,14 @@
       "designStatus": "retained",
       "stateModel": "coverage",
       "primaryGroup": "P17-G6-03",
-      "status": "mapped",
+      "status": "validated",
       "tier": "required-pr",
       "plannedTarget": "coverage:P17-G6-03",
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G6-03.md#mapping-and-prerequisites",
-        "projects/p17/evidence/P17-G6-03.md#impacted-green-at-4b860c2"
+        "projects/p17/evidence/P17-G6-03.md#impacted-green-at-4b860c2",
+        "projects/p17/evidence/P17-G6-03.md#renewed-impacted-green-at-d8f12ee"
       ],
       "secondaryGroups": [],
       "implements": [],
