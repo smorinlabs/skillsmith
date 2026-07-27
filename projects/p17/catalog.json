@@ -7774,6 +7774,7 @@
         "scripts/build-release.ts",
         "scripts/release-artifacts.test.ts",
         "scripts/release-artifacts.ts",
+        "tests/ergonomics/phase/EWP-P1-TS11.test.ts",
         "tests/ergonomics/phase/EWP-P6-TS01.test.ts"
       ],
       "integrationOwner": "root-codex-goal",
@@ -7863,7 +7864,8 @@
         "projects/p17/evidence/P17-G6-01.md#accepted-amended-ready-result",
         "projects/p17/evidence/P17-G6-01.md#revised-ewp-p6-ts01-standard-tooling-test-first-evidence-at-e7a3660",
         "projects/p17/evidence/P17-G6-01.md#minimal-implementation-at-a72dc9c",
-        "projects/p17/evidence/P17-G6-01.md#ewp-p6-ts01-targeted-green-and-macos-receipt-at-b692aab"
+        "projects/p17/evidence/P17-G6-01.md#ewp-p6-ts01-targeted-green-and-macos-receipt-at-b692aab",
+        "projects/p17/evidence/P17-G6-01.md#impacted-green-terminal-failure-and-compatibility-ownership-amendment-at-709fd1a"
       ]
     },
     {
