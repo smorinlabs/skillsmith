@@ -235,7 +235,7 @@ Tracked entities: **426** across **45** change groups.
 | D-013 | P17-G7-01 | deferred | deferred |
 | D-014 | P17-G4B-02 | signed-off | required-pr |
 | D-015 | P17-G4B-03 | signed-off | required-pr |
-| D-016 | P17-G6-04 | planned | release |
+| D-016 | P17-G6-04 | mapped | release |
 
 #### option-gate
 
@@ -256,7 +256,7 @@ Tracked entities: **426** across **45** change groups.
 
 | ID | Primary group | Status | Tier |
 |---|---|---|---|
-| EWP-WF01 | P17-G6-04 | planned | release |
+| EWP-WF01 | P17-G6-04 | failing | release |
 | EWP-WF02 | P17-G4A-01 | signed-off | required-pr |
 | EWP-WF03 | P17-G4B-03 | signed-off | required-pr |
 | EWP-WF04 | P17-G4B-03 | signed-off | required-pr |
@@ -1636,7 +1636,7 @@ Downstream coverage obligations: EWP-WF01.
 
 ## P17-G6-04 — Canonical PR/release recipes, exact-SHA publication gate, and final 1.0 evidence
 
-Phase: 6; status: **ready**; dependencies: P17-G6-01.
+Phase: 6; status: **active**; dependencies: P17-G6-01.
 Required-now validations: EWP-P6-TS06, EWP-WF01.
 Downstream coverage obligations: none.
 
@@ -1644,7 +1644,7 @@ Downstream coverage obligations: none.
 
 - [x] P17-G6-04:mapped _(passed)_
 - [x] P17-G6-04:ready _(passed)_
-- [ ] P17-G6-04:test-first _(pending)_
+- [x] P17-G6-04:test-first _(passed)_
 - [ ] P17-G6-04:minimal-implementation _(pending)_
 - [ ] P17-G6-04:targeted-green _(pending)_
 - [ ] P17-G6-04:impacted-green _(pending)_
@@ -1655,10 +1655,10 @@ Downstream coverage obligations: none.
 
 ### Tracked entities
 
-- [ ] **D-016** — Complete core workflow before 1.0 _(decision; planned)_
-- [ ] **EWP-P6-T07** — Add ADR 0010, make `just check` the canonical PR gate and `just release-check` the _(phase-task; planned)_
-- [ ] **EWP-P6-TS06** — Local/CI recipe parity; exact-SHA publication refusal; four-target builds and _(phase-test; planned)_
-- [ ] **EWP-WF01** — First installation and orientation _(workflow; planned)_
+- [ ] **D-016** — Complete core workflow before 1.0 _(decision; mapped)_
+- [ ] **EWP-P6-T07** — Add ADR 0010, make `just check` the canonical PR gate and `just release-check` the _(phase-task; red)_
+- [ ] **EWP-P6-TS06** — Local/CI recipe parity; exact-SHA publication refusal; four-target builds and _(phase-test; failing)_
+- [ ] **EWP-WF01** — First installation and orientation _(workflow; failing)_
 
 ## P17-G7-01 — Explicitly deferred P3 specifications/projects; not required for P17 or 1.0
 

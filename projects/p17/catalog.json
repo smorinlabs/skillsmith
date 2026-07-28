@@ -8395,7 +8395,7 @@
       "phase": "6",
       "title": "Canonical PR/release recipes, exact-SHA publication gate, and final 1.0 evidence",
       "dependsOn": ["P17-G6-01"],
-      "status": "ready",
+      "status": "active",
       "owner": "root-goal",
       "ownedFiles": [
         ".github/dependabot.yml",
@@ -8423,10 +8423,13 @@
         "scripts/release-artifacts.test.ts",
         "scripts/release-artifacts.ts",
         "scripts/release-check.ts",
+        "scripts/release-gates.test.ts",
         "scripts/release-gates.ts",
         "scripts/run-test-files-serial.test.ts",
         "scripts/run-test-files-serial.ts",
         "tests/ergonomics/phase/EWP-P6-TS01.test.ts",
+        "tests/ergonomics/phase/EWP-P6-TS06.test.ts",
+        "tests/ergonomics/workflows/EWP-WF01.test.ts",
         "projects/p17/evidence/P17-G6-04.md",
         "projects/p17/plans/P17-G6-04.md"
       ],
@@ -8453,8 +8456,8 @@
           ]
         },
         "test-first": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G6-04.md#g6-04-test-first-evidence-at-d203718"]
         },
         "minimal-implementation": {
           "status": "pending",
@@ -8491,7 +8494,8 @@
         "projects/p17/evidence/P17-G6-04.md#first-independent-ready-review-no-go-at-6a94082",
         "projects/p17/evidence/P17-G6-04.md#approved-first-mapping-correction",
         "projects/p17/evidence/P17-G6-04.md#renewed-independent-ready-review-go-at-360297a",
-        "projects/p17/evidence/P17-G6-04.md#accepted-corrected-ready-result"
+        "projects/p17/evidence/P17-G6-04.md#accepted-corrected-ready-result",
+        "projects/p17/evidence/P17-G6-04.md#g6-04-test-first-evidence-at-d203718"
       ]
     },
     {
@@ -10405,11 +10409,14 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G6-04",
-      "status": "planned",
+      "status": "mapped",
       "tier": "release",
       "plannedTarget": "coverage:P17-G6-04",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G6-04.md#mapping-and-prerequisites",
+        "projects/p17/evidence/P17-G6-04.md#accepted-corrected-ready-result"
+      ],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P6-TS06", "EWP-WF01"],
@@ -26088,11 +26095,14 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G6-04",
-      "status": "planned",
+      "status": "red",
       "tier": "release",
       "plannedTarget": "planned:P17-G6-04",
       "target": null,
-      "evidence": [],
+      "evidence": [
+        "projects/p17/evidence/P17-G6-04.md#accepted-corrected-ready-result",
+        "projects/p17/evidence/P17-G6-04.md#g6-04-test-first-evidence-at-d203718"
+      ],
       "secondaryGroups": [],
       "implements": ["D-016"],
       "validatedBy": ["EWP-P6-TS06", "EWP-WF01"],
@@ -26293,18 +26303,25 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-04",
-      "status": "planned",
+      "status": "failing",
       "tier": "release",
       "plannedTarget": "planned:P17-G6-04:tests/ergonomics/phase/EWP-P6-TS06.test.ts#EWP-P6-TS06",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/phase/EWP-P6-TS06.test.ts",
+        "selector": "EWP-P6-TS06",
+        "command": "bun test tests/ergonomics/phase/EWP-P6-TS06.test.ts --test-name-pattern EWP-P6-TS06"
+      },
+      "evidence": ["projects/p17/evidence/P17-G6-04.md#red-execution-receipt-ewp-p6-ts06"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-P6-TS06"],
       "impactedValidations": ["EWP-P6-TS06", "EWP-WF01"],
       "affectedContracts": ["D-016"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P6-TS06.test.ts --test-name-pattern EWP-P6-TS06"
+      ],
+      "ownedFiles": ["tests/ergonomics/phase/EWP-P6-TS06.test.ts"]
     },
     {
       "id": "EWP-WF01",
@@ -26312,18 +26329,25 @@
       "kind": "workflow",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-04",
-      "status": "planned",
+      "status": "failing",
       "tier": "release",
       "plannedTarget": "planned:P17-G6-04:tests/ergonomics/workflows/EWP-WF01.test.ts#EWP-WF01",
-      "target": null,
-      "evidence": [],
+      "target": {
+        "kind": "test",
+        "path": "tests/ergonomics/workflows/EWP-WF01.test.ts",
+        "selector": "EWP-WF01",
+        "command": "bun test tests/ergonomics/workflows/EWP-WF01.test.ts --test-name-pattern EWP-WF01"
+      },
+      "evidence": ["projects/p17/evidence/P17-G6-04.md#red-execution-receipt-ewp-wf01"],
       "secondaryGroups": [],
       "implements": [],
       "validatedBy": ["EWP-WF01"],
       "impactedValidations": ["EWP-P6-TS06", "EWP-WF01"],
       "affectedContracts": ["D-016"],
-      "testCommands": [],
-      "ownedFiles": []
+      "testCommands": [
+        "bun test tests/ergonomics/workflows/EWP-WF01.test.ts --test-name-pattern EWP-WF01"
+      ],
+      "ownedFiles": ["tests/ergonomics/workflows/EWP-WF01.test.ts"]
     },
     {
       "id": "EWP-WF02",
