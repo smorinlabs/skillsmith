@@ -39,14 +39,23 @@ const requirePublicValidator = async (): Promise<(input: unknown) => unknown> =>
 
 const publicReceipt = (runner: string, includeHomebrew: boolean) => ({
   aliasesAdjacent: true,
+  attestationVerified: true,
   candidateBundleSha256: DIGEST,
   capabilityOrientation: true,
   channels: [...['direct', 'npm', 'bun'], ...(includeHomebrew ? ['homebrew'] : [])],
+  channelBinarySha256: Object.fromEntries(
+    [...['direct', 'npm', 'bun'], ...(includeHomebrew ? ['homebrew'] : [])].map((channel) => [
+      channel,
+      DIGEST,
+    ]),
+  ),
   cleanOwnedPrefix: true,
+  directChecksumVerified: true,
   commands: ALL_COMMANDS,
   completionZshValid: true,
   fleetCases: 7,
   noSourceCheckoutOnPath: true,
+  noToolDiagnosis: true,
   readOnlyMutationExit: 4,
   requiredSkips: 0,
   runner,
@@ -78,8 +87,11 @@ describe('EWP-WF01', () => {
     ).toThrow();
     for (const mutation of [
       { aliasesAdjacent: false },
+      { attestationVerified: false },
       { capabilityOrientation: false },
+      { directChecksumVerified: false },
       { fleetCases: 6 },
+      { noToolDiagnosis: false },
       { readOnlyMutationExit: 2 },
       { upgradeUninstall: false },
       { writesWithinRoots: false },
@@ -103,6 +115,18 @@ describe('EWP-WF01', () => {
         receipts: receipts.map((receipt) =>
           receipt.runner === 'macos-15-intel'
             ? { ...receipt, channels: receipt.channels.filter((channel) => channel !== 'homebrew') }
+            : receipt,
+        ),
+      }),
+    ).toThrow();
+    expect(() =>
+      validate({
+        receipts: validReceipts().map((receipt, index) =>
+          index === 0
+            ? {
+                ...receipt,
+                channelBinarySha256: { ...receipt.channelBinarySha256, npm: 'c'.repeat(64) },
+              }
             : receipt,
         ),
       }),

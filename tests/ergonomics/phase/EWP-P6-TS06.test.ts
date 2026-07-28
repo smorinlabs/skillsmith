@@ -19,6 +19,14 @@ const requireGate = (
   return gate as (input: unknown) => unknown;
 };
 
+const jobBlock = (workflow: string, name: string, nextName: string): string => {
+  const start = workflow.indexOf(`  ${name}:`);
+  const end = workflow.indexOf(`  ${nextName}:`, start + 1);
+  expect(start, `${name} job must exist`).toBeGreaterThanOrEqual(0);
+  expect(end, `${nextName} job must follow ${name}`).toBeGreaterThan(start);
+  return workflow.slice(start, end);
+};
+
 describe('EWP-P6-TS06', () => {
   test('family 1: canonical local, CI, and pre-push gates execute the exact serial runner once', async () => {
     const [justfile, ci, hooks, packageJson] = await Promise.all([
@@ -72,6 +80,9 @@ describe('EWP-P6-TS06', () => {
     expect(() => validate({ ...valid, tag: 'v0.8.0' })).toThrow();
     expect(() => validate({ ...valid, githubSha: 'c'.repeat(40) })).toThrow();
     expect(() => validate({ ...valid, generatedVersion: '0.7.0' })).toThrow();
+    const workflow = await source('.github/workflows/release.yml');
+    expect(workflow).toContain('test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"');
+    expect(workflow).toContain('test "$sha" = "$GITHUB_SHA"');
   });
 
   test('family 4: Apple-only initial build and credential-free retained recovery are exclusive', async () => {
@@ -94,11 +105,15 @@ describe('EWP-P6-TS06', () => {
   });
 
   test('family 5: one common and four native same-candidate receipts close through always aggregate', async () => {
-    const workflow = await source('.github/workflows/release.yml');
+    const [workflow, releaseCheck] = await Promise.all([
+      source('.github/workflows/release.yml'),
+      source('scripts/release-check.ts'),
+    ]);
     const validate = requireGate(await loadGates(), 'validateReleaseReceiptSet');
     const receipt = (lane: string, receiptArtifactId: string) => ({
       candidateArtifactId: 'candidate-17',
       candidateBundleSha256: DIGEST,
+      candidateMetadataSha256: 'c'.repeat(64),
       lane,
       receiptArtifactId,
       requiredSkips: 0,
@@ -107,6 +122,7 @@ describe('EWP-P6-TS06', () => {
       status: 'passed',
       tag: 'v1.0.0',
       tests: 1,
+      version: '1.0.0',
     });
     const native = [
       receipt('native-linux-x64', 'linux-x64'),
@@ -121,6 +137,10 @@ describe('EWP-P6-TS06', () => {
       validate({ common: receipt('common', 'common'), native: native.slice(1) }),
     ).toThrow();
     expect(workflow).toContain('if: ${{ always() }}');
+    expect(workflow).toContain('candidateMetadataSha256');
+    expect(releaseCheck).toContain('candidate metadata SHA-256 mismatch');
+    expect(releaseCheck).toContain("['brew', '--prefix']");
+    expect(releaseCheck).not.toContain("runChecked(['skillsmith', 'version']");
     for (const label of ['ubuntu-24.04', 'ubuntu-24.04-arm', 'macos-15', 'macos-15-intel']) {
       expect(workflow, label).toContain(label);
     }
@@ -149,6 +169,16 @@ describe('EWP-P6-TS06', () => {
     expect(workflow).toContain('environment: npm');
     expect(workflow).toContain('environment: homebrew');
     expect(workflow).toMatch(/needs:.*publication-ready/u);
+    expect(workflow).toContain('PUBLIC_AUDIT_APPROVED_SHA');
+    expect(workflow).toContain('PUBLIC_VISIBILITY_AUTHORIZED_SHA');
+    expect(workflow).toContain('ACTIONS_ID_TOKEN_REQUEST_URL');
+    expect(workflow).toContain('npm ping');
+    expect(workflow).toContain('validatePublicationReadiness');
+    expect(workflow).toContain('git rev-list --count');
+    expect(workflow).toContain('candidateMetadataSha256');
+    const githubPreflight = jobBlock(workflow, 'github-preflight', 'npm-preflight');
+    expect(githubPreflight).not.toContain('contents: write');
+    expect(githubPreflight).not.toContain('attestations: write');
   });
 
   test('family 8: publication recovery closes GitHub, five npm packages, and tap merged state', async () => {
@@ -169,6 +199,10 @@ describe('EWP-P6-TS06', () => {
         tap: 'open-exact',
       }),
     ).toThrow();
+    const workflow = await source('.github/workflows/release.yml');
+    expect(workflow).toContain('gh attestation verify');
+    expect(workflow).toContain('npm registry state is unavailable');
+    expect(workflow).toContain('occupied Homebrew cask mismatches the candidate');
     expect(() =>
       classify({
         candidateRetained: true,

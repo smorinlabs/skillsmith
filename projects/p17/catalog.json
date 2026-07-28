@@ -8472,10 +8472,8 @@
           "evidence": ["projects/p17/evidence/P17-G6-04.md#targeted-green-at-6964b11"]
         },
         "impacted-green": {
-          "status": "passed",
-          "evidence": [
-            "projects/p17/evidence/P17-G6-04.md#impacted-green-and-terminal-repository-gate-at-6964b11"
-          ]
+          "status": "pending",
+          "evidence": []
         },
         "refactor": {
           "status": "pending",
@@ -8506,7 +8504,8 @@
         "projects/p17/evidence/P17-G6-04.md#green-execution-receipt-ewp-p6-ts06-at-6964b11",
         "projects/p17/evidence/P17-G6-04.md#green-execution-receipt-ewp-wf01-at-6964b11",
         "projects/p17/evidence/P17-G6-04.md#targeted-green-at-6964b11",
-        "projects/p17/evidence/P17-G6-04.md#impacted-green-and-terminal-repository-gate-at-6964b11"
+        "projects/p17/evidence/P17-G6-04.md#impacted-green-and-terminal-repository-gate-at-6964b11",
+        "projects/p17/evidence/P17-G6-04.md#refactor-audit-no-go-and-approved-correction-red"
       ]
     },
     {
@@ -10420,14 +10419,15 @@
       "designStatus": "accepted",
       "stateModel": "coverage",
       "primaryGroup": "P17-G6-04",
-      "status": "validated",
+      "status": "mapped",
       "tier": "release",
       "plannedTarget": "coverage:P17-G6-04",
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G6-04.md#mapping-and-prerequisites",
         "projects/p17/evidence/P17-G6-04.md#accepted-corrected-ready-result",
-        "projects/p17/evidence/P17-G6-04.md#impacted-green-and-terminal-repository-gate-at-6964b11"
+        "projects/p17/evidence/P17-G6-04.md#impacted-green-and-terminal-repository-gate-at-6964b11",
+        "projects/p17/evidence/P17-G6-04.md#refactor-audit-no-go-and-approved-correction-red"
       ],
       "secondaryGroups": [],
       "implements": [],
@@ -26107,7 +26107,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G6-04",
-      "status": "green",
+      "status": "red",
       "tier": "release",
       "plannedTarget": "planned:P17-G6-04",
       "target": null,
@@ -26115,7 +26115,8 @@
         "projects/p17/evidence/P17-G6-04.md#accepted-corrected-ready-result",
         "projects/p17/evidence/P17-G6-04.md#g6-04-test-first-evidence-at-d203718",
         "projects/p17/evidence/P17-G6-04.md#minimal-implementation",
-        "projects/p17/evidence/P17-G6-04.md#targeted-green-at-6964b11"
+        "projects/p17/evidence/P17-G6-04.md#targeted-green-at-6964b11",
+        "projects/p17/evidence/P17-G6-04.md#refactor-audit-no-go-and-approved-correction-red"
       ],
       "secondaryGroups": [],
       "implements": ["D-016"],
@@ -26317,7 +26318,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-04",
-      "status": "passing",
+      "status": "failing",
       "tier": "release",
       "plannedTarget": "planned:P17-G6-04:tests/ergonomics/phase/EWP-P6-TS06.test.ts#EWP-P6-TS06",
       "target": {
@@ -26327,8 +26328,10 @@
         "command": "bun test tests/ergonomics/phase/EWP-P6-TS06.test.ts --test-name-pattern EWP-P6-TS06"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G6-04.md#refactor-correction-red-execution-receipt-ewp-p6-ts06",
         "projects/p17/evidence/P17-G6-04.md#green-execution-receipt-ewp-p6-ts06-at-6964b11",
-        "projects/p17/evidence/P17-G6-04.md#red-execution-receipt-ewp-p6-ts06"
+        "projects/p17/evidence/P17-G6-04.md#red-execution-receipt-ewp-p6-ts06",
+        "projects/p17/evidence/P17-G6-04.md#refactor-audit-no-go-and-approved-correction-red"
       ],
       "secondaryGroups": [],
       "implements": [],
@@ -26346,7 +26349,7 @@
       "kind": "workflow",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-04",
-      "status": "passing",
+      "status": "failing",
       "tier": "release",
       "plannedTarget": "planned:P17-G6-04:tests/ergonomics/workflows/EWP-WF01.test.ts#EWP-WF01",
       "target": {
@@ -26356,8 +26359,10 @@
         "command": "bun test tests/ergonomics/workflows/EWP-WF01.test.ts --test-name-pattern EWP-WF01"
       },
       "evidence": [
+        "projects/p17/evidence/P17-G6-04.md#refactor-correction-red-execution-receipt-ewp-wf01",
         "projects/p17/evidence/P17-G6-04.md#green-execution-receipt-ewp-wf01-at-6964b11",
-        "projects/p17/evidence/P17-G6-04.md#red-execution-receipt-ewp-wf01"
+        "projects/p17/evidence/P17-G6-04.md#red-execution-receipt-ewp-wf01",
+        "projects/p17/evidence/P17-G6-04.md#refactor-audit-no-go-and-approved-correction-red"
       ],
       "secondaryGroups": [],
       "implements": [],

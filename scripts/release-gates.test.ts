@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 const SHA = 'a'.repeat(40);
 const DIGEST = 'b'.repeat(64);
+const METADATA_DIGEST = 'c'.repeat(64);
 
 const loadGates = async (): Promise<Record<string, unknown>> =>
   (await import('./release-gates.ts')) as Record<string, unknown>;
@@ -19,6 +20,7 @@ const requireGate = (
 const receipt = (lane: string, receiptArtifactId: string) => ({
   candidateArtifactId: 'candidate-17',
   candidateBundleSha256: DIGEST,
+  candidateMetadataSha256: METADATA_DIGEST,
   receiptArtifactId,
   runId: '44',
   sha: SHA,
@@ -26,6 +28,7 @@ const receipt = (lane: string, receiptArtifactId: string) => ({
   tag: 'v1.0.0',
   tests: 1,
   requiredSkips: 0,
+  version: '1.0.0',
   lane,
 });
 
@@ -108,6 +111,83 @@ describe('release gate behavioral contracts', () => {
         ...valid,
         native: valid.native.map((value, index) =>
           index === 0 ? { ...value, candidateBundleSha256: 'c'.repeat(64) } : value,
+        ),
+      }),
+    ).toThrow();
+    expect(() =>
+      validate({
+        ...valid,
+        native: valid.native.map((value, index) =>
+          index === 0 ? { ...value, candidateMetadataSha256: 'd'.repeat(64) } : value,
+        ),
+      }),
+    ).toThrow();
+    expect(() =>
+      validate({
+        ...valid,
+        native: valid.native.map((value, index) =>
+          index === 0 ? { ...value, version: '1.0.1' } : value,
+        ),
+      }),
+    ).toThrow();
+  });
+
+  test('closes executable external readiness plus exact GitHub/npm/tap state under one identity', async () => {
+    const validate = requireGate(await loadGates(), 'validatePublicationReadiness');
+    const identity = {
+      candidateArtifactId: 'candidate-17',
+      candidateBundleSha256: DIGEST,
+      candidateMetadataSha256: METADATA_DIGEST,
+      sha: SHA,
+      tag: 'v1.0.0',
+      version: '1.0.0',
+    };
+    const external = {
+      apple: true,
+      audit: true,
+      billing: true,
+      environments: ['release-please', 'release-candidate', 'github-release', 'npm', 'homebrew'],
+      immutableReleases: true,
+      npmTrusts: 5,
+      runnerLabels: ['ubuntu-24.04', 'ubuntu-24.04-arm', 'macos-15', 'macos-15-intel'],
+      tapCi: true,
+      visibilityAuthorized: true,
+    };
+    const preflights = [
+      { ...identity, channel: 'github', state: 'draft-exact', status: 'passed' },
+      {
+        ...identity,
+        channel: 'npm',
+        states: Array.from({ length: 5 }, () => 'missing'),
+        status: 'passed',
+      },
+      { ...identity, channel: 'homebrew', state: 'absent', status: 'passed' },
+    ];
+    expect(validate({ candidateRetained: true, external, preflights })).toMatchObject({
+      candidateArtifactId: 'candidate-17',
+      mode: 'initial',
+      status: 'passed',
+    });
+    expect(() =>
+      validate({
+        candidateRetained: true,
+        external,
+        preflights: preflights.map((value, index) =>
+          index === 1 ? { ...value, candidateMetadataSha256: 'd'.repeat(64) } : value,
+        ),
+      }),
+    ).toThrow();
+    expect(() =>
+      validate({ candidateRetained: true, external: { ...external, audit: false }, preflights }),
+    ).toThrow();
+    expect(() =>
+      validate({
+        candidateRetained: true,
+        external,
+        preflights: preflights.map((value, index) =>
+          index === 1
+            ? { ...value, states: ['exact', 'missing', 'missing', 'missing', 'missing'] }
+            : value,
         ),
       }),
     ).toThrow();
