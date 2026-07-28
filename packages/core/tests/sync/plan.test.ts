@@ -633,6 +633,24 @@ describe('sync fleet-to-intent projection', () => {
       });
       expect(invalid).toMatchObject({ ok: true, value: { pairs: [] } });
     }
+
+    for (const [target, candidateName] of [
+      ['*\ud800', '\ufffd'],
+      ['*\ufffd', '\udc00'],
+    ] as const) {
+      const malformedMember: SyncMemberObservation = {
+        ...base,
+        entry: { ...base.entry, name: candidateName },
+      };
+      const malformed = selectSyncFleetResourcesV1(fleetFor([malformedMember]), {
+        targets: [target],
+        delete: false,
+        continueOnError: false,
+        save: false,
+        force: false,
+      });
+      expect(malformed).toMatchObject({ ok: true, value: { pairs: [] } });
+    }
   });
 
   test('uses exact pair-to-store bindings and one aggregate group identity across tool members', () => {

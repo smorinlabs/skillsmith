@@ -102,5 +102,20 @@ describe('target selection', () => {
         error: { code: 'unmatched', targets: [invalidName], exitCode: 2 },
       });
     }
+
+    for (const [target, candidateName] of [
+      ['*\ud800', '\ufffd'],
+      ['*\ufffd', '\udc00'],
+    ] as const) {
+      expect(
+        resolveTargetSelection(
+          [{ ...unicodeCandidate, name: candidateName }],
+          validate([target], ['project']),
+        ),
+      ).toMatchObject({
+        ok: false,
+        error: { code: 'unmatched', targets: [target], exitCode: 2 },
+      });
+    }
   });
 });

@@ -22,6 +22,16 @@ describe('shared wildcard target matching', () => {
     }
   });
 
+  test('rejects malformed UTF-16 before exact comparison or Bun normalization', () => {
+    for (const malformed of ['\ud800', '\udbff', '\udc00', '\udfff']) {
+      expectNoMatch(malformed, malformed);
+      expectNoMatch(`*${malformed}`, '\ufffd');
+      expectNoMatch('*\ufffd', malformed);
+      expectNoMatch('*', malformed);
+    }
+    expectMatch('?', '😀');
+  });
+
   test('leaves only star and question mark active in Bun glob syntax', () => {
     const target = String.raw`prefix-[ab]-{x,y}-!-,\-*-?`;
     expectMatch(target, String.raw`prefix-[ab]-{x,y}-!-,\-many-Z`);

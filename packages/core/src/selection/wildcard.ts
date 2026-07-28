@@ -11,6 +11,22 @@ const NEVER_MATCH: CompiledWildcardTarget = Object.freeze({ matches: () => false
 const containsReservedSentinel = (value: string): boolean =>
   value.includes(NUL_SENTINEL) || value.includes(BACKSLASH_SENTINEL);
 
+const isWellFormedUtf16 = (value: string): boolean => {
+  for (let index = 0; index < value.length; index += 1) {
+    const codeUnit = value.charCodeAt(index);
+    if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+      if (index + 1 >= value.length) return false;
+      const next = value.charCodeAt(index + 1);
+      if (next < 0xdc00 || next > 0xdfff) return false;
+      index += 1;
+    } else if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) return false;
+  }
+  return true;
+};
+
+const isInvalidInput = (value: string): boolean =>
+  containsReservedSentinel(value) || !isWellFormedUtf16(value);
+
 const lineTerminatorMarker = (character: string): string | null => {
   switch (character) {
     case '\n':
@@ -27,7 +43,7 @@ const lineTerminatorMarker = (character: string): string | null => {
 };
 
 const encodeCandidate = (candidate: string): string | null => {
-  if (containsReservedSentinel(candidate)) return null;
+  if (isInvalidInput(candidate)) return null;
   let encoded = '';
   for (const character of candidate) {
     if (character === '/') encoded += NUL_SENTINEL;
@@ -38,7 +54,7 @@ const encodeCandidate = (candidate: string): string | null => {
 };
 
 const encodeWildcardTarget = (target: string): string | null => {
-  if (containsReservedSentinel(target)) return null;
+  if (isInvalidInput(target)) return null;
   let encoded = '';
   let previousWasStar = false;
   for (const character of target) {
@@ -66,11 +82,10 @@ const encodeWildcardTarget = (target: string): string | null => {
  * Reserved sentinel input and matcher failures always fail closed.
  */
 export const compileWildcardTarget = (target: string): CompiledWildcardTarget => {
-  if (containsReservedSentinel(target)) return NEVER_MATCH;
+  if (isInvalidInput(target)) return NEVER_MATCH;
   if (!target.includes('*') && !target.includes('?')) {
     return Object.freeze({
-      matches: (candidate: string): boolean =>
-        !containsReservedSentinel(candidate) && candidate === target,
+      matches: (candidate: string): boolean => !isInvalidInput(candidate) && candidate === target,
     });
   }
 

@@ -96,6 +96,21 @@ describe('update candidate policy', () => {
       expect(invalid.selectedNames).toEqual([]);
       expect(invalid.unmatchedTargets).toEqual([invalidName]);
     }
+
+    for (const [target, candidateName] of [
+      ['*\ud800', '\ufffd'],
+      ['*\ufffd', '\udc00'],
+    ] as const) {
+      const malformed = selectUpdateDeclarationsV1({
+        manifest: { ...manifest, skills: [{ ...factorScan, name: candidateName }] },
+        targets: [target],
+        all: false,
+        tools: [],
+        registryOrder: order,
+      });
+      expect(malformed.selectedNames).toEqual([]);
+      expect(malformed.unmatchedTargets).toEqual([target]);
+    }
   });
 
   test('keeps fixed declarations skipped until an explicit ref and pins moving refs', () => {
