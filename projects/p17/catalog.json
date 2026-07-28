@@ -7758,7 +7758,10 @@
         ".goreleaser.yaml",
         "README.md",
         "biome.json",
+        "bun.lock",
         "docs/releases.md",
+        "eslint.security.config.js",
+        "eslint-suppressions.json",
         "package.json",
         "packaging/README.md",
         "packaging/homebrew/skillsmith.rb.tmpl",
@@ -7820,8 +7823,10 @@
           ]
         },
         "impacted-green": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G6-01.md#complete-clean-clone-serial-terminal-gate-and-impacted-green-at-6f90949"
+          ]
         },
         "refactor": {
           "status": "pending",
@@ -7872,7 +7877,10 @@
         "projects/p17/evidence/P17-G6-01.md#clean-checkout-inventory-path-finding-and-correction",
         "projects/p17/evidence/P17-G6-01.md#impacted-green-runner-isolation-blocker-at-8e6152c",
         "projects/p17/evidence/P17-G6-01.md#approved-serial-test-file-terminal-amendment",
-        "projects/p17/evidence/P17-G6-01.md#serial-runner-independent-review-no-go-and-f10-f12-corrections"
+        "projects/p17/evidence/P17-G6-01.md#serial-runner-independent-review-no-go-and-f10-f12-corrections",
+        "projects/p17/evidence/P17-G6-01.md#corrected-serial-runner-independent-review-go-at-6f90949",
+        "projects/p17/evidence/P17-G6-01.md#complete-clean-clone-serial-terminal-gate-and-impacted-green-at-6f90949",
+        "projects/p17/evidence/P17-G6-01.md#pre-sign-off-dependency-and-security-lint-finding-and-ownership-amendment"
       ]
     },
     {
