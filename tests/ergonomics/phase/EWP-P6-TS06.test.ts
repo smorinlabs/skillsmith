@@ -30,6 +30,7 @@ describe('EWP-P6-TS06', () => {
     expect(justfile).toContain('release-check lane:');
     expect(justfile.match(/scripts\/run-test-files-serial\.ts/gu)).toHaveLength(1);
     expect(ci).toContain('run: just check');
+    expect(ci).toContain('just-version: 1.50.0');
     expect(ci).toContain('ubuntu-24.04-arm');
     expect(ci).toContain('macos-15-intel');
     expect(hooks).toContain('bun scripts/run-test-files-serial.ts');
@@ -74,9 +75,10 @@ describe('EWP-P6-TS06', () => {
   });
 
   test('family 4: Apple-only initial build and credential-free retained recovery are exclusive', async () => {
-    const [workflow, goreleaser] = await Promise.all([
+    const [workflow, goreleaser, adapter] = await Promise.all([
       source('.github/workflows/release.yml'),
       source('.goreleaser.yaml'),
+      source('scripts/release-artifacts.ts'),
     ]);
     const resolveSource = requireGate(await loadGates(), 'resolveCandidateSource');
     expect(resolveSource({ irreversiblePublication: false, retainedCandidate: null })).toEqual({
@@ -85,7 +87,8 @@ describe('EWP-P6-TS06', () => {
     expect(workflow).toContain('environment: release-candidate');
     expect(workflow).toContain('retained-candidate');
     expect(workflow).toContain('retention-days: 90');
-    expect(workflow).toContain('release --clean --skip=publish,announce');
+    expect(workflow).toContain('bun scripts/build-release.ts --target all --mode release');
+    expect(adapter).toContain("'--skip=publish,announce'");
     expect(goreleaser).toContain('notarize:');
     expect(goreleaser).toContain('wait: true');
   });
@@ -145,7 +148,7 @@ describe('EWP-P6-TS06', () => {
     expect(workflow).toContain('environment: github-release');
     expect(workflow).toContain('environment: npm');
     expect(workflow).toContain('environment: homebrew');
-    expect(workflow).toContain('needs: publication-ready');
+    expect(workflow).toMatch(/needs:.*publication-ready/u);
   });
 
   test('family 8: publication recovery closes GitHub, five npm packages, and tap merged state', async () => {
@@ -197,12 +200,16 @@ describe('EWP-P6-TS06', () => {
   });
 
   test('family 10: ADR, docs, action pins, and exact verified tool installers stay coherent', async () => {
-    const [adr, docs, gitleaks, actionlint, dependabot] = await Promise.all([
+    const [adr, docs, gitleaks, actionlint, dependabot, ...workflows] = await Promise.all([
       source('docs/adr/0010-release-validation-and-publication.md'),
       source('docs/releases.md'),
       source('scripts/install-gitleaks.sh'),
       source('scripts/install-actionlint.sh'),
       source('.github/dependabot.yml'),
+      source('.github/workflows/ci.yml'),
+      source('.github/workflows/commitlint.yml'),
+      source('.github/workflows/release-please.yml'),
+      source('.github/workflows/release.yml'),
     ]);
     expect(adr).toContain('Accepted');
     expect(adr).toContain('candidate');
@@ -214,5 +221,10 @@ describe('EWP-P6-TS06', () => {
     expect(gitleaks).not.toContain('brew install gitleaks');
     expect(actionlint).not.toContain('actionlint/main/');
     expect(dependabot).toContain('package-ecosystem: github-actions');
+    for (const workflow of workflows) {
+      const references = [...workflow.matchAll(/uses:\s+[^\s@]+@([^\s#]+)/gu)];
+      expect(references.length).toBeGreaterThan(0);
+      for (const reference of references) expect(reference[1]).toMatch(/^[0-9a-f]{40}$/u);
+    }
   });
 });

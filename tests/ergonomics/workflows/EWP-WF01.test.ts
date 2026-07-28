@@ -4,26 +4,26 @@ const SHA = 'a'.repeat(40);
 const DIGEST = 'b'.repeat(64);
 const ALL_COMMANDS = [
   'agents',
-  'doctor',
-  'completion',
-  'install',
-  'update',
-  'uninstall',
-  'sync',
   'list',
-  'find',
+  'commands',
+  'status',
+  'install',
+  'uninstall',
+  'update',
+  'undo',
+  'dev',
+  'verify',
+  'promote',
   'init',
+  'export',
   'plan',
   'apply',
-  'dev',
+  'sync',
+  'doctor',
   'check',
-  'lock',
-  'verify',
-  'status',
-  'outdated',
-  'diff',
-  'flip',
-  'migrate',
+  'gc',
+  'config',
+  'completion',
   'version',
   'help',
 ] as const;
@@ -38,17 +38,23 @@ const requirePublicValidator = async (): Promise<(input: unknown) => unknown> =>
 };
 
 const publicReceipt = (runner: string, includeHomebrew: boolean) => ({
+  aliasesAdjacent: true,
   candidateBundleSha256: DIGEST,
+  capabilityOrientation: true,
   channels: [...['direct', 'npm', 'bun'], ...(includeHomebrew ? ['homebrew'] : [])],
   cleanOwnedPrefix: true,
   commands: ALL_COMMANDS,
   completionZshValid: true,
+  fleetCases: 7,
   noSourceCheckoutOnPath: true,
+  readOnlyMutationExit: 4,
   requiredSkips: 0,
   runner,
   sha: SHA,
   tag: 'v1.0.0',
+  upgradeUninstall: true,
   version: '1.0.0',
+  writesWithinRoots: true,
 });
 
 const validReceipts = () => [
@@ -70,6 +76,22 @@ describe('EWP-WF01', () => {
         ),
       }),
     ).toThrow();
+    for (const mutation of [
+      { aliasesAdjacent: false },
+      { capabilityOrientation: false },
+      { fleetCases: 6 },
+      { readOnlyMutationExit: 2 },
+      { upgradeUninstall: false },
+      { writesWithinRoots: false },
+    ]) {
+      expect(() =>
+        validate({
+          receipts: validReceipts().map((receipt, index) =>
+            index === 0 ? { ...receipt, ...mutation } : receipt,
+          ),
+        }),
+      ).toThrow();
+    }
   });
 
   test('requires the public smorinlabs tap cask on both macOS architectures only', async () => {

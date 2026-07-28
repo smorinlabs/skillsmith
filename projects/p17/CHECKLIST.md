@@ -1645,7 +1645,7 @@ Downstream coverage obligations: none.
 - [x] P17-G6-04:mapped _(passed)_
 - [x] P17-G6-04:ready _(passed)_
 - [x] P17-G6-04:test-first _(passed)_
-- [ ] P17-G6-04:minimal-implementation _(pending)_
+- [x] P17-G6-04:minimal-implementation _(passed)_
 - [ ] P17-G6-04:targeted-green _(pending)_
 - [ ] P17-G6-04:impacted-green _(pending)_
 - [ ] P17-G6-04:refactor _(pending)_

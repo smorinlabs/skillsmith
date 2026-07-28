@@ -537,11 +537,12 @@ const packageJson = JSON.parse(text('package.json')) as { scripts?: Record<strin
 if (packageJson.scripts?.['check:p17'] !== 'bun scripts/check-p17-package.ts --pr-openable') {
   fail('package.json check:p17 registration drifted');
 }
-if (!packageJson.scripts?.check?.includes('bun run check:p17')) {
-  fail('package.json check does not invoke check:p17');
+if (packageJson.scripts?.check !== 'just check') {
+  fail('package.json check must delegate only to the canonical just check recipe');
 }
 const just = text('justfile');
-if (!/^p17-check:\n\s+bun run check:p17$/m.test(just) || !/^check:.*\bp17-check\b/m.test(just)) {
+const checkRecipe = just.match(/^check:\n((?: {4}[^\n]*\n)+)/m)?.[1] ?? '';
+if (!/^p17-check:\n\s+bun run check:p17$/m.test(just) || !checkRecipe.includes('just p17-check')) {
   fail('justfile P17 gate registration drifted');
 }
 

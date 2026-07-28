@@ -139,14 +139,34 @@ describe('release gate behavioral contracts', () => {
         tap: 'merged-exact',
       }),
     ).toEqual({ mode: 'complete', complete: true });
+    expect(
+      classify({
+        candidateRetained: true,
+        github: 'public-exact',
+        npm: ['exact', 'exact', 'missing', 'missing', 'missing'],
+        tap: 'absent',
+      }),
+    ).toEqual({ mode: 'resume', complete: false });
     for (const invalid of [
       { candidateRetained: true, github: 'mismatch', npm: ['missing'], tap: 'absent' },
       { candidateRetained: true, github: 'draft-exact', npm: ['mismatch'], tap: 'absent' },
+      {
+        candidateRetained: true,
+        github: 'draft-exact',
+        npm: ['exact', 'missing', 'missing', 'missing', 'missing'],
+        tap: 'absent',
+      },
       {
         candidateRetained: false,
         github: 'public-exact',
         npm: Array.from({ length: 5 }, () => 'exact'),
         tap: 'open-exact',
+      },
+      {
+        candidateRetained: false,
+        github: 'public-exact',
+        npm: ['exact', 'exact', 'missing', 'missing', 'missing'],
+        tap: 'absent',
       },
     ]) {
       expect(() => classify(invalid), JSON.stringify(invalid)).toThrow();

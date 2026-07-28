@@ -8400,6 +8400,7 @@
       "ownedFiles": [
         ".github/dependabot.yml",
         ".github/workflows/ci.yml",
+        ".github/workflows/commitlint.yml",
         ".github/workflows/release-please.yml",
         ".github/workflows/release.yml",
         ".goreleaser.yaml",
@@ -8418,6 +8419,7 @@
         "packages/core/package.json",
         "release-please-config.json",
         "scripts/build-release.ts",
+        "scripts/check-p17-package.ts",
         "scripts/install-actionlint.sh",
         "scripts/install-gitleaks.sh",
         "scripts/release-artifacts.test.ts",
@@ -8460,8 +8462,8 @@
           "evidence": ["projects/p17/evidence/P17-G6-04.md#g6-04-test-first-evidence-at-d203718"]
         },
         "minimal-implementation": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G6-04.md#minimal-implementation"]
         },
         "targeted-green": {
           "status": "pending",
@@ -8495,7 +8497,8 @@
         "projects/p17/evidence/P17-G6-04.md#approved-first-mapping-correction",
         "projects/p17/evidence/P17-G6-04.md#renewed-independent-ready-review-go-at-360297a",
         "projects/p17/evidence/P17-G6-04.md#accepted-corrected-ready-result",
-        "projects/p17/evidence/P17-G6-04.md#g6-04-test-first-evidence-at-d203718"
+        "projects/p17/evidence/P17-G6-04.md#g6-04-test-first-evidence-at-d203718",
+        "projects/p17/evidence/P17-G6-04.md#minimal-implementation"
       ]
     },
     {

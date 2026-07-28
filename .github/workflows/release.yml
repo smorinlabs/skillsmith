@@ -1,13 +1,939 @@
-name: P17-G6-04 release placeholder
+name: Release v1.0.0
 
 on:
+  push:
+    tags:
+      - v*
   workflow_dispatch:
+    inputs:
+      exact_tag:
+        description: Existing exact release tag (P17 requires v1.0.0)
+        required: true
+        type: string
+      candidate_run_id:
+        description: Original candidate workflow run ID; set all recovery fields or none
+        required: false
+        type: string
+      candidate_artifact_id:
+        description: Original retained candidate artifact ID
+        required: false
+        type: string
+      candidate_bundle_sha256:
+        description: Independently recorded candidate-bundle.tar SHA-256
+        required: false
+        type: string
+      candidate_artifact_digest:
+        description: GitHub Actions artifact digest, including sha256 prefix
+        required: false
+        type: string
 
 permissions: {}
 
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.exact_tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.exact_tag || github.ref_name }}
+  RELEASE_VERSION: 1.0.0
+
 jobs:
-  inert-before-ready:
-    if: ${{ github.repository == '' }}
-    runs-on: ubuntu-latest
+  guard:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      candidate-mode: ${{ steps.guard.outputs.candidate_mode }}
+      release-id: ${{ steps.guard.outputs.release_id }}
+      sha: ${{ steps.guard.outputs.sha }}
+      tag: ${{ steps.guard.outputs.tag }}
     steps:
-      - run: 'false'
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.14
+      - name: Bind exact tag, source, versions, generated state, and recovery mode
+        id: guard
+        env:
+          CANDIDATE_ARTIFACT_DIGEST: ${{ inputs.candidate_artifact_digest }}
+          CANDIDATE_ARTIFACT_ID: ${{ inputs.candidate_artifact_id }}
+          CANDIDATE_BUNDLE_SHA256: ${{ inputs.candidate_bundle_sha256 }}
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          test "$RELEASE_TAG" = 'v1.0.0'
+          sha="$(git rev-parse "$RELEASE_TAG^{commit}")"
+          if [ "$GITHUB_EVENT_NAME" = 'push' ]; then test "$sha" = "$GITHUB_SHA"; fi
+          git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+          git merge-base --is-ancestor "$sha" refs/remotes/origin/main
+          test "$(git status --porcelain)" = ''
+
+          test "$(jq -r '.["."]' .release-please-manifest.json)" = "$RELEASE_VERSION"
+          for manifest in package.json packages/cli/package.json packages/core/package.json; do
+            test "$(jq -r .version "$manifest")" = "$RELEASE_VERSION"
+          done
+          test "$(jq -r '.workspaces["packages/cli"].version' bun.lock)" = "$RELEASE_VERSION"
+          test "$(jq -r '.workspaces["packages/core"].version' bun.lock)" = "$RELEASE_VERSION"
+          grep -Fq "Current version: \`$RELEASE_VERSION\`" docs/commands.md
+          bun scripts/generate-command-reference.ts --check
+
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > "$RUNNER_TEMP/release.json"
+          test "$(jq -r .prerelease "$RUNNER_TEMP/release.json")" = 'false'
+          target="$(jq -r .target_commitish "$RUNNER_TEMP/release.json")"
+          if [ "$target" != "$sha" ]; then
+            target="$(git rev-parse "$target^{commit}")"
+            test "$target" = "$sha"
+          fi
+
+          supplied=0
+          for value in "$CANDIDATE_RUN_ID" "$CANDIDATE_ARTIFACT_ID" "$CANDIDATE_BUNDLE_SHA256" "$CANDIDATE_ARTIFACT_DIGEST"; do
+            if [ -n "$value" ]; then supplied=$((supplied + 1)); fi
+          done
+          if [ "$supplied" -eq 0 ]; then
+            test "$(jq -r .draft "$RUNNER_TEMP/release.json")" = 'true'
+            candidate_mode=build
+          elif [ "$supplied" -eq 4 ]; then
+            test "$GITHUB_EVENT_NAME" = 'workflow_dispatch'
+            case "$CANDIDATE_RUN_ID:$CANDIDATE_ARTIFACT_ID" in *[!0-9:]*|:*) exit 1 ;; esac
+            case "$CANDIDATE_BUNDLE_SHA256" in *[!0-9a-f]*|'') exit 1 ;; esac
+            test "${#CANDIDATE_BUNDLE_SHA256}" -eq 64
+            case "$CANDIDATE_ARTIFACT_DIGEST" in sha256:[0-9a-f]*) ;; *) exit 1 ;; esac
+            test "${#CANDIDATE_ARTIFACT_DIGEST}" -eq 71
+            candidate_mode=retained
+          else
+            echo 'Recovery requires all four retained-candidate fields.' >&2
+            exit 1
+          fi
+          echo "candidate_mode=$candidate_mode" >> "$GITHUB_OUTPUT"
+          echo "release_id=$(jq -r .id "$RUNNER_TEMP/release.json")" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+
+  candidate:
+    needs: guard
+    if: needs.guard.outputs.candidate-mode == 'build'
+    runs-on: ubuntu-24.04
+    environment: release-candidate
+    permissions:
+      contents: read
+    outputs:
+      artifact-digest: ${{ steps.candidate.outputs.artifact-digest }}
+      artifact-id: ${{ steps.candidate.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.guard.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.14
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          version: v2.17.1
+          install-only: true
+      - name: Install exact npm and candidate dependencies
+        run: |
+          npm_prefix="$RUNNER_TEMP/npm-12.0.1"
+          npm install --global --prefix "$npm_prefix" npm@12.0.1
+          echo "$npm_prefix/bin" >> "$GITHUB_PATH"
+          bun install --frozen-lockfile --ignore-scripts
+          tool_bin="$RUNNER_TEMP/release-tools"
+          SKILLSMITH_TOOL_BIN_DIR="$tool_bin" ./scripts/install-gitleaks.sh
+          echo "$tool_bin" >> "$GITHUB_PATH"
+      - name: Build, sign, notarize, scan, and bundle the candidate
+        env:
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
+          MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+        run: |
+          bun scripts/build-release.ts --target all --mode release --output dist/release
+          tar --format=posix -cf candidate-bundle.tar dist/release
+          sha256sum candidate-bundle.tar > candidate-bundle.tar.sha256
+      - name: Retain the private candidate for recovery
+        id: candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-candidate-${{ github.run_id }}
+          path: |
+            candidate-bundle.tar
+            candidate-bundle.tar.sha256
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0
+      - name: Write immutable candidate identity
+        env:
+          CANDIDATE_ARTIFACT_ID: ${{ steps.candidate.outputs.artifact-id }}
+        run: |
+          jq -n \
+            --arg candidateArtifactDigest '${{ steps.candidate.outputs.artifact-digest }}' \
+            --arg candidateArtifactId "$CANDIDATE_ARTIFACT_ID" \
+            --arg candidateBundleSha256 "$(cut -d' ' -f1 candidate-bundle.tar.sha256)" \
+            --arg metadataSha256 "$(sha256sum dist/release/metadata.json | cut -d' ' -f1)" \
+            --arg runId "$GITHUB_RUN_ID" \
+            --arg sha '${{ needs.guard.outputs.sha }}' \
+            --arg tag "$RELEASE_TAG" \
+            '{candidateArtifactDigest:$candidateArtifactDigest,candidateArtifactId:$candidateArtifactId,candidateBundleSha256:$candidateBundleSha256,metadataSha256:$metadataSha256,runId:$runId,sha:$sha,tag:$tag}' \
+            > candidate-identity.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-candidate-identity-${{ github.run_id }}
+          path: candidate-identity.json
+          if-no-files-found: error
+          retention-days: 90
+
+  retained-candidate:
+    needs: guard
+    if: needs.guard.outputs.candidate-mode == 'retained'
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.guard.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify retained artifact identity and availability
+        env:
+          ARTIFACT_DIGEST: ${{ inputs.candidate_artifact_digest }}
+          ARTIFACT_ID: ${{ inputs.candidate_artifact_id }}
+          GH_TOKEN: ${{ github.token }}
+          ORIGINAL_RUN_ID: ${{ inputs.candidate_run_id }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID" > "$RUNNER_TEMP/artifact.json"
+          test "$(jq -r .expired "$RUNNER_TEMP/artifact.json")" = 'false'
+          test "$(jq -r .workflow_run.id "$RUNNER_TEMP/artifact.json")" = "$ORIGINAL_RUN_ID"
+          test "$(jq -r .digest "$RUNNER_TEMP/artifact.json")" = "$ARTIFACT_DIGEST"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ inputs.candidate_artifact_id }}
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.candidate_run_id }}
+          path: retained
+      - name: Verify exact retained bytes and reconstruct identity
+        run: |
+          bundle="$(find retained -type f -name candidate-bundle.tar -print -quit)"
+          test -n "$bundle"
+          test "$(sha256sum "$bundle" | cut -d' ' -f1)" = '${{ inputs.candidate_bundle_sha256 }}'
+          cp "$bundle" candidate-bundle.tar
+          tar -xf candidate-bundle.tar
+          test "$(jq -r .commit dist/release/metadata.json)" = '${{ needs.guard.outputs.sha }}'
+          test "$(jq -r .tag dist/release/metadata.json)" = "$RELEASE_TAG"
+          jq -n \
+            --arg candidateArtifactDigest '${{ inputs.candidate_artifact_digest }}' \
+            --arg candidateArtifactId '${{ inputs.candidate_artifact_id }}' \
+            --arg candidateBundleSha256 '${{ inputs.candidate_bundle_sha256 }}' \
+            --arg metadataSha256 "$(sha256sum dist/release/metadata.json | cut -d' ' -f1)" \
+            --arg runId '${{ inputs.candidate_run_id }}' \
+            --arg sha '${{ needs.guard.outputs.sha }}' \
+            --arg tag "$RELEASE_TAG" \
+            '{candidateArtifactDigest:$candidateArtifactDigest,candidateArtifactId:$candidateArtifactId,candidateBundleSha256:$candidateBundleSha256,metadataSha256:$metadataSha256,runId:$runId,sha:$sha,tag:$tag}' \
+            > candidate-identity.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: retained-candidate-${{ github.run_id }}
+          path: |
+            candidate-bundle.tar
+            candidate-identity.json
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  candidate-source:
+    needs: [guard, candidate, retained-candidate]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      artifact-id: ${{ steps.source.outputs.artifact-id }}
+      bundle-sha256: ${{ steps.identity.outputs.bundle_sha256 }}
+    steps:
+      - name: Require exactly one successful candidate source
+        env:
+          BUILD_RESULT: ${{ needs.candidate.result }}
+          EXPECTED_MODE: ${{ needs.guard.outputs.candidate-mode }}
+          RETAINED_RESULT: ${{ needs.retained-candidate.result }}
+        run: |
+          case "$EXPECTED_MODE:$BUILD_RESULT:$RETAINED_RESULT" in
+            build:success:skipped|retained:skipped:success) ;;
+            *) exit 1 ;;
+          esac
+      - name: Download initial candidate bytes
+        if: needs.candidate.result == 'success'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: release-candidate-*${{ github.run_id }}
+          merge-multiple: true
+          path: source
+      - name: Download retained candidate bytes
+        if: needs.retained-candidate.result == 'success'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: retained-candidate-${{ github.run_id }}
+          path: source
+      - name: Verify the common candidate identity
+        id: identity
+        run: |
+          test -s source/candidate-bundle.tar
+          test -s source/candidate-identity.json
+          bundle_sha="$(sha256sum source/candidate-bundle.tar | cut -d' ' -f1)"
+          test "$bundle_sha" = "$(jq -r .candidateBundleSha256 source/candidate-identity.json)"
+          test "$(jq -r .sha source/candidate-identity.json)" = '${{ needs.guard.outputs.sha }}'
+          test "$(jq -r .tag source/candidate-identity.json)" = "$RELEASE_TAG"
+          echo "bundle_sha256=$bundle_sha" >> "$GITHUB_OUTPUT"
+      - name: Transfer the sole validated source to all lanes
+        id: source
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: candidate-source-${{ github.run_id }}
+          path: source
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+  common:
+    needs: [guard, candidate-source]
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.guard.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.14
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '24'
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        with:
+          just-version: 1.50.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.candidate-source.outputs.artifact-id }}
+          path: transferred
+      - name: Install exact repository and real-tool dependencies
+        run: |
+          npm_prefix="$RUNNER_TEMP/npm-12.0.1"
+          npm install --global --prefix "$npm_prefix" npm@12.0.1
+          echo "$npm_prefix/bin" >> "$GITHUB_PATH"
+          tool_prefix="$RUNNER_TEMP/real-tools"
+          npm install --global --prefix "$tool_prefix" @anthropic-ai/claude-code@2.1.202 @openai/codex@0.142.5
+          echo "$tool_prefix/bin" >> "$GITHUB_PATH"
+          bun install --frozen-lockfile --ignore-scripts
+          tool_bin="$RUNNER_TEMP/release-tools"
+          SKILLSMITH_TOOL_BIN_DIR="$tool_bin" ./scripts/install-actionlint.sh
+          echo "$tool_bin" >> "$GITHUB_PATH"
+      - name: Run canonical and real Claude/Codex release-candidate compatibility gates
+        env:
+          GITHUB_REF_NAME: ${{ needs.guard.outputs.tag }}
+          GITHUB_SHA: ${{ needs.guard.outputs.sha }}
+          SKILLSMITH_CANDIDATE_IDENTITY: ${{ github.workspace }}/transferred/candidate-identity.json
+          SKILLSMITH_RECEIPT_ARTIFACT_ID: pending
+          SKILLSMITH_RELEASE_CANDIDATE_BUNDLE: ${{ github.workspace }}/transferred/candidate-bundle.tar
+          SKILLSMITH_RELEASE_CANDIDATE_ROOT: ${{ github.workspace }}/dist/release
+          SKILLSMITH_RELEASE_RECEIPT_PATH: ${{ github.workspace }}/receipt-common.json
+          SKILLSMITH_E2E: '1'
+        run: |
+          tar -xf transferred/candidate-bundle.tar
+          just release-check common
+      - name: Upload common lane evidence
+        id: evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-evidence-common-${{ github.run_id }}
+          path: receipt-common.json
+          if-no-files-found: error
+      - name: Seal common receipt with its evidence artifact ID
+        env:
+          RECEIPT_ARTIFACT_ID: ${{ steps.evidence.outputs.artifact-id }}
+        run: jq --arg id "$RECEIPT_ARTIFACT_ID" '.receiptArtifactId=$id' receipt-common.json > sealed.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-receipt-common-${{ github.run_id }}
+          path: sealed.json
+          if-no-files-found: error
+
+  native:
+    needs: [guard, candidate-source]
+    name: Native candidate (${{ matrix.lane }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            lane: native-linux-x64
+          - runner: ubuntu-24.04-arm
+            lane: native-linux-arm64
+          - runner: macos-15
+            lane: native-darwin-arm64
+          - runner: macos-15-intel
+            lane: native-darwin-x64
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.guard.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.14
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '24'
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        with:
+          just-version: 1.50.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.candidate-source.outputs.artifact-id }}
+          path: transferred
+      - name: Install exact native-lifecycle tools
+        run: |
+          npm_prefix="$RUNNER_TEMP/npm-12.0.1"
+          npm install --global --prefix "$npm_prefix" npm@12.0.1
+          echo "$npm_prefix/bin" >> "$GITHUB_PATH"
+          bun install --frozen-lockfile --ignore-scripts
+      - name: Run the matching raw/direct/npm/Bun/cask lane
+        env:
+          GITHUB_REF_NAME: ${{ needs.guard.outputs.tag }}
+          GITHUB_SHA: ${{ needs.guard.outputs.sha }}
+          SKILLSMITH_CANDIDATE_IDENTITY: ${{ github.workspace }}/transferred/candidate-identity.json
+          SKILLSMITH_RECEIPT_ARTIFACT_ID: pending
+          SKILLSMITH_RELEASE_CANDIDATE_BUNDLE: ${{ github.workspace }}/transferred/candidate-bundle.tar
+          SKILLSMITH_RELEASE_CANDIDATE_ROOT: ${{ github.workspace }}/dist/release
+          SKILLSMITH_RELEASE_RECEIPT_PATH: ${{ github.workspace }}/receipt-native.json
+        run: |
+          tar -xf transferred/candidate-bundle.tar
+          just release-check '${{ matrix.lane }}'
+      - name: Upload native lane evidence
+        id: evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-evidence-${{ matrix.lane }}-${{ github.run_id }}
+          path: receipt-native.json
+          if-no-files-found: error
+      - name: Seal native receipt with its evidence artifact ID
+        env:
+          RECEIPT_ARTIFACT_ID: ${{ steps.evidence.outputs.artifact-id }}
+        run: jq --arg id "$RECEIPT_ARTIFACT_ID" '.receiptArtifactId=$id' receipt-native.json > 'sealed-${{ matrix.lane }}.json'
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-receipt-${{ matrix.lane }}-${{ github.run_id }}
+          path: sealed-${{ matrix.lane }}.json
+          if-no-files-found: error
+
+  validation-aggregate:
+    needs: [guard, common, native]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      artifact-id: ${{ steps.aggregate.outputs.artifact-id }}
+    steps:
+      - name: Require every credential-free producer to succeed
+        env:
+          COMMON_RESULT: ${{ needs.common.result }}
+          NATIVE_RESULT: ${{ needs.native.result }}
+        run: test "$COMMON_RESULT:$NATIVE_RESULT" = 'success:success'
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.guard.outputs.sha }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.14
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        with:
+          just-version: 1.50.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: release-receipt-*-${{ github.run_id }}
+          merge-multiple: true
+          path: receipts
+      - name: Close exactly one common and four native receipts
+        env:
+          SKILLSMITH_RELEASE_RECEIPT_PATH: ${{ github.workspace }}/validation-aggregate.json
+          SKILLSMITH_RELEASE_RECEIPTS_ROOT: ${{ github.workspace }}/receipts
+        run: just release-check aggregate
+      - name: Upload the sole sealed validation receipt
+        id: aggregate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-validation-${{ github.run_id }}
+          path: validation-aggregate.json
+          if-no-files-found: error
+
+  github-preflight:
+    needs: [guard, candidate-source, validation-aggregate]
+    runs-on: ubuntu-24.04
+    environment: github-release
+    permissions:
+      actions: read
+      attestations: write
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.validation-aggregate.outputs.artifact-id }}
+          path: validation
+      - name: Preflight exact draft/public release and immutable-release policy
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test -s validation/validation-aggregate.json
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > release.json
+          test "$(jq -r .prerelease release.json)" = 'false'
+          immutable="$(gh api "repos/$GITHUB_REPOSITORY/immutable-releases" -H 'X-GitHub-Api-Version: 2026-03-10' --jq .enabled)"
+          test "$immutable" = 'true'
+          jq -n --arg channel github --arg digest '${{ needs.candidate-source.outputs.bundle-sha256 }}' --arg sha '${{ needs.guard.outputs.sha }}' --arg tag "$RELEASE_TAG" '{channel:$channel,candidateBundleSha256:$digest,sha:$sha,tag:$tag,status:"passed"}' > github-preflight.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: authority-preflight-github-${{ github.run_id }}
+          path: github-preflight.json
+          if-no-files-found: error
+
+  npm-preflight:
+    needs: [guard, candidate-source, validation-aggregate]
+    runs-on: ubuntu-24.04
+    environment: npm
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.validation-aggregate.outputs.artifact-id }}
+          path: validation
+      - name: Preflight public provenance and all five trusted publishers
+        env:
+          NPM_TRUSTED_PUBLISHERS_READY: ${{ vars.NPM_TRUSTED_PUBLISHERS_READY }}
+        run: |
+          test -s validation/validation-aggregate.json
+          test "$NPM_TRUSTED_PUBLISHERS_READY" = '5'
+          test '${{ github.event.repository.private }}' = 'false'
+          jq -n --arg channel npm --arg digest '${{ needs.candidate-source.outputs.bundle-sha256 }}' --arg sha '${{ needs.guard.outputs.sha }}' --arg tag "$RELEASE_TAG" '{channel:$channel,candidateBundleSha256:$digest,sha:$sha,tag:$tag,status:"passed",trustedPublishers:5}' > npm-preflight.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: authority-preflight-npm-${{ github.run_id }}
+          path: npm-preflight.json
+          if-no-files-found: error
+
+  homebrew-preflight:
+    needs: [guard, candidate-source, validation-aggregate]
+    runs-on: ubuntu-24.04
+    environment: homebrew
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Mint short-lived tap App token
+        id: tap-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ vars.HOMEBREW_APP_ID }}
+          private-key: ${{ secrets.HOMEBREW_APP_PRIVATE_KEY }}
+          owner: smorinlabs
+          repositories: homebrew-tap
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.validation-aggregate.outputs.artifact-id }}
+          path: validation
+      - name: Preflight reviewed cask infrastructure and tap App access
+        env:
+          GH_TOKEN: ${{ steps.tap-token.outputs.token }}
+          TAP_CASK_CI_READY: ${{ vars.TAP_CASK_CI_READY }}
+        run: |
+          test -s validation/validation-aggregate.json
+          test "$TAP_CASK_CI_READY" = '1'
+          test "$(gh api repos/smorinlabs/homebrew-tap --jq .default_branch)" = 'main'
+          jq -n --arg channel homebrew --arg digest '${{ needs.candidate-source.outputs.bundle-sha256 }}' --arg sha '${{ needs.guard.outputs.sha }}' --arg tag "$RELEASE_TAG" '{channel:$channel,candidateBundleSha256:$digest,sha:$sha,tag:$tag,status:"passed",tapCi:true}' > homebrew-preflight.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: authority-preflight-homebrew-${{ github.run_id }}
+          path: homebrew-preflight.json
+          if-no-files-found: error
+
+  publication-ready:
+    needs: [guard, github-preflight, npm-preflight, homebrew-preflight]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+    outputs:
+      artifact-id: ${{ steps.ready.outputs.artifact-id }}
+    steps:
+      - name: Require all three protected authority preflights
+        env:
+          GITHUB_PREFLIGHT: ${{ needs.github-preflight.result }}
+          HOMEBREW_PREFLIGHT: ${{ needs.homebrew-preflight.result }}
+          NPM_PREFLIGHT: ${{ needs.npm-preflight.result }}
+        run: test "$GITHUB_PREFLIGHT:$NPM_PREFLIGHT:$HOMEBREW_PREFLIGHT" = 'success:success:success'
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: authority-preflight-*-${{ github.run_id }}
+          merge-multiple: true
+          path: preflights
+      - name: Seal the sole publication-ready receipt
+        run: |
+          test "$(find preflights -type f -name '*-preflight.json' | wc -l | tr -d ' ')" = '3'
+          jq -s --arg sha '${{ needs.guard.outputs.sha }}' --arg tag "$RELEASE_TAG" '
+            if length != 3 or ([.[].channel] | unique | length) != 3 or
+               any(.[]; .status != "passed" or .sha != $sha or .tag != $tag) or
+               ([.[].candidateBundleSha256] | unique | length) != 1
+            then error("authority preflight closure failed")
+            else {status:"passed",sha:$sha,tag:$tag,candidateBundleSha256:.[0].candidateBundleSha256,channels:[.[].channel] | sort}
+            end' preflights/*-preflight.json > publication-ready.json
+      - name: Upload publication-ready receipt
+        id: ready
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: publication-ready-${{ github.run_id }}
+          path: publication-ready.json
+          if-no-files-found: error
+
+  github-publish:
+    needs: [guard, candidate-source, publication-ready]
+    runs-on: ubuntu-24.04
+    environment: github-release
+    permissions:
+      actions: read
+      attestations: write
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.candidate-source.outputs.artifact-id }}
+          path: transferred
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.publication-ready.outputs.artifact-id }}
+          path: ready
+      - name: Upload only missing exact assets and reject occupied mismatches
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test -s ready/publication-ready.json
+          tar -xf transferred/candidate-bundle.tar
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > release.json
+          for asset in dist/release/skillsmith-v1.0.0-*.tar.gz dist/release/SHA256SUMS; do
+            name="${asset##*/}"
+            asset_id="$(jq -r --arg name "$name" '.assets[] | select(.name == $name) | .id' release.json)"
+            if [ -n "$asset_id" ]; then
+              gh api "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" -H 'Accept: application/octet-stream' > "$RUNNER_TEMP/$name"
+              test "$(sha256sum "$RUNNER_TEMP/$name" | cut -d' ' -f1)" = "$(sha256sum "$asset" | cut -d' ' -f1)"
+            else
+              gh release upload "$RELEASE_TAG" "$asset"
+            fi
+          done
+      - name: Attest direct release assets
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
+        with:
+          subject-path: |
+            dist/release/skillsmith-v1.0.0-*.tar.gz
+            dist/release/SHA256SUMS
+      - name: Publish the complete draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" --jq .draft)" = 'true' ]; then
+            gh release edit "$RELEASE_TAG" --draft=false --latest
+          fi
+
+  npm-publish:
+    needs: [guard, candidate-source, publication-ready, github-publish]
+    runs-on: ubuntu-24.04
+    environment: npm
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.candidate-source.outputs.artifact-id }}
+          path: transferred
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.publication-ready.outputs.artifact-id }}
+          path: ready
+      - name: Install exact npm
+        run: npm install --global npm@12.0.1
+      - name: Publish four payloads before the script-free launcher
+        run: |
+          test -s ready/publication-ready.json
+          tar -xf transferred/candidate-bundle.tar
+          publish_exact() {
+            tarball="$1"
+            package="$(tar -xOzf "$tarball" package/package.json | jq -r .name)"
+            local_integrity="sha512-$(openssl dgst -sha512 -binary "$tarball" | openssl base64 -A)"
+            remote_integrity="$(npm view "$package@$RELEASE_VERSION" dist.integrity --json 2>/dev/null | jq -r '. // empty')"
+            if [ -n "$remote_integrity" ]; then
+              test "$remote_integrity" = "$local_integrity"
+            else
+              npm publish "$tarball" --access public --provenance
+            fi
+          }
+          for tarball in \
+            dist/release/npm/smorinlabs-skillsmith-darwin-arm64-1.0.0.tgz \
+            dist/release/npm/smorinlabs-skillsmith-darwin-x64-1.0.0.tgz \
+            dist/release/npm/smorinlabs-skillsmith-linux-arm64-1.0.0.tgz \
+            dist/release/npm/smorinlabs-skillsmith-linux-x64-1.0.0.tgz; do
+            publish_exact "$tarball"
+          done
+          publish_exact dist/release/npm/smorinlabs-skillsmith-1.0.0.tgz
+
+  homebrew-publish:
+    needs: [guard, candidate-source, publication-ready, npm-publish]
+    runs-on: ubuntu-24.04
+    environment: homebrew
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Mint short-lived tap App token
+        id: tap-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ vars.HOMEBREW_APP_ID }}
+          private-key: ${{ secrets.HOMEBREW_APP_PRIVATE_KEY }}
+          owner: smorinlabs
+          repositories: homebrew-tap
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.candidate-source.outputs.artifact-id }}
+          path: transferred
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: smorinlabs/homebrew-tap
+          ref: main
+          path: tap
+          token: ${{ steps.tap-token.outputs.token }}
+          persist-credentials: true
+      - name: Open the reviewed cask PR or accept its exact merged state
+        env:
+          GH_TOKEN: ${{ steps.tap-token.outputs.token }}
+        run: |
+          tar -xf transferred/candidate-bundle.tar
+          candidate="$GITHUB_WORKSPACE/dist/release/homebrew/Casks/skillsmith.rb"
+          destination="$GITHUB_WORKSPACE/tap/Casks/skillsmith.rb"
+          if [ -f "$destination" ] && cmp -s "$candidate" "$destination"; then
+            exit 0
+          fi
+          branch='release/skillsmith-v1.0.0'
+          cd tap
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            git fetch --no-tags origin "$branch:refs/remotes/origin/$branch"
+            git show "refs/remotes/origin/$branch:Casks/skillsmith.rb" > "$RUNNER_TEMP/open-skillsmith.rb"
+            cmp "$candidate" "$RUNNER_TEMP/open-skillsmith.rb"
+            pr_url="$(gh pr list --repo smorinlabs/homebrew-tap --state open --head "$branch" --json url --jq '.[0].url // empty')"
+            test -n "$pr_url"
+            echo "$pr_url"
+            echo 'The exact tap PR is still open; merge it and rerun with the retained candidate.' >&2
+            exit 1
+          fi
+          git switch -c "$branch"
+          mkdir -p Casks
+          cp "$candidate" Casks/skillsmith.rb
+          git config user.name 'skillsmith-homebrew-app[bot]'
+          git config user.email 'skillsmith-homebrew-app[bot]@users.noreply.github.com'
+          git add Casks/skillsmith.rb
+          git diff --cached --check
+          git commit -m 'feat(cask): add skillsmith 1.0.0'
+          git push origin "$branch"
+          gh pr create --repo smorinlabs/homebrew-tap --base main --head "$branch" --title 'feat(cask): add skillsmith 1.0.0' --body 'Generated from the exact validated smorinlabs/skillsmith v1.0.0 candidate. Merge only after cask CI succeeds.'
+          echo 'The reviewed tap PR must merge before public validation; rerun with the retained candidate afterward.' >&2
+          exit 1
+
+  public-validation:
+    needs: [guard, candidate-source, homebrew-publish]
+    name: Public v1.0.0 (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: linux-x64
+          - runner: ubuntu-24.04-arm
+            target: linux-arm64
+          - runner: macos-15
+            target: darwin-arm64
+          - runner: macos-15-intel
+            target: darwin-x64
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    steps:
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.14
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '24'
+      - name: Install exact npm
+        run: npm install --global npm@12.0.1
+      - name: Prove public direct, npm, Bun, and macOS Homebrew lifecycle and orientation
+        env:
+          CANDIDATE_BUNDLE_SHA256: ${{ needs.candidate-source.outputs.bundle-sha256 }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ needs.guard.outputs.sha }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -eu
+          root="$RUNNER_TEMP/public-skillsmith"
+          mkdir -p "$root/direct" "$root/npm" "$root/bun"
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "skillsmith-v1.0.0-$TARGET.tar.gz" --dir "$root/direct"
+          tar -xzf "$root/direct/skillsmith-v1.0.0-$TARGET.tar.gz" -C "$root/direct"
+
+          verify_orientation() {
+            binary="$1"
+            test "$("$binary" version)" = "$RELEASE_VERSION"
+            "$binary" help > "$root/help.txt"
+            "$binary" agents --capabilities --format json > "$root/agents.json"
+            "$binary" completion zsh > "$root/_skillsmith"
+            test -s "$root/_skillsmith"
+            for command in agents list commands status install uninstall update undo dev verify promote init export plan apply sync doctor check gc config completion version help; do
+              grep -Eq "(^|[ |])$command([ |]|$)" "$root/help.txt"
+            done
+            jq -e '.capabilities.tools | length > 0' "$root/agents.json" >/dev/null
+          }
+
+          make_stub() {
+            name="$1"
+            version="$2"
+            printf '#!/bin/sh\nprintf "%%s\\n" "%s"\n' "$version" > "$root/fleet/$name"
+            chmod 0755 "$root/fleet/$name"
+          }
+
+          verify_fleet() {
+            label="$1"
+            expected="$2"
+            shift 2
+            rm -rf "$root/fleet" "$root/fleet-home"
+            mkdir -p "$root/fleet" "$root/fleet-home"
+            for tool in "$@"; do
+              case "$tool" in
+                claude) make_stub claude '2.1.202 (Claude Code)' ;;
+                codex) make_stub codex 'codex-cli 0.142.5' ;;
+                kilo) make_stub kilo '7.4.5' ;;
+                opencode) make_stub opencode '1.17.18' ;;
+                *) exit 1 ;;
+              esac
+            done
+            HOME="$root/fleet-home" XDG_CONFIG_HOME="$root/fleet-home/config" XDG_CACHE_HOME="$root/fleet-home/cache" XDG_DATA_HOME="$root/fleet-home/data" PATH="$root/fleet:/usr/bin:/bin" "$root/direct/skillsmith" agents --capabilities --format json > "$root/fleet-$label.json"
+            test "$(jq '.detections | length' "$root/fleet-$label.json")" = "$expected"
+          }
+
+          verify_orientation "$root/direct/skillsmith"
+          grep -Fq 'list|ls' "$root/help.txt"
+          grep -Fq 'install|i' "$root/help.txt"
+          grep -Fq 'uninstall|remove|rm' "$root/help.txt"
+          grep -Fq 'dev|demote' "$root/help.txt"
+          verify_fleet zero 0
+          verify_fleet claude 1 claude
+          verify_fleet codex 1 codex
+          verify_fleet both 2 claude codex
+          verify_fleet kilo 1 kilo
+          verify_fleet opencode 1 opencode
+          verify_fleet mixed 2 claude kilo
+          HOME="$root/fleet-home" XDG_CONFIG_HOME="$root/fleet-home/config" XDG_CACHE_HOME="$root/fleet-home/cache" XDG_DATA_HOME="$root/fleet-home/data" PATH="$root/fleet:/usr/bin:/bin" "$root/direct/skillsmith" doctor --json > "$root/doctor.json"
+          test -s "$root/doctor.json"
+          set +e
+          HOME="$root/fleet-home" XDG_CONFIG_HOME="$root/fleet-home/config" XDG_CACHE_HOME="$root/fleet-home/cache" XDG_DATA_HOME="$root/fleet-home/data" PATH="$root/fleet:/usr/bin:/bin" "$root/direct/skillsmith" install owner/repo --tool kilo-code --user --no-verify --no-prompt --json > "$root/read-only-mutation.json"
+          mutation_exit="$?"
+          set -e
+          test "$mutation_exit" = '4'
+          npm install --global --prefix "$root/npm" --ignore-scripts "@smorinlabs/skillsmith@$RELEASE_VERSION"
+          npm install --global --prefix "$root/npm" --ignore-scripts "@smorinlabs/skillsmith@$RELEASE_VERSION"
+          verify_orientation "$root/npm/bin/skillsmith"
+          npm uninstall --global --prefix "$root/npm" --ignore-scripts @smorinlabs/skillsmith
+          test ! -e "$root/npm/bin/skillsmith"
+
+          BUN_INSTALL="$root/bun" bun add --global --exact --ignore-scripts "@smorinlabs/skillsmith@$RELEASE_VERSION"
+          BUN_INSTALL="$root/bun" bun add --global --exact --ignore-scripts "@smorinlabs/skillsmith@$RELEASE_VERSION"
+          verify_orientation "$root/bun/bin/skillsmith"
+          BUN_INSTALL="$root/bun" bun remove --global @smorinlabs/skillsmith
+          test ! -e "$root/bun/bin/skillsmith"
+
+          channels='["direct","npm","bun"]'
+          if [ "$RUNNER_OS" = 'macOS' ]; then
+            brew install --cask smorinlabs/tap/skillsmith
+            verify_orientation "$(command -v skillsmith)"
+            brew uninstall --cask skillsmith
+            channels='["direct","npm","bun","homebrew"]'
+          fi
+          rm -rf "$root/direct" "$root/npm" "$root/bun"
+          commands='["agents","list","commands","status","install","uninstall","update","undo","dev","verify","promote","init","export","plan","apply","sync","doctor","check","gc","config","completion","version","help"]'
+          jq -n \
+            --arg digest "$CANDIDATE_BUNDLE_SHA256" \
+            --arg runner '${{ matrix.runner }}' \
+            --arg sha "$RELEASE_SHA" \
+            --argjson channels "$channels" \
+            --argjson commands "$commands" \
+            '{aliasesAdjacent:true,candidateBundleSha256:$digest,capabilityOrientation:true,channels:$channels,cleanOwnedPrefix:true,commands:$commands,completionZshValid:true,fleetCases:7,noSourceCheckoutOnPath:true,readOnlyMutationExit:4,requiredSkips:0,runner:$runner,sha:$sha,tag:"v1.0.0",upgradeUninstall:true,version:"1.0.0",writesWithinRoots:true}' \
+            > 'public-${{ matrix.target }}.json'
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: public-receipt-${{ matrix.target }}-${{ github.run_id }}
+          path: public-${{ matrix.target }}.json
+          if-no-files-found: error
+
+  public-aggregate:
+    needs: [guard, public-validation]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Require all four public runners
+        env:
+          PUBLIC_RESULT: ${{ needs.public-validation.result }}
+        run: test "$PUBLIC_RESULT" = 'success'
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.guard.outputs.sha }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.14
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: public-receipt-*-${{ github.run_id }}
+          merge-multiple: true
+          path: public-receipts
+      - name: Close EWP-WF01 with nonempty zero-skip public receipts
+        run: |
+          bun -e 'import { readdir, readFile } from "node:fs/promises"; import { validatePublicWorkflowReceipts } from "./scripts/release-gates.ts"; const root="public-receipts"; const receipts=await Promise.all((await readdir(root)).filter(x=>x.endsWith(".json")).map(async x=>JSON.parse(await readFile(`${root}/${x}`,"utf8")))); console.log(JSON.stringify(validatePublicWorkflowReceipts({receipts})));'

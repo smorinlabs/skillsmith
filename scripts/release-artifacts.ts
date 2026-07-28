@@ -802,6 +802,17 @@ export type BuildReleaseCandidateInput = Readonly<{
   version: string;
   sourceRevision: string;
   target: 'all';
+  mode?: 'snapshot' | 'release';
+  releaseSecrets?: Readonly<
+    Record<
+      | 'MACOS_SIGN_P12'
+      | 'MACOS_SIGN_PASSWORD'
+      | 'MACOS_NOTARY_KEY'
+      | 'MACOS_NOTARY_KEY_ID'
+      | 'MACOS_NOTARY_ISSUER_ID',
+      string
+    >
+  >;
   canaries?: readonly string[];
 }>;
 
@@ -824,6 +835,7 @@ export const buildReleaseCandidate = async (
   const stagingRoot = resolve(input.stagingRoot);
   const outputRoot = resolve(input.outputRoot);
   const version = validateReleaseVersion(input.version);
+  const mode = input.mode ?? 'snapshot';
   assertSourceRevision(input.sourceRevision);
   if (input.target !== 'all')
     throw new Error('standard release candidates require all four targets');
@@ -839,12 +851,35 @@ export const buildReleaseCandidate = async (
   const isolatedTemp = join(workRoot, 'tmp');
   await mkdir(isolatedHome, { recursive: true });
   await mkdir(isolatedTemp, { recursive: true });
-  const env = createControlledBuildEnvironment({
+  const baseEnvironment = createControlledBuildEnvironment({
     path: toolPath(),
     home: isolatedHome,
     tmpdir: isolatedTemp,
     tag: `v${version}`,
   });
+  const secretNames = [
+    'MACOS_SIGN_P12',
+    'MACOS_SIGN_PASSWORD',
+    'MACOS_NOTARY_KEY',
+    'MACOS_NOTARY_KEY_ID',
+    'MACOS_NOTARY_ISSUER_ID',
+  ] as const;
+  if (
+    (mode === 'release' &&
+      (input.releaseSecrets === undefined ||
+        secretNames.some((name) => input.releaseSecrets?.[name].length === 0))) ||
+    (mode === 'snapshot' && input.releaseSecrets !== undefined)
+  ) {
+    throw new Error('release signing values must be complete and release-mode-only');
+  }
+  const env = {
+    ...baseEnvironment,
+    ...(mode === 'release' ? input.releaseSecrets : {}),
+  } as Readonly<Record<string, string>>;
+  const canaries = [
+    ...(input.canaries ?? []),
+    ...(mode === 'release' ? secretNames.map((name) => env[name] ?? '') : []),
+  ];
   const goreleaser = Bun.which('goreleaser', { PATH: env.PATH });
   const npm = Bun.which('npm', { PATH: env.PATH });
   if (goreleaser === null || npm === null) {
@@ -891,10 +926,14 @@ export const buildReleaseCandidate = async (
     );
     const configPath = join(workRoot, `goreleaser-${randomUUID()}.yaml`);
     await writeFile(configPath, derivedConfig, { mode: 0o600 });
-    runChecked([goreleaser, 'release', '--snapshot', '--clean', '--config', configPath], {
+    const goreleaserArguments =
+      mode === 'release'
+        ? [goreleaser, 'release', '--clean', '--skip=publish,announce', '--config', configPath]
+        : [goreleaser, 'release', '--snapshot', '--clean', '--config', configPath];
+    runChecked(goreleaserArguments, {
       cwd: repositoryRoot,
       env,
-      canaries: input.canaries ?? [],
+      canaries,
     });
 
     const artifactsPath = join(outputRoot, 'artifacts.json');
@@ -1007,7 +1046,7 @@ export const buildReleaseCandidate = async (
     ) {
       throw new Error('generated cask contains a missing binary stanza or forbidden bypass');
     }
-    if ((input.canaries ?? []).length > 0) {
+    if (canaries.length > 0) {
       const outputFiles: Record<string, Uint8Array> = {};
       const visit = async (directory: string): Promise<void> => {
         for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -1017,7 +1056,7 @@ export const buildReleaseCandidate = async (
         }
       };
       await visit(outputRoot);
-      assertNoReleaseLeaks({ canaries: input.canaries ?? [], outputs: outputFiles });
+      assertNoReleaseLeaks({ canaries, outputs: outputFiles });
     }
     return {
       outputRoot,

@@ -18,7 +18,7 @@ pre-push:
     typecheck:
       run: bunx tsc --noEmit
     test:
-      run: bun test
+      run: bun scripts/run-test-files-serial.ts
     gitleaks:
       run: ./scripts/check-gitleaks.sh full
     audit:
