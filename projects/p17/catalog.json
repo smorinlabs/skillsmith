@@ -7838,8 +7838,10 @@
           ]
         },
         "refactor": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G6-01.md#security-refactor-and-renewed-terminal-gate-at-a640e51"
+          ]
         },
         "adversarial-review": {
           "status": "pending",
@@ -7892,7 +7894,8 @@
         "projects/p17/evidence/P17-G6-01.md#pre-sign-off-dependency-and-security-lint-finding-and-ownership-amendment",
         "projects/p17/evidence/P17-G6-01.md#security-suppression-scoping-correction",
         "projects/p17/evidence/P17-G6-01.md#security-amendment-independent-review-no-go-and-wildcard-correction",
-        "projects/p17/evidence/P17-G6-01.md#platform-neutral-wildcard-amendment-no-go-at-882f8f0"
+        "projects/p17/evidence/P17-G6-01.md#platform-neutral-wildcard-amendment-no-go-at-882f8f0",
+        "projects/p17/evidence/P17-G6-01.md#security-refactor-and-renewed-terminal-gate-at-a640e51"
       ]
     },
     {
