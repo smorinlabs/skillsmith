@@ -8430,6 +8430,7 @@
         "scripts/run-test-files-serial.test.ts",
         "scripts/run-test-files-serial.ts",
         "tests/ergonomics/phase/EWP-P6-TS01.test.ts",
+        "tests/ergonomics/phase/EWP-P1-TS11.test.ts",
         "tests/ergonomics/phase/EWP-P6-TS06.test.ts",
         "tests/ergonomics/workflows/EWP-WF01.test.ts",
         "projects/p17/evidence/P17-G6-04.md",
@@ -8440,6 +8441,7 @@
       "requiredNowValidations": ["EWP-P6-TS06", "EWP-WF01"],
       "downstreamCoverage": [],
       "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P1-TS11.test.ts --test-name-pattern EWP-P1-TS11",
         "bun test tests/ergonomics/phase/EWP-P6-TS06.test.ts --test-name-pattern EWP-P6-TS06",
         "bun test tests/ergonomics/workflows/EWP-WF01.test.ts --test-name-pattern EWP-WF01"
       ],

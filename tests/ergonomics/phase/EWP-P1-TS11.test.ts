@@ -2335,6 +2335,7 @@ describe('EWP-P1-TS11', () => {
         scripts: [
           'dev',
           'test',
+          'test:terminal',
           'test:smoke',
           'test:smoke:p2-ts04',
           'test:smoke:p2-ts04:recovery',
