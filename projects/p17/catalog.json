@@ -7761,7 +7761,8 @@
         "bun.lock",
         "docs/releases.md",
         "eslint.security.config.js",
-        "eslint-suppressions.json",
+        "eslint-security-suppressions.json",
+        "lefthook.yml",
         "package.json",
         "packaging/README.md",
         "packaging/homebrew/skillsmith.rb.tmpl",
@@ -7880,7 +7881,8 @@
         "projects/p17/evidence/P17-G6-01.md#serial-runner-independent-review-no-go-and-f10-f12-corrections",
         "projects/p17/evidence/P17-G6-01.md#corrected-serial-runner-independent-review-go-at-6f90949",
         "projects/p17/evidence/P17-G6-01.md#complete-clean-clone-serial-terminal-gate-and-impacted-green-at-6f90949",
-        "projects/p17/evidence/P17-G6-01.md#pre-sign-off-dependency-and-security-lint-finding-and-ownership-amendment"
+        "projects/p17/evidence/P17-G6-01.md#pre-sign-off-dependency-and-security-lint-finding-and-ownership-amendment",
+        "projects/p17/evidence/P17-G6-01.md#security-suppression-scoping-correction"
       ]
     },
     {
