@@ -1,0 +1,13 @@
+name: P17-G6-04 release placeholder
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  inert-before-ready:
+    if: ${{ github.repository == '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: 'false'

@@ -8395,20 +8395,48 @@
       "phase": "6",
       "title": "Canonical PR/release recipes, exact-SHA publication gate, and final 1.0 evidence",
       "dependsOn": ["P17-G6-01"],
-      "status": "planned",
+      "status": "mapped",
       "owner": "root-goal",
-      "ownedFiles": [],
-      "integrationOwner": null,
+      "ownedFiles": [
+        ".github/dependabot.yml",
+        ".github/workflows/ci.yml",
+        ".github/workflows/release-please.yml",
+        ".github/workflows/release.yml",
+        ".goreleaser.yaml",
+        "README.md",
+        "docs/adr/0010-release-validation-and-publication.md",
+        "docs/adr/README.md",
+        "docs/releases.md",
+        "justfile",
+        "lefthook.yml",
+        "package.json",
+        "release-please-config.json",
+        "scripts/build-release.ts",
+        "scripts/install-gitleaks.sh",
+        "scripts/release-artifacts.test.ts",
+        "scripts/release-artifacts.ts",
+        "scripts/release-check.ts",
+        "scripts/release-gates.test.ts",
+        "scripts/release-gates.ts",
+        "scripts/run-test-files-serial.test.ts",
+        "scripts/run-test-files-serial.ts",
+        "tests/ergonomics/phase/EWP-P6-TS01.test.ts",
+        "tests/ergonomics/phase/EWP-P6-TS06.test.ts",
+        "tests/ergonomics/workflows/EWP-WF01.test.ts",
+        "projects/p17/evidence/P17-G6-04.md",
+        "projects/p17/plans/P17-G6-04.md"
+      ],
+      "integrationOwner": "root-codex-goal",
       "impactedValidations": ["EWP-P6-TS06", "EWP-WF01"],
       "requiredNowValidations": ["EWP-P6-TS06", "EWP-WF01"],
       "downstreamCoverage": [],
       "testCommands": [],
-      "implementers": [],
+      "implementers": ["root-codex-goal"],
       "reviewer": null,
       "gates": {
         "mapped": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": ["projects/p17/evidence/P17-G6-04.md#mapping-and-prerequisites"]
         },
         "ready": {
           "status": "pending",
@@ -8447,7 +8475,10 @@
           "evidence": []
         }
       },
-      "evidence": []
+      "evidence": [
+        "projects/p17/evidence/P17-G6-04.md#mapping-and-prerequisites",
+        "projects/p17/evidence/P17-G6-04.md#mapping-result"
+      ]
     },
     {
       "id": "P17-G7-01",
