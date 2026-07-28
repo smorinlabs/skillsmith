@@ -123,6 +123,10 @@ function requireExactSet(
   }
 }
 
+function requireUnique(actual: readonly string[], label: string): void {
+  if (new Set(actual).size !== actual.length) fail(`${label} contains a duplicate`);
+}
+
 function requireSha(value: unknown, pattern: RegExp, label: string): string {
   const candidate = string(value, label);
   if (!pattern.test(candidate)) fail(`${label} is malformed`);
@@ -211,6 +215,7 @@ export function resolveCandidateSource(
 type ValidReceipt = Readonly<{
   candidateArtifactId: string;
   candidateBundleSha256: string;
+  candidateMetadataSha256: string;
   lane: string;
   receiptArtifactId: string;
   requiredSkips: number;
@@ -219,6 +224,7 @@ type ValidReceipt = Readonly<{
   status: 'passed';
   tag: 'v1.0.0';
   tests: number;
+  version: '1.0.0';
 }>;
 
 function releaseReceipt(value: unknown, label: string): ValidReceipt {
@@ -236,6 +242,11 @@ function releaseReceipt(value: unknown, label: string): ValidReceipt {
       SHA_256,
       `${label} candidate digest`,
     ),
+    candidateMetadataSha256: requireSha(
+      receipt.candidateMetadataSha256,
+      SHA_256,
+      `${label} candidate metadata digest`,
+    ),
     lane: string(receipt.lane, `${label} lane`),
     receiptArtifactId: string(receipt.receiptArtifactId, `${label} receipt artifact ID`),
     requiredSkips,
@@ -244,16 +255,22 @@ function releaseReceipt(value: unknown, label: string): ValidReceipt {
     status: 'passed',
     tag: P17_TAG,
     tests,
+    version:
+      string(receipt.version, `${label} version`) === P17_VERSION
+        ? P17_VERSION
+        : fail(`${label} version is not 1.0.0`),
   };
 }
 
 export function validateReleaseReceiptSet(input: unknown): {
   candidateArtifactId: string;
   candidateBundleSha256: string;
+  candidateMetadataSha256: string;
   receiptCount: 5;
   runId: string;
   sha: string;
   tag: 'v1.0.0';
+  version: '1.0.0';
 } {
   const value = record(input, 'release receipts');
   const common = releaseReceipt(value.common, 'common receipt');
@@ -268,8 +285,7 @@ export function validateReleaseReceiptSet(input: unknown): {
     'native lanes',
   );
   const receipts = [common, ...native];
-  requireExactSet(
-    receipts.map((receipt) => receipt.receiptArtifactId),
+  requireUnique(
     receipts.map((receipt) => receipt.receiptArtifactId),
     'receipt artifact IDs',
   );
@@ -277,9 +293,11 @@ export function validateReleaseReceiptSet(input: unknown): {
     if (
       receipt.candidateArtifactId !== common.candidateArtifactId ||
       receipt.candidateBundleSha256 !== common.candidateBundleSha256 ||
+      receipt.candidateMetadataSha256 !== common.candidateMetadataSha256 ||
       receipt.runId !== common.runId ||
       receipt.sha !== common.sha ||
-      receipt.tag !== common.tag
+      receipt.tag !== common.tag ||
+      receipt.version !== common.version
     ) {
       fail(`${receipt.lane} is not bound to the common candidate/run/source identity`);
     }
@@ -287,10 +305,12 @@ export function validateReleaseReceiptSet(input: unknown): {
   return {
     candidateArtifactId: common.candidateArtifactId,
     candidateBundleSha256: common.candidateBundleSha256,
+    candidateMetadataSha256: common.candidateMetadataSha256,
     receiptCount: 5,
     runId: common.runId,
     sha: common.sha,
     tag: common.tag,
+    version: common.version,
   };
 }
 
@@ -391,16 +411,106 @@ export function validateExternalReadiness(input: unknown): { ready: true } {
   return { ready: true };
 }
 
+type PublicationIdentity = Readonly<{
+  candidateArtifactId: string;
+  candidateBundleSha256: string;
+  candidateMetadataSha256: string;
+  sha: string;
+  tag: 'v1.0.0';
+  version: '1.0.0';
+}>;
+
+function publicationIdentity(value: UnknownRecord, label: string): PublicationIdentity {
+  const tag = string(value.tag, `${label} tag`);
+  if (tag !== P17_TAG) fail(`${label} tag is not v1.0.0`);
+  const version = string(value.version, `${label} version`);
+  if (version !== P17_VERSION) fail(`${label} version is not 1.0.0`);
+  return {
+    candidateArtifactId: string(value.candidateArtifactId, `${label} candidate artifact ID`),
+    candidateBundleSha256: requireSha(
+      value.candidateBundleSha256,
+      SHA_256,
+      `${label} candidate bundle digest`,
+    ),
+    candidateMetadataSha256: requireSha(
+      value.candidateMetadataSha256,
+      SHA_256,
+      `${label} candidate metadata digest`,
+    ),
+    sha: requireSha(value.sha, SHA_1, `${label} source SHA`),
+    tag: P17_TAG,
+    version: P17_VERSION,
+  };
+}
+
+function samePublicationIdentity(
+  actual: PublicationIdentity,
+  expected: PublicationIdentity,
+  label: string,
+): void {
+  for (const key of Object.keys(expected) as (keyof PublicationIdentity)[]) {
+    if (actual[key] !== expected[key]) fail(`${label} has candidate identity drift in ${key}`);
+  }
+}
+
+export function validatePublicationReadiness(input: unknown): PublicationIdentity & {
+  complete: boolean;
+  mode: 'initial' | 'resume' | 'complete';
+  status: 'passed';
+} {
+  const value = record(input, 'publication readiness');
+  validateExternalReadiness(value.external);
+  if (!Array.isArray(value.preflights)) fail('publication preflights must be an array');
+  const preflights = value.preflights.map((entry, index) => {
+    const receipt = record(entry, `publication preflight ${index + 1}`);
+    if (string(receipt.status, `publication preflight ${index + 1} status`) !== 'passed') {
+      fail(`publication preflight ${index + 1} did not pass`);
+    }
+    return {
+      channel: string(receipt.channel, `publication preflight ${index + 1} channel`),
+      identity: publicationIdentity(receipt, `publication preflight ${index + 1}`),
+      receipt,
+    };
+  });
+  requireExactSet(
+    preflights.map(({ channel }) => channel),
+    ['github', 'npm', 'homebrew'],
+    'publication preflight channels',
+  );
+  const reference = preflights[0]?.identity;
+  if (reference === undefined) fail('publication preflight set is empty');
+  for (const preflight of preflights) {
+    samePublicationIdentity(preflight.identity, reference, `${preflight.channel} preflight`);
+  }
+  const byChannel = new Map(preflights.map((preflight) => [preflight.channel, preflight.receipt]));
+  const github = string(byChannel.get('github')?.state, 'GitHub preflight state');
+  const npm = strings(byChannel.get('npm')?.states, 'npm preflight states');
+  const tap = string(byChannel.get('homebrew')?.state, 'Homebrew preflight state');
+  const classification = classifyPublicationState({
+    candidateRetained: boolean(value.candidateRetained, 'candidate retention'),
+    github,
+    npm,
+    tap,
+  });
+  return { ...reference, ...classification, status: 'passed' };
+}
+
 type PublicReceipt = Readonly<{
   aliasesAdjacent: true;
+  attestationVerified: true;
+  candidateArtifactId: string;
   candidateBundleSha256: string;
+  candidateMetadataSha256: string;
   capabilityOrientation: true;
+  channelBinarySha256: Record<string, string>;
   channels: string[];
   cleanOwnedPrefix: true;
   commands: string[];
   completionZshValid: true;
+  directChecksumVerified: true;
   fleetCases: 7;
   noSourceCheckoutOnPath: true;
+  noToolDiagnosis: true;
   readOnlyMutationExit: 4;
   requiredSkips: 0;
   runner: string;
@@ -427,7 +537,10 @@ function publicReceipt(value: unknown, label: string): PublicReceipt {
   }
   for (const [key, description] of [
     ['aliasesAdjacent', 'alias adjacency'],
+    ['attestationVerified', 'artifact attestation'],
     ['capabilityOrientation', 'capability orientation'],
+    ['directChecksumVerified', 'direct archive checksum'],
+    ['noToolDiagnosis', 'no-tool diagnosis'],
     ['upgradeUninstall', 'upgrade/uninstall lifecycle'],
     ['writesWithinRoots', 'write-root confinement'],
   ] as const) {
@@ -446,20 +559,39 @@ function publicReceipt(value: unknown, label: string): PublicReceipt {
   if (commands.join('\0') !== PUBLIC_COMMAND_ORDER.join('\0')) {
     fail(`${label} does not contain all 23 commands in group order`);
   }
+  const channels = strings(receipt.channels, `${label} channels`);
+  const channelDigests = record(receipt.channelBinarySha256, `${label} channel binary digests`);
+  requireExactSet(Object.keys(channelDigests), channels, `${label} channel binary digest keys`);
+  const digests = Object.entries(channelDigests).map(([channel, digest]) =>
+    requireSha(digest, SHA_256, `${label} ${channel} binary digest`),
+  );
+  if (new Set(digests).size !== 1) fail(`${label} channel native binaries are not byte-identical`);
   return {
     aliasesAdjacent: true,
+    attestationVerified: true,
+    candidateArtifactId: string(receipt.candidateArtifactId, `${label} candidate artifact ID`),
     candidateBundleSha256: requireSha(
       receipt.candidateBundleSha256,
       SHA_256,
       `${label} candidate digest`,
     ),
+    candidateMetadataSha256: requireSha(
+      receipt.candidateMetadataSha256,
+      SHA_256,
+      `${label} candidate metadata digest`,
+    ),
     capabilityOrientation: true,
-    channels: strings(receipt.channels, `${label} channels`),
+    channelBinarySha256: Object.fromEntries(
+      Object.keys(channelDigests).map((channel, index) => [channel, digests[index] as string]),
+    ),
+    channels,
     cleanOwnedPrefix: true,
     commands,
     completionZshValid: true,
+    directChecksumVerified: true,
     fleetCases: 7,
     noSourceCheckoutOnPath: true,
+    noToolDiagnosis: true,
     readOnlyMutationExit: 4,
     requiredSkips: 0,
     runner: string(receipt.runner, `${label} runner`),
@@ -490,6 +622,8 @@ export function validatePublicWorkflowReceipts(input: unknown): {
   for (const receipt of receipts) {
     if (
       receipt.candidateBundleSha256 !== reference.candidateBundleSha256 ||
+      receipt.candidateArtifactId !== reference.candidateArtifactId ||
+      receipt.candidateMetadataSha256 !== reference.candidateMetadataSha256 ||
       receipt.sha !== reference.sha ||
       receipt.tag !== reference.tag ||
       receipt.version !== reference.version

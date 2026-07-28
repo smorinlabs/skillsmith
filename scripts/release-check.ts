@@ -107,6 +107,7 @@ const expectedLaneForHost = (): Lane => `native-${hostTargetId()}` as Lane;
 type CandidateContext = Readonly<{
   candidateArtifactId: string;
   candidateBundleSha256: string;
+  candidateMetadataSha256: string;
   candidateRoot: string;
   caskPath: string;
   inventory: ReturnType<typeof validateGoreleaserInventory>;
@@ -127,6 +128,7 @@ async function validateCandidate(): Promise<CandidateContext> {
   const sha = text(identity.sha, 'candidate SHA');
   const tag = text(identity.tag, 'candidate tag');
   const bundleSha256 = text(identity.candidateBundleSha256, 'candidate bundle SHA-256');
+  const metadataSha256 = text(identity.candidateMetadataSha256, 'candidate metadata SHA-256');
   if (Bun.version !== EXPECTED_BUN_VERSION) fail(`Bun ${EXPECTED_BUN_VERSION} is required`);
   if (sha !== requiredEnvironment('GITHUB_SHA') || sha !== git(['rev-parse', 'HEAD'])) {
     fail('candidate/check-out SHA mismatch');
@@ -144,12 +146,16 @@ async function validateCandidate(): Promise<CandidateContext> {
     JSON.parse(await readFile(inventory.metadataPath, 'utf8')) as unknown,
     'candidate metadata',
   );
+  if ((await fileSha256(inventory.metadataPath)) !== metadataSha256) {
+    fail('candidate metadata SHA-256 mismatch');
+  }
   if (metadata.version !== '1.0.0' || metadata.tag !== 'v1.0.0' || metadata.commit !== sha) {
     fail('candidate metadata identity mismatch');
   }
   return {
     candidateArtifactId: text(identity.candidateArtifactId, 'candidate artifact ID'),
     candidateBundleSha256: bundleSha256,
+    candidateMetadataSha256: metadataSha256,
     candidateRoot,
     caskPath: inventory.caskPath,
     inventory,
@@ -467,16 +473,31 @@ async function macOSCandidate(
       env: brewEnvironment,
       label: 'candidate cask install',
     });
-    await runChecked(['skillsmith', 'version'], {
+    const brewPrefix = (
+      await runChecked(['brew', '--prefix'], {
+        cwd: root,
+        env: brewEnvironment,
+        label: 'Homebrew prefix discovery',
+      })
+    ).stdout
+      .toString()
+      .trim();
+    if (brewPrefix.length === 0) fail('Homebrew prefix is empty');
+    const installedBinary = join(brewPrefix, 'bin', 'skillsmith');
+    const version = await runChecked([installedBinary, 'version'], {
       cwd: root,
       env: brewEnvironment,
       label: 'candidate cask execution',
     });
+    if (version.stdout.toString().trim() !== candidate.version) {
+      fail('candidate cask version mismatch');
+    }
     await runChecked(['brew', 'uninstall', '--cask', 'skillsmith'], {
       cwd: root,
       env: brewEnvironment,
       label: 'candidate cask uninstall',
     });
+    if (await Bun.file(installedBinary).exists()) fail('candidate cask uninstall retained binary');
   } finally {
     server.stop(true);
     await rm(root, { force: true, recursive: true });
@@ -545,6 +566,7 @@ async function writeReceipt(candidate: CandidateContext, lane: Lane, tests: numb
     `${JSON.stringify({
       candidateArtifactId: candidate.candidateArtifactId,
       candidateBundleSha256: candidate.candidateBundleSha256,
+      candidateMetadataSha256: candidate.candidateMetadataSha256,
       lane,
       receiptArtifactId: requiredEnvironment('SKILLSMITH_RECEIPT_ARTIFACT_ID'),
       requiredSkips: 0,
@@ -553,6 +575,7 @@ async function writeReceipt(candidate: CandidateContext, lane: Lane, tests: numb
       status: 'passed',
       tag: candidate.tag,
       tests,
+      version: candidate.version,
     })}\n`,
     { mode: 0o600 },
   );

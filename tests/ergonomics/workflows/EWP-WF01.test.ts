@@ -40,7 +40,9 @@ const requirePublicValidator = async (): Promise<(input: unknown) => unknown> =>
 const publicReceipt = (runner: string, includeHomebrew: boolean) => ({
   aliasesAdjacent: true,
   attestationVerified: true,
+  candidateArtifactId: 'candidate-17',
   candidateBundleSha256: DIGEST,
+  candidateMetadataSha256: 'c'.repeat(64),
   capabilityOrientation: true,
   channels: [...['direct', 'npm', 'bun'], ...(includeHomebrew ? ['homebrew'] : [])],
   channelBinarySha256: Object.fromEntries(
@@ -128,6 +130,20 @@ describe('EWP-WF01', () => {
                 channelBinarySha256: { ...receipt.channelBinarySha256, npm: 'c'.repeat(64) },
               }
             : receipt,
+        ),
+      }),
+    ).toThrow();
+    expect(() =>
+      validate({
+        receipts: validReceipts().map((receipt, index) =>
+          index === 0 ? { ...receipt, candidateArtifactId: 'candidate-18' } : receipt,
+        ),
+      }),
+    ).toThrow();
+    expect(() =>
+      validate({
+        receipts: validReceipts().map((receipt, index) =>
+          index === 0 ? { ...receipt, candidateMetadataSha256: 'd'.repeat(64) } : receipt,
         ),
       }),
     ).toThrow();
