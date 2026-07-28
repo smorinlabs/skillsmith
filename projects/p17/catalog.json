@@ -7773,6 +7773,14 @@
         "packaging/npm/platform/darwin-x64/package.json",
         "packaging/npm/platform/linux-arm64/package.json",
         "packaging/npm/platform/linux-x64/package.json",
+        "packages/core/src/selection/resolve.ts",
+        "packages/core/src/selection/wildcard.ts",
+        "packages/core/src/sync/plan.ts",
+        "packages/core/src/update/candidates.ts",
+        "packages/core/tests/selection/resolve.test.ts",
+        "packages/core/tests/selection/wildcard.test.ts",
+        "packages/core/tests/sync/plan.test.ts",
+        "packages/core/tests/update/candidates.test.ts",
         "projects/p17/evidence/P17-G6-01.md",
         "projects/p17/plans/P17-G6-01.md",
         "scripts/build-release.ts",
@@ -7882,7 +7890,8 @@
         "projects/p17/evidence/P17-G6-01.md#corrected-serial-runner-independent-review-go-at-6f90949",
         "projects/p17/evidence/P17-G6-01.md#complete-clean-clone-serial-terminal-gate-and-impacted-green-at-6f90949",
         "projects/p17/evidence/P17-G6-01.md#pre-sign-off-dependency-and-security-lint-finding-and-ownership-amendment",
-        "projects/p17/evidence/P17-G6-01.md#security-suppression-scoping-correction"
+        "projects/p17/evidence/P17-G6-01.md#security-suppression-scoping-correction",
+        "projects/p17/evidence/P17-G6-01.md#security-amendment-independent-review-no-go-and-wildcard-correction"
       ]
     },
     {
