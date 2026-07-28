@@ -8395,7 +8395,7 @@
       "phase": "6",
       "title": "Canonical PR/release recipes, exact-SHA publication gate, and final 1.0 evidence",
       "dependsOn": ["P17-G6-01"],
-      "status": "mapped",
+      "status": "ready",
       "owner": "root-goal",
       "ownedFiles": [
         ".github/dependabot.yml",
@@ -8434,7 +8434,10 @@
       "impactedValidations": ["EWP-P6-TS06", "EWP-WF01"],
       "requiredNowValidations": ["EWP-P6-TS06", "EWP-WF01"],
       "downstreamCoverage": [],
-      "testCommands": [],
+      "testCommands": [
+        "bun test tests/ergonomics/phase/EWP-P6-TS06.test.ts --test-name-pattern EWP-P6-TS06",
+        "bun test tests/ergonomics/workflows/EWP-WF01.test.ts --test-name-pattern EWP-WF01"
+      ],
       "implementers": ["root-codex-goal"],
       "reviewer": null,
       "gates": {
@@ -8443,8 +8446,11 @@
           "evidence": ["projects/p17/evidence/P17-G6-04.md#mapping-and-prerequisites"]
         },
         "ready": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G6-04.md#renewed-independent-ready-review-go-at-360297a",
+            "projects/p17/evidence/P17-G6-04.md#accepted-corrected-ready-result"
+          ]
         },
         "test-first": {
           "status": "pending",
@@ -8481,7 +8487,11 @@
       },
       "evidence": [
         "projects/p17/evidence/P17-G6-04.md#mapping-and-prerequisites",
-        "projects/p17/evidence/P17-G6-04.md#mapping-result"
+        "projects/p17/evidence/P17-G6-04.md#mapping-result",
+        "projects/p17/evidence/P17-G6-04.md#first-independent-ready-review-no-go-at-6a94082",
+        "projects/p17/evidence/P17-G6-04.md#approved-first-mapping-correction",
+        "projects/p17/evidence/P17-G6-04.md#renewed-independent-ready-review-go-at-360297a",
+        "projects/p17/evidence/P17-G6-04.md#accepted-corrected-ready-result"
       ]
     },
     {

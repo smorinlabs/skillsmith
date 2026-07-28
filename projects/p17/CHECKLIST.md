@@ -1636,14 +1636,14 @@ Downstream coverage obligations: EWP-WF01.
 
 ## P17-G6-04 — Canonical PR/release recipes, exact-SHA publication gate, and final 1.0 evidence
 
-Phase: 6; status: **mapped**; dependencies: P17-G6-01.
+Phase: 6; status: **ready**; dependencies: P17-G6-01.
 Required-now validations: EWP-P6-TS06, EWP-WF01.
 Downstream coverage obligations: none.
 
 ### Group gates
 
 - [x] P17-G6-04:mapped _(passed)_
-- [ ] P17-G6-04:ready _(pending)_
+- [x] P17-G6-04:ready _(passed)_
 - [ ] P17-G6-04:test-first _(pending)_
 - [ ] P17-G6-04:minimal-implementation _(pending)_
 - [ ] P17-G6-04:targeted-green _(pending)_
