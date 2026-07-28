@@ -235,7 +235,7 @@ Tracked entities: **426** across **45** change groups.
 | D-013 | P17-G7-01 | deferred | deferred |
 | D-014 | P17-G4B-02 | signed-off | required-pr |
 | D-015 | P17-G4B-03 | signed-off | required-pr |
-| D-016 | P17-G6-04 | mapped | release |
+| D-016 | P17-G6-04 | validated | release |
 
 #### option-gate
 
@@ -256,7 +256,7 @@ Tracked entities: **426** across **45** change groups.
 
 | ID | Primary group | Status | Tier |
 |---|---|---|---|
-| EWP-WF01 | P17-G6-04 | failing | release |
+| EWP-WF01 | P17-G6-04 | passing | release |
 | EWP-WF02 | P17-G4A-01 | signed-off | required-pr |
 | EWP-WF03 | P17-G4B-03 | signed-off | required-pr |
 | EWP-WF04 | P17-G4B-03 | signed-off | required-pr |
@@ -1646,8 +1646,8 @@ Downstream coverage obligations: none.
 - [x] P17-G6-04:ready _(passed)_
 - [x] P17-G6-04:test-first _(passed)_
 - [x] P17-G6-04:minimal-implementation _(passed)_
-- [ ] P17-G6-04:targeted-green _(pending)_
-- [ ] P17-G6-04:impacted-green _(pending)_
+- [x] P17-G6-04:targeted-green _(passed)_
+- [x] P17-G6-04:impacted-green _(passed)_
 - [ ] P17-G6-04:refactor _(pending)_
 - [ ] P17-G6-04:adversarial-review _(pending)_
 - [ ] P17-G6-04:traceability-closure _(pending)_
@@ -1655,10 +1655,10 @@ Downstream coverage obligations: none.
 
 ### Tracked entities
 
-- [ ] **D-016** — Complete core workflow before 1.0 _(decision; mapped)_
-- [ ] **EWP-P6-T07** — Add ADR 0010, make `just check` the canonical PR gate and `just release-check` the _(phase-task; red)_
-- [ ] **EWP-P6-TS06** — Local/CI recipe parity; exact-SHA publication refusal; four-target builds and _(phase-test; failing)_
-- [ ] **EWP-WF01** — First installation and orientation _(workflow; failing)_
+- [ ] **D-016** — Complete core workflow before 1.0 _(decision; validated)_
+- [ ] **EWP-P6-T07** — Add ADR 0010, make `just check` the canonical PR gate and `just release-check` the _(phase-task; green)_
+- [ ] **EWP-P6-TS06** — Local/CI recipe parity; exact-SHA publication refusal; four-target builds and _(phase-test; passing)_
+- [ ] **EWP-WF01** — First installation and orientation _(workflow; passing)_
 
 ## P17-G7-01 — Explicitly deferred P3 specifications/projects; not required for P17 or 1.0
 
