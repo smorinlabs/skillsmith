@@ -11,9 +11,9 @@ Tracked entities: **426** across **45** change groups.
 
 | Kind | Total | Signed off | Active/open | Deferred |
 |---|---:|---:|---:|---:|
-| recommendation | 34 | 27 | 1 | 6 |
-| phase-task | 65 | 62 | 3 | 0 |
-| phase-test | 61 | 59 | 2 | 0 |
+| recommendation | 34 | 28 | 0 | 6 |
+| phase-task | 65 | 64 | 1 | 0 |
+| phase-test | 61 | 60 | 1 | 0 |
 | command-test | 157 | 157 | 0 | 0 |
 | option-gate | 10 | 10 | 0 | 0 |
 | workflow | 16 | 15 | 1 | 0 |
@@ -31,7 +31,7 @@ Tracked entities: **426** across **45** change groups.
 | 3 | 8 | 82 | 82 | 0 |
 | 4 | 7 | 105 | 105 | 0 |
 | 5 | 5 | 70 | 70 | 0 |
-| 6 | 5 | 40 | 32 | 0 |
+| 6 | 5 | 40 | 36 | 0 |
 | 7 | 1 | 7 | 0 | 7 |
 
 ### Phase gates
@@ -151,7 +151,7 @@ Tracked entities: **426** across **45** change groups.
 | P1-09 | P17-G4A-01 | signed-off | required-pr |
 | P1-10 | P17-G5-01 | signed-off | required-pr |
 | P1-11 | P17-G5-03 | signed-off | required-pr |
-| P1-12 | P17-G6-01 | mapped | release |
+| P1-12 | P17-G6-01 | signed-off | release |
 | P2-01 | P17-G1-02A | signed-off | required-pr |
 | P2-02 | P17-G5-02 | signed-off | required-pr |
 | P2-03 | P17-G5-04 | signed-off | required-pr |
@@ -1512,7 +1512,7 @@ Downstream coverage obligations: none.
 
 ## P17-G6-01 — Native assets, checksums, Homebrew/npm distribution, and clean installs
 
-Phase: 6; status: **active**; dependencies: P17-G6-02B, P17-G6-03.
+Phase: 6; status: **signed-off**; dependencies: P17-G6-02B, P17-G6-03.
 Required-now validations: EWP-P6-TS01.
 Downstream coverage obligations: EWP-WF01.
 
@@ -1525,16 +1525,16 @@ Downstream coverage obligations: EWP-WF01.
 - [x] P17-G6-01:targeted-green _(passed)_
 - [x] P17-G6-01:impacted-green _(passed)_
 - [x] P17-G6-01:refactor _(passed)_
-- [ ] P17-G6-01:adversarial-review _(pending)_
-- [ ] P17-G6-01:traceability-closure _(pending)_
-- [ ] P17-G6-01:signed-off _(pending)_
+- [x] P17-G6-01:adversarial-review _(passed)_
+- [x] P17-G6-01:traceability-closure _(passed)_
+- [x] P17-G6-01:signed-off _(passed)_
 
 ### Tracked entities
 
-- [ ] **EWP-P6-T01** — Native release assets/checksums. _(phase-task; green)_
-- [ ] **EWP-P6-T02** — Homebrew and npm/Bun distribution. _(phase-task; green)_
-- [ ] **EWP-P6-TS01** — Clean-machine install smoke per distribution. _(phase-test; passing)_
-- [ ] **P1-12** — Distribution _(recommendation; mapped)_
+- [x] **EWP-P6-T01** — Native release assets/checksums. _(phase-task; signed-off)_
+- [x] **EWP-P6-T02** — Homebrew and npm/Bun distribution. _(phase-task; signed-off)_
+- [x] **EWP-P6-TS01** — Clean-machine install smoke per distribution. _(phase-test; signed-off)_
+- [x] **P1-12** — Distribution _(recommendation; signed-off)_
 
 ## P17-G6-02A — Shared command metadata, five-group help, progressive options, workflows, and generated docs
 

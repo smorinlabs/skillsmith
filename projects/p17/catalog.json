@@ -7751,7 +7751,7 @@
       "phase": "6",
       "title": "Native assets, checksums, Homebrew/npm distribution, and clean installs",
       "dependsOn": ["P17-G6-02B", "P17-G6-03"],
-      "status": "active",
+      "status": "signed-off",
       "owner": "root-goal",
       "ownedFiles": [
         ".github/workflows/ci.yml",
@@ -7799,7 +7799,7 @@
         "bun test tests/ergonomics/phase/EWP-P6-TS01.test.ts --test-name-pattern EWP-P6-TS01"
       ],
       "implementers": ["root-codex-goal"],
-      "reviewer": null,
+      "reviewer": "/root/g6_01_f06_amendment_review",
       "gates": {
         "mapped": {
           "status": "passed",
@@ -7844,16 +7844,22 @@
           ]
         },
         "adversarial-review": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G6-01.md#final-adversarial-go-renewed-terminal-traceability-and-sign-off-at-9afd564"
+          ]
         },
         "traceability-closure": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G6-01.md#final-adversarial-go-renewed-terminal-traceability-and-sign-off-at-9afd564"
+          ]
         },
         "signed-off": {
-          "status": "pending",
-          "evidence": []
+          "status": "passed",
+          "evidence": [
+            "projects/p17/evidence/P17-G6-01.md#final-adversarial-go-renewed-terminal-traceability-and-sign-off-at-9afd564"
+          ]
         }
       },
       "evidence": [
@@ -7896,7 +7902,8 @@
         "projects/p17/evidence/P17-G6-01.md#security-amendment-independent-review-no-go-and-wildcard-correction",
         "projects/p17/evidence/P17-G6-01.md#platform-neutral-wildcard-amendment-no-go-at-882f8f0",
         "projects/p17/evidence/P17-G6-01.md#security-refactor-and-renewed-terminal-gate-at-a640e51",
-        "projects/p17/evidence/P17-G6-01.md#independent-adversarial-review-no-go-and-malformed-utf-16-correction"
+        "projects/p17/evidence/P17-G6-01.md#independent-adversarial-review-no-go-and-malformed-utf-16-correction",
+        "projects/p17/evidence/P17-G6-01.md#final-adversarial-go-renewed-terminal-traceability-and-sign-off-at-9afd564"
       ]
     },
     {
@@ -25828,7 +25835,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G6-01",
-      "status": "green",
+      "status": "signed-off",
       "tier": "release",
       "plannedTarget": "planned:P17-G6-01",
       "target": null,
@@ -25838,7 +25845,8 @@
         "projects/p17/evidence/P17-G6-01.md#accepted-amended-ready-result",
         "projects/p17/evidence/P17-G6-01.md#revised-ewp-p6-ts01-standard-tooling-test-first-evidence-at-e7a3660",
         "projects/p17/evidence/P17-G6-01.md#minimal-implementation-at-a72dc9c",
-        "projects/p17/evidence/P17-G6-01.md#ewp-p6-ts01-targeted-green-and-macos-receipt-at-b692aab"
+        "projects/p17/evidence/P17-G6-01.md#ewp-p6-ts01-targeted-green-and-macos-receipt-at-b692aab",
+        "projects/p17/evidence/P17-G6-01.md#final-adversarial-go-renewed-terminal-traceability-and-sign-off-at-9afd564"
       ],
       "secondaryGroups": [],
       "implements": ["P1-12"],
@@ -25854,7 +25862,7 @@
       "kind": "phase-task",
       "stateModel": "work",
       "primaryGroup": "P17-G6-01",
-      "status": "green",
+      "status": "signed-off",
       "tier": "release",
       "plannedTarget": "planned:P17-G6-01",
       "target": null,
@@ -25864,7 +25872,8 @@
         "projects/p17/evidence/P17-G6-01.md#accepted-amended-ready-result",
         "projects/p17/evidence/P17-G6-01.md#revised-ewp-p6-ts01-standard-tooling-test-first-evidence-at-e7a3660",
         "projects/p17/evidence/P17-G6-01.md#minimal-implementation-at-a72dc9c",
-        "projects/p17/evidence/P17-G6-01.md#ewp-p6-ts01-targeted-green-and-macos-receipt-at-b692aab"
+        "projects/p17/evidence/P17-G6-01.md#ewp-p6-ts01-targeted-green-and-macos-receipt-at-b692aab",
+        "projects/p17/evidence/P17-G6-01.md#final-adversarial-go-renewed-terminal-traceability-and-sign-off-at-9afd564"
       ],
       "secondaryGroups": ["P17-G6-04"],
       "implements": ["P1-12"],
@@ -26053,7 +26062,7 @@
       "kind": "phase-test",
       "stateModel": "validation",
       "primaryGroup": "P17-G6-01",
-      "status": "passing",
+      "status": "signed-off",
       "tier": "release",
       "plannedTarget": "planned:P17-G6-01:tests/ergonomics/phase/EWP-P6-TS01.test.ts#EWP-P6-TS01",
       "target": {
@@ -26065,7 +26074,8 @@
       "evidence": [
         "projects/p17/evidence/P17-G6-01.md#ewp-p6-ts01-targeted-green-and-macos-receipt-at-b692aab",
         "projects/p17/evidence/P17-G6-01.md#revised-ewp-p6-ts01-standard-tooling-test-first-evidence-at-e7a3660",
-        "projects/p17/evidence/P17-G6-01.md#minimal-implementation-at-a72dc9c"
+        "projects/p17/evidence/P17-G6-01.md#minimal-implementation-at-a72dc9c",
+        "projects/p17/evidence/P17-G6-01.md#final-adversarial-go-renewed-terminal-traceability-and-sign-off-at-9afd564"
       ],
       "secondaryGroups": [],
       "implements": [],
@@ -27834,13 +27844,14 @@
       "designStatus": "retained",
       "stateModel": "coverage",
       "primaryGroup": "P17-G6-01",
-      "status": "mapped",
+      "status": "signed-off",
       "tier": "release",
       "plannedTarget": "coverage:P17-G6-01",
       "target": null,
       "evidence": [
         "projects/p17/evidence/P17-G6-01.md#mapping-and-prerequisites",
-        "projects/p17/evidence/P17-G6-01.md#standard-tooling-distribution-amendment-and-ready-reset"
+        "projects/p17/evidence/P17-G6-01.md#standard-tooling-distribution-amendment-and-ready-reset",
+        "projects/p17/evidence/P17-G6-01.md#final-adversarial-go-renewed-terminal-traceability-and-sign-off-at-9afd564"
       ],
       "secondaryGroups": [],
       "implements": [],
