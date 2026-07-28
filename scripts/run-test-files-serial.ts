@@ -7,8 +7,12 @@ import { join, resolve, sep } from 'node:path';
 
 const repositoryRoot = resolve(import.meta.dir, '..');
 const bunTestFilePattern = /(?:^|\/)[^/]+(?:\.(?:test|spec)|_(?:test|spec))\.(?:js|jsx|ts|tsx)$/;
+const safePathComponentPattern = /^[A-Za-z0-9-]+$/;
+export const EXPECTED_BUN_VERSION = '1.3.14';
+const EXPECTED_ALLOWED_SKIP_FILES = 6;
+const EXPECTED_ALLOWED_SKIPS = 28;
 
-export const ALLOWED_LIVE_E2E_SKIPS = new Map<string, number>([
+export const ALLOWED_LIVE_E2E_SKIPS: ReadonlyMap<string, number> = new Map([
   ['packages/core/tests/verify/live-e2e.test.ts', 8],
   ['packages/cli/tests/commands/install-live.test.ts', 3],
   ['packages/cli/tests/commands/verify-live.test.ts', 3],
@@ -60,10 +64,7 @@ function git(root: string, arguments_: string[]): string {
 }
 
 function isHiddenOrDependencyPath(path: string): boolean {
-  return path
-    .split('/')
-    .slice(0, -1)
-    .some((segment) => segment.startsWith('.') || segment === 'node_modules');
+  return path.split('/').some((segment) => segment.startsWith('.') || segment === 'node_modules');
 }
 
 export function discoverTestFiles(root: string): string[] {
@@ -129,14 +130,16 @@ function decodeXml(value: string): string {
 
 export function parseJUnitSummary(xml: string, expectedFile: string): JUnitSummary {
   const root = xml.match(/<testsuites\b([^>]*)>/);
-  const firstSuite = xml.match(/<testsuite\b([^>]*)>/);
-  if (!root || !firstSuite) fail(`missing JUnit suite evidence for ${expectedFile}`);
+  const suites = Array.from(xml.matchAll(/<testsuite\b([^>]*)>/g));
+  if (!root || suites.length === 0) fail(`missing JUnit suite evidence for ${expectedFile}`);
 
   const rootAttributes = attributes(root[1] ?? '');
-  const suiteAttributes = attributes(firstSuite[1] ?? '');
-  const reportedFile = decodeXml(suiteAttributes.get('file') ?? '');
-  if (reportedFile !== expectedFile) {
-    fail(`${expectedFile} JUnit evidence reported ${reportedFile || 'no file'}`);
+  const suiteAttributeSets = suites.map((suite) => attributes(suite[1] ?? ''));
+  for (const suiteAttributes of suiteAttributeSets) {
+    const reportedFile = decodeXml(suiteAttributes.get('file') ?? '');
+    if (reportedFile !== expectedFile) {
+      fail(`${expectedFile} JUnit evidence reported ${reportedFile || 'no file'}`);
+    }
   }
 
   const summary = {
@@ -146,7 +149,35 @@ export function parseJUnitSummary(xml: string, expectedFile: string): JUnitSumma
     tests: numericAttribute(rootAttributes, 'tests'),
   };
   if (summary.tests === 0) fail(`${expectedFile} reported zero tests`);
+  const outerSummary = {
+    assertions: numericAttribute(suiteAttributeSets[0] ?? new Map(), 'assertions'),
+    failures: numericAttribute(suiteAttributeSets[0] ?? new Map(), 'failures'),
+    skipped: numericAttribute(suiteAttributeSets[0] ?? new Map(), 'skipped'),
+    tests: numericAttribute(suiteAttributeSets[0] ?? new Map(), 'tests'),
+  };
+  if (JSON.stringify(outerSummary) !== JSON.stringify(summary)) {
+    fail(`${expectedFile} JUnit root and outer-suite metrics disagree`);
+  }
   return summary;
+}
+
+export function validateTerminalManifest(
+  files: readonly string[],
+  allowedSkips: ReadonlyMap<string, number> = ALLOWED_LIVE_E2E_SKIPS,
+): number {
+  if (allowedSkips.size !== EXPECTED_ALLOWED_SKIP_FILES) {
+    fail(
+      `live-E2E skip allowlist has ${allowedSkips.size} files; expected ${EXPECTED_ALLOWED_SKIP_FILES}`,
+    );
+  }
+  const expectedSkips = [...allowedSkips.values()].reduce((sum, count) => sum + count, 0);
+  if (expectedSkips !== EXPECTED_ALLOWED_SKIPS) {
+    fail(`live-E2E skip allowlist totals ${expectedSkips}; expected ${EXPECTED_ALLOWED_SKIPS}`);
+  }
+  const fileSet = new Set(files);
+  const missing = [...allowedSkips.keys()].filter((file) => !fileSet.has(file));
+  if (missing.length > 0) fail(`test-file manifest is missing live-E2E file ${missing[0]}`);
+  return expectedSkips;
 }
 
 export async function runFilesSerially(
@@ -156,6 +187,7 @@ export async function runFilesSerially(
   if (files.length === 0) fail('cannot run an empty test-file manifest');
   const duplicate = files.find((file, index) => files.indexOf(file) !== index);
   if (duplicate) fail(`duplicate test file ${duplicate}`);
+  const expectedTotalSkips = validateTerminalManifest(files);
   const seen = new Set<string>();
   let assertions = 0;
   let executed = 0;
@@ -187,6 +219,12 @@ export async function runFilesSerially(
     tests += summary.tests;
   }
 
+  if (skipped !== expectedTotalSkips) {
+    fail(
+      `serial test-file receipt totals ${skipped} skipped tests; expected ${expectedTotalSkips}`,
+    );
+  }
+
   return {
     assertions,
     discovered: files.length,
@@ -198,17 +236,30 @@ export async function runFilesSerially(
   };
 }
 
-function requireHyphenSafePath(path: string, label: string): void {
-  const dotted = resolve(path)
+export function requireHyphenSafePath(path: string, label: string): void {
+  const unsafe = resolve(path)
     .split(sep)
     .filter(Boolean)
-    .find((segment) => segment.includes('.'));
-  if (dotted) fail(`${label} contains dotted path component ${dotted}: ${resolve(path)}`);
+    .find((segment) => !safePathComponentPattern.test(segment));
+  if (unsafe) fail(`${label} contains unsafe path component ${unsafe}: ${resolve(path)}`);
 }
 
-function requireCleanRepository(root: string): void {
+export function requirePinnedBunVersion(actualVersion: string): void {
+  if (actualVersion !== EXPECTED_BUN_VERSION) {
+    fail(
+      `serial test-file terminal runner requires Bun ${EXPECTED_BUN_VERSION}; found ${actualVersion}`,
+    );
+  }
+}
+
+export function requireCleanRepository(root: string): void {
   const status = git(root, ['status', '--porcelain=v1', '--untracked-files=all']);
   if (status.length > 0) fail('serial test-file terminal runner requires a clean repository');
+}
+
+export function finalizeSuccessfulRun(root: string, runRoot: string): void {
+  rmSync(runRoot, { force: true, recursive: true });
+  requireCleanRepository(root);
 }
 
 export async function main(): Promise<void> {
@@ -219,6 +270,7 @@ export async function main(): Promise<void> {
     fail('serial test-file terminal runner refuses SKILLSMITH_E2E');
   }
 
+  requirePinnedBunVersion(Bun.version);
   requireHyphenSafePath(repositoryRoot, 'repository root');
   requireCleanRepository(repositoryRoot);
   const testFiles = discoverTestFiles(repositoryRoot);
@@ -231,8 +283,9 @@ export async function main(): Promise<void> {
     `serial test-file manifest: ${testFiles.length} files; sha256=${digest}; bun=${Bun.version}`,
   );
 
+  let receipt: SerialReceipt;
   try {
-    const receipt = await runFilesSerially(testFiles, async (file, index, total) => {
+    receipt = await runFilesSerially(testFiles, async (file, index, total) => {
       const reportPath = join(runRoot, `junit-${String(index + 1).padStart(4, '0')}.xml`);
       const command = buildBunTestCommand(file, reportPath);
       console.log(`[${index + 1}/${total}] ${file}`);
@@ -248,17 +301,19 @@ export async function main(): Promise<void> {
         junit: existsSync(reportPath) ? readFileSync(reportPath, 'utf8') : '',
       };
     });
-
-    console.log(
-      `SERIAL_TEST_FILE_RECEIPT ${JSON.stringify({
-        ...receipt,
-        bun: Bun.version,
-        manifestSha256: digest,
-      })}`,
-    );
-  } finally {
+  } catch (error) {
     rmSync(runRoot, { force: true, recursive: true });
+    throw error;
   }
+
+  finalizeSuccessfulRun(repositoryRoot, runRoot);
+  console.log(
+    `SERIAL_TEST_FILE_RECEIPT ${JSON.stringify({
+      ...receipt,
+      bun: Bun.version,
+      manifestSha256: digest,
+    })}`,
+  );
 }
 
 if (import.meta.main) {
