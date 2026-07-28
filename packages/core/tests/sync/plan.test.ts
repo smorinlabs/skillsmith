@@ -600,6 +600,41 @@ const authorityForSelection = (selection: SyncFleetResourceSelectionV1) => {
 };
 
 describe('sync fleet-to-intent projection', () => {
+  test('shares Unicode wildcard semantics and rejects reserved sentinel targets', () => {
+    const base = fleetMember('codex');
+    const unicodeMember: SyncMemberObservation = {
+      ...base,
+      entry: { ...base.entry, name: 'unicode-😀' },
+    };
+    const unicode = selectSyncFleetResourcesV1(fleetFor([unicodeMember]), {
+      targets: ['unicode-?'],
+      delete: false,
+      continueOnError: false,
+      save: false,
+      force: false,
+    });
+    expect(unicode).toMatchObject({
+      ok: true,
+      value: { pairs: [{ pair: { skill: 'unicode-😀' } }] },
+    });
+
+    for (const sentinel of ['\0', '\u0001']) {
+      const invalidName = `invalid${sentinel}name`;
+      const invalidMember: SyncMemberObservation = {
+        ...base,
+        entry: { ...base.entry, name: invalidName },
+      };
+      const invalid = selectSyncFleetResourcesV1(fleetFor([invalidMember]), {
+        targets: [invalidName],
+        delete: false,
+        continueOnError: false,
+        save: false,
+        force: false,
+      });
+      expect(invalid).toMatchObject({ ok: true, value: { pairs: [] } });
+    }
+  });
+
   test('uses exact pair-to-store bindings and one aggregate group identity across tool members', () => {
     const claude = fleetMember('claude-code');
     const codex = fleetMember('codex');

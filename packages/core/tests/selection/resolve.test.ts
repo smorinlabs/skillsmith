@@ -78,4 +78,29 @@ describe('target selection', () => {
       validateSelectionRequest({ targets: ['review'], all: false, tools: ['claude-code'] }, policy),
     ).toMatchObject({ ok: false, error: { code: 'capability', exitCode: 4 } });
   });
+
+  test('uses one-code-point wildcards and rejects reserved sentinel input without widening', () => {
+    const unicodeCandidate = {
+      ...candidates[1],
+      name: 'unicode-😀',
+      path: '/project/unicode-😀',
+    } as const;
+    expect(
+      resolveTargetSelection([unicodeCandidate], validate(['unicode-?'], ['project'])),
+    ).toMatchObject({
+      ok: true,
+      value: { outcome: 'selected', selected: [{ name: 'unicode-😀' }] },
+    });
+
+    for (const sentinel of ['\0', '\u0001']) {
+      const invalidName = `invalid${sentinel}name`;
+      const invalidCandidate = { ...unicodeCandidate, name: invalidName };
+      expect(
+        resolveTargetSelection([invalidCandidate], validate([invalidName], ['project'])),
+      ).toMatchObject({
+        ok: false,
+        error: { code: 'unmatched', targets: [invalidName], exitCode: 2 },
+      });
+    }
+  });
 });

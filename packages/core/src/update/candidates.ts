@@ -1,6 +1,7 @@
 import type { BuiltInToolId } from '../agents/registry.ts';
 import type { PortableLockSkillV1 } from '../artifacts/lock.ts';
 import type { NormalizedManifestV1 } from '../artifacts/types.ts';
+import { compileWildcardTarget } from '../selection/wildcard.ts';
 import type {
   UpdateCandidateV1,
   UpdateRemoteRefInspectionV1,
@@ -17,11 +18,6 @@ export interface SelectUpdateDeclarationsRequestV1 {
   readonly registryOrder: readonly BuiltInToolId[];
 }
 
-const wildcardPattern = (target: string): RegExp => {
-  const escaped = target.replace(/[.+^${}()|[\]\\]/gu, '\\$&');
-  return new RegExp(`^${escaped.replace(/\*/gu, '.*').replace(/\?/gu, '.')}$`, 'u');
-};
-
 const frozenStrings = (values: readonly string[]): readonly string[] => Object.freeze([...values]);
 
 /** Declaration-first selection: target matching is complete before the tool filter is applied. */
@@ -34,12 +30,12 @@ export const selectUpdateDeclarationsV1 = (
       ? 'bounded-default'
       : 'explicit-targets';
   const targets = [...new Set(request.targets)];
-  const patterns = targets.map((target) => ({ target, pattern: wildcardPattern(target) }));
+  const patterns = targets.map((target) => ({ target, pattern: compileWildcardTarget(target) }));
   const targetMatches = new Map(targets.map((target) => [target, false]));
   const declared = request.manifest.skills.filter((declaration) => {
     if (patterns.length === 0) return true;
     const matched = patterns.some(({ target, pattern }) => {
-      if (!pattern.test(declaration.name)) return false;
+      if (!pattern.matches(declaration.name)) return false;
       targetMatches.set(target, true);
       return true;
     });

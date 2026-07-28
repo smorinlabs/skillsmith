@@ -17,6 +17,7 @@ import type {
   PlanningToolContext,
 } from '../planning/types.ts';
 import { type Result, err, ok } from '../result.ts';
+import { compileWildcardTarget } from '../selection/wildcard.ts';
 import {
   type ObservedStateSnapshotV1,
   createContentObservationIdentityV1,
@@ -150,11 +151,6 @@ const projectionFailure = (
   exitClass: SyncObservationFailure['exitClass'] = 'state',
 ): Result<never, SyncObservationFailure> => err(Object.freeze({ code, message, exitClass }));
 
-const wildcardPattern = (target: string): RegExp => {
-  const escaped = target.replace(/[.+^${}()|[\]\\]/gu, '\\$&');
-  return new RegExp(`^${escaped.replace(/\*/gu, '.*').replace(/\?/gu, '.')}$`, 'u');
-};
-
 const selectedMember = (member: SyncMemberObservation): boolean =>
   member.entry.visibility.state === 'unique';
 
@@ -174,10 +170,10 @@ const selectedSourceMembers = (
   }
   const visible = fleet.source.entries.filter(selectedMember);
   if (targets.length === 0) return ok(Object.freeze(visible));
-  const patterns = [...new Set(targets)].map(wildcardPattern);
+  const patterns = [...new Set(targets)].map(compileWildcardTarget);
   return ok(
     Object.freeze(
-      visible.filter(({ entry }) => patterns.some((pattern) => pattern.test(entry.name))),
+      visible.filter(({ entry }) => patterns.some((pattern) => pattern.matches(entry.name))),
     ),
   );
 };

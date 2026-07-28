@@ -1,27 +1,10 @@
-import tsParser from '@typescript-eslint/parser';
 import pluginSecurity from 'eslint-plugin-security';
+import baseConfig from './eslint.config.js';
 
 export default [
-  {
-    ignores: [
-      '**/node_modules/**',
-      'dist/**',
-      'docs/**',
-      'research/**',
-      'scripts/**',
-      'packages/*/tests/**',
-      '**/*.d.ts',
-    ],
-  },
+  ...baseConfig,
   {
     files: ['packages/*/src/**/*.ts'],
-    languageOptions: {
-      parser: tsParser,
-      parserOptions: {
-        ecmaVersion: 'latest',
-        sourceType: 'module',
-      },
-    },
     plugins: {
       security: pluginSecurity,
     },
@@ -33,6 +16,9 @@ export default [
       //   user-configured paths is the intended behavior, not a vulnerability
       'security/detect-object-injection': 'off',
       'security/detect-non-literal-fs-filename': 'off',
+      'security/detect-possible-timing-attacks': 'error',
+      'security/detect-unsafe-regex': 'error',
+      'security/detect-non-literal-regexp': 'error',
     },
   },
 ];

@@ -19,6 +19,7 @@ import {
   type TargetSelectionError,
   type ValidatedSelectionRequest,
 } from './types.ts';
+import { type CompiledWildcardTarget, compileWildcardTarget } from './wildcard.ts';
 
 const usageError = (message: string): SelectionUsageError => ({
   code: 'usage',
@@ -144,17 +145,10 @@ export function validateSelectionRequest(
   return validateSelectionRequestWithRegistry(request, policy, registry);
 }
 
-const wildcardPattern = (target: string): RegExp | null => {
-  if (!target.includes('*') && !target.includes('?')) return null;
-  const escaped = target.replace(/[.+^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`^${escaped.replace(/\*/g, '.*').replace(/\?/g, '.')}$`);
-};
-
-const matchesTarget = (candidate: SelectionCandidate<string>, target: string): boolean => {
-  const wildcard = wildcardPattern(target);
-  if (wildcard) return wildcard.test(candidate.name) || wildcard.test(candidate.path);
-  return candidate.name === target || candidate.path === target;
-};
+const matchesTarget = (
+  candidate: SelectionCandidate<string>,
+  target: CompiledWildcardTarget,
+): boolean => target.matches(candidate.name) || target.matches(candidate.path);
 
 const isExisting = (candidate: SelectionCandidate<string>): boolean => candidate.exists !== false;
 
@@ -228,9 +222,10 @@ export const resolveTargetSelection = <C extends SelectionCandidate<string>>(
   let filteredMatch = false;
 
   for (const target of request.targets) {
+    const compiledTarget = compileWildcardTarget(target);
     const preToolMatches = scoped.filter(
       (candidate) =>
-        matchesTarget(candidate, target) &&
+        matchesTarget(candidate, compiledTarget) &&
         (isExisting(candidate) || (request.allowAbsentCreate && request.scopes.length === 1)),
     );
     const matches = preToolMatches.filter(

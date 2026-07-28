@@ -68,6 +68,36 @@ describe('update candidate policy', () => {
     expect(filtered.filteredNames).toEqual(['review']);
   });
 
+  test('shares Unicode wildcard semantics and rejects reserved sentinel targets', () => {
+    const factorScan = manifest.skills[0];
+    if (factorScan === undefined) throw new Error('missing factor-scan fixture');
+    const unicodeManifest: NormalizedManifestV1 = {
+      ...manifest,
+      skills: [{ ...factorScan, name: 'unicode-😀' }],
+    };
+    const unicode = selectUpdateDeclarationsV1({
+      manifest: unicodeManifest,
+      targets: ['unicode-?'],
+      all: false,
+      tools: [],
+      registryOrder: order,
+    });
+    expect(unicode.selectedNames).toEqual(['unicode-😀']);
+
+    for (const sentinel of ['\0', '\u0001']) {
+      const invalidName = `invalid${sentinel}name`;
+      const invalid = selectUpdateDeclarationsV1({
+        manifest: { ...manifest, skills: [{ ...factorScan, name: invalidName }] },
+        targets: [invalidName],
+        all: false,
+        tools: [],
+        registryOrder: order,
+      });
+      expect(invalid.selectedNames).toEqual([]);
+      expect(invalid.unmatchedTargets).toEqual([invalidName]);
+    }
+  });
+
   test('keeps fixed declarations skipped until an explicit ref and pins moving refs', () => {
     const selected = selectUpdateDeclarationsV1({
       manifest,
