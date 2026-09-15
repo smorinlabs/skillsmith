@@ -325,7 +325,17 @@ const runDeepMode = async (
     );
     const result = await env.exec(binary, ['app-server', '--listen', 'stdio://'], {
       cwd: proj,
-      env: { CODEX_HOME: home, HOME: home, XDG_CONFIG_HOME: home },
+      env: {
+        CODEX_HOME: home,
+        HOME: home,
+        XDG_CONFIG_HOME: home,
+        XDG_DATA_HOME: home,
+        XDG_CACHE_HOME: home,
+        XDG_STATE_HOME: home,
+        XDG_RUNTIME_DIR: home,
+        XDG_CONFIG_DIRS: home,
+        XDG_DATA_DIRS: home,
+      },
       unsetEnv: ['OPENAI_API_KEY', 'CODEX_API_KEY'],
       timeoutMs: DEEP_TIMEOUT_MS,
       jsonRpc: [

@@ -41,7 +41,7 @@ All keys below are internal stable keys; record actual GitHub issue numbers in t
 | Key | Scope | Original IDs |
 | --- | --- | --- |
 | PUB-00 | Umbrella, unfinished entities, resumption checklist | P17 Phase 6; P17-G6-04; D-016; EWP-P6-T07; EWP-P6-TS06; EWP-WF01; P14 |
-| PUB-01 | Release integration; ShellCheck/actionlint parity and workflow findings; architecture-sensitive Homebrew tests; release docs and code review | EWP-P6-T07; EWP-P6-TS06; P14-T02; P14-T04; PR #44; CI run 31238776150 |
+| PUB-01 | Release integration; ShellCheck/actionlint parity and workflow findings; architecture-sensitive Homebrew tests; release docs, final release review and version bookkeeping | EWP-P6-T07; EWP-P6-TS06; P14-T02; P14-T04; P14-RV; PR #44; CI run 31238776150 |
 | PUB-02 | Public-exposure audit/remediation covering final source and external repository surfaces; explicit visibility approval and flip | P14-T01; G6-04 external readiness |
 | PUB-03 | Protected environments; least-privilege Apps; Apple signing/notarization; runner readiness; immutable releases; npm scope authority | G6-04 external readiness |
 | PUB-04 | First-publication npm amendment/design/implementation; phase-aware preflights; token retirement/trusted-publisher transition; exact-candidate recovery | G6-04 open npm amendment |

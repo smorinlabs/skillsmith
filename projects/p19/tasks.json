@@ -105,10 +105,18 @@
       "key": "PUB-01",
       "title": "P19 PUB-01: defer remaining release integration, CI parity and release documentation",
       "state": "deferred",
-      "legacy": ["P17-G6-04", "EWP-P6-T07", "EWP-P6-TS06", "P14-T02", "P14-T04", "PR #44"],
+      "legacy": [
+        "P17-G6-04",
+        "EWP-P6-T07",
+        "EWP-P6-TS06",
+        "P14-T02",
+        "P14-T04",
+        "PR #44",
+        "P14-RV"
+      ],
       "dependsOn": [],
-      "scope": "Complete remaining release integration and release-specific code review; reproduce/fix ShellCheck/actionlint parity and four workflow findings from CI run 31238776150; correct host-architecture assumptions in Homebrew checks; refresh release documentation/version matrix. Much of G6-04 is already implemented: inspect latest evidence before recreating work. Acceptance: exact integrated source passes its applicable local/CI recipes and review; ordinary bug CI is not weakened. CI: https://github.com/smorinlabs/skillsmith/actions/runs/31238776150 . Final source must incorporate accepted P19 fixes.",
-      "body": "## Deferred work\n\nComplete remaining release integration and release-specific code review; reproduce/fix ShellCheck/actionlint parity and four workflow findings from CI run 31238776150; correct host-architecture assumptions in Homebrew checks; refresh release documentation/version matrix. Much of G6-04 is already implemented: inspect latest evidence before recreating work. Acceptance: exact integrated source passes its applicable local/CI recipes and review; ordinary bug CI is not weakened. CI: https://github.com/smorinlabs/skillsmith/actions/runs/31238776150 . Final source must incorporate accepted P19 fixes.\n\n## Original IDs\n\n- P17-G6-04\n- EWP-P6-T07\n- EWP-P6-TS06\n- P14-T02\n- P14-T04\n- PR #44\n\n## Dependencies\n\nNo unsatisfied hard dependency assigned. Historical references above do not imply blocking.\n\n## Provenance and scope\n\nUser authorized P19 implementation and publication deferral on 2026-09-15. Original P17 release completion remains pending. This issue does not authorize publishing, credentials, visibility changes or unapproved product-contract amendments.\n\n- P17 preserved checkpoint: `5a7418593ecf6a8be4b10d8a5f657bb9e4f0e402`; draft PR #44.\n- Maintenance baseline: `9c0219f69888239ef5d2cab9ddea4a4683b14a48`.\n- [P17 goal](https://github.com/smorinlabs/skillsmith/blob/5a7418593ecf6a8be4b10d8a5f657bb9e4f0e402/projects/P17-GOAL.md)\n- [G6-04 plan](https://github.com/smorinlabs/skillsmith/blob/5a7418593ecf6a8be4b10d8a5f657bb9e4f0e402/projects/p17/plans/P17-G6-04.md)\n- [G6-04 evidence](https://github.com/smorinlabs/skillsmith/blob/5a7418593ecf6a8be4b10d8a5f657bb9e4f0e402/projects/p17/evidence/P17-G6-04.md)\n- [Catalog](https://github.com/smorinlabs/skillsmith/blob/5a7418593ecf6a8be4b10d8a5f657bb9e4f0e402/projects/p17/catalog.json)\n- P19 project/plan/task registry is being recorded in branch `agent/p19-bug-closeout`.\n\nKeep original IDs and evidence. Distinguish historical/satisfied dependencies from current blockers. Close only with the acceptance evidence, not merely because a successor issue exists. Revalidate exact source and external facts on resumption; historic mapping failures are not necessarily current defects.\n\n## Linked tracking\n\n- Project: [P19 #51](https://github.com/smorinlabs/skillsmith/issues/51)\n- Publication umbrella (related, not a product-bug prerequisite): [PUB-00 #53](https://github.com/smorinlabs/skillsmith/issues/53)\n- Blocks: [PUB-06 #59](https://github.com/smorinlabs/skillsmith/issues/59)\n",
+      "scope": "Complete remaining release integration and release-specific code review; reproduce/fix ShellCheck/actionlint parity and four workflow findings from CI run 31238776150; correct host-architecture assumptions in Homebrew checks; refresh release documentation/version matrix. Much of G6-04 is already implemented: inspect latest evidence before recreating work. Acceptance: exact integrated source passes its applicable local/CI recipes and review; ordinary bug CI is not weakened. CI: https://github.com/smorinlabs/skillsmith/actions/runs/31238776150 . Final source must incorporate accepted P19 fixes. Also owns legacy P14-RV's final release review and Release-As version bookkeeping before candidate creation; reconcile it with P17's actual approved version so no duplicate release is created. Formal P14 status handoff remains PUB-07.",
+      "body": "## Deferred work\n\nComplete remaining release integration and release-specific code review; reproduce/fix ShellCheck/actionlint parity and four workflow findings from CI run 31238776150; correct host-architecture assumptions in Homebrew checks; refresh release documentation/version matrix. Much of G6-04 is already implemented: inspect latest evidence before recreating work. Acceptance: exact integrated source passes its applicable local/CI recipes and review; ordinary bug CI is not weakened. CI: https://github.com/smorinlabs/skillsmith/actions/runs/31238776150 . Final source must incorporate accepted P19 fixes.\n\n## Original IDs\n\n- P17-G6-04\n- EWP-P6-T07\n- EWP-P6-TS06\n- P14-T02\n- P14-T04\n- PR #44\n\n- P14-RV — final review/version bookkeeping, before candidate creation\n\n## Dependencies\n\nNo unsatisfied hard dependency assigned. Historical references above do not imply blocking.\n\n## Provenance and scope\n\nUser authorized P19 implementation and publication deferral on 2026-09-15. Original P17 release completion remains pending. This issue does not authorize publishing, credentials, visibility changes or unapproved product-contract amendments.\n\n- P17 preserved checkpoint: `5a7418593ecf6a8be4b10d8a5f657bb9e4f0e402`; draft PR #44.\n- Maintenance baseline: `9c0219f69888239ef5d2cab9ddea4a4683b14a48`.\n- [P17 goal](https://github.com/smorinlabs/skillsmith/blob/5a7418593ecf6a8be4b10d8a5f657bb9e4f0e402/projects/P17-GOAL.md)\n- [G6-04 plan](https://github.com/smorinlabs/skillsmith/blob/5a7418593ecf6a8be4b10d8a5f657bb9e4f0e402/projects/p17/plans/P17-G6-04.md)\n- [G6-04 evidence](https://github.com/smorinlabs/skillsmith/blob/5a7418593ecf6a8be4b10d8a5f657bb9e4f0e402/projects/p17/evidence/P17-G6-04.md)\n- [Catalog](https://github.com/smorinlabs/skillsmith/blob/5a7418593ecf6a8be4b10d8a5f657bb9e4f0e402/projects/p17/catalog.json)\n- P19 project/plan/task registry is being recorded in branch `agent/p19-bug-closeout`.\n\nKeep original IDs and evidence. Distinguish historical/satisfied dependencies from current blockers. Close only with the acceptance evidence, not merely because a successor issue exists. Revalidate exact source and external facts on resumption; historic mapping failures are not necessarily current defects.\n\n## Linked tracking\n\n- Project: [P19 #51](https://github.com/smorinlabs/skillsmith/issues/51)\n- Publication umbrella (related, not a product-bug prerequisite): [PUB-00 #53](https://github.com/smorinlabs/skillsmith/issues/53)\n- Blocks: [PUB-06 #59](https://github.com/smorinlabs/skillsmith/issues/59)\n\n## P19 traceability correction\n\nThe previously unmapped unchecked P14-RV belongs here for final release review and Release-As version bookkeeping before PUB-06 candidate creation/publication. Reconcile against P17's actual approved version; do not create a duplicate release. Final P14 status reconciliation/handoff remains PUB-07 #62. All of this execution is deferred.\n\nP17's current pull-request CI also automatically invokes a macOS Candidate-cask contract step, even for draft PRs. Keep candidate qualification within the deferred scope. A product-only PR path must explicitly separate or authorize that step; do not silently disable ordinary CI or call skipped qualification passed.\n",
       "url": "https://github.com/smorinlabs/skillsmith/issues/52",
       "number": 52
     },
@@ -305,18 +313,19 @@
       "branch": "agent/p19-bug-closeout",
       "productCommit": "3dd85a0",
       "securityCommit": "b458413",
-      "validatedHead": "27524370b95b49b7001e7237bdb18912820e86c6",
+      "validatedHead": "8623165b5406b4c6c5216da4894eaedb7c78bfe2",
       "pullRequest": 66,
-      "ordinaryLocalGate": "passed",
+      "ordinaryLocalGate": "passed on validatedHead; subsequent review corrections await final replay",
       "githubCi": "passed on ubuntu-latest and macos-latest",
-      "review": "pending"
+      "review": "Copilot changes recommended; findings corrected locally; fresh Codex sign-off pending"
     },
     "p17": {
       "branch": "agent/p19-p17-fixes",
       "base": "5a7418593ecf6a8be4b10d8a5f657bb9e4f0e402",
       "firstCarryCommit": "e960b2cfefe043d8f04d045fd7907870746738cb",
-      "ordinaryLocalGate": "failed: six pre-existing doctor fixture failures; corrections under validation",
-      "review": "pending"
+      "ordinaryLocalGate": "be2297c: static checks and doctor contract passed; update TS05 failed at file 46/370; protocol/static fixture corrected, targeted replay passed; terminal replay pending",
+      "review": "pending",
+      "pullRequest": "not opened: current P17 PR CI automatically invokes deferred Candidate-cask qualification; product-only CI separation or scope decision needed"
     }
   }
 }

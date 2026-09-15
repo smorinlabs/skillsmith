@@ -135,7 +135,6 @@ export const listSkills = async (
   let all = [...standalone, ...pluginBundled];
   all = dedupeByRealpath(all);
   if (opts.globs && opts.globs.length > 0) all = applyGlobs(all, opts.globs);
-  if (opts.duplicatesOnly) all = filterCrossScopeDuplicates(all);
   if (opts.enabledFilter === 'enabled-only') all = all.filter((e) => e.enabled === 'on');
   if (opts.enabledFilter === 'disabled-only') all = all.filter((e) => e.enabled === 'off');
   if (opts.enabledFilter === 'unconfigured-only') all = all.filter((e) => e.enabled === 'unset');
@@ -144,6 +143,7 @@ export const listSkills = async (
   // have their scope computed from pluginScope
   const scopeSet = new Set(scopes);
   all = all.filter((e) => scopeSet.has(e.scope));
+  if (opts.duplicatesOnly) all = filterCrossScopeDuplicates(all);
 
   logger.debug(
     `listSkills: ${standalone.length} standalone + ${pluginBundled.length} plugin = ${all.length} after filters`,
