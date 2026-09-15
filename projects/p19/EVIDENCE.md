@@ -231,3 +231,40 @@ Product tasks remain in progress until affected-line carry-forward, review and i
 - Fresh remote check: release-please disabled_manually; ordinary CI active; #34 and
   #44 draft/open with no auto-merge; #44 still at 5a74185. Main is still 9c0219f;
   the repository remains private. Original P17 worktree remains clean and unchanged.
+
+## 2026-09-15 — diagnostic remainder and final-gate preparation
+
+- Main administrative checkpoint 38baccce45d5600bd17012f983c340ea615fb2f3 passed
+  full check/secrets/audit/security lint and GitHub Linux/macOS CI with the same
+  1,047 pass / 28 existing live skips / 0 fail / 4,971 assertions.
+- P17 3864d3e34d4d7e8b0a932f809789f842c15972a3 passed the corrected verify
+  contract, then failed the help expectation at file 48/370 (9 pass/1 fail).
+  This P19-introduced stale assertion still expected "cross-scope duplicates".
+  Commit 08719851938d4bec06fac72f5e5e3cb6b7c563a3 retains an exact semantic
+  expectation for "same-tool placement conflicts", allowing terminal line wrapping.
+  Full help owner: 10 pass/85 assertions; ordinary smoke: 5 pass/3,737 assertions.
+- Ran the remaining 322 tracked files diagnostically at 0871985, in fresh serial
+  processes with the canonical per-file command, timeout/concurrency/orphan/retry
+  flags and exact per-file skip allowlist. Continued after failures to collect all
+  remaining findings; this is explicitly NOT the canonical full-gate receipt.
+  Result: 2,859 pass, 8 existing live skips, 1 fail; 100,823 assertions. The sole
+  failure was scripts/check-p17-package-output.test.ts, whose literal link count
+  predated the two P19 backlinks (23 versus 25). All other 321 files passed.
+  Manifest SHA-256: bb0c3d601779accad270a2c3263128ba5ea723c8d74081ec6171c71a583e2d1c.
+  Diagnostic JUnit retained at /tmp/skillsmith-p19-diagnostic-IbTYUd.
+- Corrected only the checker test's expected link count; production checker,
+  catalog counts, lifecycle gates and final-pending states are unchanged.
+  Checker-output owner: 3 pass/25 assertions; smoke: 5 pass/3,737 assertions.
+  Also removed P17's stale unconditional pipe-truncation workaround, reflecting
+  its already-safe entrypoint and the new source/compiled output regressions.
+- P17 full-history secrets scan: 893 commits, no leaks. Fresh dependency audit:
+  no vulnerabilities. An initial security-lint invocation omitted P17's required
+  suppression-location argument and reported its 37 already-reviewed baseline
+  findings. The exact hook command with --suppressions-location
+  eslint-security-suppressions.json passes. Both that file and the security
+  configuration are byte-for-byte unchanged from 5a74185; no new suppression or
+  pass-on-unpruned override was introduced. G6-01 documents the reviewed baseline.
+- Full terminal validation still must be replayed at a clean final checkpoint.
+  Fresh independent Codex review and affected-line integration remain pending.
+  Final P19 receipts will be linked from tracking issue #51; branch-local evidence
+  is an append-only snapshot, not an implied later approval.

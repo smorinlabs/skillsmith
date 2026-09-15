@@ -32,7 +32,7 @@ const lifecycleGateNames = [
 ] as const;
 
 const expectedV1 =
-  'structurally valid; preparation/PR/merge readiness was not asserted: 86 prep IDs, 23 local links, valid: 426 entities (419 required, 7 deferred; 244 validation obligations), 45 groups, deterministic checklist';
+  'structurally valid; preparation/PR/merge readiness was not asserted: 86 prep IDs, 25 local links, valid: 426 entities (419 required, 7 deferred; 244 validation obligations), 45 groups, deterministic checklist';
 
 const run = (version?: '1' | '2' | 'invalid') =>
   Bun.spawnSync(['bun', checker, '--check'], {
