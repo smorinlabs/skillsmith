@@ -1513,6 +1513,7 @@ export const runCheckApplication: ApplicationService<CurrentCommandRequest, Heal
 
 export const verifyExitClass = (report: VerifyReport): CommandExitClass => {
   if (report.summary.verdict === 'fail') return 'failure';
+  if (report.summary.verdict === 'inconclusive') return 'capability';
   const anyRan = report.tools.some((tool) => tool.modes.some((mode) => mode.status === 'ran'));
   if (!anyRan) return 'capability';
   if (report.requested.explicitTools && report.tools.some((tool) => !tool.available)) {

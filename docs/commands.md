@@ -92,7 +92,7 @@ Minimal invocation: `skillsmith list`
 
 - `--description <glob>` _(advanced)_ — Match the skill description with a glob
 - `--disabled` — Show only disabled entries
-- `--duplicates` _(advanced)_ — Show only cross-scope duplicates
+- `--duplicates` _(advanced)_ — Show only same-tool placement conflicts
 - `--enabled` — Show only enabled entries
 - `--mode <dev|pinned|unmanaged>` _(advanced)_ — Narrow to dev, pinned, or unmanaged placements
 - `--revision <glob>` _(advanced)_ — Match the recorded revision with a glob
@@ -534,7 +534,7 @@ Minimal invocation: `skillsmith verify <path>`
 
 #### BEHAVIOR AND VERIFICATION
 
-- `--deep` — Also run isolated session-backed load verification
+- `--deep` — Also run isolated native load verification (no model call)
 - `--static` _(advanced)_ — Run static verification only; this is the default
 - `--strict` — Treat warnings as failures (exit 1 on any warning)
 

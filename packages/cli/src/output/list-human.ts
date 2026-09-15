@@ -58,9 +58,7 @@ const valueCell = (value: string | null | undefined, empty = ''): string =>
 const safeLine = (value: string): string => redactSensitiveString(value).replace(/[\r\n]+/g, ' ');
 
 const emptyOutput = (outcome: ListHumanOpts['outcome']): string =>
-  outcome === 'filter-noop'
-    ? 'No skills installed.\nActive filters reduced the selected inventory to zero.\n'
-    : 'No skills installed.\n';
+  outcome === 'filter-noop' ? 'No skills matched the active filters.\n' : 'No skills installed.\n';
 
 const formatOrigin = (origin: Origin): string => {
   if (origin.kind === 'standalone') return 'standalone';
@@ -85,7 +83,10 @@ export const renderListHuman = (
   entries: readonly PresentedSkillEntry[],
   opts: ListHumanOpts,
 ): string => {
-  if (entries.length === 0) return emptyOutput(opts.outcome);
+  if (entries.length === 0)
+    return opts.duplicates
+      ? 'No duplicate skills matched the selected inventory.\n'
+      : emptyOutput(opts.outcome);
 
   const columns = opts.long
     ? [

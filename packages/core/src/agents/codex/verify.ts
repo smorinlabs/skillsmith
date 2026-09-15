@@ -10,6 +10,7 @@ import type {
   VerifyMode,
   VerifyPorts,
 } from '../../verify/types.ts';
+import { analyzeCodexSkills, sanitizeDeepDiagnostic } from './deep-result.ts';
 import { CODEX_VERIFIED_AGAINST } from './descriptor.ts';
 import { detect } from './detect.ts';
 
@@ -264,30 +265,45 @@ const runStaticMode = async (
   }
 };
 
-const DEEP_COVERAGE = { manifest: false, skills: true };
-const DEEP_COMMAND =
-  'codex exec -C <proj> --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox "ok"';
+const DEEP_COMMAND = 'codex app-server --listen stdio:// (initialize; skills/list <proj>)';
 
-const deepErrorResult = (skipReason: 'timeout' | 'exec-error'): ModeResult => ({
+const deepErrorResult = (
+  skipReason: 'timeout' | 'exec-error',
+  message: string,
+  findings: VerifyFinding[] = [],
+): ModeResult => ({
   mode: 'deep',
   status: 'error',
   skipReason,
-  coverage: DEEP_COVERAGE,
+  coverage: { manifest: false, skills: false },
   verdict: null,
   command: DEEP_COMMAND,
-  findings: [],
+  findings: [
+    ...findings,
+    {
+      checkId: 'codex.deep-probe',
+      toolSeverity: null,
+      normalizedSeverity: 'info',
+      message,
+      file: null,
+      subject: 'plugin',
+    },
+  ],
 });
 
-/** Copy each `<path>/skills/<n>/` (with SKILL.md) into `<proj>/.agents/skills/<n>/`. */
-const stageSkills = async (env: VerifyPorts, path: string, proj: string): Promise<void> => {
+/** Copy only target skills, and retain every expected entry for exact-path loading proof. */
+const stageSkills = async (env: VerifyPorts, path: string, proj: string): Promise<string[]> => {
   const skillsDir = join(path, 'skills');
-  if (!(await env.fileExists(skillsDir))) return; // no skills dir ⇒ nothing to stage
+  if (!(await env.fileExists(skillsDir))) return [];
   await env.makeDir(join(proj, '.agents', 'skills'));
-  for (const n of await env.listDir(skillsDir)) {
-    const src = join(skillsDir, n);
+  const names: string[] = [];
+  for (const name of await env.listDir(skillsDir)) {
+    const src = join(skillsDir, name);
     if (!(await env.fileExists(join(src, 'SKILL.md')))) continue;
-    await env.copyTree(src, join(proj, '.agents', 'skills', n));
+    await env.copyTree(src, join(proj, '.agents', 'skills', name));
+    names.push(name);
   }
+  return names;
 };
 
 const runDeepMode = async (
@@ -300,56 +316,66 @@ const runDeepMode = async (
   try {
     await env.makeDir(proj);
     await env.makeDir(home);
-    await stageSkills(env, opts.path, proj);
-
-    const result = await env.exec(
-      binary,
-      [
-        'exec',
-        '-C',
-        proj,
-        '--skip-git-repo-check',
-        '--dangerously-bypass-approvals-and-sandbox',
-        'ok',
-      ],
-      {
-        env: { CODEX_HOME: home },
-        timeoutMs: DEEP_TIMEOUT_MS,
-        ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
-      },
+    const names = await stageSkills(env, opts.path, proj);
+    const realProj = await env.realpath(proj);
+    const expected = await Promise.all(
+      names.map(async (name) => ({
+        path: await env.realpath(join(proj, '.agents', 'skills', name, 'SKILL.md')),
+        file: opts.kind === 'skill' ? 'SKILL.md' : `skills/${name}/SKILL.md`,
+      })),
     );
-
-    if (result.timedOut) return deepErrorResult('timeout');
-
-    // codex reports paths under the *canonicalized* project dir (e.g. macOS resolves
-    // /var -> /private/var), which can differ from the mkdtemp()-returned logical path;
-    // strip using the resolved form so the prefix actually matches.
-    let realProj = proj;
-    try {
-      realProj = await env.realpath(proj);
-    } catch {
-      // keep the logical path; best-effort prefix strip in parseCodexExecStderr
+    const result = await env.exec(binary, ['app-server', '--listen', 'stdio://'], {
+      cwd: proj,
+      env: { CODEX_HOME: home, HOME: home, XDG_CONFIG_HOME: home },
+      unsetEnv: ['OPENAI_API_KEY', 'CODEX_API_KEY'],
+      timeoutMs: DEEP_TIMEOUT_MS,
+      jsonRpc: [
+        {
+          id: 1,
+          method: 'initialize',
+          params: {
+            clientInfo: { name: 'skillsmith_verification', version: '1' },
+            capabilities: { experimentalApi: true },
+          },
+        },
+        { method: 'initialized', params: {} },
+        { id: 2, method: 'skills/list', params: { cwds: [realProj], forceReload: true } },
+      ],
+      ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+    });
+    if (result.timedOut || result.code !== 0 || result.protocolError) {
+      return deepErrorResult(
+        result.timedOut ? 'timeout' : 'exec-error',
+        sanitizeDeepDiagnostic(
+          `executable=${binary}; phase=local-loader; exit=${result.code}; timeout=${result.timedOut}; ${result.protocolError ?? ''}; stderr: ${result.stderr}`,
+          [proj, realProj, home],
+        ),
+      );
     }
-
-    const findings = parseCodexExecStderr(result.stderr, realProj, opts.kind ?? 'plugin');
-
-    // The load phase runs before any auth/model call. It demonstrably ran when the session
-    // exits clean, when a per-skill load failure was scraped, or when the isolated session
-    // reached its expected unauthenticated 401 tail. A non-zero exit with none of that
-    // evidence is an exec failure, never a pass.
-    const loadPhaseRan =
-      result.code === 0 || findings.length > 0 || result.stderr.includes('401 Unauthorized');
-    if (!loadPhaseRan) return deepErrorResult('exec-error');
-
+    const analyzed = analyzeCodexSkills(result.stdout, realProj, expected);
+    if ('error' in analyzed) return deepErrorResult('exec-error', analyzed.error);
+    const hasFailure = analyzed.findings.some((finding) => finding.normalizedSeverity === 'error');
+    if (!analyzed.complete && !hasFailure) {
+      return deepErrorResult(
+        'exec-error',
+        'local loader did not verify every expected enabled target',
+        analyzed.findings,
+      );
+    }
     return {
       mode: 'deep',
       status: 'ran',
       skipReason: null,
-      coverage: DEEP_COVERAGE,
-      verdict: modeVerdictFor(findings, opts.strict),
+      coverage: { manifest: false, skills: analyzed.complete },
+      verdict: modeVerdictFor(analyzed.findings, opts.strict),
       command: DEEP_COMMAND,
-      findings,
+      findings: analyzed.findings,
     };
+  } catch {
+    return deepErrorResult(
+      'exec-error',
+      opts.signal?.aborted ? 'local loader cancelled' : 'local loader staging or execution failed',
+    );
   } finally {
     await env.removeTree(proj);
     await env.removeTree(home);

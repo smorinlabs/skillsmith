@@ -146,7 +146,7 @@ full format and the discovery helper.
 
 ## Dependency overrides (P10)
 
-Root `package.json` `overrides` force `fast-uri`, `js-yaml` (3.15.0 — must stay 3.x for
+Root `package.json` `overrides` force `fast-uri`, `js-yaml` (3.15.2 floor — must stay 3.x for
 gray-matter), and `brace-expansion` (5.x) to patched versions because bun overrides are
 flat/global. Known dormant hazard: minimatch@3 consumers inside eslint's tree will throw
 `TypeError: expand is not a function` if any eslint `files`/glob pattern uses braces

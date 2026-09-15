@@ -16,6 +16,13 @@ and complete.
 
 ### Scope
 
+Execution note (2026-09-15): publishing/pre-publishing work is paused under
+[P19](P19-product-bug-closeout-and-publication-deferral.md) and
+[PUB-00 #53](https://github.com/smorinlabs/skillsmith/issues/53); the original
+P17 release completion remains pending. Preserve executed checkpoint
+`5a7418593ecf6a8be4b10d8a5f657bb9e4f0e402` and draft PR #44. Main's preparation checklist is
+not the execution checkpoint's status; no catalog gate is signed off by this transfer.
+
 - Implement the accepted Phase 0-6 Skillsmith ergonomics plan.
 - Track every named recommendation, task, validation, command, finding, and decision.
 - Generate a checkbox-level execution view from one machine-readable catalog.
