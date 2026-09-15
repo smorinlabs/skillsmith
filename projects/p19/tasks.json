@@ -313,19 +313,22 @@
       "branch": "agent/p19-bug-closeout",
       "productCommit": "3dd85a0",
       "securityCommit": "b458413",
-      "validatedHead": "9ead9eca4215aebabd2409d15834620c8a8fa233",
+      "validatedHead": "38baccce45d5600bd17012f983c340ea615fb2f3",
       "pullRequest": 66,
       "ordinaryLocalGate": "passed: 1047 pass, 28 existing live skips, 0 fail, 4971 assertions, 129 files; frozen install/secrets/audit/security lint passed",
-      "githubCi": "passed on ubuntu-latest and macos-latest at 9ead9ec",
+      "githubCi": "passed on ubuntu-latest and macos-latest at 38baccc",
       "review": "Copilot findings corrected at 9ead9ec; fresh Codex sign-off pending"
     },
     "p17": {
       "branch": "agent/p19-p17-fixes",
       "base": "5a7418593ecf6a8be4b10d8a5f657bb9e4f0e402",
       "firstCarryCommit": "e960b2cfefe043d8f04d045fd7907870746738cb",
-      "ordinaryLocalGate": "d0ea2f4: static checks, doctor and update passed; inherited-HOME verify TS04 failed at file 47/370; baseline confirmed and fixed, full verify owner passed; terminal replay pending",
+      "ordinaryLocalGate": "3864d3e: full run reached file 48/370, stale help expectation failed; corrected at 0871985 and full help owner passed. Remainder diagnosis ran 322 files: 2859 pass, 8 existing skips, 1 stale checker link-count failure, now corrected; final canonical full replay pending",
       "review": "pending",
-      "pullRequest": "not opened: current P17 PR CI automatically invokes deferred Candidate-cask qualification; product-only CI separation or scope decision needed"
+      "pullRequest": "not opened: current P17 PR CI automatically invokes deferred Candidate-cask qualification; product-only CI separation or scope decision needed",
+      "security": "full-history secrets scan (893 commits), fresh dependency audit and exact hook security lint passed; existing reviewed 37-finding suppression baseline unchanged",
+      "diagnosticHead": "08719851938d4bec06fac72f5e5e3cb6b7c563a3",
+      "latestReceipts": "https://github.com/smorinlabs/skillsmith/issues/51"
     }
   }
 }

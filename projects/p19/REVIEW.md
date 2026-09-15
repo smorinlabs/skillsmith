@@ -15,6 +15,8 @@ evidence, not approval. Product issues remain open until affected-line review an
 | P19-RV-F08 | P17 ordinary gate: inherited host tool installations change doctor findings | Baseline reproduction at 5a74185; fixture PATH and in-process filesystem facts isolated at be2297c. Exact doctor owner passes; tracked by #67. |
 | P19-RV-F09 | Self-inspection: managed-marker probe under an ordinary file can raise ENOTDIR | Directory-kind guard and real-file/link regression at be2297c; part of #40. |
 | P19-RV-F10 | P17 ordinary gate: verify TS04 inherits Codex under HOME despite empty PATH | Reproduced on untouched 5a74185; isolate HOME/XDG/tool configuration without changing assertions. Full verify owner passes 15 tests/80 assertions; part of #67. |
+| P19-RV-F11 | P17 ordinary gate: help assertion still expects cross-scope-only duplicate wording | Corrected at 0871985 to the exact same-tool placement-conflict semantics, allowing line wrapping. All 10 help tests pass. |
+| P19-RV-F12 | Remainder diagnosis: checker-output snapshot expects 23 local links instead of 25 | The two P19 backlinks legitimately change the count. Updated only the literal test expectation; all three output compatibility tests pass. Production checker, catalog and gates unchanged. |
 
 The preserved P17 catalog records historical checkpoint sign-offs, not fresh approval of the P19 delta.
 
