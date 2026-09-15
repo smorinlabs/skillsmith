@@ -177,6 +177,12 @@ P13 merges (same files: plan.ts/run.ts).**
 ---
 
 ## [ ] Project P14: Production flip — skillsmith v1.0.0
+
+P19 disposition: all execution below is deferred under [PUB-00 #53](https://github.com/smorinlabs/skillsmith/issues/53).
+P14-T01 → PUB-02 #50; P14-T02/T04/RV → PUB-01 #52; P14-T03 infrastructure → PUB-05 #58,
+actual all-channel publication → PUB-06 #59; final reconciliation/handoff → PUB-07 #62.
+Existing checkboxes remain pending, and P14's old formula/version wording must be reconciled
+with the approved P17 cask/candidate design before resumption.
 **Goal**: Skillsmith itself dev→production: flip canonical repo public (post scrub), per-platform
 compiled binaries, distribution via `smorinlabs/homebrew-tap` + npm, docs refresh (README command
 surface, verified-against `claude`/`codex` version matrix), `Release-As: 1.0.0`.

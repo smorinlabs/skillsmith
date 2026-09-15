@@ -2,6 +2,11 @@
 
 > P17 disposition: shipped command evidence, not future target authority; target: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#83-list
 
+> P19 clarification: P17 uses same-tool placement conflicts, including multiple roots within
+> a scope; cross-tool name reuse is not a conflict. Tool/scope selection bounds collision
+> identity; display filters preserve the selected context's collision/shadowing metadata.
+> See the [current generated reference](../../docs/commands.md#skillsmith-list).
+
 List installed skills across scopes and tools. Alias: `ls`.
 
 ## Argument order

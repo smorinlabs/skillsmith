@@ -61,10 +61,10 @@ export const renderVerifyHuman = (
   const { failed, verified, skipped, counts } = report.summary;
   const incomplete =
     report.summary.verdict === 'inconclusive' &&
-    report.tools.some((tool) => tool.modes.some((mode) => mode.status === 'ran'));
+    report.tools.some((tool) => tool.available && tool.modes.length > 0);
   const summaryLine =
     failed.length > 0
-      ? `${failed.length} ${failed.length === 1 ? 'tool' : 'tools'} failed, ${verified.length} passed.  ` +
+      ? `${failed.length} ${failed.length === 1 ? 'tool' : 'tools'} failed, ${verified.length} verified.  ` +
         `(${plural(counts.error, 'error')}, ${plural(counts.warning, 'warning')}, ${plural(counts.info, 'notice')})  ` +
         `Exit code: ${exitCode}`
       : incomplete

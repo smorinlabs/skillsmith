@@ -174,3 +174,35 @@ Product tasks remain in progress until affected-line carry-forward, review and i
   retain their expectations. This correction is part of #40, not a release task.
 - Requested authority for a separate read-only Codex review; no response yet. No independent
   review or merge is claimed, and all product issues remain open pending verified closeout.
+
+## 2026-09-15 — review findings and protocol-fixture repair
+
+- Main 8623165b5406b4c6c5216da4894eaedb7c78bfe2 also passed the complete manual
+  check/secrets/audit/security gate: 1,044 pass, 28 existing live skips, 0 fail,
+  4,827 assertions, 129 files. GitHub Linux/macOS CI passed that head.
+- Copilot returned a COMMENTED, changes-recommended review of PR #66. This is useful
+  independent feedback, not the required fresh Codex adversarial sign-off. Reproduced and
+  corrected all-error human summaries, misleading "passed" wording for warned tools,
+  inherited deep-loader XDG paths and main's duplicate grouping before scope/enablement
+  selection. Added regression coverage and corrected current main command documentation.
+- P17's canonical inventory already bounds collisions by tool/scope and deliberately keeps
+  full-context visibility metadata through display filters. Preserve that architecture and
+  its same-scope multi-root conflicts; do not port main's older cross-scope-only projection
+  into it. Historical research pages now explicitly link to the corrected current behavior.
+- P17 ordinary gate at be2297c passed all static checks and the 63-case doctor contract, then
+  failed EWP-CMD-UPDATE-TS05 in file 46/370 (19 pass/1 fail in that owner). No full-suite
+  pass or subsequent chained security gate is claimed for that attempt.
+- The update fixture still simulated the old Codex exec/401 path. A direct fixture-backed
+  verify showed static=error, deep=pass after the initial protocol fixture correction:
+  the new aggregation correctly exposed the fixture's missing static success responses.
+  Added bounded local initialization/skills/list fixture dispatch, shared with undo, and
+  explicit supported static plugin responses to update. Production verification and the
+  original update assertions remain unchanged. EWP-CMD-UPDATE-TS05 now passes (23
+  assertions); the corrected P17 renderer/deep owners pass 35 tests; smoke passes 5
+  selected families/3,737 assertions. Main's three focused owners pass 40 tests.
+- P14-RV final release review and Release-As bookkeeping are explicitly owned by PUB-01
+  before candidate selection; final release handoff remains PUB-07. No version was bumped.
+- P17 pull-request CI runs a Candidate-cask macOS qualification even for draft PRs. That
+  is deferred pre-publication work: archive the carry-forward branch after ordinary gates,
+  but do not open a PR that silently launches it. A product-only CI separation or explicit
+  scope decision is required; ordinary CI has not been disabled or weakened.

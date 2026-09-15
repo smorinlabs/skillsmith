@@ -132,6 +132,7 @@ describe('verifyCodex deep mode', () => {
   ) => {
     let stagedProject = '';
     let isolatedHome = '';
+    let childEnvironment: Record<string, string> | undefined;
     const scanEnv = fakeInstalled({
       realpath: async (path) => (options.canonical ? `/canonical${path}` : path),
       exec: async (binary, args, opts): Promise<ExecResult> => {
@@ -149,6 +150,7 @@ describe('verifyCodex deep mode', () => {
         expect(opts?.unsetEnv).toContain('OPENAI_API_KEY');
         expect(opts?.env?.CODEX_HOME).toBeTruthy();
         expect(opts?.env?.HOME).toBe(opts?.env?.CODEX_HOME);
+        childEnvironment = opts?.env;
         stagedProject = opts?.cwd ?? '';
         isolatedHome = opts?.env?.CODEX_HOME ?? '';
         expect(existsSync(join(stagedProject, '.agents', 'skills', 'good-skill', 'SKILL.md'))).toBe(
@@ -171,6 +173,19 @@ describe('verifyCodex deep mode', () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error('verifier failed outside mode reporting');
+    expect(childEnvironment?.CODEX_HOME).toBeTruthy();
+    for (const key of [
+      'HOME',
+      'XDG_CONFIG_HOME',
+      'XDG_DATA_HOME',
+      'XDG_CACHE_HOME',
+      'XDG_STATE_HOME',
+      'XDG_RUNTIME_DIR',
+      'XDG_CONFIG_DIRS',
+      'XDG_DATA_DIRS',
+    ]) {
+      expect(childEnvironment?.[key]).toBe(childEnvironment?.CODEX_HOME);
+    }
     expect(existsSync(stagedProject)).toBe(false);
     expect(existsSync(isolatedHome)).toBe(false);
     const deep = result.value.modes.find((mode) => mode.mode === 'deep');

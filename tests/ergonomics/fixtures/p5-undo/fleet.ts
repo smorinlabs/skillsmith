@@ -13,6 +13,7 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join, relative, resolve } from 'node:path';
+import { codexAppServerFixtureDispatch } from '../codex-app-server.ts';
 
 const CLI_ENTRYPOINT = join(
   import.meta.dir,
@@ -178,7 +179,7 @@ export const createUndoFleet = async (): Promise<UndoFleet> => {
         'if [ "$#" -eq 4 ] && [ "$1" = "plugin" ] && [ "$2" = "marketplace" ] && [ "$3" = "add" ]; then exit 0; fi',
         'if [ "$#" -eq 3 ] && [ "$1" = "plugin" ] && [ "$2" = "add" ] && [ "$3" = "review@skillsmith-mkt" ]; then echo "Added plugin review@skillsmith-mkt"; exit 0; fi',
         'if [ "$#" -eq 3 ] && [ "$1" = "plugin" ] && [ "$2" = "list" ] && [ "$3" = "--json" ]; then echo "{\\"installed\\":[{\\"name\\":\\"review\\"}]}"; exit 0; fi',
-        'if [ "$#" -eq 6 ] && [ "$1" = "exec" ] && [ "$2" = "-C" ] && [ "$4" = "--skip-git-repo-check" ] && [ "$5" = "--dangerously-bypass-approvals-and-sandbox" ] && [ "$6" = "ok" ]; then exit 0; fi',
+        codexAppServerFixtureDispatch(),
         'exit 64',
         '',
       ].join('\n'),
