@@ -117,9 +117,13 @@ const resolveCodexPlacementScoped = async (
 };
 
 export const codexPlacementBundle: PlacementBundle = {
-  isManagedLegacyEntry: async (env, root, entry) =>
-    entry === '.codex-system-skills.marker' ||
-    (await env.fileExists(join(root, entry, '.codex-system-skills.marker'))),
+  isManagedLegacyEntry: async (env, root, entry) => {
+    if (entry === '.codex-system-skills.marker') return true;
+    const path = join(root, entry);
+    if (!(await env.fileExists(path))) return false;
+    if ((await env.pathKind(await env.realpath(path))) !== 'dir') return false;
+    return env.fileExists(join(path, '.codex-system-skills.marker'));
+  },
   roots: getSkillRoots,
   rootFacts: codexRootFacts,
   standardRoots: (env, ctx) => getSkillRoots(env, 'user', ctx),

@@ -105,7 +105,9 @@ describe('legacyInstall', () => {
         ...baseCtx.env,
         fileExists: async (path) =>
           path === legacy ||
+          path === `${legacy}/.system` ||
           (protectedSystem && path === `${legacy}/.system/.codex-system-skills.marker`),
+        pathKind: async (path) => (path === `${legacy}/.system` ? 'dir' : 'absent'),
         listDir: async (path) => (path === legacy ? entries : []),
       },
     };

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { toolRegistry } from '../../../core/src/agents/registry.ts';
@@ -121,7 +121,16 @@ const sandbox = async (label: string): Promise<string> => {
     mkdir(join(root, 'config'), { recursive: true }),
     mkdir(join(root, 'data'), { recursive: true }),
     mkdir(join(root, 'cache'), { recursive: true }),
+    mkdir(join(root, 'bin'), { recursive: true }),
   ]);
+  const git = Bun.which('git');
+  if (git === null) throw new Error('doctor fixtures require Git');
+  await symlink(git, join(root, 'bin', 'git'));
+  await symlink(process.execPath, join(root, 'bin', 'bun'));
+  // These artifact/repair cases require exactly one detected Codex, not a real loader.
+  await writeFile(join(root, 'bin', 'codex'), '#!/bin/sh\nprintf "codex fixture\\n"\n', {
+    mode: 0o755,
+  });
   return root;
 };
 
@@ -233,6 +242,7 @@ const runBoundedProcess = async (
       XDG_DATA_HOME: join(root, 'data'),
       XDG_CACHE_HOME: join(root, 'cache'),
       SKILLSMITH_HOME: join(root, 'data', 'skillsmith'),
+      PATH: join(root, 'bin'),
       SKILLSMITH_CONFIG: undefined,
       SKILLSMITH_TOOL: undefined,
       SKILLSMITH_SCOPE: undefined,
@@ -2596,6 +2606,10 @@ describe('EWP-CMD-DOCTOR-TS05', () => {
     let resolutions = 0;
     const ports: CurrentApplicationContext['ports'] = {
       ...basePorts,
+      homeDir: join(root, 'home'),
+      executableSearchPath: [join(root, 'bin')],
+      xdg: { config: join(root, 'config'), data: join(root, 'data'), cache: join(root, 'cache') },
+      fileExists: async (path) => path.startsWith(`${root}/`) && basePorts.fileExists(path),
       git: {
         ...basePorts.git,
         resolveRemoteRef: async ({ remoteUrl, ref }) => {

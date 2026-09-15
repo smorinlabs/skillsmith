@@ -40,6 +40,7 @@ pending; its historical catalog gates are not changed to passing by this deferra
 - [x] [P19-T13] Update P17 project/goal navigation with the approved pause and issue backlinks; preserve unfinished gates and original completion requirements.
 - [ ] [P19-T14] Review changes, correct findings, run target-branch merge gates, integrate only accepted bug/administrative work, and close issues only with verified evidence.
 - [ ] [P19-T15] Patch newly confirmed vulnerable parser/tooling dependencies (#65) on both maintained lines, with bounded malformed-TOML rejection, inspected lockfile changes, fresh audit and ordinary gates.
+- [ ] [P19-T16] Repair inherited host-tool discovery in P17 doctor contract fixtures (#67), preserving exact assertions and the full ordinary gate.
 - [ ] [P19-TS01] Every active/deferred/carryover item has a unique owner, acceptance criteria, dependencies, source references, and truthful status.
 - [ ] [P19-TS02] Each fixed bug has a failing-before/passing-after regression and affected-line coverage.
 - [ ] [P19-TS03] Required ordinary static/tests/build checks pass at exact reviewed commits; deferred release checks are separately identified.

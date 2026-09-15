@@ -146,3 +146,31 @@ Product tasks remain in progress until affected-line carry-forward, review and i
 - P18 remains an idea; corrected its premise with existing claude plugin validate source
   evidence. Completed SPR-GOAL-01/SPR-P1..P4 and PK-EX-PHASE-001 (version 24) remain complete;
   their repositories were read only and not changed.
+
+## 2026-09-15 — review preparation and ordinary-gate findings
+
+- Main candidate 27524370b95b49b7001e7237bdb18912820e86c6: frozen install, full check,
+  full secrets scan, high-severity audit and security lint all passed. 1,044 pass, 28 existing
+  live skips, 0 fail, 4,827 assertions, 129 files. Pushed using the documented --no-verify
+  hook workaround only after manual gates, and opened PR #66. GitHub Linux/macOS build-test,
+  PR-title lint and commitlint passed. CodeRabbit Free supplies a summary, not a comprehensive
+  code review; do not count its green status as independent approval.
+- P17 carry-forward first committed as e960b2cfefe043d8f04d045fd7907870746738cb. First
+  `bun run check` could not start because just was missing. Downloaded CI-pinned just 1.50.0
+  to an owned temporary directory; verified its release-asset SHA-256
+  3beb4967ce05883cf09ac12d6d128166eb4c6d0b03eff74b61018a6880655d7d. No global tool change.
+- The canonical P17 gate then reached file 32/370 and failed six doctor contract cases due
+  to real inherited Codex installations. A SIGINT sent to the owned just process during a
+  separate edge-case inspection did not stop the run; it ended on the actual test failure,
+  not on a green or waived gate. Pair-equivalence also fails on untouched 5a74185, proving
+  the fixture problem predates the carry-forward. Tracked as P19-T16 / #67.
+- Corrected doctor fixture PATH and added an explicit fixture-only Codex presence control;
+  isolated filesystem/search-path facts for the affected in-process resolver test as well.
+  Exact findings, repair and human-output assertions are unchanged. The six failing cases
+  now pass targeted replays. Full owner and terminal replays remain to be recorded.
+- Self-inspection found that P17's new managed-marker predicate could inspect a child path
+  under an ordinary file and raise ENOTDIR. A real-file/link regression failed first, then
+  passed after checking the resolved entry is a directory. Existing managed/mixed cases
+  retain their expectations. This correction is part of #40, not a release task.
+- Requested authority for a separate read-only Codex review; no response yet. No independent
+  review or merge is claimed, and all product issues remain open pending verified closeout.

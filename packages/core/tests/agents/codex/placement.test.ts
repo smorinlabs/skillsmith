@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { listCodexPlacements } from '../../../src/agents/codex/placement.ts';
+import { codexPlacementBundle, listCodexPlacements } from '../../../src/agents/codex/placement.ts';
 import { resolveRuntimeConfiguration } from '../../../src/config/runtime.ts';
 import {
   type FixtureFleet,
@@ -21,6 +21,18 @@ describe('codex placement detection', () => {
   });
 
   const storeRootOf = (f: FixtureFleet) => join(f.data, 'store');
+
+  test('ordinary files and links to files are not managed legacy directories', async () => {
+    fleet = await buildFixtureFleet();
+    const scan = await listCodexPlacements(fleet.env, ctxOf(fleet), storeRootOf(fleet));
+    await writeFile(join(scan.legacyRoot, 'README'), 'ordinary user file');
+    await symlink(join(scan.legacyRoot, 'README'), join(scan.legacyRoot, 'readme-link'));
+    for (const entry of ['README', 'readme-link']) {
+      expect(
+        await codexPlacementBundle.isManagedLegacyEntry?.(fleet.env, scan.legacyRoot, entry),
+      ).toBe(false);
+    }
+  });
   const portsOf = (f: FixtureFleet) => f.env;
   const ctxOf = (
     f: FixtureFleet,
