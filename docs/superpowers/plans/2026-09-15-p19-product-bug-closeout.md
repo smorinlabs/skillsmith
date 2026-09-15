@@ -192,3 +192,24 @@ complete while a confirmed in-scope product bug is unresolved.
 Publication can resume only by explicit future direction, starting at PUB-00, revalidating the
 then-current source/platform/external authorities and approvals. Restore held release controls
 only as part of that authorized resumption. P17's original goal is not marked achieved by P19.
+
+## 7. Implemented checkpoint and remaining execution
+
+Implementation and local ordinary/security validation are complete on the saved main-based and
+P17 maintenance branches; see the exact receipts in P19 EVIDENCE.md and tracking issue #51.
+Main PR #66 has green Linux/macOS CI. P17's clean `d786739` passed the canonical 370-file
+terminal gate; no P17 PR CI or deferred release qualification is claimed.
+
+The next work is review and integration, not redoing the implementation or resuming PUB tasks:
+
+1. With explicit delegation permission, obtain independent read-only Codex review of both
+   branch deltas and record reviewer identity, exact heads, findings and disposition.
+2. Confirm the accepted per-tool duplicate contract or separately scope #41's remaining
+   cross-tool-name request. Keep unmatched requirements open; no silent contract change.
+3. Obtain a scope decision for a product-only P17 PR path: its current PR CI automatically
+   invokes deferred Candidate-cask qualification. Keep the branch saved until that decision;
+   any approved separation must retain ordinary CI requirements and truthful release status.
+4. Resolve findings, rerun gates in proportion to changes and at integration heads, integrate
+   accepted work into both maintained lines, and then close supported bug/task checkboxes.
+5. Leave PUB-00..08 deferred and historical/investigation follow-ups #57/#60/#63 explicitly
+   open unless new evidence satisfies their own acceptance. Do not mark P17 release complete.

@@ -43,9 +43,35 @@ pending; its historical catalog gates are not changed to passing by this deferra
 - [ ] [P19-T15] Patch newly confirmed vulnerable parser/tooling dependencies (#65) on both maintained lines, with bounded malformed-TOML rejection, inspected lockfile changes, fresh audit and ordinary gates.
 - [ ] [P19-T16] Repair inherited host-tool discovery in P17 doctor and verification contract fixtures (#67), preserving exact assertions and the full ordinary gate.
 - [x] [P19-TS01] Every active/deferred/carryover item has a unique owner, acceptance criteria, dependencies, source references, and truthful status.
-- [ ] [P19-TS02] Each fixed bug has a failing-before/passing-after regression and affected-line coverage.
+- [x] [P19-TS02] Each fixed bug has a failing-before/passing-after regression and affected-line coverage; already-correct P17 behavior is preserved and regression-tested.
 - [ ] [P19-TS03] Required ordinary static/tests/build checks pass at exact reviewed commits; deferred release checks are separately identified.
-- [ ] [P19-TS04] Remote PR/issue/workflow state is freshly verified; no publication or visibility change occurred; P17 remains pending.
+- [x] [P19-TS04] Remote PR/issue/workflow state is freshly verified; no publication or visibility change occurred; P17 remains pending.
+
+## Implementation checkpoint — 2026-09-15
+
+The five product fixes, compatible security dependency updates and P17 fixture repairs are
+implemented. Main-based [PR #66](https://github.com/smorinlabs/skillsmith/pull/66) passes
+1,047 tests and Linux/macOS CI at `c32d255`. The saved
+[P17 maintenance branch](https://github.com/smorinlabs/skillsmith/tree/d786739eb2db462540a761d56c5eaa3473402e8b)
+passes the canonical 370-file gate at `d786739`: 3,394 test cases including 28 existing live
+skips, 111,520 assertions, no failures. Both lines pass their ordinary security checks.
+Exact receipts and earlier failures are preserved in [EVIDENCE.md](p19/EVIDENCE.md).
+
+Unchecked product tasks now represent remaining review/acceptance/integration, not missing
+implementation. Before closing them:
+
+1. Obtain fresh independent Codex review; self-inspection and corrected Copilot findings do
+   not constitute that sign-off. Permission to run a separate read-only reviewer is pending.
+2. Explicitly settle #41's cross-tool-name request against P17's accepted per-tool conflict
+   semantics. The implementation preserves the accepted contract; the issue remains open.
+3. Decide the product-only P17 PR/CI path. Existing PR CI automatically runs deferred
+   Candidate-cask qualification, so the branch is saved without opening a PR or changing CI.
+4. Correct any new review findings, validate exact integration heads, integrate accepted fixes
+   into both affected lines, then close only the issues whose acceptance is fully met.
+
+Follow-ups #57 (unreproduced Bun failure), #60 (historical P09 review receipt), and #63
+(P13 owner/wiring proof) remain open with explicit dispositions. No publishing task is resumed,
+no bug issue is closed, and neither P19 nor the original P17 release objective is complete.
 
 ## Deferred task inventory
 
