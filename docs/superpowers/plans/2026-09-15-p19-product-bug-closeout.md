@@ -171,6 +171,12 @@ are preserved. No direct main/tap pushes, force push, version bump, tag, publica
 
 ## 6. Closeout and resumption
 
+Execution finding P19-T15 (#65): the ordinary dependency audit identified vulnerable TOML/YAML
+parsers and tooling dependencies on both maintained lines. This falls within non-publication bug
+closeout. Raise compatible patched dependency floors, retain the gray-matter 3.x YAML API, add
+bounded malformed-TOML rejection coverage, inspect lockfile changes, and rerun audit plus normal
+gates. Do not bump Skillsmith release versions or waive the audit.
+
 Update P17 navigation with the approved pause and P19/PUB-00 links, retaining original objective,
 terminal rule and unsigned catalog gates. Freshly verify issue/PR/branch/worktree/workflow state.
 Close a bug only with its acceptance evidence and every affected maintained-line fix; otherwise
@@ -180,4 +186,3 @@ complete while a confirmed in-scope product bug is unresolved.
 Publication can resume only by explicit future direction, starting at PUB-00, revalidating the
 then-current source/platform/external authorities and approvals. Restore held release controls
 only as part of that authorized resumption. P17's original goal is not marked achieved by P19.
-

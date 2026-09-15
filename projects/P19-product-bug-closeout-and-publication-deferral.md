@@ -35,10 +35,11 @@ pending; its historical catalog gates are not changed to passing by this deferra
 - [ ] [P19-T08] Fix duplicate inventory/filter/empty-state reporting (#41); reconcile the cross-tool semantic question explicitly; transfer overlapping #46 scope.
 - [ ] [P19-T09] Ignore Codex-managed legacy system entries without hiding genuine legacy user skills (#40).
 - [ ] [P19-T10] Verify each product fix against current main and P17; apply/adapt to every affected line and record commits and affected contract IDs.
-- [ ] [P19-T11] Perform bounded Bun isolate diagnosis after the product bug work; preserve the accepted serial runner and distinguish owned defects from upstream failures.
-- [ ] [P19-T12] Reconcile P18, split P13-T06 wiring from downstream publishing, check P09-RV evidence, and preserve completed reconstruction/framework work.
+- [x] [P19-T11] Perform bounded Bun isolate diagnosis after the product bug work; preserve the accepted serial runner. Not reproduced in 17 focused files; #57 remains open for a reproducer, with no ownership/fix claim.
+- [x] [P19-T12] Reconcile P18, split P13-T06 wiring from downstream publishing, check P09-RV evidence, and preserve completed reconstruction/framework work. Original receipt/owner follow-ups remain #60/#63, not falsely completed work.
 - [x] [P19-T13] Update P17 project/goal navigation with the approved pause and issue backlinks; preserve unfinished gates and original completion requirements.
 - [ ] [P19-T14] Review changes, correct findings, run target-branch merge gates, integrate only accepted bug/administrative work, and close issues only with verified evidence.
+- [ ] [P19-T15] Patch newly confirmed vulnerable parser/tooling dependencies (#65) on both maintained lines, with bounded malformed-TOML rejection, inspected lockfile changes, fresh audit and ordinary gates.
 - [ ] [P19-TS01] Every active/deferred/carryover item has a unique owner, acceptance criteria, dependencies, source references, and truthful status.
 - [ ] [P19-TS02] Each fixed bug has a failing-before/passing-after regression and affected-line coverage.
 - [ ] [P19-TS03] Required ordinary static/tests/build checks pass at exact reviewed commits; deferred release checks are separately identified.

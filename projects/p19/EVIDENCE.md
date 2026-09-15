@@ -95,3 +95,54 @@ not evidence that it happened.
   to be recorded. No dependency/lockfile, report schema field, release version or gate was changed.
 
 Product tasks remain in progress until affected-line carry-forward, review and integration.
+
+## 2026-09-15 — security gate and bounded investigation
+
+- Maintenance product commit: 3dd85a0; full check on its exact code tree (before the security
+  patch): 1,042 pass, 28 existing opt-in live skips, 0 fail, 4,819 assertions, 128 files.
+  Staged secrets scan and commit hooks passed. First commit attempt was refused for an overlong
+  footer; corrected the message and confirmed the commit landed.
+- Ordinary `bun audit --audit-level=high` found 11 high advisories on main's dependency tree
+  and 6 on P17's: parser/tooling maintenance, now P19-T15 / #65. Verified primary GitHub
+  advisories for smol-toml, fast-uri, js-yaml and brace-expansion. Raised compatible floors to
+  smol-toml 1.7.1, fast-uri 3.1.6, js-yaml 3.15.2 (3.x retained), brace-expansion 5.0.9.
+  Main resolves fast-uri 3.1.8, brace-expansion 5.0.12; P17 keeps its already-patched brace
+  version. Both fresh audits report no vulnerabilities. Lock regeneration also repairs main's
+  stale workspace metadata from 0.5.0 to its already-existing 0.7.0 package versions; no
+  Skillsmith manifest version was bumped, and no release was created.
+- A bounded child loading the original 5a74185 config parser with malformed TOML `a=[1 #`
+  exceeded 1 second and was terminated (137). With smol-toml 1.7.1 both array and inline-table
+  unterminated-comment fixtures return config-error normally. Main config suite: 33 pass/62
+  assertions; P17 config suite: 65 pass/248 assertions.
+- P19-T11 bounded Bun isolate diagnosis: 29 tests/3 files and expanded 129 tests/17 files
+  both pass with --isolate --no-orphans under 30s/45s external limits. Historical epoll_ctl
+  failure not reproduced; no ownership/upstream-fix conclusion. #57 remains open for the
+  original selector/environment or a minimal reproducer. Accepted serial runner unchanged.
+
+## 2026-09-15 — affected-line carry-forward and historical reconciliation
+
+- Created agent/p19-p17-fixes at /work/skillsmith-p19-carryforward from exact 5a74185,
+  preserving the original worktree/branch. Copied regressions before production changes:
+  69 pass/44 fail across 10 files. Nine failures were test-porting issues (list@3 uses entries,
+  and project scope needs a real project context), not P17 output truncation. Corrected those
+  fixtures without weakening expectations. After adaptation, large output passes all 6 source/
+  compiled sink cases with no root exit change. Duplicate CLI controls pass 3/3.
+- P17 deep loading now uses VerifyPorts and the existing native process authority in
+  ports/default.ts; binary Git process handling remains untouched. Generic doctor consumes
+  readSkillInventory collision groups. Its Codex-managed entry predicate stays in the Codex
+  placement adapter with a validated optional extension point. Focused doctor/scan/placement:
+  43 pass/99 assertions. Core/CLI typecheck and boundaries pass.
+- P17 smoke: 5 pass, 14 deliberately unselected families, 0 fail, 3,737 assertions. Live P17
+  bare-skill --tool codex --deep --json: exit 0, both modes ran, summary pass. P17 local
+  actionlint and structural package check pass; original 43/44 groups, 415/419 required
+  entities, G6-04 5/10 and final pending statuses remain unchanged.
+- P13-T06 split is recorded in PROJECTS.md and #63/#55. Current downstream tree
+  smorinlabs/smorinlabs-harness at c415a054c18849c87b0ba81f0bb55ea6feb9083a has no skill-create
+  path. Current owner or historical wiring/proof must be supplied before downstream changes;
+  no such work is claimed done. P13's shipped code/migration remain complete.
+- PR #7 reports final whole-branch READY TO MERGE and reviews of all ten P09 tasks. Its
+  standalone original fable receipt was not found; leave P09-RV unchecked with #60 for receipt
+  or owner confirmation. This is historical reconciliation, not fresh independent review.
+- P18 remains an idea; corrected its premise with existing claude plugin validate source
+  evidence. Completed SPR-GOAL-01/SPR-P1..P4 and PK-EX-PHASE-001 (version 24) remain complete;
+  their repositories were read only and not changed.

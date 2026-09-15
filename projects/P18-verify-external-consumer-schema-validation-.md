@@ -20,6 +20,13 @@ verify/doctor time, not install time.
   shell-out-vs-vendor question apply there?
 
 ### Notes
+P19 reconciliation (2026-09-15): remains an idea, not an implementation prerequisite.
+The existing Claude static adapter already invokes `claude plugin validate <target>`;
+the motivating fleet `marketplace.json` incident is not proof that this invocation is missing.
+Refinement should identify the uncovered artifact/consumer boundary and reproduce it against
+the current promised contract before proposing additional validation. P19's Codex local-loader
+fix (#64) repairs existing deep verification; it does not deliver this broader idea.
+
 Predecessor: P11 (`skillsmith verify` — cross-tool load verification) shipped the
 `--static`/`--deep` check engine this project would extend. The incident showed all of
 skillsmith's own gates (gen-check, unit tests, `verify --static`) green while the actual
