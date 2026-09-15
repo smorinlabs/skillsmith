@@ -111,7 +111,7 @@ export const runVerify = async (
       target: { path: opts.path, kind: resolved.value.kind },
       requested: { tools: [...toolSet], modes, strict, explicitTools },
       verifiedAgainst: VERIFIED_AGAINST,
-      summary: summarize(toolVerdicts),
+      summary: summarize(toolVerdicts, { explicitTools }),
       tools: toolVerdicts,
     };
     return ok(report);

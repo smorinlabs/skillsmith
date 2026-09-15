@@ -1,3 +1,4 @@
+import type { SupportedTool } from '../../agents/types.ts';
 import { listSkills } from '../../scan/list-skills.ts';
 import type { Check, Finding } from '../types.ts';
 
@@ -15,17 +16,19 @@ export const crossScopeDuplicate: Check = {
       logger: ctx.logger,
     });
     if (!r.ok) return [];
-    const byName = new Map<string, string[]>();
+    const byName = new Map<string, { name: string; tool: SupportedTool; locations: string[] }>();
     for (const s of r.value) {
-      if (!byName.has(s.name)) byName.set(s.name, []);
-      byName.get(s.name)?.push(`${s.scope}:${s.path}`);
+      const key = `${s.tool}\0${s.name}`;
+      if (!byName.has(key)) byName.set(key, { name: s.name, tool: s.tool, locations: [] });
+      byName.get(key)?.locations.push(`${s.scope}:${s.path}`);
     }
     const findings: Finding[] = [];
-    for (const [name, locations] of byName) {
+    for (const { name, tool, locations } of byName.values()) {
       findings.push({
         checkId: 'cross-scope-duplicate',
         severity: 'warning',
         title: `'${name}' installed in multiple scopes`,
+        tool,
         message: locations.join(', '),
         remediation: "run 'skillsmith list --duplicates' and remove from the unintended scope",
       });

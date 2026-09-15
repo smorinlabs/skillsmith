@@ -57,3 +57,41 @@ not evidence that it happened.
 - Focused/impacted run of normalize, runVerify, CLI verify, both verify renderers and both
   agents' static/deep suites: 107 passed, 0 failed, 338 assertions across 9 files.
   This is local green only; carry-forward, merge gates and review are still pending.
+
+## 2026-09-15 — maintenance product regressions and live controls
+
+- #46: large JSON reproduction failed with a slow pipe before changing the root CLI exit.
+  Replaced forced normal completion with `process.exitCode`. The regression now exercises
+  320 Unicode descriptions (over 1 MiB) through normal pipes, slow consumers and files, in
+  both source and native compiled binaries: 6 passed. This does not rewrite every legacy
+  command-specific exit path. Removed the now-stale unconditional workaround from CLAUDE.md.
+- #40: managed system marker fixtures reproduced two false legacy warnings (9 pass/2 fail).
+  Ignore marker metadata and marked child directories, but still warn for mixed user content
+  and unmarked hidden directories. Focused doctor checks: 16 pass/0 fail.
+- #64: replaced the unauthenticated model-session heuristic with a local app-server exchange:
+  initialize response, initialized notification, then skills/list with forceReload. A batch
+  stdin probe exited cleanly without a skills/list response, so positive handshake completion
+  is required. No model/tool turn is sent. Exact canonical staged paths must be enabled or
+  have structured target load failures; missing/disabled/unrelated targets cannot prove pass.
+- Transport regressions cover early EOF, delayed initialization, malformed/mismatched/error
+  replies, bounded output, timeout and cancellation: initially 8 failed; now 8 passed.
+  Static/deep adapter suite after the change: 29 pass/0 fail. Error diagnostics are bounded,
+  sanitize common credential forms and temporary paths, and appear in both human and JSON
+  results. Human error/partial-summary regression initially failed; now passes.
+- Live Codex 0.154.0, Bun 1.3.14: isolated deep adapter on dummytest reported exactly the three
+  deliberately invalid fixture skills, with skills coverage true. The real CLI on bare-skill
+  with --tool codex --deep --json exited 0, both modes ran, summary pass and deep skills
+  coverage true. Existing verifiedAgainst 0.142.5 remains unchanged; version drift is reported.
+  Neither control invoked a model turn or required user credentials.
+- #41: retained the approved default of per-tool conflicts, while the optional cross-tool
+  question remains unanswered. Tests exposed name-only grouping across independent tools in
+  both list and doctor. Groups are now keyed by tool/name. Added truthful duplicate/filter
+  empty states, and CLI controls for populated no-conflict inventory, user/project conflict,
+  active filters and cross-tool name reuse. Focused CLI plus deep suite: 21 pass/0 fail.
+- Full maintenance `bun run check` after the five implementations: 1,039 pass, 28 existing
+  opt-in live skips, 0 fail, 4,794 assertions across 127 files. Biome, boundaries, TypeScript,
+  actionlint and the maintenance P17 package preparation check passed. Three CLI inventory
+  controls were added afterward and passed separately; final immutable-commit gates remain
+  to be recorded. No dependency/lockfile, report schema field, release version or gate was changed.
+
+Product tasks remain in progress until affected-line carry-forward, review and integration.

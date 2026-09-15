@@ -46,6 +46,17 @@ const report = (overrides: Partial<VerifyReport> = {}): VerifyReport => ({
 });
 
 describe('verifyExitCode', () => {
+  test('an inconclusive summary with partial static coverage exits 4', () => {
+    const r = report();
+    r.summary.verdict = 'inconclusive';
+    r.tools[1] = tool({
+      tool: 'codex',
+      verdict: 'inconclusive',
+      modes: [mode({ status: 'error', verdict: null, skipReason: 'timeout' })],
+    });
+    expect(verifyExitCode(r)).toBe(4);
+  });
+
   test('all ran modes pass -> 0', () => {
     expect(verifyExitCode(report())).toBe(0);
   });

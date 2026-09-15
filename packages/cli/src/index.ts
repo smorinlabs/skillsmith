@@ -22,9 +22,12 @@ const main = async (): Promise<number> => {
 };
 
 main().then(
-  (code) => process.exit(code),
+  (code) => {
+    // Let piped stdout/stderr drain before Bun exits (large list JSON, #46).
+    process.exitCode = code;
+  },
   (e) => {
     process.stderr.write(`fatal: ${errorMessage(e)}\n`);
-    process.exit(1);
+    process.exitCode = 1;
   },
 );

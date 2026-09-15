@@ -46,6 +46,40 @@ const report = (overrides: Partial<VerifyReport> = {}): VerifyReport => ({
 });
 
 describe('renderVerifyHuman', () => {
+  test('partial verification renders diagnostics and never says no tools ran', () => {
+    const r = report();
+    r.summary = { ...r.summary, verdict: 'inconclusive', verified: [], skipped: ['codex'] };
+    r.tools = [
+      tool({
+        tool: 'codex',
+        verdict: 'inconclusive',
+        modes: [
+          mode(),
+          mode({
+            mode: 'deep',
+            status: 'error',
+            verdict: null,
+            skipReason: 'exec-error',
+            findings: [
+              {
+                checkId: 'codex.deep-probe',
+                normalizedSeverity: 'info',
+                toolSeverity: null,
+                message: 'phase=local-loader; exit=1',
+                file: null,
+                subject: 'plugin',
+              },
+            ],
+          }),
+        ],
+      }),
+    ];
+    const out = renderVerifyHuman(r, 4);
+    expect(out).toContain('verification incomplete');
+    expect(out).toContain('phase=local-loader; exit=1');
+    expect(out).not.toContain('no tools ran');
+  });
+
   test('header: static-only mode joins tools with ", "', () => {
     const out = renderVerifyHuman(report(), 0);
     expect(out).toContain(

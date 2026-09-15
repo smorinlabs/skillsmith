@@ -14,6 +14,8 @@ export interface ExecOptions {
   unsetEnv?: readonly string[]; // removed after env merge; callers cannot reintroduce these keys
   timeoutMs?: number;
   input?: string;
+  // Bounded JSON-lines exchange: await each request's response before sending the next message.
+  jsonRpc?: readonly { id?: number; method: string; params?: unknown }[];
   signal?: AbortSignal;
 }
 
@@ -22,6 +24,7 @@ export interface ExecResult {
   stdout: string;
   stderr: string;
   timedOut: boolean;
+  protocolError?: string;
 }
 
 export interface ScanEnv {

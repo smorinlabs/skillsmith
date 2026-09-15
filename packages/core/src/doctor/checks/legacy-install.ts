@@ -13,7 +13,15 @@ export const legacyInstall: Check = {
       const legacyDir = join(base, 'skills');
       if (await ctx.env.fileExists(legacyDir)) {
         const entries = await ctx.env.listDir(legacyDir);
-        if (entries.length > 0) {
+        let hasUserEntries = false;
+        for (const entry of entries) {
+          if (entry === '.codex-system-skills.marker') continue;
+          if (await ctx.env.fileExists(join(legacyDir, entry, '.codex-system-skills.marker')))
+            continue;
+          hasUserEntries = true;
+          break;
+        }
+        if (hasUserEntries) {
           findings.push({
             checkId: 'legacy-install',
             severity: 'warning',
