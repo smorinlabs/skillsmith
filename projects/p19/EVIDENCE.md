@@ -206,3 +206,28 @@ Product tasks remain in progress until affected-line carry-forward, review and i
   is deferred pre-publication work: archive the carry-forward branch after ordinary gates,
   but do not open a PR that silently launches it. A product-only CI separation or explicit
   scope decision is required; ordinary CI has not been disabled or weakened.
+
+## 2026-09-15 — exact main result and inherited-home verification fixture
+
+- Main code head 9ead9eca4215aebabd2409d15834620c8a8fa233 passed frozen install,
+  full check, full secrets scan, high-severity audit and security lint: 1,047 passed,
+  28 existing live skips, 0 failed, 4,971 assertions across 129 files. GitHub Linux
+  and macOS build-test plus title/commit lint passed that exact head.
+- P17 code head d0ea2f4fd2548836445f03c745bb9e543fd07152 passed static checks,
+  the complete doctor and update contracts, then failed verify TS04 at file 47/370
+  (14 pass/1 fail). The same selector fails on untouched 5a74185: 0 pass/1 fail,
+  expected exit 4, actual 0. Empty PATH did not isolate the inherited user's
+  well-known Codex installation under HOME. No full terminal pass is claimed.
+- Added fixture-owned HOME, XDG config/data/cache and tool configuration paths,
+  retaining the original CLI invocation, exit-4, JSON target and empty-stderr
+  assertions. The full verification owner now passes 15 tests/80 assertions;
+  ordinary smoke passes 5 selected families/3,737 assertions. This extends
+  P19-T16/#67 to the same inherited-environment bug in doctor and verify fixtures.
+- REVIEW.md records stable P19-RV-F01..F10 dispositions. The preserved P17 catalog
+  records historical checkpoint sign-offs, not fresh approval of the P19 delta.
+- Checked the P19 task graph: 16 tasks, 20 unique issue owners, 9 publication nodes,
+  no dependency cycles or missing targets; all 20 corresponding GitHub issues are
+  open. P19 Markdown local-file references resolve.
+- Fresh remote check: release-please disabled_manually; ordinary CI active; #34 and
+  #44 draft/open with no auto-merge; #44 still at 5a74185. Main is still 9c0219f;
+  the repository remains private. Original P17 worktree remains clean and unchanged.

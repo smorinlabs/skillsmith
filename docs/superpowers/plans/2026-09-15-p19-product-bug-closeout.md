@@ -177,6 +177,12 @@ closeout. Raise compatible patched dependency floors, retain the gray-matter 3.x
 bounded malformed-TOML rejection coverage, inspect lockfile changes, and rerun audit plus normal
 gates. Do not bump Skillsmith release versions or waive the audit.
 
+Execution finding P19-T16 (#67): pre-existing doctor/verify contract failures inherit host tool
+installations through PATH or HOME. Isolate the affected fixture environments and in-process
+filesystem facts; retain exact assertions, confirm baseline failure, then pass owner/smoke and
+the canonical full gate. Do not remove host tools, suppress expected findings or change production
+discovery to make a fixture pass.
+
 Update P17 navigation with the approved pause and P19/PUB-00 links, retaining original objective,
 terminal rule and unsigned catalog gates. Freshly verify issue/PR/branch/worktree/workflow state.
 Close a bug only with its acceptance evidence and every affected maintained-line fix; otherwise

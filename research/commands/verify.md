@@ -5,7 +5,7 @@
 > P19 correction: the historical Codex `exec`/stderr probe below is superseded by the
 > [local app-server verifier](../../packages/core/src/agents/codex/README.md).
 > Required incomplete coverage is inconclusive, not passed; see the
-> [current generated command reference](../../docs/commands.md#skillsmith-verify).
+> [current generated command reference](../../docs/commands.md#verify).
 
 `skillsmith verify` loads a plugin under each target tool's own verifier and reports a **per-tool
 result matrix** — never one merged verdict. It is the artifact-facing sibling of `doctor`/`check`:

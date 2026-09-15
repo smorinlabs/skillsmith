@@ -714,7 +714,18 @@ describe('EWP-CMD-VERIFY-TS04', () => {
       const child = Bun.spawn(
         [process.execPath, CLI_ENTRYPOINT, '-C', cwd, 'verify', 'skill', '--json'],
         {
-          env: hermeticGitEnv({ PATH: '', NO_COLOR: '1', CI: '1' }),
+          // Detection also checks per-user well-known directories, independently of PATH.
+          env: hermeticGitEnv({
+            HOME: cwd,
+            XDG_CONFIG_HOME: join(cwd, 'config'),
+            XDG_DATA_HOME: join(cwd, 'data'),
+            XDG_CACHE_HOME: join(cwd, 'cache'),
+            CODEX_HOME: join(cwd, '.codex'),
+            CLAUDE_CONFIG_DIR: join(cwd, '.claude'),
+            PATH: '',
+            NO_COLOR: '1',
+            CI: '1',
+          }),
           stdout: 'pipe',
           stderr: 'pipe',
         },

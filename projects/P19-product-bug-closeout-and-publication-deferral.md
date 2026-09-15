@@ -7,6 +7,7 @@
 - **Tracking:** [P19 issue #51](https://github.com/smorinlabs/skillsmith/issues/51)
 - **Tracking:** [Deferred publication umbrella #53](https://github.com/smorinlabs/skillsmith/issues/53)
 - **Tracking:** [Execution evidence](p19/EVIDENCE.md)
+- **Tracking:** [Review disposition](p19/REVIEW.md)
 - **Depends on:** [P17 checkpoint](https://github.com/smorinlabs/skillsmith/tree/5a7418593ecf6a8be4b10d8a5f657bb9e4f0e402)
 - **Prior art:** [P17 project](P17-skillsmith-ergonomics-and-declarative-workflow.md)
 - **Prior art:** [Codex deep-verifier diagnosis](../docs/codex-deep-verifier-diagnosis.md)
@@ -40,8 +41,8 @@ pending; its historical catalog gates are not changed to passing by this deferra
 - [x] [P19-T13] Update P17 project/goal navigation with the approved pause and issue backlinks; preserve unfinished gates and original completion requirements.
 - [ ] [P19-T14] Review changes, correct findings, run target-branch merge gates, integrate only accepted bug/administrative work, and close issues only with verified evidence.
 - [ ] [P19-T15] Patch newly confirmed vulnerable parser/tooling dependencies (#65) on both maintained lines, with bounded malformed-TOML rejection, inspected lockfile changes, fresh audit and ordinary gates.
-- [ ] [P19-T16] Repair inherited host-tool discovery in P17 doctor contract fixtures (#67), preserving exact assertions and the full ordinary gate.
-- [ ] [P19-TS01] Every active/deferred/carryover item has a unique owner, acceptance criteria, dependencies, source references, and truthful status.
+- [ ] [P19-T16] Repair inherited host-tool discovery in P17 doctor and verification contract fixtures (#67), preserving exact assertions and the full ordinary gate.
+- [x] [P19-TS01] Every active/deferred/carryover item has a unique owner, acceptance criteria, dependencies, source references, and truthful status.
 - [ ] [P19-TS02] Each fixed bug has a failing-before/passing-after regression and affected-line coverage.
 - [ ] [P19-TS03] Required ordinary static/tests/build checks pass at exact reviewed commits; deferred release checks are separately identified.
 - [ ] [P19-TS04] Remote PR/issue/workflow state is freshly verified; no publication or visibility change occurred; P17 remains pending.
