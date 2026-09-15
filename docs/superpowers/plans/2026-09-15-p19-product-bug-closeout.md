@@ -114,9 +114,11 @@ request is a success signal. Update help and affected docs. Map P17-G1-05 and ve
 
 Compare identical source inventory and selection for JSON/human/duplicates/doctor. Test same
 name across scopes within one tool, allowed cross-tool name reuse, realpath aliases, zero
-inventory and zero matches. Existing issue asks for cross-tool names while P17's accepted
-conflicts are per tool: user clarification was requested; default preserves the accepted P17
-contract and retains any unmatched issue requirement as a separately owned open item.
+inventory and zero matches. The user confirmed per-tool conflict semantics with informational
+cross-tool name reporting. Under [Q1.A (2026-09-15)](https://github.com/smorinlabs/skillsmith/issues/41#issuecomment-5689778855),
+deliver the informational report in a separate follow-up PR, not PR #66. Keep #41 open until
+the report, regression coverage, documentation, review and affected-line integration are done.
+No new flag name or JSON schema was selected by this scope decision.
 Do not claim populated inventory proves duplicates, silently change precedence or fix wording
 alone while known inventory defects remain. Empty filtered output must describe no matches,
 not claim nothing is installed. Map P17-G3A-02 / P1-03 / EWP-CMD-LIST-TS01..07 /
@@ -195,17 +197,19 @@ only as part of that authorized resumption. P17's original goal is not marked ac
 
 ## 7. Implemented checkpoint and remaining execution
 
-Implementation and local ordinary/security validation are complete on the saved main-based and
-P17 maintenance branches; see the exact receipts in P19 EVIDENCE.md and tracking issue #51.
+Initial implementation and local ordinary/security validation are recorded on the saved main-based
+and P17 maintenance branches; see the exact receipts in P19 EVIDENCE.md and tracking issue #51.
 Main PR #66 has green Linux/macOS CI. P17's clean `d786739` passed the canonical 370-file
 terminal gate; no P17 PR CI or deferred release qualification is claimed.
 
-The next work is review and integration, not redoing the implementation or resuming PUB tasks:
+Independent review subsequently found remaining defects in #61/#64/#67. The next work is
+correcting those findings, delivering the separately scoped #41 report, and reviewed integration;
+it does not resume PUB tasks:
 
-1. With explicit delegation permission, obtain independent read-only Codex review of both
-   branch deltas and record reviewer identity, exact heads, findings and disposition.
-2. Confirm the accepted per-tool duplicate contract or separately scope #41's remaining
-   cross-tool-name request. Keep unmatched requirements open; no silent contract change.
+1. Correct the findings in P19 REVIEW.md and obtain fresh read-only sign-off at the corrected
+   heads. Codex and Claude Code reviewers have standing user approval.
+2. Follow Q1.A above: keep #41 open for informational cross-tool name reporting in a separate
+   follow-up PR, without changing per-tool conflicts or holding PR #66 for that addition.
 3. Obtain a scope decision for a product-only P17 PR path: its current PR CI automatically
    invokes deferred Candidate-cask qualification. Keep the branch saved until that decision;
    any approved separation must retain ordinary CI requirements and truthful release status.

@@ -1,7 +1,9 @@
 # P19 review disposition
 
-Fresh independent Codex sign-off is still pending. This ledger records findings and implementation
-evidence, not approval. Product issues remain open until affected-line review and integration.
+Independent read-only Codex reviews completed at main `7c8d865` and P17 `d786739` with changes
+requested (F13-F16 below). Corrected-head sign-off is still pending. Codex and Claude Code
+reviewers have standing user approval. Product issues remain open until their full acceptance
+and affected-line integration are satisfied.
 
 | ID | Origin / finding | Disposition |
 | --- | --- | --- |
@@ -17,13 +19,20 @@ evidence, not approval. Product issues remain open until affected-line review an
 | P19-RV-F10 | P17 ordinary gate: verify TS04 inherits Codex under HOME despite empty PATH | Reproduced on untouched 5a74185; isolate HOME/XDG/tool configuration without changing assertions. Full verify owner passes 15 tests/80 assertions; part of #67. |
 | P19-RV-F11 | P17 ordinary gate: help assertion still expects cross-scope-only duplicate wording | Corrected at 0871985 to the exact same-tool placement-conflict semantics, allowing line wrapping. All 10 help tests pass. |
 | P19-RV-F12 | Remainder diagnosis: checker-output snapshot expects 23 local links instead of 25 | The two P19 backlinks legitimately change the count. Updated only the literal test expectation; all three output compatibility tests pass. Production checker, catalog and gates unchanged. |
+| P19-RV-F13 | Main and P17 Codex reviewers: killing only the JSON-RPC launcher leaves descendant-held stdout/stderr pipes open, so the deadline does not bound completion | Open under #64 on both lines. A self-expiring child reproduced approximately 1.5 seconds of elapsed time for a 100 ms timeout. Require owned process-tree cleanup and bounded stream cleanup with a launcher/child regression. |
+| P19-RV-F14 | Main and P17 Codex reviewers: nonzero shutdown discards a validated, exact-target skill-load failure | Open under #64/#61 on both lines. The same invalid-artifact response fails at exit 0 but becomes inconclusive at exit 1. Preserve proven artifact failure alongside transport diagnostics; never turn incomplete success into pass. |
+| P19-RV-F15 | P17 Codex reviewer: deep-adapter catch converts cancellation into an ordinary successful application result with inconclusive coverage | Open under #64 on P17. Restore propagation through the existing cancellation boundary and add an in-flight Codex cancellation regression. |
+| P19-RV-F16 | P17 Codex reviewer: doctor/verify subprocess fixtures can still discover host tools through global executable directories | Open under #67 on P17. Isolate fixture discovery without removing host installations, weakening assertions, or changing production discovery. |
 
 The preserved P17 catalog records historical checkpoint sign-offs, not fresh approval of the P19 delta.
 
 Local ordinary/security gates pass on both recorded heads; main Linux/macOS CI also passes.
-This validation is not independent review or affected-line integration. No P17 PR CI receipt
-is claimed. Remaining sign-off conditions: fresh Codex review, accepted duplicate semantics,
-product-only P17 CI and exact integration-head validation, and affected-line integration.
+Those prior green gates did not cover the newly reproduced findings. No P17 PR CI receipt
+is claimed. Remaining sign-off conditions: correct F13-F16, obtain corrected-head review,
+settle product-only P17 CI, validate exact integration heads, and integrate on affected lines.
+The [Q1.A reporting decision](https://github.com/smorinlabs/skillsmith/issues/41#issuecomment-5689778855)
+preserves per-tool conflict semantics and keeps #41 open for a separate informational cross-tool
+reporting PR; this addition is not a prerequisite for merging PR #66.
 P17 PR creation also needs a scope decision because its
 current PR workflow automatically invokes deferred Candidate-cask qualification. No release gate
 has been waived, no deferred qualification has been counted passed, and no bug is auto-closed.

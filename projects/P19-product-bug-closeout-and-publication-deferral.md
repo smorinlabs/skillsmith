@@ -33,7 +33,7 @@ pending; its historical catalog gates are not changed to passing by this deferra
 - [ ] [P19-T05] Fix verification aggregation: required incomplete modes/tools cannot be hidden by a pass; preserve genuine failures and optional-tool behavior.
 - [ ] [P19-T06] Reproduce and fix large piped JSON truncation (#46), including a slow consumer and compiled binary.
 - [ ] [P19-T07] Fix Codex deep loading and bounded sanitized diagnostics without a model turn; validate local protocol capabilities and negative controls.
-- [ ] [P19-T08] Fix duplicate inventory/filter/empty-state reporting (#41); reconcile the cross-tool semantic question explicitly; transfer overlapping #46 scope.
+- [ ] [P19-T08] Integrate duplicate inventory/filter/empty-state fixes; deliver informational cross-tool name reporting in a separate follow-up PR under #41 (Q1.A). Preserve per-tool conflicts and the overlapping #46 ownership; keep #41 open until all acceptance is met.
 - [ ] [P19-T09] Ignore Codex-managed legacy system entries without hiding genuine legacy user skills (#40).
 - [ ] [P19-T10] Verify each product fix against current main and P17; apply/adapt to every affected line and record commits and affected contract IDs.
 - [x] [P19-T11] Perform bounded Bun isolate diagnosis after the product bug work; preserve the accepted serial runner. Not reproduced in 17 focused files; #57 remains open for a reproducer, with no ownership/fix claim.
@@ -49,21 +49,24 @@ pending; its historical catalog gates are not changed to passing by this deferra
 
 ## Implementation checkpoint — 2026-09-15
 
-The five product fixes, compatible security dependency updates and P17 fixture repairs are
-implemented. Main-based [PR #66](https://github.com/smorinlabs/skillsmith/pull/66) passes
-1,047 tests and Linux/macOS CI at `c32d255`. The saved
+Initial product fixes, compatible security dependency updates and P17 fixture repairs are
+implemented. Independent review found remaining defects in #61/#64/#67; this is not a completed
+bug closeout. Main-based [PR #66](https://github.com/smorinlabs/skillsmith/pull/66) passes
+1,047 tests and Linux/macOS CI at `7c8d865`. The saved
 [P17 maintenance branch](https://github.com/smorinlabs/skillsmith/tree/d786739eb2db462540a761d56c5eaa3473402e8b)
 passes the canonical 370-file gate at `d786739`: 3,394 test cases including 28 existing live
 skips, 111,520 assertions, no failures. Both lines pass their ordinary security checks.
 Exact receipts and earlier failures are preserved in [EVIDENCE.md](p19/EVIDENCE.md).
 
-Unchecked product tasks now represent remaining review/acceptance/integration, not missing
-implementation. Before closing them:
+Unchecked product tasks include remaining defect corrections, the #41 reporting follow-up,
+review, acceptance and integration. Before closing them:
 
-1. Obtain fresh independent Codex review; self-inspection and corrected Copilot findings do
-   not constitute that sign-off. Permission to run a separate read-only reviewer is pending.
-2. Explicitly settle #41's cross-tool-name request against P17's accepted per-tool conflict
-   semantics. The implementation preserves the accepted contract; the issue remains open.
+1. Correct the independent Codex findings recorded in [REVIEW.md](p19/REVIEW.md), then obtain
+   fresh sign-off. Codex and Claude Code reviewers have standing user approval; no additional
+   reviewer permission is required.
+2. Follow the [separate reporting PR decision, Q1.A](https://github.com/smorinlabs/skillsmith/issues/41#issuecomment-5689778855):
+   preserve per-tool conflict semantics and retain informational cross-tool name reporting in
+   a separate follow-up PR. Keep #41 open until delivered; PR #66 need not wait for that addition.
 3. Decide the product-only P17 PR/CI path. Existing PR CI automatically runs deferred
    Candidate-cask qualification, so the branch is saved without opening a PR or changing CI.
 4. Correct any new review findings, validate exact integration heads, integrate accepted fixes

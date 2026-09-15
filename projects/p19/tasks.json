@@ -35,7 +35,8 @@
     },
     {
       "id": "P19-T08",
-      "status": "in-progress"
+      "status": "in-progress",
+      "decisionRecord": "https://github.com/smorinlabs/skillsmith/issues/41#issuecomment-5689778855"
     },
     {
       "id": "P19-T09",
@@ -271,8 +272,8 @@
       "dependsOn": [],
       "number": 41,
       "url": "https://github.com/smorinlabs/skillsmith/issues/41",
-      "scope": "P19-T08 covers inventory, selection and truthful no-matches reporting. Cross-tool duplicate names vs P17 per-tool conflicts requires explicit disposition; optional user clarification pending.",
-      "body": "## Task\n\nP19-T08 covers inventory, selection and truthful no-matches reporting. Cross-tool duplicate names vs P17 per-tool conflicts requires explicit disposition; optional user clarification pending.\n\n## Original IDs\n\n- #41\n- P17-G3A-02\n- P1-03\n- EWP-CMD-LIST-TS01..07\n- EWP-P3A-TS03\n\n## Dependencies\n\nNo unsatisfied hard dependency assigned. Historical references above do not imply blocking.\n\n## Provenance and scope\n\nUser authorized P19 implementation and publication deferral on 2026-09-15. Original P17 release completion remains pending. This issue does not authorize publishing, credentials, visibility changes or unapproved product-contract amendments.\n\n- P17 preserved checkpoint: `5a7418593ecf6a8be4b10d8a5f657bb9e4f0e402`; draft PR #44.\n- Maintenance baseline: `9c0219f69888239ef5d2cab9ddea4a4683b14a48`.\n- [P17 goal](https://github.com/smorinlabs/skillsmith/blob/5a7418593ecf6a8be4b10d8a5f657bb9e4f0e402/projects/P17-GOAL.md)\n- [G6-04 plan](https://github.com/smorinlabs/skillsmith/blob/5a7418593ecf6a8be4b10d8a5f657bb9e4f0e402/projects/p17/plans/P17-G6-04.md)\n- [G6-04 evidence](https://github.com/smorinlabs/skillsmith/blob/5a7418593ecf6a8be4b10d8a5f657bb9e4f0e402/projects/p17/evidence/P17-G6-04.md)\n- [Catalog](https://github.com/smorinlabs/skillsmith/blob/5a7418593ecf6a8be4b10d8a5f657bb9e4f0e402/projects/p17/catalog.json)\n- P19 project/plan/task registry is being recorded in branch `agent/p19-bug-closeout`.\n\nKeep original IDs and evidence. Distinguish historical/satisfied dependencies from current blockers. Close only with the acceptance evidence, not merely because a successor issue exists. Revalidate exact source and external facts on resumption; historic mapping failures are not necessarily current defects.\n\n## Linked tracking\n\n- Project: [P19 #51](https://github.com/smorinlabs/skillsmith/issues/51)\n- Publication umbrella (related, not a product-bug prerequisite): [PUB-00 #53](https://github.com/smorinlabs/skillsmith/issues/53)\n- Blocks: [FOLLOW-BUN #57](https://github.com/smorinlabs/skillsmith/issues/57)\n"
+      "scope": "P19-T08 covers inventory, selection and truthful no-matches reporting. User decision Q1.A (2026-09-15) preserves per-tool conflicts and delivers informational cross-tool name reporting in a separate follow-up PR. Keep #41 open until reporting acceptance and affected-line integration are complete; this addition does not block PR #66.",
+      "body": "## Task\n\nP19-T08 covers inventory, selection and truthful no-matches reporting. User decision Q1.A (2026-09-15) preserves per-tool conflicts and delivers informational cross-tool name reporting in a separate follow-up PR. Keep #41 open until reporting acceptance and affected-line integration are complete; this addition does not block PR #66.\n\nDecision record: https://github.com/smorinlabs/skillsmith/issues/41#issuecomment-5689778855\n\n## Original IDs\n\n- #41\n- P17-G3A-02\n- P1-03\n- EWP-CMD-LIST-TS01..07\n- EWP-P3A-TS03\n\n## Dependencies\n\nNo unsatisfied hard dependency assigned. Historical references above do not imply blocking.\n\n## Provenance and scope\n\nUser authorized P19 implementation and publication deferral on 2026-09-15. Original P17 release completion remains pending. This issue does not authorize publishing, credentials, visibility changes or unapproved product-contract amendments.\n\n- P17 preserved checkpoint: `5a7418593ecf6a8be4b10d8a5f657bb9e4f0e402`; draft PR #44.\n- Maintenance baseline: `9c0219f69888239ef5d2cab9ddea4a4683b14a48`.\n- [P17 goal](https://github.com/smorinlabs/skillsmith/blob/5a7418593ecf6a8be4b10d8a5f657bb9e4f0e402/projects/P17-GOAL.md)\n- [G6-04 plan](https://github.com/smorinlabs/skillsmith/blob/5a7418593ecf6a8be4b10d8a5f657bb9e4f0e402/projects/p17/plans/P17-G6-04.md)\n- [G6-04 evidence](https://github.com/smorinlabs/skillsmith/blob/5a7418593ecf6a8be4b10d8a5f657bb9e4f0e402/projects/p17/evidence/P17-G6-04.md)\n- [Catalog](https://github.com/smorinlabs/skillsmith/blob/5a7418593ecf6a8be4b10d8a5f657bb9e4f0e402/projects/p17/catalog.json)\n- P19 project/plan/task registry is being recorded in branch `agent/p19-bug-closeout`.\n\nKeep original IDs and evidence. Distinguish historical/satisfied dependencies from current blockers. Close only with the acceptance evidence, not merely because a successor issue exists. Revalidate exact source and external facts on resumption; historic mapping failures are not necessarily current defects.\n\n## Linked tracking\n\n- Project: [P19 #51](https://github.com/smorinlabs/skillsmith/issues/51)\n- Publication umbrella (related, not a product-bug prerequisite): [PUB-00 #53](https://github.com/smorinlabs/skillsmith/issues/53)\n- Blocks: [FOLLOW-BUN #57](https://github.com/smorinlabs/skillsmith/issues/57)\n"
     },
     {
       "key": "ISSUE-40",
@@ -313,11 +314,11 @@
       "branch": "agent/p19-bug-closeout",
       "productCommit": "3dd85a0",
       "securityCommit": "b458413",
-      "validatedHead": "c32d2558343e8af4769f259b977c5a439a51dfe1",
+      "validatedHead": "7c8d8651c1d8e62ffcf2eb27a93af8862e629b81",
       "pullRequest": 66,
       "ordinaryLocalGate": "passed: 1047 pass, 28 existing live skips, 0 fail, 4971 assertions, 129 files; frozen install/secrets/audit/security lint passed",
-      "githubCi": "passed on ubuntu-latest and macos-latest at c32d255; run 34953302622",
-      "review": "Copilot findings corrected at 9ead9ec; fresh Codex sign-off pending",
+      "githubCi": "passed on ubuntu-latest and macos-latest at 7c8d865; run 34956291881",
+      "review": "Independent read-only Codex review at 7c8d865 requested changes: process-tree deadline and dropped invalid-artifact evidence (REVIEW.md F13/F14). Corrected-head sign-off pending; reviewers have standing approval.",
       "latestReceipts": "https://github.com/smorinlabs/skillsmith/issues/51"
     },
     "p17": {
@@ -338,7 +339,7 @@
         "bun": "1.3.14",
         "manifestSha256": "bb0c3d601779accad270a2c3263128ba5ea723c8d74081ec6171c71a583e2d1c"
       },
-      "review": "pending",
+      "review": "Independent read-only Codex review at d786739 requested changes: REVIEW.md F13-F16. Corrected-head sign-off pending; reviewers have standing approval.",
       "pullRequest": null,
       "integrationHold": "Current P17 PR CI automatically invokes deferred Candidate-cask qualification; product-only CI separation or scope decision needed before PR creation. No ordinary CI was disabled or weakened.",
       "security": "passed at d786739: full-history secrets scan (895 commits), fresh dependency audit and exact hook security lint; existing reviewed 37-finding suppression baseline unchanged",
@@ -346,8 +347,8 @@
       "latestReceipts": "https://github.com/smorinlabs/skillsmith/issues/51"
     },
     "remainingCloseout": [
-      "Fresh independent Codex review of both exact branch deltas; separate read-only reviewer permission pending",
-      "Explicit disposition of #41 cross-tool-name request versus the preserved accepted per-tool conflict semantics",
+      "Correct independent review findings F13-F16 under #61/#64/#67, then obtain corrected-head sign-off; Codex and Claude Code reviewers have standing user approval",
+      "Q1.A decided: retain per-tool conflicts and deliver informational cross-tool name reporting in a separate follow-up PR; #41 stays open and this addition does not block PR #66",
       "Approved product-only P17 PR/CI path, then exact integration-head validation and affected-line integration",
       "Close product issues only after acceptance; keep PUB-00..08 deferred and #57/#60/#63 follow-ups open"
     ]
