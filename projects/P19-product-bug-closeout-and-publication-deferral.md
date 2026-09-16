@@ -33,7 +33,7 @@ pending; its historical catalog gates are not changed to passing by this deferra
 - [ ] [P19-T05] Fix verification aggregation: required incomplete modes/tools cannot be hidden by a pass; preserve genuine failures and optional-tool behavior.
 - [ ] [P19-T06] Reproduce and fix large piped JSON truncation (#46), including a slow consumer and compiled binary.
 - [ ] [P19-T07] Fix Codex deep loading and bounded sanitized diagnostics without a model turn; validate local protocol capabilities and negative controls.
-- [ ] [P19-T08] Fix duplicate inventory/filter/empty-state reporting (#41); reconcile the cross-tool semantic question explicitly; transfer overlapping #46 scope.
+- [ ] [P19-T08] Integrate duplicate inventory/filter/empty-state fixes; deliver informational cross-tool name reporting in a separate follow-up PR under #41 (Q1.A). Preserve per-tool conflicts and overlapping #46 ownership; keep #41 open until all acceptance is met.
 - [ ] [P19-T09] Ignore Codex-managed legacy system entries without hiding genuine legacy user skills (#40).
 - [ ] [P19-T10] Verify each product fix against current main and P17; apply/adapt to every affected line and record commits and affected contract IDs.
 - [x] [P19-T11] Perform bounded Bun isolate diagnosis after the product bug work; preserve the accepted serial runner. Not reproduced in 17 focused files; #57 remains open for a reproducer, with no ownership/fix claim.
@@ -46,6 +46,32 @@ pending; its historical catalog gates are not changed to passing by this deferra
 - [ ] [P19-TS02] Each fixed bug has a failing-before/passing-after regression and affected-line coverage.
 - [ ] [P19-TS03] Required ordinary static/tests/build checks pass at exact reviewed commits; deferred release checks are separately identified.
 - [ ] [P19-TS04] Remote PR/issue/workflow state is freshly verified; no publication or visibility change occurred; P17 remains pending.
+
+## Approved closeout direction — 2026-09-15
+
+- [Q1.A](https://github.com/smorinlabs/skillsmith/issues/41#issuecomment-5689778855): keep
+  per-tool duplicate conflicts and deliver informational cross-tool name reporting in a
+  separate follow-up PR. #41 stays open; PR #66 need not wait for the report.
+- [Q2.A](https://github.com/smorinlabs/skillsmith/issues/51#issuecomment-5689864463):
+  separate release qualification from automatic PR CI; preserve canonical ordinary checks,
+  title validation and all native build/smoke lanes. After bug corrections and validation,
+  open `agent/p19-p17-fixes` against `agent/p17-execution`, not main. Keep PR #44 draft.
+- All Codex and Claude Code reviewers have standing user approval.
+
+CI-only commit `ffd1cba` has independent approval. Its manual release-qualification workflow
+was not dispatched, and no deferred qualification is counted passed. Runtime review corrections
+at `b33c224` cover bounded descendant cleanup, preserved artifact-failure evidence, cancellation
+propagation and global-directory fixture isolation; the affected five owners passed 144 tests.
+Independent review approved those corrections. Main review then found a startup race in the
+shared new descendant test, requiring explicit readiness before cancellation. Its final correction
+at `01d09a9` is independently approved against main's corresponding `27c67e9` (41-test replay).
+Exact-head ordinary gates, current CI and affected-line integration still precede issue closure.
+
+The previous clean P17 checkpoint `d786739` passed all 370 tracked files: 3,394 test cases,
+28 existing live skips, 111,520 assertions and no failures. This is historical evidence, not
+a full-gate receipt for the new code. Main-based P19 records and
+[P19 #51](https://github.com/smorinlabs/skillsmith/issues/51) retain canonical cross-line receipts.
+No bug issue, P19 objective or P17 release objective is closed by this checkpoint.
 
 ## Deferred task inventory
 

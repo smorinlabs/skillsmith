@@ -192,3 +192,18 @@ complete while a confirmed in-scope product bug is unresolved.
 Publication can resume only by explicit future direction, starting at PUB-00, revalidating the
 then-current source/platform/external authorities and approvals. Restore held release controls
 only as part of that authorized resumption. P17's original goal is not marked achieved by P19.
+
+## 7. Decided closeout questions — 2026-09-15
+
+- [Q1.A](https://github.com/smorinlabs/skillsmith/issues/41#issuecomment-5689778855): retain
+  per-tool duplicate conflicts and deliver informational cross-tool name reporting separately.
+  Keep #41 open until that follow-up PR is reviewed, validated and integrated on affected lines;
+  the report does not block PR #66. No flag name or JSON schema is selected by this decision.
+- [Q2.A](https://github.com/smorinlabs/skillsmith/issues/51#issuecomment-5689864463): move
+  only Candidate-cask qualification and dedicated setup behind an explicit guarded manual
+  release trigger. Retain ordinary checks and every native build/smoke lane. After corrections
+  and validation, open the P17 maintenance PR against `agent/p17-execution`, not main.
+  PR #44 remains draft; release qualification and original release-completion gates stay pending.
+- Independent Codex and Claude Code reviewers have standing user approval. Correct findings
+  F13-F16 under #61/#64/#67 and any validated in-scope review regressions before integration.
+  Close issues only with acceptance and affected-line merge receipts; all PUB work stays held.

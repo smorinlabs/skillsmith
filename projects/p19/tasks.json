@@ -35,7 +35,8 @@
     },
     {
       "id": "P19-T08",
-      "status": "in-progress"
+      "status": "in-progress",
+      "decisionRecord": "https://github.com/smorinlabs/skillsmith/issues/41#issuecomment-5689778855"
     },
     {
       "id": "P19-T09",
@@ -59,7 +60,8 @@
     },
     {
       "id": "P19-T14",
-      "status": "in-progress"
+      "status": "in-progress",
+      "decisionRecord": "https://github.com/smorinlabs/skillsmith/issues/51#issuecomment-5689864463"
     },
     {
       "id": "P19-T15",
@@ -323,9 +325,13 @@
       "branch": "agent/p19-p17-fixes",
       "base": "5a7418593ecf6a8be4b10d8a5f657bb9e4f0e402",
       "firstCarryCommit": "e960b2cfefe043d8f04d045fd7907870746738cb",
-      "ordinaryLocalGate": "3864d3e: full run reached file 48/370, stale help expectation failed; corrected at 0871985 and full help owner passed. Remainder diagnosis ran 322 files: 2859 pass, 8 existing skips, 1 stale checker link-count failure, now corrected; final canonical full replay pending",
-      "review": "pending",
-      "pullRequest": "not opened: current P17 PR CI automatically invokes deferred Candidate-cask qualification; product-only CI separation or scope decision needed",
+      "validatedHead": "d786739eb2db462540a761d56c5eaa3473402e8b",
+      "ordinaryLocalGate": "passed at clean d786739: frozen install, canonical full check; 370/370 files, 3394 test cases including 28 existing live skips, 0 failures, 111520 assertions, no duplicate files. This predates the latest corrections; exact-head full replay pending",
+      "codeHead": "01d09a98fcfa1fa47017fb2096b085f5661176a5",
+      "review": "F13-F16 independently approved at b33c224; affected five owners passed 144 tests. F17 fixture correction independently approved at 01d09a9; transport owner 12 pass/0 fail. Exact-head full gates/CI/integration pending. CI-only ffd1cba independently approved; no release qualification executed.",
+      "pullRequest": null,
+      "integrationHold": "Q2.A approved and CI separation implemented at ffd1cba. After correction/review/full gates, open maintenance PR against agent/p17-execution; keep PR #44 draft and release qualification deferred, not passed.",
+      "decisionRecord": "https://github.com/smorinlabs/skillsmith/issues/51#issuecomment-5689864463",
       "security": "full-history secrets scan (893 commits), fresh dependency audit and exact hook security lint passed; existing reviewed 37-finding suppression baseline unchanged",
       "diagnosticHead": "08719851938d4bec06fac72f5e5e3cb6b7c563a3",
       "latestReceipts": "https://github.com/smorinlabs/skillsmith/issues/51"
