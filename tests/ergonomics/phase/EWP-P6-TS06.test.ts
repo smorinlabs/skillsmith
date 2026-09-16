@@ -45,6 +45,43 @@ describe('EWP-P6-TS06', () => {
     expect(packageJson).toContain('"test:terminal"');
   });
 
+  test('family 1: automatic product CI keeps native smoke but release qualification is explicit opt-in', async () => {
+    const ci = await source('.github/workflows/ci.yml');
+    expect(ci).not.toContain('P17_G6_01_HOMEBREW_RECEIPT');
+    expect(ci).not.toContain('goreleaser/goreleaser-action');
+    expect(ci).not.toContain('npm@12.0.1');
+    expect(ci).toContain('run: just check');
+    expect(ci).toContain('Host-native build and smoke');
+    for (const runner of ['ubuntu-24.04-arm', 'macos-15', 'macos-15-intel']) {
+      expect(ci).toContain(runner);
+    }
+    const product = Bun.YAML.parse(ci) as { on: Record<string, unknown> };
+    expect(Object.keys(product.on).toSorted()).toEqual(['pull_request', 'push']);
+
+    const qualificationSource = await source('.github/workflows/release-qualification.yml');
+    const qualification = Bun.YAML.parse(qualificationSource) as {
+      on: Record<string, { inputs: Record<string, { default: boolean; required: boolean }> }>;
+      permissions: Record<string, unknown>;
+      jobs: Record<string, { if: string; permissions: Record<string, string> }>;
+    };
+    expect(Object.keys(qualification.on)).toEqual(['workflow_dispatch']);
+    expect(qualification.on.workflow_dispatch?.inputs.resume_release_qualification).toMatchObject({
+      default: false,
+      required: true,
+    });
+    expect(qualification.permissions).toEqual({});
+    expect(Object.keys(qualification.jobs)).toEqual(['candidate-cask']);
+    expect(qualification.jobs['candidate-cask']?.if).toBe(
+      "${{ github.event_name == 'workflow_dispatch' && inputs.resume_release_qualification }}",
+    );
+    expect(qualification.jobs['candidate-cask']?.permissions).toEqual({ contents: 'read' });
+    for (const runner of ['macos-15', 'macos-15-intel'])
+      expect(qualificationSource).toContain(runner);
+    expect(qualificationSource).toContain("P17_G6_01_HOMEBREW_RECEIPT: '1'");
+    expect(qualificationSource).toContain('EWP-P6-TS01.*Homebrew supported-platform');
+    expect(qualificationSource).not.toMatch(/npm publish|gh release upload|contents: write|TAP_/u);
+  });
+
   test('family 2: Release Please uses its protected App, exact v1.0.0, and derived-file sync', async () => {
     const [workflow, config] = await Promise.all([
       source('.github/workflows/release-please.yml'),
@@ -244,6 +281,7 @@ describe('EWP-P6-TS06', () => {
       source('.github/workflows/commitlint.yml'),
       source('.github/workflows/release-please.yml'),
       source('.github/workflows/release.yml'),
+      source('.github/workflows/release-qualification.yml'),
     ]);
     expect(adr).toContain('Accepted');
     expect(adr).toContain('candidate');

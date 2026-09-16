@@ -15,6 +15,23 @@ npm/Bun, and Homebrew. The first public release is exactly `v1.0.0`.
 - `just release-check <lane>` validates a transferred candidate in one common lane, four native
   lanes, and a credential-free aggregate.
 
+## P19 product-only closeout and release hold
+
+Publication and pre-publication execution remain deferred under [#53](https://github.com/smorinlabs/skillsmith/issues/53).
+The release process below describes the future resumed workflow, not authorization to run it now.
+
+Under the [user-approved Q2.A decision](https://github.com/smorinlabs/skillsmith/issues/51#issuecomment-5689864463),
+`.github/workflows/ci.yml` still runs `just check`,
+PR-title validation, and native build/smoke checks automatically, with the same native runner
+matrix. Homebrew candidate install/upgrade qualification and its dedicated Node/npm/GoReleaser
+setup are in `.github/workflows/release-qualification.yml`. That workflow has only an explicit
+`workflow_dispatch` trigger and defaults `resume_release_qualification` to false.
+
+Do not dispatch release qualification while the hold remains. Its macOS arm64/x64 receipts and
+outstanding platform fixes remain required release work under [#52](https://github.com/smorinlabs/skillsmith/issues/52)
+and [#58](https://github.com/smorinlabs/skillsmith/issues/58). Ordinary CI success does not establish
+those receipts. The signed-candidate, authority, and publication gates in `release.yml` are unchanged.
+
 ## Preparation
 
 Every push to `main` runs `.github/workflows/release-please.yml`. A protected

@@ -21,7 +21,12 @@ const BUILD_SOURCE = join(ROOT, 'scripts', 'build-release.ts');
 const GORELEASER_SOURCE = join(ROOT, '.goreleaser.yaml');
 const FORMULA_SOURCE = join(ROOT, 'packaging', 'homebrew', 'skillsmith.rb.tmpl');
 const LAUNCHER_SOURCE = join(ROOT, 'packaging', 'npm', 'bin', 'skillsmith.cjs');
-const WORKFLOW_SOURCE = join(ROOT, '.github', 'workflows', 'ci.yml');
+const QUALIFICATION_WORKFLOW_SOURCE = join(
+  ROOT,
+  '.github',
+  'workflows',
+  'release-qualification.yml',
+);
 const MAX_NATIVE_BINARY_BYTES = 134_217_728;
 const HEX_40 = 'a'.repeat(40);
 const HEX_64 = 'b'.repeat(64);
@@ -1855,7 +1860,7 @@ describe('EWP-P6-TS01', () => {
         readFile(join(ROOT, 'docs', 'releases.md'), 'utf8'),
         readFile(join(ROOT, 'packaging', 'README.md'), 'utf8'),
         readFile(join(ROOT, 'package.json'), 'utf8'),
-        readFile(WORKFLOW_SOURCE, 'utf8'),
+        readFile(QUALIFICATION_WORKFLOW_SOURCE, 'utf8'),
         readFile(RELEASE_SOURCE, 'utf8'),
       ],
     );

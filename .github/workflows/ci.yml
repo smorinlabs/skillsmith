@@ -62,22 +62,6 @@ jobs:
           bun-version: 1.3.14
       - name: Install dependencies without lifecycle scripts
         run: bun install --frozen-lockfile --ignore-scripts
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        if: runner.os == 'macOS'
-        with:
-          node-version: 24
-      - name: Install pinned npm
-        if: runner.os == 'macOS'
-        run: |
-          npm_prefix="$RUNNER_TEMP/skillsmith-npm-12.0.1"
-          npm install --global --prefix "$npm_prefix" npm@12.0.1
-          echo "$npm_prefix/bin" >> "$GITHUB_PATH"
-      - name: Install pinned GoReleaser
-        if: runner.os == 'macOS'
-        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
-        with:
-          version: v2.17.1
-          install-only: true
       - name: Host-native build and smoke
         env:
           EXPECTED_LANE: ${{ matrix.lane }}
@@ -85,15 +69,6 @@ jobs:
           bun run build
           test "$(./dist/skillsmith version)" = "$(bun -p "import('./package.json').then(p => p.default.version)")"
           ./dist/skillsmith agents --capabilities --format json >/dev/null
-      - name: Candidate-cask contract on macOS
-        if: runner.os == 'macOS'
-        env:
-          P17_G6_01_HOMEBREW_RECEIPT: '1'
-        run: >-
-          bun test tests/ergonomics/phase/EWP-P6-TS01.test.ts
-          --timeout 300000
-          --max-concurrency 1
-          --test-name-pattern 'EWP-P6-TS01.*Homebrew supported-platform'
 
   lint-pr-title:
     if: github.event_name == 'pull_request'
