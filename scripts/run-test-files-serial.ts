@@ -8,6 +8,9 @@ import { join, resolve, sep } from 'node:path';
 const repositoryRoot = resolve(import.meta.dir, '..');
 const bunTestFilePattern = /(?:^|\/)[^/]+(?:\.(?:test|spec)|_(?:test|spec))\.(?:js|jsx|ts|tsx)$/;
 const safePathComponentPattern = /^[A-Za-z0-9-]+$/;
+const gitEnvironment = Object.fromEntries(
+  Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')),
+);
 export const EXPECTED_BUN_VERSION = '1.3.14';
 const EXPECTED_ALLOWED_SKIP_FILES = 6;
 const EXPECTED_ALLOWED_SKIPS = 28;
@@ -54,6 +57,7 @@ function decode(bytes: Uint8Array): string {
 function git(root: string, arguments_: string[]): string {
   const result = Bun.spawnSync(['git', ...arguments_], {
     cwd: root,
+    env: gitEnvironment,
     stderr: 'pipe',
     stdout: 'pipe',
   });

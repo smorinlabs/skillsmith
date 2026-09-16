@@ -19,6 +19,10 @@ import {
 
 const temporaryDirectories: string[] = [];
 
+const fixtureGitEnvironment = Object.fromEntries(
+  Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')),
+);
+
 afterEach(() => {
   for (const directory of temporaryDirectories.splice(0)) {
     rmSync(directory, { force: true, recursive: true });
@@ -46,10 +50,15 @@ function repositoryFixture(): string {
     writeFileSync(absolute, 'export {};\n');
   }
 
-  expect(Bun.spawnSync(['git', 'init', '--quiet'], { cwd: root }).exitCode).toBe(0);
-  expect(Bun.spawnSync(['git', 'add', '--force', '--', ...tracked], { cwd: root }).exitCode).toBe(
-    0,
-  );
+  expect(
+    Bun.spawnSync(['git', 'init', '--quiet'], { cwd: root, env: fixtureGitEnvironment }).exitCode,
+  ).toBe(0);
+  expect(
+    Bun.spawnSync(['git', 'add', '--force', '--', ...tracked], {
+      cwd: root,
+      env: fixtureGitEnvironment,
+    }).exitCode,
+  ).toBe(0);
   expect(
     Bun.spawnSync(
       [
@@ -63,7 +72,7 @@ function repositoryFixture(): string {
         '-m',
         'test fixture',
       ],
-      { cwd: root },
+      { cwd: root, env: fixtureGitEnvironment },
     ).exitCode,
   ).toBe(0);
   return root;
