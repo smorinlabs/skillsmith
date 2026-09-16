@@ -250,6 +250,44 @@ describe('EWP-P6-TS06', () => {
     ).toThrow();
   });
 
+  test('family 8: post-uninstall assertion stops when the cask remains registered', async () => {
+    const workflow = await source('.github/workflows/release.yml');
+    const assertion = workflow.match(
+      /test ! -e "\$brew_binary"\n([\s\S]*?)\n\s*channels='\["direct","npm","bun","homebrew"\]'/u,
+    )?.[1];
+    expect(assertion, 'exercise the actual workflow assertion, not a copied repair').toBeDefined();
+    if (assertion === undefined) throw new Error('post-uninstall assertion is absent');
+
+    for (const status of [0, 1]) {
+      // A shell function intercepts the only command under test; no Homebrew is run.
+      const child = Bun.spawnSync(
+        [
+          'bash',
+          '--noprofile',
+          '--norc',
+          '-e',
+          '-o',
+          'pipefail',
+          '-c',
+          `brew() {
+            if [[ "$#" != 3 || "$1" != list || "$2" != --cask || "$3" != skillsmith ]]; then
+              exit 97
+            fi
+            return ${status}
+          }
+          ${assertion}
+          echo assertion-completed`,
+        ],
+        { env: { PATH: process.env.PATH ?? '/usr/bin:/bin' }, timeout: 2_000 },
+      );
+      expect(child.exitCode, `brew list status ${status}`).toBe(status === 0 ? 1 : 0);
+      expect(child.stdout.toString()).toBe(status === 0 ? '' : 'assertion-completed\n');
+      expect(child.stderr.toString()).toBe(
+        status === 0 ? 'skillsmith cask remains installed after uninstall\n' : '',
+      );
+    }
+  });
+
   test('family 9: executable external readiness refuses every missing authority or public audit', async () => {
     const validate = requireGate(await loadGates(), 'validateExternalReadiness');
     const valid = {

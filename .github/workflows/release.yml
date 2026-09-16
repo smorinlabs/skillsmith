@@ -110,10 +110,12 @@ jobs:
             echo 'Recovery requires all four retained-candidate fields.' >&2
             exit 1
           fi
-          echo "candidate_mode=$candidate_mode" >> "$GITHUB_OUTPUT"
-          echo "release_id=$(jq -r .id "$RUNNER_TEMP/release.json")" >> "$GITHUB_OUTPUT"
-          echo "sha=$sha" >> "$GITHUB_OUTPUT"
-          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          {
+            echo "candidate_mode=$candidate_mode"
+            echo "release_id=$(jq -r .id "$RUNNER_TEMP/release.json")"
+            echo "sha=$sha"
+            echo "tag=$RELEASE_TAG"
+          } >> "$GITHUB_OUTPUT"
 
   candidate:
     needs: guard
@@ -315,11 +317,13 @@ jobs:
           test "$(jq -r .commit dist/release/metadata.json)" = '${{ needs.guard.outputs.sha }}'
           test "$(jq -r .tag dist/release/metadata.json)" = "$RELEASE_TAG"
           test "$(jq -r .version dist/release/metadata.json)" = "$RELEASE_VERSION"
-          echo "bundle_sha256=$bundle_sha" >> "$GITHUB_OUTPUT"
-          echo "candidate_artifact_id=$(jq -r .candidateArtifactId source/candidate-identity.json)" >> "$GITHUB_OUTPUT"
-          echo "metadata_sha256=$metadata_sha" >> "$GITHUB_OUTPUT"
-          echo "run_id=$(jq -r .runId source/candidate-identity.json)" >> "$GITHUB_OUTPUT"
-          echo "version=$RELEASE_VERSION" >> "$GITHUB_OUTPUT"
+          {
+            echo "bundle_sha256=$bundle_sha"
+            echo "candidate_artifact_id=$(jq -r .candidateArtifactId source/candidate-identity.json)"
+            echo "metadata_sha256=$metadata_sha"
+            echo "run_id=$(jq -r .runId source/candidate-identity.json)"
+            echo "version=$RELEASE_VERSION"
+          } >> "$GITHUB_OUTPUT"
           rm -rf dist
       - name: Transfer the sole validated source to all lanes
         id: source
@@ -1257,7 +1261,10 @@ jobs:
             test "$homebrew_sha" = "$direct_sha"
             brew uninstall --cask skillsmith
             test ! -e "$brew_binary"
-            ! brew list --cask skillsmith >/dev/null 2>&1
+            if brew list --cask skillsmith >/dev/null 2>&1; then
+              echo 'skillsmith cask remains installed after uninstall' >&2
+              exit 1
+            fi
             channels='["direct","npm","bun","homebrew"]'
             channel_digests="$(jq -cn --arg direct "$direct_sha" --arg npm "$npm_sha" --arg bun "$bun_sha" --arg homebrew "$homebrew_sha" '{direct:$direct,npm:$npm,bun:$bun,homebrew:$homebrew}')"
           fi
@@ -1312,4 +1319,4 @@ jobs:
           path: public-receipts
       - name: Close EWP-WF01 with nonempty zero-skip public receipts
         run: |
-          bun -e 'import { readdir, readFile } from "node:fs/promises"; import { validatePublicWorkflowReceipts } from "./scripts/release-gates.ts"; const root="public-receipts"; const receipts=await Promise.all((await readdir(root)).filter(x=>x.endsWith(".json")).map(async x=>JSON.parse(await readFile(`${root}/${x}`,"utf8")))); console.log(JSON.stringify(validatePublicWorkflowReceipts({receipts})));'
+          bun -e 'import { readdir, readFile } from "node:fs/promises"; import { validatePublicWorkflowReceipts } from "./scripts/release-gates.ts"; const root="public-receipts"; const receipts=await Promise.all((await readdir(root)).filter(x=>x.endsWith(".json")).map(async x=>JSON.parse(await readFile(root+"/"+x,"utf8")))); console.log(JSON.stringify(validatePublicWorkflowReceipts({receipts})));'

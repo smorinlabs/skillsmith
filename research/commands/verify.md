@@ -1,11 +1,15 @@
-# verify
+# verify — historical P11 command design
 
-> P17 disposition: shipped command evidence, not future target authority; target: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#89-verify
+> Historical archive: the entire design below is retained as P11 evidence, not current
+> command documentation. Its Codex `exec`/stderr/401 probe, JSON schema and exit/coverage
+> guarantees are superseded. Do not use the archived commands as current instructions.
 
-> P19 correction: the historical Codex `exec`/stderr probe below is superseded by the
-> [local app-server verifier](../../packages/core/src/agents/codex/README.md).
-> Required incomplete coverage is inconclusive, not passed; see the
-> [current generated command reference](../../docs/commands.md#verify).
+Current authority: the [generated command reference](../../docs/commands.md#verify),
+the [local app-server verifier](../../packages/core/src/agents/codex/README.md), and
+the [P17 verify contract](../../docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#89-verify).
+Required incomplete coverage is inconclusive, not passed.
+
+## Archived design (superseded)
 
 `skillsmith verify` loads a plugin under each target tool's own verifier and reports a **per-tool
 result matrix** — never one merged verdict. It is the artifact-facing sibling of `doctor`/`check`:

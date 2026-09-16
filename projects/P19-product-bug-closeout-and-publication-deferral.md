@@ -58,6 +58,21 @@ pending; its historical catalog gates are not changed to passing by this deferra
   open `agent/p19-p17-fixes` against `agent/p17-execution`, not main. Keep PR #44 draft.
 - All Codex and Claude Code reviewers have standing user approval.
 
+### Q4 and cleanup decisions — 2026-09-16
+
+- [Q4.A](https://github.com/smorinlabs/skillsmith/issues/52#issuecomment-5691946055):
+  approve only the four existing ShellCheck findings in `release.yml`, a harmless
+  fake-command regression, matching local ShellCheck validation, and PR #68's normal
+  review/green-CI/merge flow into `agent/p17-execution`. This is a narrow exception to
+  #52's deferral, not approval of the remaining release integration or qualification.
+- C1 retains the main-maintenance worktree and branch. C2 permits guarded fast-forward
+  local-main synchronization only after #68 is settled. Neither authorizes deletion.
+- Main PR #66 merged at `837d41cc79cb6d7c499d7ec87ddba2efe9d171d9`.
+  P17 PR #68 remains subject to its final gates and integration; source issue #51 owns
+  subsequent exact-head receipts. #41's cross-tool interface (Q3) remains undecided.
+- The question of integrating P17 into main is separate: #44 remains draft and unapproved
+  for merge. Preserve the publication hold, deferred gates and original phase IDs.
+
 CI-only commit `ffd1cba` has independent approval. Its manual release-qualification workflow
 was not dispatched, and no deferred qualification is counted passed. Runtime review corrections
 at `b33c224` cover bounded descendant cleanup, preserved artifact-failure evidence, cancellation

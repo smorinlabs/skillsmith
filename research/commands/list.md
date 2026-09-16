@@ -26,7 +26,7 @@ Optional positional filter(s) matching skill name patterns (glob supported): `sk
 | `--user` | — | bool | — | — | Shorthand for `--scope=user` |
 | `--system` | — | bool | — | — | Shorthand for `--scope=system` |
 | `--project` | — | bool | — | — | Shorthand for `--scope=project` |
-| `--duplicates` | — | bool | false | — | Show only cross-scope duplicates |
+| `--duplicates` | — | bool | false | — | Show only same-tool placement conflicts |
 | `--json` | — | bool | false | — | JSON output |
 | `--long` | `-l` | bool | false | — | Show symlink path, store path, source, and commit SHA |
 
