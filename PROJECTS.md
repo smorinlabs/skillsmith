@@ -35,6 +35,7 @@
 
 ## Project index
 
+- [~] **P19** — [Product bug closeout and publication deferral](projects/P19-product-bug-closeout-and-publication-deferral.md)
 - [?] **P18** — [verify: validate against external consumer schemas (claude plugin validate parity)](projects/P18-verify-external-consumer-schema-validation-.md)
 - [~] **P17** — [Skillsmith Ergonomics and Declarative Workflow](projects/P17-skillsmith-ergonomics-and-declarative-workflow.md)
 
@@ -156,6 +157,7 @@ downstream, smorin-harness `skill-create` drops its ln -s step. Plan:
 - [x] [P13-T04] Adversarial full-branch review (codex) + fable whole-branch review
 - [x] [P13-T05] PR, CI green, merge; release-please v0.7.0
 - [ ] [P13-T06] Downstream: skill-create wire step → single `skillsmith dev --source` per tool; real-skill re-wire proof; smorin-harness release
+  - P19 split: wiring/real-skill evidence and current owner remain [#63](https://github.com/smorinlabs/skillsmith/issues/63); publishing/pre-publishing execution is deferred to [PUB-08 #55](https://github.com/smorinlabs/skillsmith/issues/55). Do not infer this task is complete from shipped P13 code.
 - [x] [P13-T07] Downstream migration DONE 2026-07-10: all 22 codex placements moved ~/.codex/skills → ~/.agents/skills via dev --source (pilot + gated 21-skill sweep, 21/21 clean, restore path never needed; legacy root holds only the 4 codex-native dirs)
 - [x] [P13-T08] Issue #9 closed (auto, PR #18 'Fixes #9'); memory updated
 
@@ -175,6 +177,12 @@ P13 merges (same files: plan.ts/run.ts).**
 ---
 
 ## [ ] Project P14: Production flip — skillsmith v1.0.0
+
+P19 disposition: all execution below is deferred under [PUB-00 #53](https://github.com/smorinlabs/skillsmith/issues/53).
+P14-T01 → PUB-02 #50; P14-T02/T04/RV → PUB-01 #52; P14-T03 infrastructure → PUB-05 #58,
+actual all-channel publication → PUB-06 #59; final reconciliation/handoff → PUB-07 #62.
+Existing checkboxes remain pending, and P14's old formula/version wording must be reconciled
+with the approved P17 cask/candidate design before resumption.
 **Goal**: Skillsmith itself dev→production: flip canonical repo public (post scrub), per-platform
 compiled binaries, distribution via `smorinlabs/homebrew-tap` + npm, docs refresh (README command
 surface, verified-against `claude`/`codex` version matrix), `Release-As: 1.0.0`.
@@ -216,6 +224,7 @@ surface, verified-against `claude`/`codex` version matrix), `Release-As: 1.0.0`.
 - [x] [P09-T08] CLI: `install` (alias `i`, @clack picker) + `uninstall` (`rm`/`remove`), JSON contracts + goldens, human renderers, help topics — *sonnet*
 - [x] [P09-TS02] Acceptance: interop round-trip e2e, §13 exit-code table, env-gated SIGKILL install e2e + live e2e vs smorinlabs/smorinlabs-harness (PRD §10) — *sonnet*
 - [ ] [P09-RV] Final whole-branch review — *fable*
+  - P19 reconciliation: [merged PR #7](https://github.com/smorinlabs/skillsmith/pull/7) reports final whole-branch READY TO MERGE; the separate original fable receipt remains unlocated. Preserve the marker pending receipt or owner confirmation under [#60](https://github.com/smorinlabs/skillsmith/issues/60); this is not a newly discovered product bug.
 
 ---
 

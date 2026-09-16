@@ -46,6 +46,74 @@ const report = (overrides: Partial<VerifyReport> = {}): VerifyReport => ({
 });
 
 describe('renderVerifyHuman', () => {
+  test('an all-error attempt is incomplete, not an unattempted inventory', () => {
+    const r = report();
+    r.summary = { ...r.summary, verdict: 'inconclusive', verified: [], skipped: ['codex'] };
+    r.tools = [
+      tool({
+        tool: 'codex',
+        verdict: 'inconclusive',
+        modes: [mode({ mode: 'deep', status: 'error', verdict: null, skipReason: 'exec-error' })],
+      }),
+    ];
+    const out = renderVerifyHuman(r, 4);
+    expect(out).toContain('verification incomplete');
+    expect(out).toContain('deep  error (exec-error)');
+    expect(out).not.toContain('no tools ran');
+  });
+
+  test('a warning tool alongside a failure is verified, not called passed', () => {
+    const r = report();
+    r.summary = {
+      verdict: 'fail',
+      verified: ['codex'],
+      failed: ['claude-code'],
+      skipped: [],
+      counts: { error: 1, warning: 1, info: 0 },
+    };
+    r.tools = [
+      tool({ verdict: 'fail', modes: [mode({ verdict: 'fail' })] }),
+      tool({ tool: 'codex', verdict: 'warn', modes: [mode({ verdict: 'warn' })] }),
+    ];
+    const out = renderVerifyHuman(r, 1);
+    expect(out).toContain('1 tool failed, 1 verified.');
+    expect(out).not.toContain('1 passed');
+  });
+
+  test('partial verification renders diagnostics and never says no tools ran', () => {
+    const r = report();
+    r.summary = { ...r.summary, verdict: 'inconclusive', verified: [], skipped: ['codex'] };
+    r.tools = [
+      tool({
+        tool: 'codex',
+        verdict: 'inconclusive',
+        modes: [
+          mode(),
+          mode({
+            mode: 'deep',
+            status: 'error',
+            verdict: null,
+            skipReason: 'exec-error',
+            findings: [
+              {
+                checkId: 'codex.deep-probe',
+                normalizedSeverity: 'info',
+                toolSeverity: null,
+                message: 'phase=local-loader; exit=1',
+                file: null,
+                subject: 'plugin',
+              },
+            ],
+          }),
+        ],
+      }),
+    ];
+    const out = renderVerifyHuman(r, 4);
+    expect(out).toContain('verification incomplete');
+    expect(out).toContain('phase=local-loader; exit=1');
+    expect(out).not.toContain('no tools ran');
+  });
+
   test('header: static-only mode joins tools with ", "', () => {
     const out = renderVerifyHuman(report(), 0);
     expect(out).toContain(
@@ -197,7 +265,9 @@ describe('renderVerifyHuman', () => {
       }),
       1,
     );
-    expect(out).toContain('1 tool failed, 1 passed.  (1 error, 1 warning, 1 notice)  Exit code: 1');
+    expect(out).toContain(
+      '1 tool failed, 1 verified.  (1 error, 1 warning, 1 notice)  Exit code: 1',
+    );
   });
 
   test('summary line with multiple failures pluralizes "tools"', () => {
@@ -214,7 +284,7 @@ describe('renderVerifyHuman', () => {
       1,
     );
     expect(out).toContain(
-      '2 tools failed, 0 passed.  (2 errors, 0 warnings, 0 notices)  Exit code: 1',
+      '2 tools failed, 0 verified.  (2 errors, 0 warnings, 0 notices)  Exit code: 1',
     );
   });
 

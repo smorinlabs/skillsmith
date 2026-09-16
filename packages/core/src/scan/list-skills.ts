@@ -38,14 +38,15 @@ const applyGlobs = (entries: SkillEntry[], globs: readonly string[]): SkillEntry
 const filterCrossScopeDuplicates = (entries: SkillEntry[]): SkillEntry[] => {
   const byName = new Map<string, Set<Scope>>();
   for (const e of entries) {
-    if (!byName.has(e.name)) byName.set(e.name, new Set());
-    byName.get(e.name)?.add(e.scope);
+    const key = `${e.tool}\0${e.name}`;
+    if (!byName.has(key)) byName.set(key, new Set());
+    byName.get(key)?.add(e.scope);
   }
   const dupNames = new Set<string>();
   for (const [name, scopes] of byName) {
     if (scopes.size > 1) dupNames.add(name);
   }
-  return entries.filter((e) => dupNames.has(e.name));
+  return entries.filter((e) => dupNames.has(`${e.tool}\0${e.name}`));
 };
 
 const dedupeByRealpath = (entries: SkillEntry[]): SkillEntry[] => {
@@ -134,7 +135,6 @@ export const listSkills = async (
   let all = [...standalone, ...pluginBundled];
   all = dedupeByRealpath(all);
   if (opts.globs && opts.globs.length > 0) all = applyGlobs(all, opts.globs);
-  if (opts.duplicatesOnly) all = filterCrossScopeDuplicates(all);
   if (opts.enabledFilter === 'enabled-only') all = all.filter((e) => e.enabled === 'on');
   if (opts.enabledFilter === 'disabled-only') all = all.filter((e) => e.enabled === 'off');
   if (opts.enabledFilter === 'unconfigured-only') all = all.filter((e) => e.enabled === 'unset');
@@ -143,6 +143,7 @@ export const listSkills = async (
   // have their scope computed from pluginScope
   const scopeSet = new Set(scopes);
   all = all.filter((e) => scopeSet.has(e.scope));
+  if (opts.duplicatesOnly) all = filterCrossScopeDuplicates(all);
 
   logger.debug(
     `listSkills: ${standalone.length} standalone + ${pluginBundled.length} plugin = ${all.length} after filters`,

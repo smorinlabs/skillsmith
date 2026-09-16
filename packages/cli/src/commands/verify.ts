@@ -32,6 +32,7 @@ const USAGE_ERROR_CODES = new Set([
 
 export const verifyExitCode = (report: VerifyReport): 0 | 1 | 4 => {
   if (report.summary.verdict === 'fail') return 1;
+  if (report.summary.verdict === 'inconclusive') return 4;
   const anyRan = report.tools.some((t) => t.modes.some((m) => m.status === 'ran'));
   if (!anyRan) return 4;
   if (report.requested.explicitTools && report.tools.some((t) => !t.available)) return 4;
@@ -60,7 +61,7 @@ export const verifyCommand = (signal?: AbortSignal): Command =>
     .option('--static', 'Static verification only (no auth, no model call). Default.', false)
     .option(
       '--deep',
-      'Also run session-backed load verification (isolated; no auth, no model call).',
+      'Also run native load verification (isolated; no auth, no model call).',
       false,
     )
     .option('--strict', 'Treat warnings as failures (exit 1 on any warning).', false)

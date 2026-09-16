@@ -1,3 +1,4 @@
+import { execJsonRpcCommand } from './json-rpc.ts';
 import type { ExecOptions, ExecResult } from './types.ts';
 
 const DEFAULT_TIMEOUT_MS = 2000;
@@ -47,6 +48,8 @@ export const execCommand = async (
   let onAbort: (() => void) | undefined;
   const childEnv: Record<string, string | undefined> = { ...process.env, ...opts.env };
   for (const name of opts.unsetEnv ?? []) delete childEnv[name];
+
+  if (opts.jsonRpc) return execJsonRpcCommand(cmd, args, opts, childEnv);
 
   try {
     const proc = Bun.spawn([cmd, ...args], {

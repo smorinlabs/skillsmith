@@ -2,6 +2,8 @@ import type { Origin, SkillEntry } from '@skillsmith/core';
 
 export interface ListHumanOpts {
   long: boolean;
+  duplicates?: boolean;
+  filtered?: boolean;
 }
 
 const formatOrigin = (o: Origin): string => {
@@ -11,7 +13,11 @@ const formatOrigin = (o: Origin): string => {
 };
 
 export const renderListHuman = (entries: readonly SkillEntry[], opts: ListHumanOpts): string => {
-  if (entries.length === 0) return 'No skills installed.\n';
+  if (entries.length === 0) {
+    if (opts.duplicates) return 'No duplicate skills matched the selected inventory.\n';
+    if (opts.filtered) return 'No skills matched the active filters.\n';
+    return 'No skills installed.\n';
+  }
   const grouped = new Map<string, Map<string, SkillEntry[]>>();
   for (const e of entries) {
     if (!grouped.has(e.tool)) grouped.set(e.tool, new Map());

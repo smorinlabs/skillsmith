@@ -112,6 +112,19 @@ describe('resolveTarget', () => {
 });
 
 describe('runVerify', () => {
+  test.each([false, true])('report respects explicit unavailable tools: %s', async (explicit) => {
+    const r = await runVerify(
+      await defaultScanEnv(),
+      {
+        path: join(FIXTURES, 'dummytest'),
+        ...(explicit ? { tools: ['claude-code', 'codex'] as const } : {}),
+      },
+      { 'claude-code': okChecker('claude-code', 'pass'), codex: absentChecker('codex') },
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.summary.verdict).toBe(explicit ? 'inconclusive' : 'pass');
+  });
+
   test('dummytest with two passing fake checkers, default opts', async () => {
     const env = await defaultScanEnv();
     const r = await runVerify(

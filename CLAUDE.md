@@ -81,11 +81,12 @@ once). Until fixed:
 
 Never push with the hook enabled from a checkout with real work on it.
 
-## Bun stdout pipe truncation
+## CLI stdout drain (#46)
 
-Piping large CLI output truncates silently at ~64 KB (`bun … list --json | jq`
-loses the tail with no error). Redirect to a file instead —
-`bun … list --json > out.json` — then read the file.
+The CLI entrypoint sets `process.exitCode` on normal completion so pending output can drain.
+Do not replace it with a forced `process.exit(...)`: that truncated large piped `list --json`
+output. Regression coverage exercises source and compiled binaries with normal/slow pipes and
+file redirection. Older builds may still need the file-redirection workaround.
 
 ## Breaking changes and the 0.x trap
 
@@ -144,7 +145,7 @@ full format and the discovery helper.
 
 ## Dependency overrides (P10)
 
-Root `package.json` `overrides` force `fast-uri`, `js-yaml` (3.15.0 — must stay 3.x for
+Root `package.json` `overrides` force `fast-uri`, `js-yaml` (3.15.2 floor — must stay 3.x for
 gray-matter), and `brace-expansion` (5.x) to patched versions because bun overrides are
 flat/global. Known dormant hazard: minimatch@3 consumers inside eslint's tree will throw
 `TypeError: expand is not a function` if any eslint `files`/glob pattern uses braces

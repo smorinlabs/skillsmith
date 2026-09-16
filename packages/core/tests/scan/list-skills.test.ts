@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { crossScopeDuplicate } from '../../src/doctor/checks/cross-scope-duplicate.ts';
+import { noopLogger } from '../../src/env/logger.ts';
 import type { ScanEnv } from '../../src/env/types.ts';
 import { listSkills } from '../../src/scan/list-skills.ts';
 
@@ -33,6 +35,88 @@ const fakeEnv = (
 });
 
 describe('listSkills', () => {
+  test('duplicate groups use the final selected scopes and enablement', async () => {
+    const env = fakeEnv(
+      { '/h/.claude/skills': ['shared'], '/plugin/skills': ['shared'] },
+      {
+        '/h/.claude/skills/shared/SKILL.md': '---\nname: shared\n---\n',
+        '/plugin/skills/shared/SKILL.md': '---\nname: shared\n---\n',
+        '/h/.claude/plugins/installed_plugins.json': JSON.stringify({
+          version: 2,
+          plugins: {
+            'test@fixture': [
+              { scope: 'project', projectPath: '/proj', installPath: '/plugin', version: '1.0' },
+            ],
+          },
+        }),
+        '/proj/.claude/settings.json': JSON.stringify({
+          enabledPlugins: { 'test@fixture': false },
+        }),
+      },
+    );
+    const opts = {
+      tools: ['claude-code'] as const,
+      cwd: '/proj',
+      envVars: {},
+      duplicatesOnly: true,
+    };
+    const all = await listSkills(env, opts);
+    expect(all.ok && all.value.length).toBe(2);
+    for (const selection of [
+      { scopes: ['user'] as const },
+      { enabledFilter: 'enabled-only' as const },
+      { enabledFilter: 'disabled-only' as const },
+    ]) {
+      const narrowed = await listSkills(env, { ...opts, ...selection });
+      expect(narrowed.ok && narrowed.value).toEqual([]);
+    }
+  });
+
+  test('cross-tool name reuse is not a same-tool cross-scope duplicate', async () => {
+    const env = fakeEnv(
+      {
+        '/h/.claude/skills': ['shared'],
+        '/proj/.agents/skills': ['shared'],
+      },
+      {
+        '/h/.claude/skills/shared/SKILL.md': '---\nname: shared\n---\n',
+        '/proj/.agents/skills/shared/SKILL.md': '---\nname: shared\n---\n',
+      },
+    );
+    const opts = { tools: ['claude-code', 'codex'] as const, cwd: '/proj', envVars: {} };
+    const inventory = await listSkills(env, opts);
+    const duplicates = await listSkills(env, { ...opts, duplicatesOnly: true });
+    expect(inventory.ok && inventory.value.length).toBe(2);
+    expect(duplicates.ok && duplicates.value).toEqual([]);
+  });
+
+  test('doctor keeps independent tools duplicate groups separate', async () => {
+    const roots = [
+      '/h/.claude/skills',
+      '/proj/.claude/skills',
+      '/h/.agents/skills',
+      '/proj/.agents/skills',
+    ];
+    const env = fakeEnv(
+      Object.fromEntries(roots.map((root) => [root, ['shared']])),
+      Object.fromEntries(
+        roots.map((root) => [`${root}/shared/SKILL.md`, '---\nname: shared\n---\n']),
+      ),
+    );
+    const findings = await crossScopeDuplicate.run({
+      env,
+      mode: 'doctor',
+      tools: ['claude-code', 'codex'],
+      scopes: ['user', 'project'],
+      cwd: '/proj',
+      envVars: {},
+      offline: true,
+      logger: noopLogger,
+    });
+    expect(findings).toHaveLength(2);
+    expect(findings.map((finding) => finding.tool).sort()).toEqual(['claude-code', 'codex']);
+  });
+
   test('empty system → []', async () => {
     const r = await listSkills(fakeEnv({}), { cwd: '/proj', envVars: {} });
     expect(r.ok).toBe(true);

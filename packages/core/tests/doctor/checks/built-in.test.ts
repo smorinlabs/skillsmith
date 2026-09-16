@@ -81,6 +81,28 @@ describe('multiInstall', () => {
 });
 
 describe('legacyInstall', () => {
+  test.each([
+    { entries: ['.system'], protectedSystem: true, expected: 0 },
+    { entries: ['.system', 'user-skill'], protectedSystem: true, expected: 1 },
+    { entries: ['.system'], protectedSystem: false, expected: 1 },
+    { entries: ['.codex-system-skills.marker'], protectedSystem: false, expected: 0 },
+  ])('managed legacy entries: %j', async ({ entries, protectedSystem, expected }) => {
+    const legacy = '/custom-codex/skills';
+    const ctx: CheckRunContext = {
+      ...baseCtx,
+      tools: ['codex'],
+      envVars: { CODEX_HOME: '/custom-codex' },
+      env: {
+        ...baseEnv,
+        fileExists: async (path) =>
+          path === legacy ||
+          (protectedSystem && path === `${legacy}/.system/.codex-system-skills.marker`),
+        listDir: async (path) => (path === legacy ? entries : []),
+      },
+    };
+    expect(await legacyInstall.run(ctx)).toHaveLength(expected);
+  });
+
   test('no Codex legacy dir → no findings', async () => {
     const ctx: CheckRunContext = { ...baseCtx, tools: ['codex'] };
     expect(await legacyInstall.run(ctx)).toEqual([]);

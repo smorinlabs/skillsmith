@@ -8,7 +8,7 @@ export type VerifyTool = (typeof VERIFY_TOOLS)[number];
 export type VerifyMode = 'static' | 'deep';
 export type NormalizedSeverity = 'error' | 'warning' | 'info';
 export type VerifyOutcome = 'pass' | 'warn' | 'fail'; // a produced verdict
-export type SummaryVerdict = VerifyOutcome | 'inconclusive'; // rollup when nothing ran
+export type SummaryVerdict = VerifyOutcome | 'inconclusive'; // missing required coverage, unless a failure is proven
 export type ModeStatus = 'ran' | 'skipped' | 'error'; // did the checker run?
 export type SkipReason = 'not-installed' | 'timeout' | 'exec-error';
 
@@ -38,7 +38,7 @@ export interface ToolVerdict {
   toolVersion: string | null; // observed CLI version, or null when unavailable
   versionDrift: boolean; // observed !== VERIFIED_AGAINST[tool]
   skipReason: SkipReason | null; // 'not-installed' when !available
-  verdict: SummaryVerdict; // worst of ran modes; 'inconclusive' if none ran
+  verdict: SummaryVerdict; // failures win; otherwise incomplete modes are inconclusive
   modes: ModeResult[]; // empty when !available
 }
 

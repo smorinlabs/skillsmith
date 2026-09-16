@@ -34,7 +34,7 @@ export const listCommand = (): Command =>
     .option('--system', 'shorthand for --scope=system', false)
     .option('--project', 'shorthand for --scope=project', false)
     .option('--managed', 'shorthand for --scope=managed', false)
-    .option('--duplicates', 'Show only cross-scope duplicates', false)
+    .option('--duplicates', 'Show only same-tool cross-scope duplicates', false)
     .option('-l, --long', 'Show paths and details', false)
     .option('--json', 'Emit JSON', false)
     .option('--enabled', 'Show only enabled entries', false)
@@ -95,7 +95,17 @@ export const listCommand = (): Command =>
           process.exit(1);
         }
         process.stdout.write(
-          opts.json ? renderListJson(r.value) : renderListHuman(r.value, { long: opts.long }),
+          opts.json
+            ? renderListJson(r.value)
+            : renderListHuman(r.value, {
+                long: opts.long,
+                duplicates: opts.duplicates,
+                filtered:
+                  globs.length > 0 ||
+                  opts.tool.length > 0 ||
+                  Boolean(scopeR.value) ||
+                  enabledFilter !== undefined,
+              }),
         );
       },
     );

@@ -26,8 +26,11 @@ export const modeVerdictFor = (
 
 export const toolVerdictFor = (modes: readonly ModeResult[]): SummaryVerdict => {
   const ran = modes.filter((m) => m.status === 'ran');
-  if (ran.length === 0) return 'inconclusive';
-  return worstOutcome(ran.map((m) => m.verdict ?? 'pass'));
+  const produced = ran.flatMap((m) => (m.verdict === null ? [] : [m.verdict]));
+  const worst = worstOutcome(produced);
+  if (worst === 'fail') return 'fail';
+  if (produced.length === 0 || produced.length !== modes.length) return 'inconclusive';
+  return worst;
 };
 
 const tally = (findings: readonly VerifyFinding[]): VerifyReport['summary']['counts'] => {
@@ -36,12 +39,16 @@ const tally = (findings: readonly VerifyFinding[]): VerifyReport['summary']['cou
   return counts;
 };
 
-export const summarize = (tools: readonly ToolVerdict[]): VerifyReport['summary'] => {
+export const summarize = (
+  tools: readonly ToolVerdict[],
+  options: { explicitTools?: boolean } = {},
+): VerifyReport['summary'] => {
   const verified: ToolVerdict['tool'][] = [];
   const failed: ToolVerdict['tool'][] = [];
   const skipped: ToolVerdict['tool'][] = [];
   const allFindings: VerifyFinding[] = [];
   const produced: VerifyOutcome[] = [];
+  let incomplete = false;
 
   for (const t of tools) {
     for (const m of t.modes) allFindings.push(...m.findings);
@@ -53,11 +60,14 @@ export const summarize = (tools: readonly ToolVerdict[]): VerifyReport['summary'
       produced.push(t.verdict);
     } else {
       skipped.push(t.tool);
+      if (t.available || options.explicitTools) incomplete = true;
     }
   }
 
+  const worst = worstOutcome(produced);
   return {
-    verdict: produced.length > 0 ? worstOutcome(produced) : 'inconclusive',
+    verdict:
+      worst === 'fail' ? 'fail' : incomplete || produced.length === 0 ? 'inconclusive' : worst,
     verified,
     failed,
     skipped,
