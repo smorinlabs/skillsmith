@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import type {
@@ -28,6 +28,7 @@ import { renderVerifyHuman } from '../../src/output/verify-human.ts';
 import * as verifyJson from '../../src/output/verify-json.ts';
 import { exitCodeForClass } from '../../src/runtime/adapter.ts';
 import { CLI_ENTRYPOINT } from '../fixtures/cli.ts';
+import { createDetectionIsolation } from '../fixtures/detection.ts';
 
 const FIXTURES = join(import.meta.dir, '..', '..', '..', 'core', 'tests', 'fixtures', 'verify');
 const PLUGIN = join(FIXTURES, 'dummytest');
@@ -517,8 +518,22 @@ describe('EWP-CMD-VERIFY-TS03', () => {
     );
     await chmod(claude, 0o755);
     try {
+      const isolation = await createDetectionIsolation(root, {
+        HOME: root,
+        PATH: `${bin}:/bin:/usr/bin`,
+      });
       const child = Bun.spawn(
-        [process.execPath, CLI_ENTRYPOINT, 'verify', plugin, '--tool', 'claude-code', '--json'],
+        [
+          process.execPath,
+          '--preload',
+          isolation.preload,
+          CLI_ENTRYPOINT,
+          'verify',
+          plugin,
+          '--tool',
+          'claude-code',
+          '--json',
+        ],
         {
           env: hermeticGitEnv({
             HOME: root,
@@ -711,8 +726,19 @@ describe('EWP-CMD-VERIFY-TS04', () => {
     try {
       await mkdir(join(cwd, 'skill'));
       await writeFile(join(cwd, 'skill', 'SKILL.md'), '---\nname: skill\ndescription: test\n---\n');
+      const isolation = await createDetectionIsolation(cwd, { HOME: cwd, PATH: '' });
       const child = Bun.spawn(
-        [process.execPath, CLI_ENTRYPOINT, '-C', cwd, 'verify', 'skill', '--json'],
+        [
+          process.execPath,
+          '--preload',
+          isolation.preload,
+          CLI_ENTRYPOINT,
+          '-C',
+          cwd,
+          'verify',
+          'skill',
+          '--json',
+        ],
         {
           // Detection also checks per-user well-known directories, independently of PATH.
           env: hermeticGitEnv({
@@ -736,6 +762,9 @@ describe('EWP-CMD-VERIFY-TS04', () => {
       };
       expect(output.target.path).toBe(join(cwd, 'skill'));
       expect(await new Response(child.stderr).text()).toBe('');
+      const blocked = await readFile(isolation.trace, 'utf8');
+      expect(blocked).toContain('/opt/homebrew/bin/codex');
+      expect(blocked).toContain('/usr/local/bin/codex');
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }

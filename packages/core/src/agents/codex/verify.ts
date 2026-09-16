@@ -353,16 +353,35 @@ const runDeepMode = async (
       ],
       ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
     });
-    if (result.timedOut || result.code !== 0 || result.protocolError) {
-      return deepErrorResult(
+    opts.signal?.throwIfAborted();
+    const analyzed = analyzeCodexSkills(result.stdout, realProj, expected);
+    const executionFailed = result.timedOut || result.code !== 0 || result.protocolError;
+    if (executionFailed) {
+      const diagnostic = deepErrorResult(
         result.timedOut ? 'timeout' : 'exec-error',
         sanitizeDeepDiagnostic(
           `executable=${binary}; phase=local-loader; exit=${result.code}; timeout=${result.timedOut}; ${result.protocolError ?? ''}; stderr: ${result.stderr}`,
           [proj, realProj, home],
         ),
       );
+      // A validated exact-target rejection remains a failure even if shutdown is incomplete.
+      // A successful-looking transcript still cannot establish pass after execution failure.
+      if (
+        !('error' in analyzed) &&
+        analyzed.findings.some((finding) => finding.normalizedSeverity === 'error')
+      ) {
+        return {
+          mode: 'deep',
+          status: 'ran',
+          skipReason: null,
+          coverage: { manifest: false, skills: analyzed.complete },
+          verdict: 'fail',
+          command: DEEP_COMMAND,
+          findings: [...analyzed.findings, ...diagnostic.findings],
+        };
+      }
+      return diagnostic;
     }
-    const analyzed = analyzeCodexSkills(result.stdout, realProj, expected);
     if ('error' in analyzed) return deepErrorResult('exec-error', analyzed.error);
     const hasFailure = analyzed.findings.some((finding) => finding.normalizedSeverity === 'error');
     if (!analyzed.complete && !hasFailure) {
@@ -381,11 +400,9 @@ const runDeepMode = async (
       command: DEEP_COMMAND,
       findings: analyzed.findings,
     };
-  } catch {
-    return deepErrorResult(
-      'exec-error',
-      opts.signal?.aborted ? 'local loader cancelled' : 'local loader staging or execution failed',
-    );
+  } catch (error) {
+    if (opts.signal?.aborted) throw error;
+    return deepErrorResult('exec-error', 'local loader staging or execution failed');
   } finally {
     await env.removeTree(proj);
     await env.removeTree(home);

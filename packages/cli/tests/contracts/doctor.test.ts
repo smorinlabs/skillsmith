@@ -39,6 +39,7 @@ import type { CliRuntimeIo } from '../../src/runtime/io.ts';
 import { CURRENT_COMMAND_SPECS, validateOptionInvocation } from '../../src/spec/index.ts';
 import { validateNonMutatingMode } from '../../src/util/non-mutating-mode.ts';
 import { CLI_ENTRYPOINT } from '../fixtures/cli.ts';
+import { createDetectionIsolation } from '../fixtures/detection.ts';
 
 type UnknownRecord = Record<string, unknown>;
 type DoctorInputResult =
@@ -316,12 +317,29 @@ const runBoundedProcess = async (
   return response;
 };
 
-const runCli = (
+const runCli = async (
   root: string,
   args: readonly string[],
   environment: Readonly<Record<string, string | undefined>> = {},
-): Promise<{ readonly exitCode: number; readonly stdout: string; readonly stderr: string }> =>
-  runBoundedProcess(root, ['bun', CLI_ENTRYPOINT, ...args], environment);
+): Promise<{
+  readonly exitCode: number;
+  readonly stdout: string;
+  readonly stderr: string;
+  readonly detectionTrace: string;
+}> => {
+  // Resolve overrides before deriving external binary paths, just as the child does.
+  const isolation = await createDetectionIsolation(root, {
+    HOME: join(root, 'home'),
+    PATH: join(root, 'bin'),
+    ...environment,
+  });
+  const result = await runBoundedProcess(
+    root,
+    ['bun', '--preload', isolation.preload, CLI_ENTRYPOINT, ...args],
+    environment,
+  );
+  return { ...result, detectionTrace: isolation.trace };
+};
 
 const json = (result: { readonly stdout: string }): UnknownRecord =>
   JSON.parse(result.stdout) as UnknownRecord;
@@ -717,6 +735,45 @@ const runDoctorThroughCliAdapter = async (
 };
 
 describe('EWP-CMD-DOCTOR-TS01', () => {
+  test('fixture preloads exclude synthetic global tools without changing production discovery', async () => {
+    const root = await sandbox('global-discovery');
+    const home = join(root, 'home');
+    const isolation = await createDetectionIsolation(root, { HOME: home, PATH: '' });
+    const scanner = join(import.meta.dir, '../../../core/src/detect/scanners.ts');
+    const globals = ['/opt/homebrew/bin/codex', '/usr/local/bin/codex'];
+    const source = (guarded: boolean): string =>
+      [
+        "import { mock } from 'bun:test';",
+        "import * as fs from 'node:fs/promises';",
+        `const globals = ${JSON.stringify(globals)};`,
+        'const calls = []; const originalStat = fs.stat;',
+        'const stat = async (path, options) => {',
+        '  if (globals.includes(String(path))) { calls.push(String(path)); return { isFile: () => true }; }',
+        '  return options === undefined ? originalStat(path) : originalStat(path, options);',
+        '};',
+        "mock.module('node:fs/promises', () => ({ ...fs, stat }));",
+        guarded ? `await import(${JSON.stringify(isolation.preload)});` : '',
+        `const { findOnPath } = await import(${JSON.stringify(scanner)});`,
+        'const found = await findOnPath({',
+        `  homeDir: ${JSON.stringify(home)}, executableSearchPath: [],`,
+        '  fileExists: async path => { try { await fs.stat(path); return true; } catch { return false; } },',
+        '  realpath: async path => path,',
+        '}, "codex");',
+        'console.log(JSON.stringify({ found, calls }));',
+      ].join('\n');
+    const control = await runBoundedProcess(root, [process.execPath, '-e', source(false)]);
+    expect(control.exitCode).toBe(0);
+    expect(control.stderr).toBe('');
+    expect(JSON.parse(control.stdout)).toEqual({ found: globals, calls: globals });
+    const guarded = await runBoundedProcess(root, [process.execPath, '-e', source(true)]);
+    expect(guarded.exitCode).toBe(0);
+    expect(guarded.stderr).toBe('');
+    expect(JSON.parse(guarded.stdout)).toEqual({ found: [], calls: [] });
+    expect(new Set((await readFile(isolation.trace, 'utf8')).trim().split('\n'))).toEqual(
+      new Set(globals),
+    );
+  });
+
   test('doctor command helper normalizes explicit selection and artifact paths', () => {
     expect(typeof doctorCommandApi.resolveDoctorInputs).toBe('function');
     if (doctorCommandApi.resolveDoctorInputs === undefined) return;
@@ -1197,6 +1254,11 @@ describe('EWP-CMD-DOCTOR-TS03', () => {
       const path = join(root, 'data', 'skillsmith', 'placements.json');
       if (fixture.source !== null) await writeLedgerSource(root, fixture.source);
       const result = await runCli(root, healthArgs(root));
+      if (fixture.exitCode === 0) {
+        const blocked = await readFile(result.detectionTrace, 'utf8');
+        expect(blocked).toContain('/opt/homebrew/bin/codex');
+        expect(blocked).toContain('/usr/local/bin/codex');
+      }
       observed.push({
         id: fixture.id,
         exitCode: result.exitCode,

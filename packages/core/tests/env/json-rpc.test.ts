@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { defaultRuntimePorts } from '../../src/ports/default.ts';
 
 const { exec: execCommand } = await defaultRuntimePorts();
@@ -26,7 +29,110 @@ createInterface({input:process.stdin}).on('line', line => {
 });
 `;
 
+const descendantFixture = async (launcherExits = false, detachedChild = false) => {
+  const root = await mkdtemp(join(tmpdir(), 'skillsmith-rpc-descendant-'));
+  const heartbeat = join(root, 'heartbeat.json');
+  const descendant = [
+    "const fs = require('node:fs');",
+    `const heartbeat = ${JSON.stringify(heartbeat)};`,
+    'let tick = 0;',
+    'const write = () => fs.writeFileSync(heartbeat, JSON.stringify({ pid: process.pid, tick: ++tick }));',
+    'write(); const interval = setInterval(write, 20);',
+    'setTimeout(() => clearInterval(interval), 2500);',
+  ].join('\n');
+  const launcher = [
+    `const child = Bun.spawn([process.execPath, "-e", ${JSON.stringify(descendant)}],`,
+    `{ stdin: "ignore", stdout: "inherit", stderr: "inherit", detached: ${detachedChild} });`,
+    launcherExits ? 'child.unref();' : 'setInterval(() => {}, 1000);',
+  ].join('\n');
+  return {
+    heartbeat,
+    launcher,
+    cleanup: async () => {
+      try {
+        const { pid } = JSON.parse(await readFile(heartbeat, 'utf8')) as { pid: number };
+        if (Number.isSafeInteger(pid) && pid > 1 && pid !== process.pid) {
+          try {
+            process.kill(pid, 'SIGKILL');
+          } catch {
+            /* already stopped */
+          }
+        }
+      } catch {
+        /* fixture may have stopped before writing */
+      }
+      await rm(root, { recursive: true, force: true });
+    },
+  };
+};
+
 describe('bounded JSON-RPC process exchange', () => {
+  test.each([false, true])(
+    'deadline bounds descendant-held pipes even when launcher exits first: %s',
+    async (launcherExits) => {
+      const fixture = await descendantFixture(launcherExits);
+      try {
+        const started = performance.now();
+        const result = await execCommand(process.execPath, ['-e', fixture.launcher], {
+          jsonRpc: messages,
+          timeoutMs: 200,
+        });
+        expect(result.timedOut).toBe(true);
+        expect(result.protocolError).toContain('deadline');
+        expect(performance.now() - started).toBeLessThan(1200);
+        const heartbeat = await readFile(fixture.heartbeat, 'utf8');
+        await Bun.sleep(100);
+        expect(await readFile(fixture.heartbeat, 'utf8')).toBe(heartbeat);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
+  test('cancellation bounds descendant-held pipes and stops the owned group', async () => {
+    const fixture = await descendantFixture();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 200);
+    try {
+      const started = performance.now();
+      const outcome = await execCommand(process.execPath, ['-e', fixture.launcher], {
+        jsonRpc: messages,
+        timeoutMs: 2000,
+        signal: controller.signal,
+      }).then(
+        (result) => ({ result, error: undefined }),
+        (error: unknown) => ({ result: undefined, error }),
+      );
+      expect(performance.now() - started).toBeLessThan(1200);
+      expect(outcome.error).toMatchObject({
+        capability: 'process',
+        operation: 'exec',
+        code: 'cancelled',
+      });
+      const heartbeat = await readFile(fixture.heartbeat, 'utf8');
+      await Bun.sleep(100);
+      expect(await readFile(fixture.heartbeat, 'utf8')).toBe(heartbeat);
+    } finally {
+      clearTimeout(timer);
+      await fixture.cleanup();
+    }
+  });
+
+  test('reader cleanup bounds a deliberately detached fixture descendant', async () => {
+    const fixture = await descendantFixture(false, true);
+    try {
+      const started = performance.now();
+      const result = await execCommand(process.execPath, ['-e', fixture.launcher], {
+        jsonRpc: messages,
+        timeoutMs: 200,
+      });
+      expect(result.timedOut).toBe(true);
+      expect(performance.now() - started).toBeLessThan(1200);
+    } finally {
+      // An escaped process group is outside transport ownership; this fixture owns its cleanup.
+      await fixture.cleanup();
+    }
+  });
   test('waits for initialize, then notifies, requests, and closes stdin after the result', async () => {
     const result = await execCommand(process.execPath, ['-e', SERVER], {
       jsonRpc: messages,

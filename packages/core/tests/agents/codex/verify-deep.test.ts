@@ -4,6 +4,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseCodexExecStderr, verifyCodex } from '../../../src/agents/codex/verify.ts';
 import type { ExecResult, ScanEnv } from '../../../src/env/types.ts';
+import { runVerify } from '../../../src/verify/run.ts';
 import type { VerifyPorts } from '../../../src/verify/types.ts';
 import { runtimePorts } from '../../fixtures/runtime-ports.ts';
 
@@ -126,6 +127,37 @@ const reply = (proj: string, skills: unknown = loaded(proj), errors: unknown = [
   `${JSON.stringify({ id: 1, result: {} })}\n${JSON.stringify({ id: 2, result: { data: [{ cwd: proj, skills, errors }] } })}\n`;
 
 describe('verifyCodex deep mode', () => {
+  test('in-flight Codex cancellation reaches the runVerify cancellation boundary', async () => {
+    const controller = new AbortController();
+    let stagedProject = '';
+    let isolatedHome = '';
+    const ports = fakeInstalled({
+      exec: async (binary, args, opts) => {
+        const staticResult = staticHappyPath(binary, args);
+        if (staticResult) return staticResult;
+        expect(args[0]).toBe('app-server');
+        stagedProject = opts?.cwd ?? '';
+        isolatedHome = opts?.env?.CODEX_HOME ?? '';
+        controller.abort();
+        throw new Error('fixture process operation cancelled');
+      },
+    });
+    const result = await runVerify(ports, {
+      path: DUMMY,
+      tools: ['codex'],
+      deep: true,
+      signal: controller.signal,
+    });
+    expect(stagedProject).not.toBe('');
+    expect(isolatedHome).not.toBe('');
+    expect(existsSync(stagedProject)).toBe(false);
+    expect(existsSync(isolatedHome)).toBe(false);
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: 'generic', message: 'runVerify aborted' },
+    });
+  });
+
   const probe = async (
     respond: (proj: string) => Partial<ExecResult> = (proj) => ({ stdout: reply(proj) }),
     options: { kind?: 'plugin' | 'skill'; canonical?: boolean; combined?: boolean } = {},
@@ -276,6 +308,63 @@ describe('verifyCodex deep mode', () => {
     }));
     expect(deep.verdict).toBe('fail');
   });
+
+  test.each([{ code: 1 }, { timedOut: true }, { protocolError: 'process stream failed' }])(
+    'validated artifact failure survives abnormal shutdown: %j',
+    async (failure) => {
+      const { deep, tool } = await probe(
+        (proj) => ({
+          ...failure,
+          stdout: reply(proj, loaded(proj).slice(1), [
+            { path: loaded(proj)[0]?.path, message: 'invalid skill' },
+          ]),
+          stderr: 'loader shutdown token=private-value',
+        }),
+        { combined: true },
+      );
+      expect(deep.status).toBe('ran');
+      expect(deep.verdict).toBe('fail');
+      expect(tool.verdict).toBe('fail');
+      expect(deep.coverage.skills).toBe(true);
+      expect(deep.findings.some((finding) => finding.checkId === 'codex.skill-load')).toBe(true);
+      expect(deep.findings.some((finding) => finding.checkId === 'codex.deep-probe')).toBe(true);
+      expect(JSON.stringify(deep)).not.toContain('private-value');
+    },
+  );
+
+  test.each([{ code: 1 }, { timedOut: true }, { protocolError: 'process stream failed' }])(
+    'successful-looking output cannot pass after abnormal shutdown: %j',
+    async (failure) => {
+      const { deep, tool } = await probe((proj) => ({ ...failure, stdout: reply(proj) }));
+      expect(deep.status).toBe('error');
+      expect(deep.verdict).toBeNull();
+      expect(tool.verdict).toBe('inconclusive');
+    },
+  );
+
+  test.each(['missing-init', 'reordered', 'method-on-response', 'unknown-id', 'error-field'])(
+    'unvalidated transcript cannot establish artifact failure after shutdown: %s',
+    async (corruption) => {
+      const { deep, tool } = await probe((proj) => {
+        const lines = reply(proj, [], [{ path: loaded(proj)[0]?.path, message: 'invalid skill' }])
+          .trim()
+          .split('\n');
+        if (corruption === 'missing-init') lines.shift();
+        if (corruption === 'reordered') lines.reverse();
+        if (corruption === 'method-on-response') {
+          lines[1] = JSON.stringify({ ...JSON.parse(lines[1] ?? '{}'), method: 'untrusted' });
+        }
+        if (corruption === 'unknown-id') lines.unshift('{"id":99,"result":{}}');
+        if (corruption === 'error-field') {
+          lines[0] = JSON.stringify({ ...JSON.parse(lines[0] ?? '{}'), error: null });
+        }
+        return { code: 1, protocolError: 'unexpected response', stdout: `${lines.join('\n')}\n` };
+      });
+      expect(deep.status).toBe('error');
+      expect(tool.verdict).toBe('inconclusive');
+      expect(deep.findings.some((finding) => finding.checkId === 'codex.skill-load')).toBe(false);
+    },
+  );
 
   test.each([
     'garbage',

@@ -43,20 +43,26 @@ export const analyzeCodexSkills = (
   } catch {
     return { error: 'malformed skills/list JSON' };
   }
-  const replies = messages.filter(record);
-  const initialized = replies.filter((message) => message.id === 1);
-  const listed = replies.filter((message) => message.id === 2);
+  const messagesAsRecords = messages.filter(record);
+  const replies = messagesAsRecords.filter((message) => Object.hasOwn(message, 'id'));
+  const [initialized, listed] = replies;
   if (
-    initialized.length !== 1 ||
-    !record(initialized[0]?.result) ||
-    initialized[0]?.error ||
-    listed.length !== 1 ||
-    listed[0]?.error ||
-    !record(listed[0]?.result)
+    messagesAsRecords.length !== messages.length ||
+    messagesAsRecords.some(
+      (message) => !Object.hasOwn(message, 'id') && typeof message.method !== 'string',
+    ) ||
+    replies.length !== 2 ||
+    initialized?.id !== 1 ||
+    listed?.id !== 2 ||
+    replies.some(
+      (message) => Object.hasOwn(message, 'error') || Object.hasOwn(message, 'method'),
+    ) ||
+    !record(initialized.result) ||
+    !record(listed.result)
   ) {
     return { error: 'missing or invalid initialization/skills/list response' };
   }
-  const data = listed[0].result.data;
+  const data = listed.result.data;
   if (!Array.isArray(data)) return { error: 'missing skills/list data' };
   const rows = data.filter((row): row is Record<string, unknown> => record(row) && row.cwd === cwd);
   if (rows.length !== 1) return { error: 'missing or ambiguous requested working directory' };
