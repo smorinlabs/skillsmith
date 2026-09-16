@@ -13,6 +13,7 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join, relative, resolve } from 'node:path';
+import { hermeticGitEnv } from '../../../../packages/core/tests/fixtures/git-env.ts';
 import { codexAppServerFixtureDispatch } from '../codex-app-server.ts';
 
 const CLI_ENTRYPOINT = join(
@@ -67,14 +68,13 @@ const isRecord = (value: unknown): value is UnknownRecord =>
 const runGit = (cwd: string, args: readonly string[]): string => {
   const product = Bun.spawnSync(['git', ...args], {
     cwd,
-    env: {
-      ...process.env,
+    env: hermeticGitEnv({
       GIT_AUTHOR_NAME: 'Skillsmith undo fixture',
       GIT_AUTHOR_EMAIL: 'undo@skillsmith.test',
       GIT_COMMITTER_NAME: 'Skillsmith undo fixture',
       GIT_COMMITTER_EMAIL: 'undo@skillsmith.test',
       GIT_CONFIG_NOSYSTEM: '1',
-    },
+    }),
     stdout: 'pipe',
     stderr: 'pipe',
   });
@@ -113,6 +113,7 @@ const sourceFor = async (fleet: UndoFleet, skill: string): Promise<string> => {
   runGit(fleet.sourceRepository, ['add', '-A']);
   const diff = Bun.spawnSync(['git', 'diff', '--cached', '--quiet'], {
     cwd: fleet.sourceRepository,
+    env: hermeticGitEnv(),
     stdout: 'ignore',
     stderr: 'ignore',
   });
@@ -246,7 +247,10 @@ export const spawnUndoCli = (
 ) =>
   Bun.spawn([process.execPath, CLI_ENTRYPOINT, ...args], {
     cwd: fleet.cwd,
-    env: { ...process.env, ...fleet.env, ...extraEnv },
+    env: hermeticGitEnv(
+      { ...fleet.env, ...extraEnv },
+      { globalConfigPath: fleet.env.GIT_CONFIG_GLOBAL },
+    ),
     stdin: 'ignore',
     stdout: 'pipe',
     stderr: 'pipe',
