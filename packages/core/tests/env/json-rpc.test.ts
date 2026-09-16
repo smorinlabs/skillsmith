@@ -34,9 +34,12 @@ const descendantFixture = async (launcherExits = false, detachedChild = false) =
     "const fs = require('node:fs');",
     `const heartbeat = ${JSON.stringify(heartbeat)};`,
     'let tick = 0;',
-    'const write = () => fs.writeFileSync(heartbeat, JSON.stringify({ pid: process.pid, tick: ++tick }));',
+    'const write = () => {',
+    '  fs.writeFileSync(heartbeat + ".next", JSON.stringify({ pid: process.pid, tick: ++tick }));',
+    '  fs.renameSync(heartbeat + ".next", heartbeat);',
+    '};',
     'write(); const interval = setInterval(write, 20);',
-    'setTimeout(() => clearInterval(interval), 2500);',
+    'setTimeout(() => clearInterval(interval), 10000);',
   ].join('\n');
   const launcher = [
     `const child = Bun.spawn([process.execPath, "-e", ${JSON.stringify(descendant)}],`,
@@ -46,6 +49,19 @@ const descendantFixture = async (launcherExits = false, detachedChild = false) =
   return {
     heartbeat,
     launcher,
+    ready: async () => {
+      const deadline = performance.now() + 1500;
+      while (performance.now() < deadline) {
+        try {
+          const value = JSON.parse(await readFile(heartbeat, 'utf8')) as { pid: number };
+          if (Number.isSafeInteger(value.pid) && value.pid > 1) return;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        }
+        await Bun.sleep(10);
+      }
+      throw new Error('descendant fixture did not become ready within 1500 ms');
+    },
     cleanup: async () => {
       try {
         const { pid } = JSON.parse(await readFile(heartbeat, 'utf8')) as { pid: number };
@@ -69,38 +85,45 @@ describe('bounded JSON-RPC process exchange', () => {
     'deadline bounds descendant-held pipes even when launcher exits first: %s',
     async (launcherExits) => {
       const fixture = await descendantFixture(launcherExits);
+      const started = performance.now();
+      const exchange = execCommand(process.execPath, ['-e', fixture.launcher], {
+        jsonRpc: messages,
+        timeoutMs: 2000,
+      });
       try {
-        const started = performance.now();
-        const result = await execCommand(process.execPath, ['-e', fixture.launcher], {
-          jsonRpc: messages,
-          timeoutMs: 200,
-        });
+        await fixture.ready();
+        expect(performance.now() - started).toBeLessThan(2000);
+        const result = await exchange;
         expect(result.timedOut).toBe(true);
         expect(result.protocolError).toContain('deadline');
-        expect(performance.now() - started).toBeLessThan(1200);
+        expect(performance.now() - started).toBeLessThan(3500);
         const heartbeat = await readFile(fixture.heartbeat, 'utf8');
         await Bun.sleep(100);
         expect(await readFile(fixture.heartbeat, 'utf8')).toBe(heartbeat);
       } finally {
+        await exchange;
         await fixture.cleanup();
       }
     },
+    15000,
   );
 
   test('cancellation bounds descendant-held pipes and stops the owned group', async () => {
     const fixture = await descendantFixture();
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 200);
+    const exchange = execCommand(process.execPath, ['-e', fixture.launcher], {
+      jsonRpc: messages,
+      timeoutMs: 5000,
+      signal: controller.signal,
+    }).then(
+      (result) => ({ result, error: undefined }),
+      (error: unknown) => ({ result: undefined, error }),
+    );
     try {
+      await fixture.ready();
       const started = performance.now();
-      const outcome = await execCommand(process.execPath, ['-e', fixture.launcher], {
-        jsonRpc: messages,
-        timeoutMs: 2000,
-        signal: controller.signal,
-      }).then(
-        (result) => ({ result, error: undefined }),
-        (error: unknown) => ({ result: undefined, error }),
-      );
+      controller.abort();
+      const outcome = await exchange;
       expect(performance.now() - started).toBeLessThan(1200);
       expect(outcome.result?.protocolError).toBe('cancelled');
       expect(outcome.result?.timedOut).toBe(false);
@@ -108,26 +131,31 @@ describe('bounded JSON-RPC process exchange', () => {
       await Bun.sleep(100);
       expect(await readFile(fixture.heartbeat, 'utf8')).toBe(heartbeat);
     } finally {
-      clearTimeout(timer);
+      controller.abort();
+      await exchange;
       await fixture.cleanup();
     }
   });
 
   test('reader cleanup bounds a deliberately detached fixture descendant', async () => {
     const fixture = await descendantFixture(false, true);
+    const started = performance.now();
+    const exchange = execCommand(process.execPath, ['-e', fixture.launcher], {
+      jsonRpc: messages,
+      timeoutMs: 2000,
+    });
     try {
-      const started = performance.now();
-      const result = await execCommand(process.execPath, ['-e', fixture.launcher], {
-        jsonRpc: messages,
-        timeoutMs: 200,
-      });
+      await fixture.ready();
+      expect(performance.now() - started).toBeLessThan(2000);
+      const result = await exchange;
       expect(result.timedOut).toBe(true);
-      expect(performance.now() - started).toBeLessThan(1200);
+      expect(performance.now() - started).toBeLessThan(3500);
     } finally {
       // An escaped process group is outside transport ownership; this fixture owns its cleanup.
+      await exchange;
       await fixture.cleanup();
     }
-  });
+  }, 15000);
   test('waits for initialize, then notifies, requests, and closes stdin after the result', async () => {
     const result = await execCommand(process.execPath, ['-e', SERVER], {
       jsonRpc: messages,
