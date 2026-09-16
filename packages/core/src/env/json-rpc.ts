@@ -2,6 +2,7 @@ import type { ExecOptions, ExecResult } from './types.ts';
 
 const STDOUT_LIMIT = 1024 * 1024;
 const STDERR_LIMIT = 16 * 1024;
+const CLEANUP_GRACE_MS = 250;
 
 /** A finite request/response exchange; no model/tool methods are supplied by this transport. */
 export const execJsonRpcCommand = async (
@@ -33,21 +34,59 @@ export const execJsonRpcCommand = async (
 
   let timedOut = false;
   let protocolError: string | undefined;
+  let stdout = '';
+  let stderr = '';
   let complete = false;
   let next = 0;
   let waitingId: number | undefined;
   let pending = '';
   try {
+    // Supported Linux/macOS hosts get an owned session/process group, including launcher children.
+    const ownsProcessGroup = process.platform !== 'win32';
     const proc = Bun.spawn([command, ...args], {
       ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
       env,
+      detached: ownsProcessGroup,
       stdin: 'pipe',
       stdout: 'pipe',
       stderr: 'pipe',
     });
+    const readers = new Set<{ cancel(reason?: unknown): Promise<void> }>();
+    let terminated = false;
+    let notifyFailure: () => void = () => {};
+    const failed = new Promise<void>((resolve) => {
+      notifyFailure = resolve;
+    });
+    const terminate = (): void => {
+      if (terminated) return;
+      terminated = true;
+      try {
+        proc.stdin.end();
+      } catch {
+        /* already closed */
+      }
+      if (ownsProcessGroup) {
+        // The leader may already have exited while a descendant retains its pipes.
+        try {
+          process.kill(-proc.pid, 'SIGKILL');
+        } catch {
+          /* group already gone */
+        }
+      }
+      if (proc.exitCode === null) {
+        try {
+          proc.kill('SIGKILL');
+        } catch {
+          /* already exited */
+        }
+      }
+      // An inherited descriptor (even outside the owned group) must not defeat the deadline.
+      for (const reader of readers) void reader.cancel().catch(() => {});
+    };
     const fail = (reason: string): void => {
       protocolError ??= reason;
-      proc.kill('SIGKILL');
+      terminate();
+      notifyFailure();
     };
     const onAbort = (): void => fail('cancelled');
     const timer = setTimeout(() => {
@@ -112,50 +151,90 @@ export const execJsonRpcCommand = async (
     const read = async (
       stream: ReadableStream<Uint8Array>,
       limit: number,
+      capture: (text: string) => void,
       onText?: (text: string) => void,
-    ): Promise<string> => {
+    ): Promise<void> => {
       const reader = stream.getReader();
+      readers.add(reader);
       const decoder = new TextDecoder();
       let bytes = 0;
-      let result = '';
       try {
-        for (;;) {
+        while (!terminated) {
           const chunk = await reader.read();
-          if (chunk.done) return result + decoder.decode();
+          if (chunk.done) {
+            capture(decoder.decode());
+            return;
+          }
           const available = Math.max(0, limit - bytes);
           const text = decoder.decode(chunk.value.subarray(0, available), { stream: true });
           bytes += chunk.value.byteLength;
-          result += text;
+          capture(text);
           if (bytes > limit) fail('output limit exceeded');
           else onText?.(text);
         }
       } finally {
+        readers.delete(reader);
         reader.releaseLock();
       }
     };
     try {
-      if (options.signal?.aborted) onAbort();
-      else sendNext();
-      const [code, stdout, stderr] = await Promise.all([
+      const completion = Promise.all([
         proc.exited,
-        read(proc.stdout, STDOUT_LIMIT, receive),
-        read(proc.stderr, STDERR_LIMIT),
-      ]);
+        read(
+          proc.stdout,
+          STDOUT_LIMIT,
+          (text) => {
+            stdout += text;
+          },
+          receive,
+        ),
+        read(proc.stderr, STDERR_LIMIT, (text) => {
+          stderr += text;
+        }),
+      ]).then(
+        ([code]) => code,
+        () => {
+          fail('process stream failed');
+          return -1;
+        },
+      );
+      const cleanup = failed.then(async () => {
+        let cleanupTimer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          return await Promise.race([
+            completion,
+            new Promise<number>((resolve) => {
+              cleanupTimer = setTimeout(() => {
+                proc.unref();
+                resolve(-1);
+              }, CLEANUP_GRACE_MS);
+            }),
+          ]);
+        } finally {
+          clearTimeout(cleanupTimer);
+        }
+      });
+      if (options.signal?.aborted) onAbort();
+      else {
+        try {
+          sendNext();
+        } catch {
+          fail('process input failed');
+        }
+      }
+      const code = await Promise.race([completion, cleanup]);
       if (!complete) protocolError ??= 'incomplete exchange';
       return { code, stdout, stderr, timedOut, ...(protocolError ? { protocolError } : {}) };
     } finally {
       clearTimeout(timer);
       options.signal?.removeEventListener('abort', onAbort);
-      if (proc.exitCode === null) {
-        proc.kill('SIGKILL');
-        await proc.exited;
-      }
+      terminate();
     }
   } catch {
     return {
       code: -1,
-      stdout: '',
-      stderr: '',
+      stdout,
+      stderr,
       timedOut,
       protocolError: protocolError ?? 'process exchange failed',
     };

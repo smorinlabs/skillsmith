@@ -352,16 +352,34 @@ const runDeepMode = async (
       ],
       ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
     });
-    if (result.timedOut || result.code !== 0 || result.protocolError) {
-      return deepErrorResult(
+    const analyzed = analyzeCodexSkills(result.stdout, realProj, expected);
+    const executionFailed = result.timedOut || result.code !== 0 || result.protocolError;
+    if (executionFailed) {
+      const diagnostic = deepErrorResult(
         result.timedOut ? 'timeout' : 'exec-error',
         sanitizeDeepDiagnostic(
           `executable=${binary}; phase=local-loader; exit=${result.code}; timeout=${result.timedOut}; ${result.protocolError ?? ''}; stderr: ${result.stderr}`,
           [proj, realProj, home],
         ),
       );
+      // A validated exact-target rejection remains a failure even if shutdown is incomplete.
+      // A successful-looking transcript still cannot establish pass after execution failure.
+      if (
+        !('error' in analyzed) &&
+        analyzed.findings.some((finding) => finding.normalizedSeverity === 'error')
+      ) {
+        return {
+          mode: 'deep',
+          status: 'ran',
+          skipReason: null,
+          coverage: { manifest: false, skills: analyzed.complete },
+          verdict: 'fail',
+          command: DEEP_COMMAND,
+          findings: [...analyzed.findings, ...diagnostic.findings],
+        };
+      }
+      return diagnostic;
     }
-    const analyzed = analyzeCodexSkills(result.stdout, realProj, expected);
     if ('error' in analyzed) return deepErrorResult('exec-error', analyzed.error);
     const hasFailure = analyzed.findings.some((finding) => finding.normalizedSeverity === 'error');
     if (!analyzed.complete && !hasFailure) {

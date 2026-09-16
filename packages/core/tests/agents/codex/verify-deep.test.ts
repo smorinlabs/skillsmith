@@ -274,6 +274,63 @@ describe('verifyCodex deep mode', () => {
     expect(deep.verdict).toBe('fail');
   });
 
+  test.each([{ code: 1 }, { timedOut: true }, { protocolError: 'process stream failed' }])(
+    'validated artifact failure survives abnormal shutdown: %j',
+    async (failure) => {
+      const { deep, tool } = await probe(
+        (proj) => ({
+          ...failure,
+          stdout: reply(proj, loaded(proj).slice(1), [
+            { path: loaded(proj)[0]?.path, message: 'invalid skill' },
+          ]),
+          stderr: 'loader shutdown token=private-value',
+        }),
+        { combined: true },
+      );
+      expect(deep.status).toBe('ran');
+      expect(deep.verdict).toBe('fail');
+      expect(tool.verdict).toBe('fail');
+      expect(deep.coverage.skills).toBe(true);
+      expect(deep.findings.some((finding) => finding.checkId === 'codex.skill-load')).toBe(true);
+      expect(deep.findings.some((finding) => finding.checkId === 'codex.deep-probe')).toBe(true);
+      expect(JSON.stringify(deep)).not.toContain('private-value');
+    },
+  );
+
+  test.each([{ code: 1 }, { timedOut: true }, { protocolError: 'process stream failed' }])(
+    'successful-looking output cannot pass after abnormal shutdown: %j',
+    async (failure) => {
+      const { deep, tool } = await probe((proj) => ({ ...failure, stdout: reply(proj) }));
+      expect(deep.status).toBe('error');
+      expect(deep.verdict).toBeNull();
+      expect(tool.verdict).toBe('inconclusive');
+    },
+  );
+
+  test.each(['missing-init', 'reordered', 'method-on-response', 'unknown-id', 'error-field'])(
+    'unvalidated transcript cannot establish artifact failure after shutdown: %s',
+    async (corruption) => {
+      const { deep, tool } = await probe((proj) => {
+        const lines = reply(proj, [], [{ path: loaded(proj)[0]?.path, message: 'invalid skill' }])
+          .trim()
+          .split('\n');
+        if (corruption === 'missing-init') lines.shift();
+        if (corruption === 'reordered') lines.reverse();
+        if (corruption === 'method-on-response') {
+          lines[1] = JSON.stringify({ ...JSON.parse(lines[1] ?? '{}'), method: 'untrusted' });
+        }
+        if (corruption === 'unknown-id') lines.unshift('{"id":99,"result":{}}');
+        if (corruption === 'error-field') {
+          lines[0] = JSON.stringify({ ...JSON.parse(lines[0] ?? '{}'), error: null });
+        }
+        return { code: 1, protocolError: 'unexpected response', stdout: `${lines.join('\n')}\n` };
+      });
+      expect(deep.status).toBe('error');
+      expect(tool.verdict).toBe('inconclusive');
+      expect(deep.findings.some((finding) => finding.checkId === 'codex.skill-load')).toBe(false);
+    },
+  );
+
   test.each([
     'garbage',
     '{"id":2,"result":{"data":[]}}',
