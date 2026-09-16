@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -30,6 +30,7 @@ createInterface({input:process.stdin}).on('line', line => {
 const descendantFixture = async (launcherExits = false, detachedChild = false) => {
   const root = await mkdtemp(join(tmpdir(), 'skillsmith-rpc-descendant-'));
   const heartbeat = join(root, 'heartbeat.json');
+  const launcherPid = join(root, 'launcher.pid');
   const descendant = [
     "const fs = require('node:fs');",
     `const heartbeat = ${JSON.stringify(heartbeat)};`,
@@ -39,9 +40,10 @@ const descendantFixture = async (launcherExits = false, detachedChild = false) =
     '  fs.renameSync(heartbeat + ".next", heartbeat);',
     '};',
     'write(); const interval = setInterval(write, 20);',
-    'setTimeout(() => clearInterval(interval), 10000);',
+    'setTimeout(() => clearInterval(interval), 30000);',
   ].join('\n');
   const launcher = [
+    `require('node:fs').writeFileSync(${JSON.stringify(launcherPid)}, String(process.pid));`,
     `const child = Bun.spawn([process.execPath, "-e", ${JSON.stringify(descendant)}],`,
     `{ stdin: "ignore", stdout: "inherit", stderr: "inherit", detached: ${detachedChild} });`,
     launcherExits ? 'child.unref();' : 'setInterval(() => {}, 1000);',
@@ -50,17 +52,27 @@ const descendantFixture = async (launcherExits = false, detachedChild = false) =
     heartbeat,
     launcher,
     ready: async () => {
-      const deadline = performance.now() + 1500;
+      const deadline = performance.now() + 5000;
       while (performance.now() < deadline) {
         try {
           const value = JSON.parse(await readFile(heartbeat, 'utf8')) as { pid: number };
-          if (Number.isSafeInteger(value.pid) && value.pid > 1) return;
+          if (Number.isSafeInteger(value.pid) && value.pid > 1) {
+            if (!launcherExits) return;
+            const pid = Number(await readFile(launcherPid, 'utf8'));
+            if (!Number.isSafeInteger(pid) || pid <= 1) throw new Error('invalid fixture PID');
+            try {
+              process.kill(pid, 0);
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code === 'ESRCH') return;
+              throw error;
+            }
+          }
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
         }
         await Bun.sleep(10);
       }
-      throw new Error('descendant fixture did not become ready within 1500 ms');
+      throw new Error('descendant fixture did not become ready within 5000 ms');
     },
     cleanup: async () => {
       try {
@@ -80,27 +92,56 @@ const descendantFixture = async (launcherExits = false, detachedChild = false) =
   };
 };
 
+// Control when this deadline fires, not what it does: child startup is not the behavior under test.
+// The separate real-clock deadline test below still verifies ordinary timer scheduling.
+const startDeadlineFixture = (launcher: string) => {
+  const realSetTimeout = globalThis.setTimeout;
+  let expire: (() => void) | undefined;
+  let deadlines = 0;
+  const controlledSetTimeout = Object.assign(
+    (...parameters: Parameters<typeof setTimeout>) => {
+      const [callback, delay, ...args] = parameters;
+      if (delay === 20000) {
+        deadlines++;
+        expire = () => callback(...args);
+      }
+      return realSetTimeout(callback, delay, ...args);
+    },
+    { __promisify__: realSetTimeout.__promisify__ },
+  );
+  const timer = spyOn(globalThis, 'setTimeout').mockImplementation(controlledSetTimeout);
+  try {
+    const exchange = execCommand(process.execPath, ['-e', launcher], {
+      jsonRpc: messages,
+      timeoutMs: 20000,
+    });
+    if (!expire || deadlines !== 1) throw new Error('transport did not arm exactly one deadline');
+    return { exchange, expire };
+  } finally {
+    timer.mockRestore();
+  }
+};
+
 describe('bounded JSON-RPC process exchange', () => {
   test.each([false, true])(
-    'deadline bounds descendant-held pipes even when launcher exits first: %s',
+    'controlled deadline bounds descendant-held pipes when launcher exits first: %s',
     async (launcherExits) => {
       const fixture = await descendantFixture(launcherExits);
-      const started = performance.now();
-      const exchange = execCommand(process.execPath, ['-e', fixture.launcher], {
-        jsonRpc: messages,
-        timeoutMs: 2000,
-      });
+      const { exchange, expire } = startDeadlineFixture(fixture.launcher);
       try {
         await fixture.ready();
-        expect(performance.now() - started).toBeLessThan(2000);
+        const started = performance.now();
+        expire();
         const result = await exchange;
         expect(result.timedOut).toBe(true);
         expect(result.protocolError).toContain('deadline');
-        expect(performance.now() - started).toBeLessThan(3500);
+        if (launcherExits) expect(result.code).toBe(0);
+        expect(performance.now() - started).toBeLessThan(1200);
         const heartbeat = await readFile(fixture.heartbeat, 'utf8');
         await Bun.sleep(100);
         expect(await readFile(fixture.heartbeat, 'utf8')).toBe(heartbeat);
       } finally {
+        expire();
         await exchange;
         await fixture.cleanup();
       }
@@ -113,7 +154,7 @@ describe('bounded JSON-RPC process exchange', () => {
     const controller = new AbortController();
     const exchange = execCommand(process.execPath, ['-e', fixture.launcher], {
       jsonRpc: messages,
-      timeoutMs: 5000,
+      timeoutMs: 10000,
       signal: controller.signal,
     }).then(
       (result) => ({ result, error: undefined }),
@@ -135,23 +176,21 @@ describe('bounded JSON-RPC process exchange', () => {
       await exchange;
       await fixture.cleanup();
     }
-  });
+  }, 15000);
 
-  test('reader cleanup bounds a deliberately detached fixture descendant', async () => {
+  test('controlled deadline bounds pipes from a deliberately detached fixture descendant', async () => {
     const fixture = await descendantFixture(false, true);
-    const started = performance.now();
-    const exchange = execCommand(process.execPath, ['-e', fixture.launcher], {
-      jsonRpc: messages,
-      timeoutMs: 2000,
-    });
+    const { exchange, expire } = startDeadlineFixture(fixture.launcher);
     try {
       await fixture.ready();
-      expect(performance.now() - started).toBeLessThan(2000);
+      const started = performance.now();
+      expire();
       const result = await exchange;
       expect(result.timedOut).toBe(true);
-      expect(performance.now() - started).toBeLessThan(3500);
+      expect(performance.now() - started).toBeLessThan(1200);
     } finally {
       // An escaped process group is outside transport ownership; this fixture owns its cleanup.
+      expire();
       await exchange;
       await fixture.cleanup();
     }
