@@ -332,3 +332,55 @@ Product tasks remain in progress until affected-line carry-forward, review and i
   Preserve the validated P17 tree; its branch-local records are earlier snapshots.
   This canonical main-based record plus tracking issue #51 owns the final receipt
   and remaining handoff. Neither P19 nor the original P17 release objective is complete.
+
+## 2026-09-15 — Q2 execution and independent review corrections
+
+- Direction is recorded separately from execution:
+  [Q1.A](https://github.com/smorinlabs/skillsmith/issues/41#issuecomment-5689778855)
+  keeps per-tool conflicts and puts informational cross-tool reporting in a separate PR;
+  [Q2.A](https://github.com/smorinlabs/skillsmith/issues/51#issuecomment-5689864463)
+  approves narrowly separating release qualification from automatic product PR CI and opening
+  the maintenance PR into `agent/p17-execution`. #41 stays open; #44 stays draft.
+- P17 CI-only `ffd1cbaec2f3380fea51055ca46888b9f1c43ccf` retains canonical ordinary
+  checks, PR-title validation and all three native build/smoke lanes. Only Candidate-cask
+  qualification and its dedicated setup move to the guarded manual release workflow.
+  TS06: 11 pass / 197 assertions; TS01 family 10: 1 pass / 19 assertions; smoke:
+  5 pass / 3,737 assertions. Type-checking, actionlint and commit hooks pass.
+  Independent read-only review approved the exact CI commit. No workflow dispatch,
+  candidate qualification, publication or release-gate completion is claimed.
+- F13/F14 source corrections: main `5adb299b29c31011b12c9341ea5a789b16d6aba6`;
+  P17 F13-F16 corrections: `b33c2249a4a1709497020001540662e87b68995d`.
+  The previous transport exceeded a 200 ms deadline by waiting roughly 2.5 seconds
+  for a self-expiring descendant. Owned process-group termination, reader cancellation
+  and bounded cleanup now return promptly. A reviewer independently measured 110 ms
+  against a 100 ms deadline. Linux/macOS process-group ownership is intended; Windows
+  process-tree parity is not asserted.
+- Exact-target artifact failures previously became inconclusive after nonzero shutdown.
+  New regressions first failed, then pass for exit, timeout and stream error, retaining
+  sanitized diagnostics. Successful-looking abnormal results remain inconclusive.
+  Invalid initialization/order/ID/error-field transcripts cannot establish artifact failure.
+  P17 cancellation now reaches the existing runVerify boundary and removes temporary staging.
+- F16 uses a test-only preload shared by init, doctor and verify. Synthetic global
+  Codex paths are discovered without isolation and excluded with it; trace assertions
+  prove the real CLI fixture uses the preload. Production discovery, host tools and
+  original CLI result/repair assertions are unchanged. Main focused owners: 41 pass;
+  P17 five affected owners: 144 pass / 1,513 assertions in 40.67 seconds.
+  Type-checking and affected-source ESLint passed on both branches.
+- Review caught F17, a new test startup race. A first readiness-window correction
+  passed isolated runs but failed overlapping runs (including 39 pass / 2 fail in review);
+  it was not accepted as reliable. Final correction is main
+  `27c67e9adc6818949342ac540aa0dbd312ae4496` / P17
+  `01d09a98fcfa1fa47017fb2096b085f5661176a5`: atomic heartbeat, bounded child readiness,
+  synchronous restoration of a narrowly captured deadline timer, retained real watchdog,
+  explicit exited-launcher proof and unchanged separate real-clock deadline test.
+  Final independent main replay: 41 pass / 0 fail / 721 assertions, 948 ms.
+  P17 transport replay: 12 pass / 0 fail / 32 assertions, 773 ms.
+  Independent review approved the final equivalent fixture changes on both branches.
+- Independent source review found no remaining blocking correction. P17 reviewer also
+  ran 59 focused tests / 826 assertions with no failures before the final fixture
+  correction. Execution evidence is Linux/Bun 1.3.14; macOS remains a remote CI obligation.
+- These are focused review receipts, not a replacement for exact-head full gates.
+  The next clean administrative heads must pass ordinary/security checks before the
+  authorized pushes. Preserve old complete-gate receipts as history. Live integration
+  and issue-closure receipts are recorded on [P19 #51](https://github.com/smorinlabs/skillsmith/issues/51).
+  No issue is auto-closed; PUB-00..08 and original P17 release completion remain pending.

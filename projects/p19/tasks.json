@@ -60,7 +60,8 @@
     },
     {
       "id": "P19-T14",
-      "status": "in-progress"
+      "status": "in-progress",
+      "decisionRecord": "https://github.com/smorinlabs/skillsmith/issues/51#issuecomment-5689864463"
     },
     {
       "id": "P19-T15",
@@ -318,7 +319,8 @@
       "pullRequest": 66,
       "ordinaryLocalGate": "passed: 1047 pass, 28 existing live skips, 0 fail, 4971 assertions, 129 files; frozen install/secrets/audit/security lint passed",
       "githubCi": "passed on ubuntu-latest and macos-latest at 7c8d865; run 34956291881",
-      "review": "Independent read-only Codex review at 7c8d865 requested changes: process-tree deadline and dropped invalid-artifact evidence (REVIEW.md F13/F14). Corrected-head sign-off pending; reviewers have standing approval.",
+      "codeHead": "27c67e9adc6818949342ac540aa0dbd312ae4496",
+      "review": "F13/F14 runtime corrections at 5adb299 and final F17 fixture correction at 27c67e9 independently approved. Final reviewer replay: 41 pass, 0 fail, 721 assertions. Exact-head full gates/CI/integration pending. Reviewers have standing approval.",
       "latestReceipts": "https://github.com/smorinlabs/skillsmith/issues/51"
     },
     "p17": {
@@ -339,17 +341,19 @@
         "bun": "1.3.14",
         "manifestSha256": "bb0c3d601779accad270a2c3263128ba5ea723c8d74081ec6171c71a583e2d1c"
       },
-      "review": "Independent read-only Codex review at d786739 requested changes: REVIEW.md F13-F16. Corrected-head sign-off pending; reviewers have standing approval.",
+      "codeHead": "01d09a98fcfa1fa47017fb2096b085f5661176a5",
+      "review": "F13-F16 independently approved at b33c224; affected owners passed 144 tests. F17 fixture correction independently approved at 01d09a9; transport owner 12 pass/0 fail. Exact-head full gates/CI/integration pending. CI-only ffd1cba independently approved; no release qualification executed.",
       "pullRequest": null,
-      "integrationHold": "Current P17 PR CI automatically invokes deferred Candidate-cask qualification; product-only CI separation or scope decision needed before PR creation. No ordinary CI was disabled or weakened.",
+      "integrationHold": "Q2.A approved and CI separation implemented at ffd1cba. After remaining correction/review/full gates, open maintenance PR against agent/p17-execution. PR #44 remains draft; qualification stays deferred, not passed.",
+      "decisionRecord": "https://github.com/smorinlabs/skillsmith/issues/51#issuecomment-5689864463",
       "security": "passed at d786739: full-history secrets scan (895 commits), fresh dependency audit and exact hook security lint; existing reviewed 37-finding suppression baseline unchanged",
       "diagnosticHead": "08719851938d4bec06fac72f5e5e3cb6b7c563a3",
       "latestReceipts": "https://github.com/smorinlabs/skillsmith/issues/51"
     },
     "remainingCloseout": [
-      "Correct independent review findings F13-F16 under #61/#64/#67, then obtain corrected-head sign-off; Codex and Claude Code reviewers have standing user approval",
+      "F13-F17 corrections independently approved under #61/#64/#67; complete exact-head full gates, current CI and integration. Codex and Claude Code reviewers have standing approval",
       "Q1.A decided: retain per-tool conflicts and deliver informational cross-tool name reporting in a separate follow-up PR; #41 stays open and this addition does not block PR #66",
-      "Approved product-only P17 PR/CI path, then exact integration-head validation and affected-line integration",
+      "Q2.A decided and implemented: product-only P17 PR against agent/p17-execution after exact integration-head validation; #44 remains draft and release qualification deferred",
       "Close product issues only after acceptance; keep PUB-00..08 deferred and #57/#60/#63 follow-ups open"
     ]
   }

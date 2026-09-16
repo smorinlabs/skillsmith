@@ -210,9 +210,11 @@ it does not resume PUB tasks:
    heads. Codex and Claude Code reviewers have standing user approval.
 2. Follow Q1.A above: keep #41 open for informational cross-tool name reporting in a separate
    follow-up PR, without changing per-tool conflicts or holding PR #66 for that addition.
-3. Obtain a scope decision for a product-only P17 PR path: its current PR CI automatically
-   invokes deferred Candidate-cask qualification. Keep the branch saved until that decision;
-   any approved separation must retain ordinary CI requirements and truthful release status.
+3. Execute [Q2.A](https://github.com/smorinlabs/skillsmith/issues/51#issuecomment-5689864463):
+   move only Candidate-cask qualification and its dedicated setup behind an explicit guarded
+   manual release trigger. Retain canonical ordinary checks, title validation and every native
+   build/smoke lane. After bug corrections and validation, open the maintenance PR against
+   `agent/p17-execution`, not main; keep #44 draft and all release completion requirements pending.
 4. Resolve findings, rerun gates in proportion to changes and at integration heads, integrate
    accepted work into both maintained lines, and then close supported bug/task checkboxes.
 5. Leave PUB-00..08 deferred and historical/investigation follow-ups #57/#60/#63 explicitly

@@ -67,14 +67,31 @@ review, acceptance and integration. Before closing them:
 2. Follow the [separate reporting PR decision, Q1.A](https://github.com/smorinlabs/skillsmith/issues/41#issuecomment-5689778855):
    preserve per-tool conflict semantics and retain informational cross-tool name reporting in
    a separate follow-up PR. Keep #41 open until delivered; PR #66 need not wait for that addition.
-3. Decide the product-only P17 PR/CI path. Existing PR CI automatically runs deferred
-   Candidate-cask qualification, so the branch is saved without opening a PR or changing CI.
+3. Follow the [approved product-only P17 path, Q2.A](https://github.com/smorinlabs/skillsmith/issues/51#issuecomment-5689864463):
+   separate release qualification from automatic PR CI, retain ordinary checks and native
+   build/smoke, and open `agent/p19-p17-fixes` against `agent/p17-execution` after validation.
+   PR #44 remains draft. Release qualification remains required before a future release.
 4. Correct any new review findings, validate exact integration heads, integrate accepted fixes
    into both affected lines, then close only the issues whose acceptance is fully met.
 
 Follow-ups #57 (unreproduced Bun failure), #60 (historical P09 review receipt), and #63
 (P13 owner/wiring proof) remain open with explicit dispositions. No publishing task is resumed,
 no bug issue is closed, and neither P19 nor the original P17 release objective is complete.
+
+### Q2 implementation and review correction checkpoint
+
+CI separation is committed on P17 at `ffd1cba` and independently approved. Only the
+Homebrew candidate install/upgrade qualification and its dedicated setup moved to a guarded
+manual release-only workflow; no qualification was executed or counted passed.
+Runtime review corrections are committed on main at `5adb299` and P17 at `b33c224`.
+Main's two affected owners passed 41 tests; P17's five affected owners passed 144 tests,
+including the global-tool isolation controls. Type-checking and affected-source lint passed.
+Review then exposed a startup race in the new descendant fixture. The final correction at main
+`27c67e9` / P17 `01d09a9` is independently approved: main replay 41 pass, 0 fail, 721 assertions;
+P17's equivalent fixture differs only in its existing execution/cancellation contract.
+Exact-head full gates and remote integration remain required. These focused
+results do not replace the older full-gate receipts above. Latest integration receipts belong
+to [P19 #51](https://github.com/smorinlabs/skillsmith/issues/51).
 
 ## Deferred task inventory
 
