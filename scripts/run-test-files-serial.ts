@@ -295,7 +295,7 @@ export async function main(): Promise<void> {
       console.log(`[${index + 1}/${total}] ${file}`);
       const child = Bun.spawn(command, {
         cwd: repositoryRoot,
-        env: { ...process.env, TMPDIR: runRoot },
+        env: { ...gitEnvironment, TMPDIR: runRoot },
         stderr: 'inherit',
         stdout: 'inherit',
       });
