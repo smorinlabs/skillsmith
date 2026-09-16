@@ -247,10 +247,13 @@ export const spawnUndoCli = (
 ) =>
   Bun.spawn([process.execPath, CLI_ENTRYPOINT, ...args], {
     cwd: fleet.cwd,
-    env: hermeticGitEnv(
-      { ...fleet.env, ...extraEnv },
-      { globalConfigPath: fleet.env.GIT_CONFIG_GLOBAL },
-    ),
+    env:
+      fleet.env.GIT_CONFIG_GLOBAL === undefined
+        ? hermeticGitEnv({ ...fleet.env, ...extraEnv })
+        : hermeticGitEnv(
+            { ...fleet.env, ...extraEnv },
+            { globalConfigPath: fleet.env.GIT_CONFIG_GLOBAL },
+          ),
     stdin: 'ignore',
     stdout: 'pipe',
     stderr: 'pipe',
