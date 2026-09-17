@@ -1,10 +1,16 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { createHash } from 'node:crypto';
 import {
+  copyFileSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
+  realpathSync,
   renameSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -123,22 +129,137 @@ function temporaryFile(prefix: string, name: string): string {
   return resolve(directory, name);
 }
 
+type CatalogRepository = {
+  root: string;
+  home: string;
+  catalog: string;
+  checklist: string;
+};
+
+function isolatedCatalogEnvironment(
+  repository: CatalogRepository,
+  overrides: Readonly<Record<string, string | undefined>> = {},
+): Record<string, string | undefined> {
+  const environment = { ...process.env, ...overrides };
+  for (const name of Object.keys(environment)) {
+    if (name.startsWith('GIT_') || name.startsWith('P17_')) delete environment[name];
+  }
+  return {
+    ...environment,
+    HOME: repository.home,
+    XDG_CONFIG_HOME: resolve(repository.home, 'config'),
+    XDG_CACHE_HOME: resolve(repository.home, 'cache'),
+    XDG_DATA_HOME: resolve(repository.home, 'data'),
+    GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_CONFIG_SYSTEM: '/dev/null',
+    GIT_OPTIONAL_LOCKS: '0',
+    P17_CATALOG_PATH: repository.catalog,
+    P17_CHECKLIST_PATH: repository.checklist,
+  };
+}
+
+function isolatedCatalogGit(repository: CatalogRepository, cwd: string, args: string[]): string {
+  const result = Bun.spawnSync(
+    ['git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', ...args],
+    {
+      cwd,
+      env: isolatedCatalogEnvironment(repository),
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: 30_000,
+    },
+  );
+  if (result.exitCode !== 0) {
+    throw new Error(`isolated catalog Git failed: ${result.stderr.toString()}`);
+  }
+  return result.stdout.toString().trim();
+}
+
+function isolatedCatalogRepository(directory: string): CatalogRepository {
+  const repository = {
+    root: resolve(directory, 'repository'),
+    home: resolve(directory, 'home'),
+    catalog: resolve(directory, 'catalog.json'),
+    checklist: resolve(directory, 'CHECKLIST.md'),
+  };
+  mkdirSync(repository.home);
+  const head = isolatedCatalogGit(repository, root, ['rev-parse', '--verify', 'HEAD']);
+  isolatedCatalogGit(repository, root, [
+    'clone',
+    '--no-local',
+    '--no-hardlinks',
+    '--no-checkout',
+    root,
+    repository.root,
+  ]);
+  isolatedCatalogGit(repository, repository.root, ['checkout', '--quiet', '--detach', head]);
+  expect(isolatedCatalogGit(repository, repository.root, ['rev-parse', 'HEAD'])).toBe(head);
+  expect(
+    realpathSync(isolatedCatalogGit(repository, repository.root, ['rev-parse', '--show-toplevel'])),
+  ).toBe(realpathSync(repository.root));
+  const innerGit = isolatedCatalogGit(repository, repository.root, [
+    'rev-parse',
+    '--absolute-git-dir',
+  ]);
+  expect(realpathSync(innerGit)).toBe(realpathSync(resolve(repository.root, '.git')));
+  expect(realpathSync(repository.root)).not.toBe(realpathSync(root));
+  expect(
+    isolatedCatalogGit(repository, repository.root, [
+      'rev-parse',
+      '--path-format=absolute',
+      '--git-common-dir',
+    ]),
+  ).toBe(innerGit);
+  expect(existsSync(resolve(innerGit, 'objects/info/alternates'))).toBeFalse();
+  // Exercise the current validator and its runtime imports, including a dirty implementation.
+  for (const path of [
+    'scripts/p17-catalog.ts',
+    'packages/core/src/env/git.ts',
+    'packages/core/src/ports/git.ts',
+    'packages/core/src/ports/errors.ts',
+  ]) {
+    copyFileSync(resolve(root, path), resolve(repository.root, path));
+    expect(readFileSync(resolve(repository.root, path))).toEqual(readFileSync(resolve(root, path)));
+  }
+  return repository;
+}
+
+function objectFileInodes(directory: string): Set<string> {
+  const identities = new Set<string>();
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = resolve(directory, entry.name);
+    if (entry.isDirectory()) {
+      for (const identity of objectFileInodes(path)) identities.add(identity);
+    } else if (entry.isFile()) {
+      const metadata = statSync(path, { bigint: true });
+      identities.add(`${metadata.dev}:${metadata.ino}`);
+    }
+  }
+  return identities;
+}
+
 function runCatalogMutation(
   mutate: (catalog: CatalogFixture) => void,
   mode: '--check' | '--write' | '--reset-baseline' = '--check',
   environment: Readonly<Record<string, string | undefined>> = {},
+  repository?: CatalogRepository,
 ) {
-  const temporaryCatalog = temporaryFile('skillsmith-p17-catalog-', 'catalog.json');
-  const temporaryChecklist = temporaryFile('skillsmith-p17-checklist-', 'CHECKLIST.md');
+  const temporaryCatalog =
+    repository?.catalog ?? temporaryFile('skillsmith-p17-catalog-', 'catalog.json');
+  const temporaryChecklist =
+    repository?.checklist ?? temporaryFile('skillsmith-p17-checklist-', 'CHECKLIST.md');
   const catalog = fixture();
   mutate(catalog);
   writeFileSync(temporaryCatalog, `${JSON.stringify(catalog, null, 2)}\n`);
-  if (mode === '--check') writeFileSync(temporaryChecklist, readFileSync(checklistPath, 'utf8'));
+  if (mode === '--check' && repository === undefined) {
+    writeFileSync(temporaryChecklist, readFileSync(checklistPath, 'utf8'));
+  }
   return Bun.spawnSync(['bun', 'scripts/p17-catalog.ts', mode], {
-    cwd: root,
+    cwd: repository?.root ?? root,
     env: {
-      ...process.env,
-      ...environment,
+      ...(repository === undefined
+        ? { ...process.env, ...environment }
+        : isolatedCatalogEnvironment(repository, environment)),
       P17_CATALOG_PATH: temporaryCatalog,
       P17_CHECKLIST_PATH: temporaryChecklist,
     },
@@ -1010,12 +1131,65 @@ describe('P17 group lifecycle coherence', () => {
   test('rejects an absent path whose latest exact Git event is not deletion', () => {
     const path = 'LICENSE';
     const absolute = resolve(root, path);
-    const directory = mkdtempSync(resolve(root, '.p17-owned-path-history-'));
+    const sourceIndexPath = runGit(root, [
+      '-c',
+      'core.fsmonitor=false',
+      'rev-parse',
+      '--path-format=absolute',
+      '--git-path',
+      'index',
+    ]).trim();
+    const sourceIndex = readFileSync(sourceIndexPath);
+    const sourceBytes = readFileSync(absolute);
+    const sourceMetadata = () => {
+      const value = statSync(absolute, { bigint: true });
+      return {
+        device: value.dev,
+        inode: value.ino,
+        mode: value.mode,
+        size: value.size,
+        mtime: value.mtimeNs,
+        ctime: value.ctimeNs,
+      };
+    };
+    const beforeMetadata = sourceMetadata();
+    const directory = mkdtempSync(resolve(tmpdir(), 'skillsmith-p17-owned-path-history-'));
     temporaryDirectories.push(directory);
-    const backup = resolve(directory, 'LICENSE');
-    renameSync(absolute, backup);
     try {
-      const result = runCatalogMutation((catalog) => {
+      const repository = isolatedCatalogRepository(directory);
+      const innerIndex = isolatedCatalogGit(repository, repository.root, [
+        'rev-parse',
+        '--path-format=absolute',
+        '--git-path',
+        'index',
+      ]);
+      expect(realpathSync(innerIndex)).not.toBe(realpathSync(sourceIndexPath));
+      const innerIndexBefore = createHash('sha256').update(readFileSync(innerIndex)).digest('hex');
+      const sourceCommon = isolatedCatalogGit(repository, root, [
+        'rev-parse',
+        '--path-format=absolute',
+        '--git-common-dir',
+      ]);
+      const sourceObjects = objectFileInodes(resolve(sourceCommon, 'objects'));
+      const fixtureObjects = objectFileInodes(resolve(repository.root, '.git/objects'));
+      const sharedObjects = [...fixtureObjects].filter((identity) => sourceObjects.has(identity));
+      expect(fixtureObjects.size).toBeGreaterThan(0);
+      expect(sharedObjects).toEqual([]);
+      const innerStatus = isolatedCatalogGit(repository, repository.root, [
+        'status',
+        '--porcelain=v1',
+      ]);
+      const latestEvent = isolatedCatalogGit(repository, repository.root, [
+        'log',
+        '-1',
+        '--format=',
+        '--name-status',
+        '--no-renames',
+        '--',
+        ':(literal)LICENSE',
+      ]);
+      expect(latestEvent).toMatch(/^[AMT]\tLICENSE$/u);
+      const mutate = (catalog: CatalogFixture) => {
         activatePhase0(catalog);
         const value = group(catalog);
         value.status = 'ready';
@@ -1023,14 +1197,66 @@ describe('P17 group lifecycle coherence', () => {
         value.testCommands = ['bun test scripts/p17-catalog.test.ts'];
         value.implementers = ['implementation-agent'];
         passGroupThrough(value, 'ready');
-      });
+      };
+      const poisonRoot = resolve(directory, 'poison');
+      mkdirSync(poisonRoot);
+      const poisonCatalog = resolve(poisonRoot, 'catalog.json');
+      const poisonChecklist = resolve(poisonRoot, 'CHECKLIST.md');
+      const poisonIndex = resolve(poisonRoot, 'index');
+      const sentinel = 'owned poison sentinel: must not be selected\n';
+      for (const target of [poisonCatalog, poisonChecklist, poisonIndex]) {
+        writeFileSync(target, sentinel);
+      }
+      const poison = {
+        GIT_DIR: poisonRoot,
+        GIT_WORK_TREE: poisonRoot,
+        GIT_INDEX_FILE: poisonIndex,
+        P17_CATALOG_PATH: poisonCatalog,
+        P17_CHECKLIST_PATH: poisonChecklist,
+        P17_UNKNOWN_CANARY: poisonRoot,
+      };
+      expect(isolatedCatalogEnvironment(repository, poison).P17_UNKNOWN_CANARY).toBeUndefined();
+      const written = runCatalogMutation(mutate, '--write', poison, repository);
+      expect(written.exitCode).toBe(0);
+      const present = runCatalogMutation(mutate, '--check', poison, repository);
+      expect(present.exitCode).toBe(0);
+      const innerLicense = resolve(repository.root, path);
+      const backup = resolve(directory, 'LICENSE');
+      renameSync(innerLicense, backup);
+      const result = runCatalogMutation(mutate, '--check', poison, repository);
       expectFailure(
         result,
         `P17-G0-01 owned path is neither a regular repository file nor a recorded deletion: ${path}`,
       );
+      for (const target of [poisonCatalog, poisonChecklist, poisonIndex]) {
+        expect(readFileSync(target, 'utf8')).toBe(sentinel);
+      }
+      process.stdout.write(
+        `P17_CATALOG_ISOLATED_FIXTURE ${JSON.stringify({
+          root: repository.root,
+          head: isolatedCatalogGit(repository, repository.root, ['rev-parse', 'HEAD']),
+          statusBeforeRemoval: innerStatus,
+          statusAfterRemoval: isolatedCatalogGit(repository, repository.root, [
+            'status',
+            '--porcelain=v1',
+          ]),
+          indexSha256Before: innerIndexBefore,
+          indexSha256After: createHash('sha256').update(readFileSync(innerIndex)).digest('hex'),
+          sourceObjectFiles: sourceObjects.size,
+          fixtureObjectFiles: fixtureObjects.size,
+          sharedObjectInodes: sharedObjects,
+          latestEvent,
+          presentWriteExit: written.exitCode,
+          presentCheckExit: present.exitCode,
+          absentCheckExit: result.exitCode,
+        })}\n`,
+      );
     } finally {
-      renameSync(backup, absolute);
+      rmSync(directory, { recursive: true, force: true });
     }
+    expect(readFileSync(absolute)).toEqual(sourceBytes);
+    expect(readFileSync(sourceIndexPath)).toEqual(sourceIndex);
+    expect(sourceMetadata()).toEqual(beforeMetadata);
   });
 
   test('rejects a rename-away instead of treating its path-filtered status as deletion', () => {
