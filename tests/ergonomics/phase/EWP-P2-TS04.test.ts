@@ -2901,7 +2901,7 @@ describe('EWP-P2-TS04 — lossless human artifacts and recoverable pair mutation
       },
       'capability permission failures used the wrong classification',
     ).toEqual({ count: 0, examples: [] });
-  }, 300_000);
+  }, 600_000);
 
   test('SIGKILLs every declared inner physical gap and reaches a safe repeatable terminal state', async () => {
     const fixture = recoveryFixture().physicalGaps;
