@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeSync } from 'node:fs';
 import {
   chmod,
   link,
@@ -2777,6 +2777,65 @@ describe('EWP-P2-TS04 — lossless human artifacts and recoverable pair mutation
   }, 120_000);
 
   test('classifies EACCES and EPERM at every declared capability phase without secret leakage', async () => {
+    type TimingCode = 'EACCES' | 'EPERM';
+    type TimingPath = 'commit' | 'resume' | 'rollback' | 'cleanup';
+    type TimingEntity = 'row' | 'provisioning';
+    type TimingStage =
+      | 'row-start'
+      | 'setup-complete'
+      | 'seed-start'
+      | 'seed-complete'
+      | 'operation-start'
+      | 'operation-complete'
+      | 'recovery-start'
+      | 'recovery-complete'
+      | 'verification-complete';
+
+    let capabilityStarted = 0;
+    let capabilityVerified = 0;
+    let provisioningStarted = 0;
+    let provisioningVerified = 0;
+    const timingMillis = () => Number((process.hrtime.bigint() - timingOrigin) / 1_000_000n);
+    const emitTimingRow = (
+      entity: TimingEntity,
+      index: number,
+      code: TimingCode,
+      path: TimingPath,
+      stage: TimingStage,
+    ) => {
+      writeSync(
+        2,
+        `P2_R9 ${JSON.stringify({
+          kind: 'p2-r9',
+          version: 1,
+          entity,
+          index,
+          code,
+          path,
+          stage,
+          t_ms: timingMillis(),
+        })}\n`,
+      );
+    };
+    const emitTimingAggregate = (stage: 'suite-start' | 'aggregate-complete') => {
+      writeSync(
+        2,
+        `P2_R9 ${JSON.stringify({
+          kind: 'p2-r9',
+          version: 1,
+          entity: 'aggregate',
+          stage,
+          t_ms: stage === 'suite-start' ? 0 : timingMillis(),
+          capability_started: capabilityStarted,
+          capability_verified: capabilityVerified,
+          provisioning_started: provisioningStarted,
+          provisioning_verified: provisioningVerified,
+        })}\n`,
+      );
+    };
+
+    const timingOrigin = process.hrtime.bigint();
+    emitTimingAggregate('suite-start');
     const fixture = recoveryFixture().capabilitySignatures;
     const rows = (['EACCES', 'EPERM'] as const).flatMap((code) =>
       (['commit', 'resume', 'rollback', 'cleanup'] as const).flatMap((path) =>
@@ -2790,8 +2849,11 @@ describe('EWP-P2-TS04 — lossless human artifacts and recoverable pair mutation
       const signature = key.slice(0, separator);
       const occurrence = Number(key.slice(separator + 1));
       const label = `${code}:${path}:${key}`;
+      emitTimingRow('row', index, code, path, 'row-start');
+      capabilityStarted += 1;
       const root = await makeRoot(`permission-${index}`);
       const paths = await prepareCrashPair(root);
+      emitTimingRow('row', index, code, path, 'setup-complete');
       if (path !== 'commit') {
         const seed =
           path === 'cleanup'
@@ -2799,7 +2861,9 @@ describe('EWP-P2-TS04 — lossless human artifacts and recoverable pair mutation
             : path === 'rollback'
               ? ROLLBACK_RECOVERY_SEED
               : MIXED_RECOVERY_SEED;
+        emitTimingRow('row', index, code, path, 'seed-start');
         const seeded = await runCrashWorker(root, seed, 'SIGKILL', crashCommitStart());
+        emitTimingRow('row', index, code, path, 'seed-complete');
         expect(seeded.reached, `${label}: failed seed`).not.toBeNull();
         await expireKilledCentralLock(root);
       }
@@ -2812,6 +2876,7 @@ describe('EWP-P2-TS04 — lossless human artifacts and recoverable pair mutation
         failCode: code,
         once: true,
       });
+      emitTimingRow('row', index, code, path, 'operation-start');
       const result =
         path === 'commit'
           ? await commitArtifactPair(traced.ports, {
@@ -2831,6 +2896,7 @@ describe('EWP-P2-TS04 — lossless human artifacts and recoverable pair mutation
               paths.pair,
               path === 'rollback' ? 'rollback' : 'resume',
             );
+      emitTimingRow('row', index, code, path, 'operation-complete');
       expect(
         capabilityTupleTranscript(traced.events),
         `${label}: capability not reached`,
@@ -2849,7 +2915,9 @@ describe('EWP-P2-TS04 — lossless human artifacts and recoverable pair mutation
         join(root, '.p2-ts04-coordination'),
       );
       const direction = path === 'rollback' || path === 'commit' ? 'rollback' : 'resume';
+      emitTimingRow('row', index, code, path, 'recovery-start');
       const recovered = await recoverArtifactPair(clean, paths.pair, direction);
+      emitTimingRow('row', index, code, path, 'recovery-complete');
       expect(recovered.ok, `${label}:${JSON.stringify(recovered)}`).toBeTrue();
       const manifest = await bytesAt(paths.manifestPath);
       const lock = await bytesAt(paths.lockPath);
@@ -2867,10 +2935,14 @@ describe('EWP-P2-TS04 — lossless human artifacts and recoverable pair mutation
         value: 'clean',
       });
       await assertNoInternalResidue(clean, root);
+      emitTimingRow('row', index, code, path, 'verification-complete');
+      capabilityVerified += 1;
       executed.add(label);
     });
 
     for (const [index, code] of (['EACCES', 'EPERM'] as const).entries()) {
+      emitTimingRow('provisioning', index, code, 'commit', 'row-start');
+      provisioningStarted += 1;
       const root = await makeRoot(`permission-provision-${index}`);
       const base = await createTestNodeArtifactCoordinatorPorts(
         join(root, '.p2-ts04-coordination'),
@@ -2880,11 +2952,13 @@ describe('EWP-P2-TS04 — lossless human artifacts and recoverable pair mutation
       const pair = pairFor(manifestPath, lockPath);
       const point = 'mkdir:<root>/missing-parent:700';
       const traced = tracePorts(base, root, { failEvent: point, failCode: code, once: true });
+      emitTimingRow('provisioning', index, code, 'commit', 'operation-start');
       const result = await commitArtifactPair(traced.ports, {
         pair,
         manifest: Object.freeze({ kind: 'replace' as const, bytes: encoder.encode(EDIT_AFTER) }),
         lock: Object.freeze({ kind: 'replace' as const, lock: lockFor(EDIT_AFTER) }),
       });
+      emitTimingRow('provisioning', index, code, 'commit', 'operation-complete');
       expect(result, `${code}:provisioning`).toMatchObject({
         ok: false,
         error: { reason: 'permission-denied', exitCode: 6 },
@@ -2892,6 +2966,8 @@ describe('EWP-P2-TS04 — lossless human artifacts and recoverable pair mutation
       expect(await bytesAt(manifestPath)).toBeNull();
       expect(await bytesAt(lockPath)).toBeNull();
       await assertNoInternalResidue(base, root);
+      emitTimingRow('provisioning', index, code, 'commit', 'verification-complete');
+      provisioningVerified += 1;
     }
     expect(executed.size).toBe(1_030);
     expect(
@@ -2901,7 +2977,8 @@ describe('EWP-P2-TS04 — lossless human artifacts and recoverable pair mutation
       },
       'capability permission failures used the wrong classification',
     ).toEqual({ count: 0, examples: [] });
-  }, 300_000);
+    emitTimingAggregate('aggregate-complete');
+  }, 900_000);
 
   test('SIGKILLs every declared inner physical gap and reaches a safe repeatable terminal state', async () => {
     const fixture = recoveryFixture().physicalGaps;
