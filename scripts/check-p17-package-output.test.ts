@@ -179,8 +179,8 @@ async function checkerFixture(name: string) {
   mkdirSync(evidence, { recursive: true });
   mkdirSync(resolve(directory, 'home'));
   const env = fixtureEnvironment(process.env, directory);
-  const git = (...args: string[]) => {
-    const result = Bun.spawnSync(
+  const gitResult = (...args: string[]) =>
+    Bun.spawnSync(
       [
         'git',
         '-c',
@@ -198,6 +198,8 @@ async function checkerFixture(name: string) {
         stderr: 'pipe',
       },
     );
+  const git = (...args: string[]) => {
+    const result = gitResult(...args);
     expect(result.exitCode, result.stderr.toString()).toBe(0);
     return result.stdout.toString().trim();
   };
@@ -255,13 +257,36 @@ async function checkerFixture(name: string) {
         2,
       ),
     );
-    const identity = () => ({
-      index: readFileSync(resolve(repo, '.git/index')).toString('hex'),
-      config: readFileSync(resolve(repo, '.git/config')).toString('hex'),
-      head: git('rev-parse', 'HEAD'),
-      ref: git('symbolic-ref', 'HEAD'),
-      stage: git('ls-files', '--stage'),
-    });
+    const identity = () => {
+      const refResult = gitResult('symbolic-ref', '--quiet', 'HEAD');
+      const refOutput = refResult.stdout.toString().trim();
+      const refError = refResult.stderr.toString();
+      const ref =
+        refResult.exitCode === 0
+          ? (() => {
+              expect(refError).toBe('');
+              expect(refOutput).toStartWith('refs/');
+              return refOutput;
+            })()
+          : refResult.exitCode === 1
+            ? (() => {
+                expect(refOutput).toBe('');
+                expect(refError).toBe('');
+                return null;
+              })()
+            : (() => {
+                throw new Error(
+                  `git symbolic-ref --quiet HEAD failed with exit ${refResult.exitCode}: ${refError}`,
+                );
+              })();
+      return {
+        index: readFileSync(resolve(repo, '.git/index')).toString('hex'),
+        config: readFileSync(resolve(repo, '.git/config')).toString('hex'),
+        head: git('rev-parse', 'HEAD'),
+        ref,
+        stage: git('ls-files', '--stage'),
+      };
+    };
     const staleLicense = async () => {
       const license = resolve(repo, 'LICENSE');
       const bytes = readFileSync(license);
@@ -417,6 +442,33 @@ describe('P17 checker Git observations', () => {
       expectUnchanged(observed);
     });
   }, 15_000);
+
+  test('identity explicitly distinguishes attached and detached HEAD at the same commit', async () => {
+    await withCheckerFixture('identity-topology', async (fixture) => {
+      const head = fixture.git('rev-parse', 'HEAD');
+      fixture.git('switch', '--no-track', '-c', 'fixture-attached', head);
+      const attached = fixture.identity();
+      expect(attached.ref).toBe('refs/heads/fixture-attached');
+      fixture.git('checkout', '--detach', attached.head);
+      const detached = fixture.identity();
+      expect(detached.head).toBe(attached.head);
+      expect(detached.ref).toBeNull();
+      expect(detached.ref).not.toBe(attached.ref);
+    });
+  });
+
+  test('identity rejects a malformed fixture HEAD instead of treating it as detached', async () => {
+    await withCheckerFixture('identity-invalid-head', async (fixture) => {
+      const headPath = resolve(fixture.repo, '.git/HEAD');
+      const original = readFileSync(headPath);
+      try {
+        writeFileSync(headPath, 'ref: refs/heads/does-not-exist\n');
+        expect(() => fixture.identity()).toThrow();
+      } finally {
+        writeFileSync(headPath, original);
+      }
+    });
+  });
 
   test('merge-ready reaches Git gates before gh and rejects dirty canonical content', async () => {
     await withCheckerFixture('canonical', async (fixture) => {
