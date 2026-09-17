@@ -13,7 +13,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { devNull, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join, posix, relative, sep, win32 } from 'node:path';
 
 // The observer is deliberately independent of the Git helper under test. Poison
 // is delivered only to a fresh non-test Bun process, so no preload can hide it.
@@ -66,22 +66,144 @@ type GitDataEntry = {
   readonly target?: string;
 };
 
-const isWithin = (root: string, candidate: string): boolean =>
-  candidate === root || candidate.startsWith(`${root}/`);
+type PathOps = Pick<typeof posix, 'relative' | 'isAbsolute' | 'sep'>;
+const nativePathOps: PathOps = { relative, isAbsolute, sep };
+
+const isWithin = (root: string, candidate: string, pathOps: PathOps = nativePathOps): boolean => {
+  const relative = pathOps.relative(root, candidate);
+  return (
+    relative === '' ||
+    (!pathOps.isAbsolute(relative) && relative !== '..' && !relative.startsWith(`..${pathOps.sep}`))
+  );
+};
+
+test('isWithin applies flavor-aware repository boundaries (#69)', () => {
+  const controls: ReadonlyArray<{
+    readonly name: string;
+    readonly pathOps: PathOps;
+    readonly root: string;
+    readonly candidate: string;
+    readonly expected: boolean;
+  }> = [
+    {
+      name: 'win32 equal',
+      pathOps: win32,
+      root: 'C:\\outer',
+      candidate: 'C:\\outer',
+      expected: true,
+    },
+    {
+      name: 'win32 child',
+      pathOps: win32,
+      root: 'C:\\outer',
+      candidate: 'C:\\outer\\git',
+      expected: true,
+    },
+    {
+      name: 'win32 mixed-separator child',
+      pathOps: win32,
+      root: 'C:\\outer',
+      candidate: 'C:/outer/.git',
+      expected: true,
+    },
+    {
+      name: 'win32 UNC child',
+      pathOps: win32,
+      root: '\\\\server\\share\\outer',
+      candidate: '\\\\server\\share\\outer\\git',
+      expected: true,
+    },
+    {
+      name: 'win32 sibling prefix',
+      pathOps: win32,
+      root: 'C:\\outer',
+      candidate: 'C:\\outer-sibling',
+      expected: false,
+    },
+    {
+      name: 'win32 traversal',
+      pathOps: win32,
+      root: 'C:\\outer',
+      candidate: 'C:\\outer\\..\\outside',
+      expected: false,
+    },
+    {
+      name: 'win32 different drive',
+      pathOps: win32,
+      root: 'C:\\outer',
+      candidate: 'D:\\outer\\git',
+      expected: false,
+    },
+    {
+      name: 'win32 UNC sibling',
+      pathOps: win32,
+      root: '\\\\server\\share\\outer',
+      candidate: '\\\\server\\share\\outer-sibling',
+      expected: false,
+    },
+    {
+      name: 'posix equal',
+      pathOps: posix,
+      root: '/outer',
+      candidate: '/outer',
+      expected: true,
+    },
+    {
+      name: 'posix child',
+      pathOps: posix,
+      root: '/outer',
+      candidate: '/outer/.git',
+      expected: true,
+    },
+    {
+      name: 'posix literal backslash basename',
+      pathOps: posix,
+      root: '/outer',
+      candidate: '/outer/..\\child',
+      expected: true,
+    },
+    {
+      name: 'posix sibling prefix',
+      pathOps: posix,
+      root: '/outer',
+      candidate: '/outer-sibling',
+      expected: false,
+    },
+    {
+      name: 'posix traversal',
+      pathOps: posix,
+      root: '/outer',
+      candidate: '/outer/../outside',
+      expected: false,
+    },
+    {
+      name: 'posix absolute outside',
+      pathOps: posix,
+      root: '/outer',
+      candidate: '/outside',
+      expected: false,
+    },
+  ];
+  for (const control of controls) {
+    expect(isWithin(control.root, control.candidate, control.pathOps)).toBe(control.expected);
+  }
+});
 
 const inventory = async (root: string, relative: string): Promise<GitDataEntry[]> => {
-  const path = join(root, relative);
+  const entryPath = join(root, relative);
   try {
-    const status = await lstat(path);
+    const status = await lstat(entryPath);
     if (status.isSymbolicLink()) {
-      return [{ path: relative, kind: 'symlink', mode: status.mode, target: await readlink(path) }];
+      return [
+        { path: relative, kind: 'symlink', mode: status.mode, target: await readlink(entryPath) },
+      ];
     }
     if (status.isFile()) {
-      return [{ path: relative, kind: 'file', mode: status.mode, sha256: await digest(path) }];
+      return [{ path: relative, kind: 'file', mode: status.mode, sha256: await digest(entryPath) }];
     }
     if (!status.isDirectory()) return [{ path: relative, kind: 'other', mode: status.mode }];
     const entries: GitDataEntry[] = [{ path: relative, kind: 'directory', mode: status.mode }];
-    for (const name of (await readdir(path)).sort()) {
+    for (const name of (await readdir(entryPath)).sort()) {
       entries.push(...(await inventory(root, join(relative, name))));
     }
     return entries;
@@ -174,7 +296,10 @@ for (const kind of ['remote', 'fleet'] as const) {
         observeGit(outer, ['commit', '-qm', 'test: sacrificial outer']);
         const before = await identity(outer);
         const gitDirectory = join(outer, '.git');
-        const redirect = { GIT_DIR: gitDirectory, GIT_INDEX_FILE: join(gitDirectory, 'index') };
+        const redirect = {
+          GIT_DIR: gitDirectory,
+          GIT_INDEX_FILE: join(gitDirectory, 'index'),
+        };
         const poisonEnvironment: Record<string, string> =
           poison === 'hook'
             ? redirect
