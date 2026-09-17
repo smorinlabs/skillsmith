@@ -1,0 +1,70 @@
+name: P2 permission phase timing (single invocation)
+on:
+  push:
+    branches: [agent/p19-p17-ci-timing]
+permissions:
+  contents: read
+concurrency:
+  group: p2-permission-timing
+  cancel-in-progress: false
+jobs:
+  selected-permission-test:
+    if: github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 26
+    steps:
+      - name: Establish the global diagnostic clock
+        timeout-minutes: 1
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, time
+          out = pathlib.Path(os.environ['RUNNER_TEMP']) / 'p2-permission-evidence'
+          out.mkdir(exist_ok=False)
+          (out / 'start.json').write_text(json.dumps({'monotonic': time.monotonic(), 'unix': time.time(), 'run_id': os.environ['GITHUB_RUN_ID'], 'run_attempt': os.environ['GITHUB_RUN_ATTEMPT'], 'controller_commit': os.environ['GITHUB_SHA']}) + '\n')
+          PY
+      - name: Checkout only the reviewed diagnostic controller
+        timeout-minutes: 2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: diagnostic-control
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: scripts/ci-diagnostics
+      - name: Checkout the reviewed instrumented subject
+        timeout-minutes: 2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: 01244fbe32e8d18d98c6de9d03662b5b1972f740
+          path: diagnostic-subject
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up the original Bun version
+        timeout-minutes: 2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.14
+      - name: One selected permission-matrix invocation
+        timeout-minutes: 24
+        run: |
+          python3 - <<'PYTHON'
+          import json, os, pathlib, time
+          out = pathlib.Path(os.environ['RUNNER_TEMP']) / 'p2-permission-evidence'
+          start = json.loads((out / 'start.json').read_text())['monotonic']
+          remaining = start + 1440 - time.monotonic() - 15
+          if remaining <= 0:
+              (out / 'not-launched.json').write_text('{"reason":"global_budget_exhausted"}\n')
+              raise SystemExit(1)
+          argv = ['timeout', '--signal=TERM', '--kill-after=15s', f'{remaining:.3f}s', 'python3', 'diagnostic-control/scripts/ci-diagnostics/p2-permission.py']
+          (out / 'enclosing-timeout.json').write_text(json.dumps({'argv': argv, 'hard_deadline_monotonic': start + 1440}) + '\n')
+          os.execvp(argv[0], argv)
+          PYTHON
+      - name: Retain bounded diagnostic evidence even after failure
+        if: always()
+        timeout-minutes: 2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: p2-permission-timing-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/p2-permission-evidence/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 1
