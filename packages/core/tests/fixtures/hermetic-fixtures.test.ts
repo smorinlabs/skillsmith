@@ -279,6 +279,11 @@ test.each(['object', 'ref', 'log'] as const)(
 );
 
 const cases = ['hook', 'trio', 'common', 'objects', 'config', 'config-file', 'discovery'] as const;
+const expectedDiscoveryRoutingKeys = [
+  'GIT_CEILING_DIRECTORIES',
+  'GIT_DISCOVERY_ACROSS_FILESYSTEM',
+  'GIT_NAMESPACE',
+] as const;
 for (const kind of ['remote', 'fleet'] as const) {
   test.each([...cases])(
     `${kind} fixture preserves outer HEAD/index/config under %s poison (#17)`,
@@ -299,6 +304,11 @@ for (const kind of ['remote', 'fleet'] as const) {
         const redirect = {
           GIT_DIR: gitDirectory,
           GIT_INDEX_FILE: join(gitDirectory, 'index'),
+        };
+        const discoveryPoison = {
+          GIT_CEILING_DIRECTORIES: base,
+          GIT_DISCOVERY_ACROSS_FILESYSTEM: '0',
+          GIT_NAMESPACE: 'fixture-namespace',
         };
         const poisonEnvironment: Record<string, string> =
           poison === 'hook'
@@ -321,11 +331,7 @@ for (const kind of ['remote', 'fleet'] as const) {
                       }
                     : poison === 'config-file'
                       ? { GIT_CONFIG: join(gitDirectory, 'config') }
-                      : {
-                          GIT_CEILING_DIRECTORIES: base,
-                          GIT_DISCOVERY_ACROSS_FILESYSTEM: '0',
-                          GIT_NAMESPACE: 'fixture-namespace',
-                        };
+                      : discoveryPoison;
         const script = `
 import { buildRemoteFixture, destroyRemoteFixture } from ${JSON.stringify(join(import.meta.dir, 'acquire/remote.ts'))};
 import { hermeticGitEnv } from ${JSON.stringify(join(import.meta.dir, 'git-env.ts'))};
@@ -333,7 +339,11 @@ import { buildFixtureFleet, destroyFixtureFleet } from ${JSON.stringify(join(imp
 const kind = ${JSON.stringify(kind)};
 const fixture = await (kind === 'remote' ? buildRemoteFixture() : buildFixtureFleet());
 try {
-  console.log(JSON.stringify({ head: kind === 'remote' ? fixture.multiHead : fixture.headSha, canary: process.env.SKILLSMITH_ISOLATION_CANARY, gitConfigPresent: Object.hasOwn(hermeticGitEnv(), 'GIT_CONFIG') }));
+  const expectedDiscoveryRoutingKeys = ${JSON.stringify(expectedDiscoveryRoutingKeys)};
+  const rawDiscoveryRouting = Object.fromEntries(expectedDiscoveryRoutingKeys.map((name) => [name, process.env[name] ?? null]));
+  const helperEnvironment = hermeticGitEnv();
+  const remainingDiscoveryRouting = Object.fromEntries(expectedDiscoveryRoutingKeys.flatMap((name) => Object.hasOwn(helperEnvironment, name) ? [[name, helperEnvironment[name] ?? null]] : []));
+  console.log(JSON.stringify({ head: kind === 'remote' ? fixture.multiHead : fixture.headSha, canary: process.env.SKILLSMITH_ISOLATION_CANARY, gitConfigPresent: Object.hasOwn(helperEnvironment, 'GIT_CONFIG'), rawDiscoveryRouting, remainingDiscoveryRouting }));
 } finally { await (kind === 'remote' ? destroyRemoteFixture(fixture) : destroyFixtureFleet(fixture)); }
 `;
         // eslint-disable-next-line skillsmith/hermetic-test-spawn -- deliberate poison targets only the sacrificial outer repo; parent checks its raw identity
@@ -363,11 +373,17 @@ try {
             head: string;
             canary: string;
             gitConfigPresent: boolean;
+            rawDiscoveryRouting: Record<string, string | null>;
+            remainingDiscoveryRouting: Record<string, string | null>;
           };
           expect(result.head).toMatch(/^[0-9a-f]{40}$/);
           expect(result.head).not.toBe(before.head);
           expect(result.canary).toBe('retained');
           expect(result.gitConfigPresent).toBeFalse();
+          if (poison === 'discovery') {
+            expect(result.rawDiscoveryRouting).toEqual(discoveryPoison);
+            expect(result.remainingDiscoveryRouting).toEqual({});
+          }
         } finally {
           clearTimeout(timer);
           if (child.exitCode === null) {
