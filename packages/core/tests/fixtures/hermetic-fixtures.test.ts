@@ -1,102 +1,400 @@
-import { test, expect } from 'bun:test';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
-import { join } from 'node:path';
-import { tmpdir } from 'node:os';
-import { runGit } from './git-env.ts';
-import { buildRemoteFixture, destroyRemoteFixture } from './acquire/remote.ts';
-import { buildFixtureFleet, destroyFixtureFleet } from './place/fleet.ts';
+import { expect, test } from 'bun:test';
+import { createHash } from 'node:crypto';
+import {
+  appendFile,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  readlink,
+  realpath,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
+import { devNull, tmpdir } from 'node:os';
+import { isAbsolute, join, posix, relative, sep, win32 } from 'node:path';
 
-// Reproduces issue #17: lefthook pre-push exports GIT_DIR (no GIT_WORK_TREE),
-// so a non-hermetic child git treats its cwd as the worktree of the REAL repo
-// and fixture commits land on the branch being pushed.
-const POISON_VARS = ['GIT_DIR', 'GIT_INDEX_FILE'] as const;
+// The observer is deliberately independent of the Git helper under test. Poison
+// is delivered only to a fresh non-test Bun process, so no preload can hide it.
+const cleanEnvironment = {
+  ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_'))),
+  GIT_CONFIG_GLOBAL: devNull,
+  GIT_CONFIG_SYSTEM: devNull,
+  GIT_OPTIONAL_LOCKS: '0',
+};
 
-interface Victim {
-  dir: string;
-  head: string;
+function observeGit(cwd: string, args: string[]): string {
+  // eslint-disable-next-line skillsmith/hermetic-test-spawn -- independent clean observer must not call the helper being tested
+  const result = Bun.spawnSync(
+    [
+      'git',
+      '-c',
+      'core.fsmonitor=false',
+      '-c',
+      `core.hooksPath=${devNull}`,
+      '-c',
+      'commit.gpgsign=false',
+      '-c',
+      'user.name=Skillsmith Test',
+      '-c',
+      'user.email=skillsmith@example.invalid',
+      ...args,
+    ],
+    { cwd, env: { ...cleanEnvironment, HOME: cwd }, stdout: 'pipe', stderr: 'pipe' },
+  );
+  if (result.exitCode !== 0) throw new Error(new TextDecoder().decode(result.stderr));
+  return new TextDecoder().decode(result.stdout).trim();
 }
 
-const makeVictim = async (): Promise<Victim> => {
-  const dir = await mkdtemp(join(tmpdir(), 'skillsmith-victim-'));
-  await writeFile(join(dir, 'README.md'), '# victim\n');
-  runGit(dir, ['init', '-q', '-b', 'main']);
-  runGit(dir, [
-    '-c', 'user.email=victim@skillsmith.test',
-    '-c', 'user.name=victim',
-    '-c', 'commit.gpgsign=false',
-    'add', '-A',
-  ]);
-  runGit(dir, [
-    '-c', 'user.email=victim@skillsmith.test',
-    '-c', 'user.name=victim',
-    '-c', 'commit.gpgsign=false',
-    'commit', '-qm', 'victim: initial',
-  ]);
-  return { dir, head: runGit(dir, ['rev-parse', 'HEAD']).trim() };
-};
-
-const withPoisonedEnv = async <T>(victim: Victim, fn: () => Promise<T>): Promise<T> => {
-  const saved: Record<string, string | undefined> = {};
-  for (const name of POISON_VARS) saved[name] = process.env[name];
-  process.env.GIT_DIR = join(victim.dir, '.git');
-  process.env.GIT_INDEX_FILE = join(victim.dir, '.git', 'index');
+const digest = async (path: string): Promise<string | null> => {
   try {
-    return await fn();
-  } finally {
-    for (const name of POISON_VARS) {
-      if (saved[name] === undefined) delete process.env[name];
-      else process.env[name] = saved[name];
-    }
+    return createHash('sha256')
+      .update(await readFile(path))
+      .digest('hex');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
   }
 };
 
-// The load-bearing assertions: same HEAD, exactly one commit, clean tree.
-const assertVictimUntouched = (victim: Victim): void => {
-  expect(runGit(victim.dir, ['rev-parse', 'HEAD']).trim()).toBe(victim.head);
-  expect(runGit(victim.dir, ['rev-list', '--count', 'HEAD']).trim()).toBe('1');
-  expect(runGit(victim.dir, ['status', '--porcelain']).trim()).toBe('');
+type GitDataEntry = {
+  readonly path: string;
+  readonly kind: 'directory' | 'file' | 'missing' | 'other' | 'symlink';
+  readonly mode?: number;
+  readonly sha256?: string | null;
+  readonly target?: string;
 };
 
-test('buildRemoteFixture is hermetic under a poisoned hook environment (#17)', async () => {
-  const victim = await makeVictim();
-  let fixture: Awaited<ReturnType<typeof buildRemoteFixture>> | null = null;
-  let builderError: unknown = null;
-  try {
-    try {
-      fixture = await withPoisonedEnv(victim, () => buildRemoteFixture());
-    } catch (e) {
-      builderError = e;
-    }
-    assertVictimUntouched(victim);
-    expect(builderError).toBeNull();
-    expect(fixture?.multiHead).not.toBe(victim.head);
-  } finally {
-    try {
-      if (fixture) await destroyRemoteFixture(fixture);
-    } finally {
-      await rm(victim.dir, { recursive: true, force: true });
-    }
+type PathOps = Pick<typeof posix, 'relative' | 'isAbsolute' | 'sep'>;
+const nativePathOps: PathOps = { relative, isAbsolute, sep };
+
+const isWithin = (root: string, candidate: string, pathOps: PathOps = nativePathOps): boolean => {
+  const relative = pathOps.relative(root, candidate);
+  return (
+    relative === '' ||
+    (!pathOps.isAbsolute(relative) && relative !== '..' && !relative.startsWith(`..${pathOps.sep}`))
+  );
+};
+
+test('isWithin applies flavor-aware repository boundaries (#69)', () => {
+  const controls: ReadonlyArray<{
+    readonly name: string;
+    readonly pathOps: PathOps;
+    readonly root: string;
+    readonly candidate: string;
+    readonly expected: boolean;
+  }> = [
+    {
+      name: 'win32 equal',
+      pathOps: win32,
+      root: 'C:\\outer',
+      candidate: 'C:\\outer',
+      expected: true,
+    },
+    {
+      name: 'win32 child',
+      pathOps: win32,
+      root: 'C:\\outer',
+      candidate: 'C:\\outer\\git',
+      expected: true,
+    },
+    {
+      name: 'win32 mixed-separator child',
+      pathOps: win32,
+      root: 'C:\\outer',
+      candidate: 'C:/outer/.git',
+      expected: true,
+    },
+    {
+      name: 'win32 UNC child',
+      pathOps: win32,
+      root: '\\\\server\\share\\outer',
+      candidate: '\\\\server\\share\\outer\\git',
+      expected: true,
+    },
+    {
+      name: 'win32 sibling prefix',
+      pathOps: win32,
+      root: 'C:\\outer',
+      candidate: 'C:\\outer-sibling',
+      expected: false,
+    },
+    {
+      name: 'win32 traversal',
+      pathOps: win32,
+      root: 'C:\\outer',
+      candidate: 'C:\\outer\\..\\outside',
+      expected: false,
+    },
+    {
+      name: 'win32 different drive',
+      pathOps: win32,
+      root: 'C:\\outer',
+      candidate: 'D:\\outer\\git',
+      expected: false,
+    },
+    {
+      name: 'win32 UNC sibling',
+      pathOps: win32,
+      root: '\\\\server\\share\\outer',
+      candidate: '\\\\server\\share\\outer-sibling',
+      expected: false,
+    },
+    {
+      name: 'posix equal',
+      pathOps: posix,
+      root: '/outer',
+      candidate: '/outer',
+      expected: true,
+    },
+    {
+      name: 'posix child',
+      pathOps: posix,
+      root: '/outer',
+      candidate: '/outer/.git',
+      expected: true,
+    },
+    {
+      name: 'posix literal backslash basename',
+      pathOps: posix,
+      root: '/outer',
+      candidate: '/outer/..\\child',
+      expected: true,
+    },
+    {
+      name: 'posix sibling prefix',
+      pathOps: posix,
+      root: '/outer',
+      candidate: '/outer-sibling',
+      expected: false,
+    },
+    {
+      name: 'posix traversal',
+      pathOps: posix,
+      root: '/outer',
+      candidate: '/outer/../outside',
+      expected: false,
+    },
+    {
+      name: 'posix absolute outside',
+      pathOps: posix,
+      root: '/outer',
+      candidate: '/outside',
+      expected: false,
+    },
+  ];
+  for (const control of controls) {
+    expect(isWithin(control.root, control.candidate, control.pathOps)).toBe(control.expected);
   }
 });
 
-test('buildFixtureFleet is hermetic under a poisoned hook environment (#17)', async () => {
-  const victim = await makeVictim();
-  let fleet: Awaited<ReturnType<typeof buildFixtureFleet>> | null = null;
-  let builderError: unknown = null;
+const inventory = async (root: string, relative: string): Promise<GitDataEntry[]> => {
+  const entryPath = join(root, relative);
   try {
-    try {
-      fleet = await withPoisonedEnv(victim, () => buildFixtureFleet());
-    } catch (e) {
-      builderError = e;
+    const status = await lstat(entryPath);
+    if (status.isSymbolicLink()) {
+      return [
+        { path: relative, kind: 'symlink', mode: status.mode, target: await readlink(entryPath) },
+      ];
     }
-    assertVictimUntouched(victim);
-    expect(builderError).toBeNull();
-    expect(fleet?.headSha).not.toBe(victim.head);
-  } finally {
-    try {
-      if (fleet) await destroyFixtureFleet(fleet);
-    } finally {
-      await rm(victim.dir, { recursive: true, force: true });
+    if (status.isFile()) {
+      return [{ path: relative, kind: 'file', mode: status.mode, sha256: await digest(entryPath) }];
     }
+    if (!status.isDirectory()) return [{ path: relative, kind: 'other', mode: status.mode }];
+    const entries: GitDataEntry[] = [{ path: relative, kind: 'directory', mode: status.mode }];
+    for (const name of (await readdir(entryPath)).sort()) {
+      entries.push(...(await inventory(root, join(relative, name))));
+    }
+    return entries;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT')
+      return [{ path: relative, kind: 'missing' }];
+    throw error;
   }
-});
+};
+
+async function identity(root: string) {
+  const outer = await realpath(root);
+  const gitDirectory = await realpath(observeGit(root, ['rev-parse', '--absolute-git-dir']));
+  const common = await realpath(
+    observeGit(root, ['rev-parse', '--path-format=absolute', '--git-common-dir']),
+  );
+  const index = observeGit(root, ['rev-parse', '--path-format=absolute', '--git-path', 'index']);
+  if (!isWithin(outer, gitDirectory) || !isWithin(outer, common) || !isWithin(outer, index)) {
+    throw new Error('outer observer resolved Git state outside its disposable repository');
+  }
+  const [objects, refs, logs, packedRefs] = await Promise.all(
+    ['objects', 'refs', 'logs', 'packed-refs'].map((relative) => inventory(common, relative)),
+  );
+  return {
+    head: observeGit(root, ['rev-parse', 'HEAD']),
+    ref: observeGit(root, ['symbolic-ref', 'HEAD']),
+    index: await digest(index),
+    config: await digest(join(common, 'config')),
+    sentinel: await digest(join(root, 'README.md')),
+    count: observeGit(root, ['rev-list', '--count', 'HEAD']),
+    status: observeGit(root, ['status', '--porcelain']),
+    refsSnapshot: observeGit(root, [
+      'for-each-ref',
+      '--sort=refname',
+      '--format=%(refname)%00%(objectname)%00%(objecttype)%00%(symref)',
+    ]),
+    gitData: { objects, refs, logs, packedRefs },
+  };
+}
+
+test.each(['object', 'ref', 'log'] as const)(
+  'independent outer observer detects injected harmless %s pollution (#17)',
+  async (kind) => {
+    const base = await mkdtemp(join(tmpdir(), 'skillsmith-hermetic-observer-red-'));
+    const outer = join(base, 'outer');
+    try {
+      await mkdir(outer);
+      await writeFile(join(outer, 'README.md'), '# observer fixture\n');
+      observeGit(outer, ['init', '-q', '-b', 'main']);
+      observeGit(outer, ['add', '-A']);
+      observeGit(outer, ['commit', '-qm', 'test: observer fixture']);
+      const before = await identity(outer);
+      if (kind === 'object') {
+        // eslint-disable-next-line skillsmith/hermetic-test-spawn -- independent observer probe writes only an unreachable object in the disposable outer repository
+        const result = Bun.spawnSync(['git', 'hash-object', '-w', '--stdin'], {
+          cwd: outer,
+          env: { ...cleanEnvironment, HOME: outer },
+          stdin: Buffer.from('observer fixture object\n'),
+          stdout: 'pipe',
+          stderr: 'pipe',
+        });
+        expect(result.exitCode).toBe(0);
+      } else if (kind === 'ref') {
+        observeGit(outer, ['tag', 'observer-fixture-tag']);
+      } else {
+        await appendFile(join(outer, '.git', 'logs', 'HEAD'), 'observer fixture log\n');
+      }
+      expect(await identity(outer)).not.toEqual(before);
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  },
+);
+
+const cases = ['hook', 'trio', 'common', 'objects', 'config', 'config-file', 'discovery'] as const;
+const expectedDiscoveryRoutingKeys = [
+  'GIT_CEILING_DIRECTORIES',
+  'GIT_DISCOVERY_ACROSS_FILESYSTEM',
+  'GIT_NAMESPACE',
+] as const;
+for (const kind of ['remote', 'fleet'] as const) {
+  test.each([...cases])(
+    `${kind} fixture preserves outer HEAD/index/config under %s poison (#17)`,
+    async (poison) => {
+      const base = await mkdtemp(join(tmpdir(), 'skillsmith-hermetic-recurrence-'));
+      const outer = join(base, 'outer');
+      const home = join(base, 'home');
+      const temporary = join(base, 'tmp');
+      try {
+        await Promise.all([outer, home, temporary].map((path) => mkdir(path)));
+        await writeFile(join(outer, 'README.md'), '# sacrificial outer repository\n');
+        observeGit(outer, ['init', '-q', '-b', 'main']);
+        observeGit(outer, ['config', 'fixture.sentinel', 'retained']);
+        observeGit(outer, ['add', '-A']);
+        observeGit(outer, ['commit', '-qm', 'test: sacrificial outer']);
+        const before = await identity(outer);
+        const gitDirectory = join(outer, '.git');
+        const redirect = {
+          GIT_DIR: gitDirectory,
+          GIT_INDEX_FILE: join(gitDirectory, 'index'),
+        };
+        const discoveryPoison = {
+          GIT_CEILING_DIRECTORIES: base,
+          GIT_DISCOVERY_ACROSS_FILESYSTEM: '0',
+          GIT_NAMESPACE: 'fixture-namespace',
+        };
+        const poisonEnvironment: Record<string, string> =
+          poison === 'hook'
+            ? redirect
+            : poison === 'trio'
+              ? { ...redirect, GIT_WORK_TREE: outer }
+              : poison === 'common'
+                ? { ...redirect, GIT_COMMON_DIR: gitDirectory }
+                : poison === 'objects'
+                  ? {
+                      GIT_OBJECT_DIRECTORY: join(gitDirectory, 'objects'),
+                      GIT_ALTERNATE_OBJECT_DIRECTORIES: join(gitDirectory, 'objects'),
+                    }
+                  : poison === 'config'
+                    ? {
+                        GIT_CONFIG_COUNT: '1',
+                        GIT_CONFIG_KEY_0: 'core.worktree',
+                        GIT_CONFIG_VALUE_0: outer,
+                        GIT_CONFIG_PARAMETERS: "'core.bare=false'",
+                      }
+                    : poison === 'config-file'
+                      ? { GIT_CONFIG: join(gitDirectory, 'config') }
+                      : discoveryPoison;
+        const script = `
+import { buildRemoteFixture, destroyRemoteFixture } from ${JSON.stringify(join(import.meta.dir, 'acquire/remote.ts'))};
+import { hermeticGitEnv } from ${JSON.stringify(join(import.meta.dir, 'git-env.ts'))};
+import { buildFixtureFleet, destroyFixtureFleet } from ${JSON.stringify(join(import.meta.dir, 'place/fleet.ts'))};
+const kind = ${JSON.stringify(kind)};
+const fixture = await (kind === 'remote' ? buildRemoteFixture() : buildFixtureFleet());
+try {
+  const expectedDiscoveryRoutingKeys = ${JSON.stringify(expectedDiscoveryRoutingKeys)};
+  const rawDiscoveryRouting = Object.fromEntries(expectedDiscoveryRoutingKeys.map((name) => [name, process.env[name] ?? null]));
+  const helperEnvironment = hermeticGitEnv();
+  const remainingDiscoveryRouting = Object.fromEntries(expectedDiscoveryRoutingKeys.flatMap((name) => Object.hasOwn(helperEnvironment, name) ? [[name, helperEnvironment[name] ?? null]] : []));
+  console.log(JSON.stringify({ head: kind === 'remote' ? fixture.multiHead : fixture.headSha, canary: process.env.SKILLSMITH_ISOLATION_CANARY, gitConfigPresent: Object.hasOwn(helperEnvironment, 'GIT_CONFIG'), rawDiscoveryRouting, remainingDiscoveryRouting }));
+} finally { await (kind === 'remote' ? destroyRemoteFixture(fixture) : destroyFixtureFleet(fixture)); }
+`;
+        // eslint-disable-next-line skillsmith/hermetic-test-spawn -- deliberate poison targets only the sacrificial outer repo; parent checks its raw identity
+        const child = Bun.spawn([process.execPath, '--eval', script], {
+          cwd: base,
+          env: {
+            ...cleanEnvironment,
+            HOME: home,
+            XDG_CONFIG_HOME: home,
+            TMPDIR: temporary,
+            SKILLSMITH_ISOLATION_CANARY: 'retained',
+            ...poisonEnvironment,
+          },
+          stdout: 'pipe',
+          stderr: 'pipe',
+        });
+        const stdout = new Response(child.stdout).text();
+        const stderr = new Response(child.stderr).text();
+        const timer = setTimeout(() => child.kill('SIGKILL'), 15_000);
+        try {
+          const exitCode = await child.exited;
+          expect(await identity(outer)).toEqual(before);
+          const output = await stdout;
+          const error = await stderr;
+          expect({ exitCode, error }).toEqual({ exitCode: 0, error: '' });
+          const result = JSON.parse(output) as {
+            head: string;
+            canary: string;
+            gitConfigPresent: boolean;
+            rawDiscoveryRouting: Record<string, string | null>;
+            remainingDiscoveryRouting: Record<string, string | null>;
+          };
+          expect(result.head).toMatch(/^[0-9a-f]{40}$/);
+          expect(result.head).not.toBe(before.head);
+          expect(result.canary).toBe('retained');
+          expect(result.gitConfigPresent).toBeFalse();
+          if (poison === 'discovery') {
+            expect(result.rawDiscoveryRouting).toEqual(discoveryPoison);
+            expect(result.remainingDiscoveryRouting).toEqual({});
+          }
+        } finally {
+          clearTimeout(timer);
+          if (child.exitCode === null) {
+            child.kill('SIGKILL');
+            await child.exited;
+          }
+        }
+      } finally {
+        await rm(base, { recursive: true, force: true });
+      }
+    },
+    20_000,
+  );
+}
