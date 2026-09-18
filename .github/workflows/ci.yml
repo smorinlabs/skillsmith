@@ -34,6 +34,58 @@ jobs:
           tool_bin="$RUNNER_TEMP/skillsmith-tools"
           SKILLSMITH_TOOL_BIN_DIR="$tool_bin" ./scripts/install-actionlint.sh
           echo "$tool_bin" >> "$GITHUB_PATH"
+      - name: Set up Node for pinned release-test npm
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+      - name: Install pinned release-test npm in owned prefix
+        run: |
+          npm_prefix="$RUNNER_TEMP/skillsmith-ordinary-npm-12.0.1"
+          npm install --global --prefix "$npm_prefix" --engine-strict --ignore-scripts --no-audit --no-fund npm@12.0.1
+          echo "$npm_prefix/bin" >> "$GITHUB_PATH"
+      - name: Install pinned release-test GoReleaser
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94
+        with:
+          version: v2.17.1
+          install-only: true
+      - name: Check exact release-test tool versions before canonical gate
+        run: |
+          bun --eval '
+          import { spawnSync } from "node:child_process";
+          import { assertReleaseToolVersions } from "./scripts/release-artifacts.ts";
+
+          const probe = (name) => {
+            const executable = Bun.which(name);
+            if (executable === null) throw new Error("required release-test tool missing from PATH: " + name);
+            const result = spawnSync(executable, ["--version"], {
+              cwd: process.cwd(),
+              env: process.env,
+              encoding: "utf8",
+              timeout: 30000,
+              maxBuffer: 1024 * 1024,
+            });
+            console.log(JSON.stringify({
+              tool: name,
+              executable,
+              status: result.status,
+              signal: result.signal,
+              stdout: result.stdout,
+              stderr: result.stderr,
+              error: result.error?.message ?? null,
+            }));
+            if (result.error || result.signal !== null || result.status !== 0) {
+              throw new Error("native version probe failed: " + name);
+            }
+            return result.stdout.trim();
+          };
+          const versions = {
+            bun: probe("bun"),
+            goreleaser: probe("goreleaser").match(/GitVersion:\s*v?([^\s]+)/u)?.[1] ?? "",
+            npm: probe("npm"),
+          };
+          assertReleaseToolVersions(versions);
+          console.log(JSON.stringify({ status: "EXACT_RELEASE_TEST_TOOL_VERSIONS_CONFIRMED", versions }));
+          '
       - name: Canonical repository gate
         run: just check
 
