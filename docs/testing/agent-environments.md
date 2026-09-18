@@ -60,18 +60,24 @@ The existing scanner-isolation preload excludes the eight fixed external executa
 and records a fresh trace for each invocation. No inherited provider credentials or agent
 configuration overrides enter these child environments.
 
-Presence checks direct version output against exact version tokens, then compare the actual
-Skillsmith v2 discovery report with the owned binding paths and observed first version lines.
-The Codex binding is removed temporarily to prove incomplete discovery fails the same
-four-tool completeness assertion, restored in `finally`, and checked again.
+Presence checks direct version output against exact pinned version tokens, then compare the actual
+Skillsmith v2 discovery report with the owned binding paths and cardinality. Discovery version
+metadata is best effort: for any of the four tools it must be either the observed direct first line
+or the literal `unknown` sentinel. The sentinel does not replace a successful direct probe or the
+exact installer pin. The controls clone a valid present report to prove that `unknown` is accepted
+and that a wrong non-sentinel version is rejected by the same checker. The Codex binding is removed
+temporarily to prove incomplete discovery fails the same four-tool completeness assertion, restored
+in `finally`, and checked again.
 
 Claude and Codex install from synthetic HTTPS identities rewritten to local fixture Git
 repositories, with file-only Git transport. The exact invocation uses `--scope user --no-save
---no-verify --json`. Presence must produce the expected symlink, skill bytes, store, and ledger;
-absence must produce exit 4 and the structured not-detected refusal. Both preserve project and
-user manifest/lock nodes. The v2 wire schemas validate every report. These checks exercise local
-discovery and placement without authentication, model prompts, provider APIs, or downloaded
-skills; they do not establish authenticated agent verification or release qualification.
+--no-verify --json`. It records `requested.verify: "skipped"` and the pinned ledger verification
+as `"skipped"`; the successful result's `verify` field is explicitly `null` because no verification
+ran. Presence must produce the expected symlink, skill bytes, store, and ledger; absence must
+produce exit 4 and the structured not-detected refusal. Both preserve project and user manifest/lock
+nodes. The v2 wire schemas validate every report. These checks exercise local discovery and placement
+without authentication, model prompts, provider APIs, or downloaded skills; they do not establish
+authenticated agent verification or release qualification.
 
 Each owned child has a 30-second deadline with concurrent output consumption and bounded
 process-group TERM/KILL cleanup. Installer bootstrap and installation bounds are 120 and 900

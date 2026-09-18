@@ -418,17 +418,21 @@ const assertDiscovery = (value: Workspace, report: Agents, missing?: string): vo
       ['claude-code', 'codex'].includes(tool.id),
     );
     const installations = report.detections.find((row) => row.tool === tool.id)?.installations;
-    expect(installations).toEqual(
-      mode === 'present' && missing !== tool.id
-        ? [
-            {
-              path: join(value.bin, tool.binary),
-              version: value.versions.get(tool.id) ?? '',
-              installMethod: 'unknown',
-            },
-          ]
-        : [],
-    );
+    if (mode !== 'present' || missing === tool.id) {
+      expect(installations).toEqual([]);
+      continue;
+    }
+    expect(installations).toHaveLength(1);
+    const installation = installations?.[0];
+    if (!installation) throw new Error(`missing ${tool.id} installation`);
+    expect([value.versions.get(tool.id) ?? '', 'unknown']).toContain(installation.version);
+    expect(installations).toEqual([
+      {
+        path: join(value.bin, tool.binary),
+        version: installation.version,
+        installMethod: 'unknown',
+      },
+    ]);
   }
 };
 
@@ -441,8 +445,34 @@ test('CI-T01: four supported agents obey the owned executable environment', asyn
     await json(join(value.root, `${label}-parsed.json`), report);
     return report;
   };
-  assertDiscovery(value, await discover('all-tools'));
+  const allTools = await discover('all-tools');
+  assertDiscovery(value, allTools);
   if (mode === 'present') {
+    const unknownVersion = structuredClone(allTools);
+    const unknownKilo = unknownVersion.detections.find((row) => row.tool === 'kilo-code');
+    const unknownInstallation = unknownKilo?.installations[0];
+    if (!unknownInstallation)
+      throw new Error('missing Kilo installation for unknown-version control');
+    unknownInstallation.version = 'unknown';
+    assertDiscovery(value, unknownVersion);
+    const observedDirectKilo = value.versions.get('kilo-code') ?? '';
+    const wrongVersion = structuredClone(allTools);
+    const wrongKilo = wrongVersion.detections.find((row) => row.tool === 'kilo-code');
+    const wrongInstallation = wrongKilo?.installations[0];
+    if (!wrongInstallation) throw new Error('missing Kilo installation for wrong-version control');
+    wrongInstallation.version = 'not-a-direct-version';
+    expect(wrongInstallation.version).not.toBe(observedDirectKilo);
+    expect(wrongInstallation.version).not.toBe('unknown');
+    expect(() => assertDiscovery(value, wrongVersion)).toThrow();
+    await json(join(value.root, 'discovery-version-controls.json'), {
+      kind: 'constructed-discovery-version-controls',
+      actualProductExecutions: 0,
+      observedDirectKilo,
+      unknownSentinelAccepted: true,
+      wrongNonSentinelRejected: true,
+      unknownReport: unknownVersion,
+      wrongReport: wrongVersion,
+    });
     const path = join(value.bin, 'codex');
     const target = await readlink(path);
     await unlink(path);
@@ -571,7 +601,7 @@ for (const tool of ['claude-code', 'codex'] as const) {
         action: 'installed',
         placement: 'symlink',
         placementPath: live,
-        verify: { gate: 'skipped' },
+        verify: null,
       });
       expect(row.store).not.toBeNull();
       if (!row.store) throw new Error('missing returned store');
