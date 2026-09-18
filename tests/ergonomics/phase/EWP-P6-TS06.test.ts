@@ -27,6 +27,216 @@ const jobBlock = (workflow: string, name: string, nextName: string): string => {
   return workflow.slice(start, end);
 };
 
+type BoundaryStep = {
+  name?: string;
+  uses?: string;
+  run?: string;
+  with?: Record<string, unknown>;
+  env?: Record<string, unknown>;
+};
+type BoundaryWorkflow = {
+  on: Record<
+    string,
+    {
+      branches?: string[];
+      inputs?: Record<string, { type?: string; default?: boolean; required?: boolean }>;
+    } | null
+  >;
+  permissions: Record<string, unknown>;
+  jobs: Record<
+    string,
+    {
+      permissions?: Record<string, string>;
+      environment?: unknown;
+      uses?: string;
+      if?: string;
+      steps?: BoundaryStep[];
+      strategy?: { matrix?: { include?: { runner?: string }[] } };
+    }
+  >;
+};
+
+const ORDINARY_NPM_INSTALL = `npm_prefix="$RUNNER_TEMP/skillsmith-ordinary-npm-12.0.1"
+npm install --global --prefix "$npm_prefix" --engine-strict --ignore-scripts --no-audit --no-fund npm@12.0.1
+echo "$npm_prefix/bin" >> "$GITHUB_PATH"`;
+
+function boundary(condition: unknown, diagnostic: string): asserts condition {
+  if (!condition) throw new Error(diagnostic);
+}
+
+const assertAutomaticReleaseBoundary = (
+  product: BoundaryWorkflow,
+  qualification: BoundaryWorkflow,
+): void => {
+  const record = (value: unknown): value is Record<string, unknown> =>
+    value !== null && typeof value === 'object' && !Array.isArray(value);
+  boundary(
+    record(product) && record(product.on) && record(product.permissions) && record(product.jobs),
+    'automatic workflow shape invalid',
+  );
+  boundary(
+    Object.keys(product.on).toSorted().join(',') === 'pull_request,push' &&
+      product.on.push?.branches?.join(',') === 'main',
+    'automatic workflow triggers changed',
+  );
+  boundary(Object.keys(product.permissions).length === 0, 'automatic workflow authority changed');
+  const productText = JSON.stringify(product);
+  boundary(
+    !/\$\{\{[^}]*\bsecrets(?:\.|\[)/u.test(productText),
+    'automatic CI cannot access release secrets',
+  );
+  boundary(
+    !productText.includes('P17_G6_01_HOMEBREW_RECEIPT'),
+    'Homebrew qualification is not automatic',
+  );
+  const installers: { job: string; step: BoundaryStep }[] = [];
+  for (const [name, job] of Object.entries(product.jobs)) {
+    boundary(record(job), 'automatic job shape invalid');
+    boundary(
+      !job.uses?.includes('release-qualification'),
+      'automatic CI cannot invoke release qualification',
+    );
+    boundary(
+      record(job.permissions) && JSON.stringify(job.permissions) === '{"contents":"read"}',
+      'automatic jobs must have contents:read only',
+    );
+    boundary(job.environment === undefined, 'automatic jobs cannot enter release environments');
+    boundary(job.uses === undefined && Array.isArray(job.steps), 'automatic job shape invalid');
+    for (const step of job.steps) {
+      boundary(record(step), 'automatic step shape invalid');
+      if (step.uses?.startsWith('goreleaser/goreleaser-action')) {
+        installers.push({ job: name, step });
+      }
+      const command = step.run ?? '';
+      boundary(
+        !command.includes('release-qualification'),
+        'automatic CI cannot invoke release qualification',
+      );
+      boundary(!/\bnpm\s+publish\b/u.test(command), 'automatic npm publication is forbidden');
+      boundary(
+        !/\bgoreleaser\s+(?:release|build)\b/u.test(command),
+        'automatic GoReleaser execution is forbidden',
+      );
+      boundary(
+        ![
+          /\bgh\s+release\s+(?:create|upload|edit|delete)\b/u,
+          /\bjust\s+release-check\b/u,
+          /\b(?:bun|node)\s+(?:run\s+)?\S*(?:build-release|release-check)\.[jt]s\b/u,
+          /\bbun\s+run\s+(?:build:release|release-check)\b/u,
+        ].some((pattern) => pattern.test(command)),
+        'automatic release execution is forbidden',
+      );
+    }
+  }
+  boundary(
+    Object.keys(product.jobs).toSorted().join(',') ===
+      'agent-environments,lint-pr-title,native-receipt,ordinary-check',
+    'automatic job roster changed',
+  );
+  boundary(installers.length === 1, 'exactly one ordinary GoReleaser installer required');
+  const installer = installers[0];
+  boundary(
+    installer.job === 'ordinary-check',
+    'GoReleaser installer must belong to ordinary-check',
+  );
+  boundary(
+    installer.step.uses === 'goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94',
+    'ordinary GoReleaser action pin changed',
+  );
+  boundary(record(installer.step.with), 'ordinary GoReleaser inputs missing');
+  boundary(
+    installer.step.with['install-only'] === true,
+    'ordinary GoReleaser install-only must be boolean true',
+  );
+  boundary(installer.step.with.version === 'v2.17.1', 'ordinary GoReleaser version changed');
+  boundary(
+    Object.keys(installer.step.with).toSorted().join(',') === 'install-only,version' &&
+      installer.step.env === undefined,
+    'ordinary GoReleaser has execution inputs',
+  );
+  const ordinary = product.jobs['ordinary-check'].steps ?? [];
+  const node = ordinary.findIndex(
+    (step) => step.name === 'Set up Node for pinned release-test npm',
+  );
+  const npm = ordinary.findIndex(
+    (step) => step.name === 'Install pinned release-test npm in owned prefix',
+  );
+  const versions = ordinary.findIndex(
+    (step) => step.name === 'Check exact release-test tool versions before canonical gate',
+  );
+  const canonical = ordinary.findIndex((step) => step.run === 'just check');
+  boundary(
+    node >= 0 &&
+      ordinary[node].uses === 'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020' &&
+      ordinary[node].with?.['node-version'] === '24',
+    'ordinary Node prerequisite changed',
+  );
+  boundary(
+    npm >= 0 && ordinary[npm].run?.trim() === ORDINARY_NPM_INSTALL,
+    'ordinary npm must use exact owned installer',
+  );
+  boundary(
+    node < npm &&
+      npm < versions &&
+      ordinary.indexOf(installer.step) < versions &&
+      versions < canonical &&
+      versions >= 0 &&
+      canonical >= 0,
+    'ordinary prerequisites must precede canonical gate',
+  );
+  boundary(
+    record(qualification) &&
+      record(qualification.on) &&
+      record(qualification.permissions) &&
+      record(qualification.jobs),
+    'qualification workflow shape invalid',
+  );
+  boundary(
+    Object.keys(qualification.on).join(',') === 'workflow_dispatch',
+    'qualification must require workflow_dispatch',
+  );
+  const resume = qualification.on.workflow_dispatch?.inputs?.resume_release_qualification;
+  boundary(
+    resume?.type === 'boolean' && resume.required === true,
+    'qualification resume must require boolean input',
+  );
+  boundary(resume.default === false, 'qualification resume must default false');
+  boundary(Object.keys(qualification.permissions).length === 0, 'qualification authority changed');
+  boundary(
+    Object.keys(qualification.jobs).join(',') === 'candidate-cask',
+    'qualification job roster changed',
+  );
+  const candidate = qualification.jobs['candidate-cask'];
+  boundary(
+    candidate?.if ===
+      "${{ github.event_name == 'workflow_dispatch' && inputs.resume_release_qualification }}",
+    'qualification job requires explicit resume guard',
+  );
+  boundary(
+    JSON.stringify(candidate.permissions) === '{"contents":"read"}',
+    'qualification authority changed',
+  );
+  boundary(
+    candidate.strategy?.matrix?.include
+      ?.map((lane) => lane.runner)
+      .toSorted()
+      .join(',') === 'macos-15,macos-15-intel',
+    'qualification native matrix changed',
+  );
+  boundary(
+    candidate.steps?.some(
+      (step) =>
+        step.env?.P17_G6_01_HOMEBREW_RECEIPT === '1' &&
+        step.run?.includes('EWP-P6-TS01.*Homebrew supported-platform'),
+    ),
+    'qualification Homebrew selector changed',
+  );
+  boundary(
+    !/npm\s+publish|gh\s+release\s+upload|TAP_/u.test(JSON.stringify(qualification)),
+    'qualification publication is forbidden',
+  );
+};
+
 describe('EWP-P6-TS06', () => {
   test('family 1: canonical local, CI, and pre-push gates execute the exact serial runner once', async () => {
     const [justfile, ci, hooks, packageJson] = await Promise.all([
@@ -48,33 +258,168 @@ describe('EWP-P6-TS06', () => {
   test('family 1: automatic product CI keeps native smoke but release qualification is explicit opt-in', async () => {
     const ci = await source('.github/workflows/ci.yml');
     expect(ci).not.toContain('P17_G6_01_HOMEBREW_RECEIPT');
-    expect(ci).not.toContain('goreleaser/goreleaser-action');
-    expect(ci).not.toContain('npm@12.0.1');
     expect(ci).toContain('run: just check');
     expect(ci).toContain('Host-native build and smoke');
     for (const runner of ['ubuntu-24.04-arm', 'macos-15', 'macos-15-intel']) {
       expect(ci).toContain(runner);
     }
-    const product = Bun.YAML.parse(ci) as { on: Record<string, unknown> };
-    expect(Object.keys(product.on).toSorted()).toEqual(['pull_request', 'push']);
-
     const qualificationSource = await source('.github/workflows/release-qualification.yml');
-    const qualification = Bun.YAML.parse(qualificationSource) as {
-      on: Record<string, { inputs: Record<string, { default: boolean; required: boolean }> }>;
-      permissions: Record<string, unknown>;
-      jobs: Record<string, { if: string; permissions: Record<string, string> }>;
-    };
-    expect(Object.keys(qualification.on)).toEqual(['workflow_dispatch']);
-    expect(qualification.on.workflow_dispatch?.inputs.resume_release_qualification).toMatchObject({
-      default: false,
-      required: true,
-    });
-    expect(qualification.permissions).toEqual({});
-    expect(Object.keys(qualification.jobs)).toEqual(['candidate-cask']);
-    expect(qualification.jobs['candidate-cask']?.if).toBe(
-      "${{ github.event_name == 'workflow_dispatch' && inputs.resume_release_qualification }}",
+    const product = Bun.YAML.parse(ci) as BoundaryWorkflow;
+    const qualification = Bun.YAML.parse(qualificationSource) as BoundaryWorkflow;
+    expect(() => assertAutomaticReleaseBoundary(product, qualification)).not.toThrow();
+
+    const steps = (workflow: BoundaryWorkflow): BoundaryStep[] =>
+      workflow.jobs['ordinary-check'].steps ?? [];
+    const installerIndex = steps(product).findIndex((step) => step.uses?.startsWith('goreleaser/'));
+    const npmIndex = steps(product).findIndex(
+      (step) => step.name === 'Install pinned release-test npm in owned prefix',
     );
-    expect(qualification.jobs['candidate-cask']?.permissions).toEqual({ contents: 'read' });
+    const installer = (workflow: BoundaryWorkflow): BoundaryStep => steps(workflow)[installerIndex];
+    const resume = (workflow: BoundaryWorkflow) =>
+      workflow.on.workflow_dispatch?.inputs?.resume_release_qualification ?? {};
+    const controls: {
+      name: string;
+      mutate: (product: BoundaryWorkflow, qualification: BoundaryWorkflow) => void;
+      diagnostic: string;
+    }[] = [
+      ...[undefined, false, 'true'].map((value) => ({
+        name: `install-only ${String(value)}`,
+        mutate: (workflow: BoundaryWorkflow) => {
+          const inputs = installer(workflow).with ?? {};
+          installer(workflow).with =
+            value === undefined
+              ? Object.fromEntries(Object.entries(inputs).filter(([key]) => key !== 'install-only'))
+              : { ...inputs, 'install-only': value };
+        },
+        diagnostic: 'ordinary GoReleaser install-only must be boolean true',
+      })),
+      {
+        name: 'wrong action pin',
+        mutate: (p) => {
+          installer(p).uses = `goreleaser/goreleaser-action@${SHA}`;
+        },
+        diagnostic: 'ordinary GoReleaser action pin changed',
+      },
+      {
+        name: 'wrong version',
+        mutate: (p) => {
+          installer(p).with = { 'install-only': true, version: 'v0.0.0' };
+        },
+        diagnostic: 'ordinary GoReleaser version changed',
+      },
+      ...['args', 'token'].map((key) => ({
+        name: `execution input ${key}`,
+        mutate: (p: BoundaryWorkflow) => {
+          installer(p).with = { ...installer(p).with, [key]: 'constructed-control' };
+        },
+        diagnostic: 'ordinary GoReleaser has execution inputs',
+      })),
+      {
+        name: 'duplicate installer',
+        mutate: (p) => {
+          steps(p).push(structuredClone(installer(p)));
+        },
+        diagnostic: 'exactly one ordinary GoReleaser installer required',
+      },
+      {
+        name: 'moved installer',
+        mutate: (p) => {
+          p.jobs['native-receipt'].steps?.push(steps(p).splice(installerIndex, 1)[0]);
+        },
+        diagnostic: 'GoReleaser installer must belong to ordinary-check',
+      },
+      {
+        name: 'npm publication',
+        mutate: (p) => {
+          steps(p)[npmIndex].run = 'npm publish';
+        },
+        diagnostic: 'automatic npm publication is forbidden',
+      },
+      {
+        name: 'GoReleaser execution',
+        mutate: (p) => {
+          steps(p).push({ run: 'goreleaser release' });
+        },
+        diagnostic: 'automatic GoReleaser execution is forbidden',
+      },
+      {
+        name: 'qualification reusable job',
+        mutate: (p) => {
+          p.jobs['qualification-control'] = {
+            permissions: { contents: 'read' },
+            uses: './.github/workflows/release-qualification.yml',
+          };
+        },
+        diagnostic: 'automatic CI cannot invoke release qualification',
+      },
+      {
+        name: 'qualification dispatch',
+        mutate: (p) => {
+          steps(p).push({ run: 'gh workflow run release-qualification.yml' });
+        },
+        diagnostic: 'automatic CI cannot invoke release qualification',
+      },
+      {
+        name: 'write authority',
+        mutate: (p) => {
+          p.jobs['ordinary-check'].permissions = { contents: 'write' };
+        },
+        diagnostic: 'automatic jobs must have contents:read only',
+      },
+      {
+        name: 'privileged environment',
+        mutate: (p) => {
+          p.jobs['ordinary-check'].environment = 'release-candidate';
+        },
+        diagnostic: 'automatic jobs cannot enter release environments',
+      },
+      {
+        name: 'release secret',
+        mutate: (p) => {
+          installer(p).env = { TOKEN: '${{ secrets.NPM_TOKEN }}' };
+        },
+        diagnostic: 'automatic CI cannot access release secrets',
+      },
+      {
+        name: 'automatic Homebrew qualification',
+        mutate: (p) => {
+          installer(p).env = { P17_G6_01_HOMEBREW_RECEIPT: '1' };
+        },
+        diagnostic: 'Homebrew qualification is not automatic',
+      },
+      {
+        name: 'automatic qualification trigger',
+        mutate: (_p, q) => {
+          q.on.push = { branches: ['main'] };
+        },
+        diagnostic: 'qualification must require workflow_dispatch',
+      },
+      {
+        name: 'default-enabled qualification',
+        mutate: (_p, q) => {
+          resume(q).default = true;
+        },
+        diagnostic: 'qualification resume must default false',
+      },
+      {
+        name: 'unguarded qualification',
+        mutate: (_p, q) => {
+          q.jobs['candidate-cask'] = Object.fromEntries(
+            Object.entries(q.jobs['candidate-cask']).filter(([key]) => key !== 'if'),
+          );
+        },
+        diagnostic: 'qualification job requires explicit resume guard',
+      },
+    ];
+    for (const control of controls) {
+      const mutatedProduct = structuredClone(product);
+      const mutatedQualification = structuredClone(qualification);
+      control.mutate(mutatedProduct, mutatedQualification);
+      expect(
+        () => assertAutomaticReleaseBoundary(mutatedProduct, mutatedQualification),
+        control.name,
+      ).toThrow(control.diagnostic);
+    }
     for (const runner of ['macos-15', 'macos-15-intel'])
       expect(qualificationSource).toContain(runner);
     expect(qualificationSource).toContain("P17_G6_01_HOMEBREW_RECEIPT: '1'");
