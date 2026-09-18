@@ -119,7 +119,7 @@ jobs:
           echo "AGENT_REPORT_ROOT=$report_root" >> "$GITHUB_ENV"
           echo "SKILLSMITH_CI_AGENT_REPORT_DIR=$report_root/children" >> "$GITHUB_ENV"
           {
-            git rev-parse HEAD HEAD^{tree}
+            git rev-parse HEAD 'HEAD^{tree}'
             node --version
             npm --version
             bun --version
