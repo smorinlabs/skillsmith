@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "tools": [
+    {
+      "id": "claude-code",
+      "binary": "claude",
+      "package": "@anthropic-ai/claude-code",
+      "version": "2.1.202"
+    },
+    { "id": "codex", "binary": "codex", "package": "@openai/codex", "version": "0.142.5" },
+    { "id": "kilo-code", "binary": "kilo", "package": "@kilocode/cli", "version": "7.4.5" },
+    { "id": "opencode", "binary": "opencode", "package": "opencode-ai", "version": "1.17.18" }
+  ]
+}

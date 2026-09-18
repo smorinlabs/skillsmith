@@ -87,3 +87,95 @@ jobs:
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: printf '%s\n' "$PR_TITLE" | bunx commitlint
+
+  agent-environments:
+    name: Agent environments (${{ matrix.mode }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [present, absent]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.14
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: '24'
+      - name: Install dependencies without lifecycle scripts
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: Prepare owned reports
+        id: reports
+        run: |
+          report_root=$(mktemp -d "$RUNNER_TEMP/skillsmith-agent-reports.XXXXXX")
+          mkdir "$report_root/children"
+          echo "AGENT_REPORT_ROOT=$report_root" >> "$GITHUB_ENV"
+          echo "SKILLSMITH_CI_AGENT_REPORT_DIR=$report_root/children" >> "$GITHUB_ENV"
+          {
+            git rev-parse HEAD HEAD^{tree}
+            node --version
+            npm --version
+            bun --version
+            git --version
+          } > "$report_root/source-and-runtimes.txt"
+      - name: Install exact owned agent tools
+        id: tools
+        if: matrix.mode == 'present'
+        run: |
+          set +e
+          bun scripts/install-ci-agent-tools.ts --root "$RUNNER_TEMP/skillsmith-ci-agent-tools" > "$AGENT_REPORT_ROOT/installer.stdout" 2> "$AGENT_REPORT_ROOT/installer.stderr"
+          result=$?
+          set -e
+          cat "$AGENT_REPORT_ROOT/installer.stdout"
+          cat "$AGENT_REPORT_ROOT/installer.stderr" >&2
+          if [ "$result" -ne 0 ]; then exit "$result"; fi
+          echo "SKILLSMITH_CI_AGENT_PREFIX=$RUNNER_TEMP/skillsmith-ci-agent-tools/prefix" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/skillsmith-ci-agent-tools/prefix/bin" >> "$GITHUB_PATH"
+      - name: Check agent discovery and install prerequisites
+        env:
+          SKILLSMITH_CI_AGENT_MODE: ${{ matrix.mode }}
+        run: |
+          set +e
+          bun test ./packages/cli/tests/commands/agent-environments.test.ts --timeout=60000 --max-concurrency=1 --no-orphans --retry=0 --reporter=junit --reporter-outfile="$AGENT_REPORT_ROOT/agent-environments.xml" > "$AGENT_REPORT_ROOT/agent-environments.stdout" 2> "$AGENT_REPORT_ROOT/agent-environments.stderr"
+          result=$?
+          set -e
+          cat "$AGENT_REPORT_ROOT/agent-environments.stdout"
+          cat "$AGENT_REPORT_ROOT/agent-environments.stderr" >&2
+          exit "$result"
+      - name: Check P4A fixture independence
+        if: ${{ !cancelled() && steps.reports.outcome == 'success' && (matrix.mode == 'absent' || steps.tools.outcome == 'success') }}
+        run: |
+          set +e
+          bun test ./tests/ergonomics/phase/EWP-P4A-TS01.test.ts --timeout=60000 --max-concurrency=1 --no-orphans --retry=0 --reporter=junit --reporter-outfile="$AGENT_REPORT_ROOT/p4a-fixtures.xml" > "$AGENT_REPORT_ROOT/p4a-fixtures.stdout" 2> "$AGENT_REPORT_ROOT/p4a-fixtures.stderr"
+          result=$?
+          set -e
+          cat "$AGENT_REPORT_ROOT/p4a-fixtures.stdout"
+          cat "$AGENT_REPORT_ROOT/p4a-fixtures.stderr" >&2
+          exit "$result"
+      - name: Retain owned agent environment evidence
+        if: ${{ !cancelled() && steps.reports.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4
+        with:
+          name: agent-environments-${{ matrix.mode }}-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          include-hidden-files: true
+          path: |
+            ${{ env.AGENT_REPORT_ROOT }}/*.txt
+            ${{ env.AGENT_REPORT_ROOT }}/*.xml
+            ${{ env.AGENT_REPORT_ROOT }}/*.stdout
+            ${{ env.AGENT_REPORT_ROOT }}/*.stderr
+            ${{ env.AGENT_REPORT_ROOT }}/children/*/*.json
+            ${{ env.AGENT_REPORT_ROOT }}/children/*/*.stdout
+            ${{ env.AGENT_REPORT_ROOT }}/children/*/*.stderr
+            ${{ env.AGENT_REPORT_ROOT }}/children/*/.detection-*/preload.ts
+            ${{ env.AGENT_REPORT_ROOT }}/children/*/.detection-*/trace.txt
+            ${{ env.AGENT_REPORT_ROOT }}/children/*/.detection-*/receipt.json
+            ${{ runner.temp }}/skillsmith-ci-agent-tools/receipt.json
+            ${{ runner.temp }}/skillsmith-ci-agent-tools/logs
