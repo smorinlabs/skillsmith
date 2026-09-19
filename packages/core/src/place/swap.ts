@@ -2484,11 +2484,20 @@ const computeBefore = async (
     if (plan.rollbackOf === 'rollback' && liveKind === 'absent') {
       return ok({ mode: 'absent' });
     }
+    // SC-I60-R1: record the literal old symlink target so rollback can disambiguate a
+    // symlink→symlink dev swap (same shape as the install/uninstall branches below).
+    let devTarget: string | null = null;
+    if (kindOf(liveKind) === 'symlink') {
+      const t = await readLive();
+      if (!t.ok) return t;
+      devTarget = t.value;
+    }
     return ok({
       mode: 'pinned',
       storePath: existing?.pinned?.storePath ?? null,
       contentHash: existing?.pinned?.contentHash ?? null,
       liveKind: kindOf(liveKind),
+      ...(devTarget !== null ? { symlinkTarget: devTarget } : {}),
     });
   }
   if (plan.op === 'install') {
