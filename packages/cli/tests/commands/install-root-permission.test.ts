@@ -218,6 +218,9 @@ const buildCliWorld = async (): Promise<CliWorld> => {
   const rawEnv = hermeticGitEnv(
     {
       HOME: home,
+      XDG_DATA_HOME: join(home, '.local', 'share'),
+      XDG_CONFIG_HOME: join(home, '.config'),
+      XDG_CACHE_HOME: join(home, '.cache'),
       SKILLSMITH_HOME: f.data,
       TMPDIR: tmp,
       GIT_ALLOW_PROTOCOL: 'file:https',
@@ -480,73 +483,80 @@ describe('SC-I60-MF2A lane 1 — core exact-API (real makeDir wrapper, genuine P
   });
 });
 
-describe('SC-I60-MF2A lane 2 — deterministic public CLI (exact-path errno fault)', () => {
-  test('CONTROL: unmodified CLI installs into writable missing root (exit 0)', async () => {
-    const w = await buildCliWorld();
-    try {
-      const r = await runCli(w, INSTALL_ARGS(w.fsSource));
-      if (r.code !== 0) throw new Error(`success control failed:\n${transcript(r)}`);
-      expect(await kindOf(join(w.root, SKILL))).toBe('symlink');
-    } finally {
-      await destroyCliWorld(w);
-    }
-  });
+// strace fault injection is Linux-only; skip the lane where it cannot run
+// (Bun.which tool gate per dev-source-live.test.ts precedent).
+const lane2StraceOk = process.platform === 'linux' && Bun.which('strace') !== null;
 
-  test('RED: EACCES at exact skills root yields exit 6 (default route)', async () => {
-    const w = await buildCliWorld();
-    try {
-      const r = await runCliUnderFault(w, INSTALL_ARGS(w.fsSource), 'EACCES');
-      expect(r.injected).toBeGreaterThanOrEqual(1);
-      const combined = `${r.stdout}\n${r.stderr}`;
-      expect(combined).toContain(`cannot create skills root ${w.root}`);
-      expect(await kindOf(join(w.root, SKILL))).toBe('absent');
-      // DESIRED (pre-repair RED: actual is exit 1).
-      if (r.code !== 6) throw new Error(`RED evidence — expected exit 6, got:\n${transcript(r)}`);
-    } finally {
-      await destroyCliWorld(w);
-    }
-  });
+describe.skipIf(!lane2StraceOk)(
+  'SC-I60-MF2A lane 2 — deterministic public CLI (exact-path errno fault)',
+  () => {
+    test('CONTROL: unmodified CLI installs into writable missing root (exit 0)', async () => {
+      const w = await buildCliWorld();
+      try {
+        const r = await runCli(w, INSTALL_ARGS(w.fsSource));
+        if (r.code !== 0) throw new Error(`success control failed:\n${transcript(r)}`);
+        expect(await kindOf(join(w.root, SKILL))).toBe('symlink');
+      } finally {
+        await destroyCliWorld(w);
+      }
+    });
 
-  test('RED: EPERM at exact skills root yields exit 6 (default route)', async () => {
-    const w = await buildCliWorld();
-    try {
-      const r = await runCliUnderFault(w, INSTALL_ARGS(w.fsSource), 'EPERM');
-      expect(r.injected).toBeGreaterThanOrEqual(1);
-      const combined = `${r.stdout}\n${r.stderr}`;
-      expect(combined).toContain(`cannot create skills root ${w.root}`);
-      if (r.code !== 6) throw new Error(`RED evidence — expected exit 6, got:\n${transcript(r)}`);
-    } finally {
-      await destroyCliWorld(w);
-    }
-  });
+    test('RED: EACCES at exact skills root yields exit 6 (default route)', async () => {
+      const w = await buildCliWorld();
+      try {
+        const r = await runCliUnderFault(w, INSTALL_ARGS(w.fsSource), 'EACCES');
+        expect(r.injected).toBeGreaterThanOrEqual(1);
+        const combined = `${r.stdout}\n${r.stderr}`;
+        expect(combined).toContain(`cannot create skills root ${w.root}`);
+        expect(await kindOf(join(w.root, SKILL))).toBe('absent');
+        // DESIRED (pre-repair RED: actual is exit 1).
+        if (r.code !== 6) throw new Error(`RED evidence — expected exit 6, got:\n${transcript(r)}`);
+      } finally {
+        await destroyCliWorld(w);
+      }
+    });
 
-  test('RED: EACCES at exact skills root yields exit 6 (--no-save route)', async () => {
-    const w = await buildCliWorld();
-    try {
-      const r = await runCliUnderFault(w, [...INSTALL_ARGS(w.fsSource), '--no-save'], 'EACCES');
-      expect(r.injected).toBeGreaterThanOrEqual(1);
-      const combined = `${r.stdout}\n${r.stderr}`;
-      expect(combined).toContain(`cannot create skills root ${w.root}`);
-      if (r.code !== 6) throw new Error(`RED evidence — expected exit 6, got:\n${transcript(r)}`);
-    } finally {
-      await destroyCliWorld(w);
-    }
-  });
+    test('RED: EPERM at exact skills root yields exit 6 (default route)', async () => {
+      const w = await buildCliWorld();
+      try {
+        const r = await runCliUnderFault(w, INSTALL_ARGS(w.fsSource), 'EPERM');
+        expect(r.injected).toBeGreaterThanOrEqual(1);
+        const combined = `${r.stdout}\n${r.stderr}`;
+        expect(combined).toContain(`cannot create skills root ${w.root}`);
+        if (r.code !== 6) throw new Error(`RED evidence — expected exit 6, got:\n${transcript(r)}`);
+      } finally {
+        await destroyCliWorld(w);
+      }
+    });
 
-  test('CONTROL: EIO at exact skills root stays exit 1', async () => {
-    const w = await buildCliWorld();
-    try {
-      const r = await runCliUnderFault(w, INSTALL_ARGS(w.fsSource), 'EIO');
-      expect(r.injected).toBeGreaterThanOrEqual(1);
-      const combined = `${r.stdout}\n${r.stderr}`;
-      expect(combined).toContain(`cannot create skills root ${w.root}`);
-      if (r.code !== 1)
-        throw new Error(`EIO control failed — expected exit 1, got:\n${transcript(r)}`);
-    } finally {
-      await destroyCliWorld(w);
-    }
-  });
-});
+    test('RED: EACCES at exact skills root yields exit 6 (--no-save route)', async () => {
+      const w = await buildCliWorld();
+      try {
+        const r = await runCliUnderFault(w, [...INSTALL_ARGS(w.fsSource), '--no-save'], 'EACCES');
+        expect(r.injected).toBeGreaterThanOrEqual(1);
+        const combined = `${r.stdout}\n${r.stderr}`;
+        expect(combined).toContain(`cannot create skills root ${w.root}`);
+        if (r.code !== 6) throw new Error(`RED evidence — expected exit 6, got:\n${transcript(r)}`);
+      } finally {
+        await destroyCliWorld(w);
+      }
+    });
+
+    test('CONTROL: EIO at exact skills root stays exit 1', async () => {
+      const w = await buildCliWorld();
+      try {
+        const r = await runCliUnderFault(w, INSTALL_ARGS(w.fsSource), 'EIO');
+        expect(r.injected).toBeGreaterThanOrEqual(1);
+        const combined = `${r.stdout}\n${r.stderr}`;
+        expect(combined).toContain(`cannot create skills root ${w.root}`);
+        if (r.code !== 1)
+          throw new Error(`EIO control failed — expected exit 1, got:\n${transcript(r)}`);
+      } finally {
+        await destroyCliWorld(w);
+      }
+    });
+  },
+);
 
 describe('SC-I60-MF2A lane 3 — real-OS denial (unmodified CLI, no fault harness)', () => {
   test('RED?: non-writable owned parent yields kernel EACCES and exit 6', async () => {
