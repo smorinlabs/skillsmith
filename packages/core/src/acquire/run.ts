@@ -859,9 +859,16 @@ const predictPair = async (
   }
   const live = currentResolution.placement;
   if (live.class === 'absent') return { ...base, action: 'installed' };
+  let pinnedMatches = false;
+  if (live.class === 'pinned') {
+    const [liveHash, resolvedHash] = await Promise.all([
+      contentHashOf(env, live.path),
+      contentHashOf(env, resolved.materializedDir),
+    ]);
+    pinnedMatches = liveHash.ok && resolvedHash.ok && liveHash.value === resolvedHash.value;
+  }
   const matchesResolved =
-    (live.class === 'store-linked' && live.symlinkTarget === expectedStorePath) ||
-    live.class === 'pinned';
+    (live.class === 'store-linked' && live.symlinkTarget === expectedStorePath) || pinnedMatches;
   if (matchesResolved && !opts.force) {
     if (existing?.origin?.refResolved === sha) {
       return { ...base, action: 'noop', reason: `already installed at ${sha.slice(0, 12)}` };
