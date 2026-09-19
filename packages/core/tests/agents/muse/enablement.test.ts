@@ -21,12 +21,12 @@ const env = (files: Record<string, string> = {}): InventoryReadPorts => ({
   modifiedAt: async () => null,
 });
 
-const entry = (path: string): SkillEntry => ({
+const entry = (path: string, scope: SkillEntry['scope'] = 'user'): SkillEntry => ({
   name: path.split('/').pop() ?? path,
   path,
   realpath: path,
   tool: 'muse',
-  scope: 'user',
+  scope,
   root: '/h/.config/muse/skills',
   frontmatter: null,
   origin: { kind: 'standalone' },
@@ -83,6 +83,21 @@ describe('muse resolveStandaloneActivation', () => {
           },
           project: { '/p/.agents/skills/other/SKILL.md': 'off' },
           future: ['not-a-map'],
+        }),
+      }),
+      entries,
+    );
+    expect(entries.map((e) => e.enabled)).toEqual(['off', 'on']);
+  });
+
+  test('each entry reads only its own scope map', async () => {
+    const shared = '/h/.agents/skills/s1';
+    const entries = [entry(shared, 'user'), entry(shared, 'project')];
+    await resolveStandaloneActivation(
+      env({
+        [SETTINGS]: settings({
+          user: { '$HOME/.agents/skills/s1/SKILL.md': 'off' },
+          project: { '$HOME/.agents/skills/s1/SKILL.md': 'on' },
         }),
       }),
       entries,

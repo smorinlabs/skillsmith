@@ -3,7 +3,7 @@
 > P17 disposition: current behavior; authority: packages/cli/src/program.ts
 
 Skills you write for one AI coding tool don't work in the others. Skillsmith unifies skill discovery
-and management across Claude Code, Codex, Kilo Code, and opencode.
+and management across Claude Code, Codex, Kilo Code, opencode, and Muse.
 
 **Today:** `agents`, `config`, `list`, `ls`, `commands`, `cross-tool-names`, `doctor`, `check`, `verify`, `status`, `plan`, `apply`, `sync`, `update`, `undo`, `promote`, `dev`, `demote`, `install`, `i`, `uninstall`, `rm`, `remove`, `export`, `gc`, `init`, `version`, `completion`, and `help` are implemented.
 **P17 target:** consistent behavior across the retained command surface, with generated public help and command documentation.

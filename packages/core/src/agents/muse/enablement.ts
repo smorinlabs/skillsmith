@@ -26,7 +26,7 @@ const readActivationRecords = async (
   env: InventoryReadPorts,
   path: string,
   signal?: AbortSignal,
-): Promise<Result<ReadonlyArray<readonly [string, string]> | null, SkillSmithError>> => {
+): Promise<Result<ReadonlyArray<readonly [string, string, string]> | null, SkillSmithError>> => {
   throwIfInventoryCancelled(signal);
   const exists = await env
     .fileExists(path)
@@ -57,10 +57,11 @@ const readActivationRecords = async (
     );
   }
   const activation = validated.data.skills?.activation ?? {};
-  const records: Array<readonly [string, string]> = [];
-  for (const scopeMap of Object.values(activation)) {
+  const records: Array<readonly [string, string, string]> = [];
+  for (const [scope, scopeMap] of Object.entries(activation)) {
     if (!isStringMap(scopeMap)) continue;
-    for (const [skillPath, state] of Object.entries(scopeMap)) records.push([skillPath, state]);
+    for (const [skillPath, state] of Object.entries(scopeMap))
+      records.push([scope, skillPath, state]);
   }
   return ok(records);
 };
@@ -85,13 +86,23 @@ export const resolveStandaloneActivation: StandaloneActivationResolver = async (
   if (!read.ok) throw read.error;
   if (read.value === null) return;
 
-  const byDocument = new Map<string, string>();
-  for (const [skillPath, state] of read.value) {
+  // Records stay scoped: the same document may be inventoried under two scopes at
+  // once (a repository rooted at $HOME shares the user compatibility root), so a
+  // flattened lookup would let JSON property order decide between contradictory
+  // records. Each entry reads only its own scope map and otherwise keeps the
+  // on default.
+  const byScope = new Map<string, Map<string, string>>();
+  for (const [scope, skillPath, state] of read.value) {
+    let byDocument = byScope.get(scope);
+    if (!byDocument) {
+      byDocument = new Map<string, string>();
+      byScope.set(scope, byDocument);
+    }
     byDocument.set(expandRecordKey(env, skillPath), state);
   }
   for (const entry of entries) {
     const document = normalizeSeparators(join(entry.path, 'SKILL.md'));
-    const state = byDocument.get(document);
+    const state = byScope.get(entry.scope)?.get(document);
     if (state === 'off') entry.enabled = 'off';
     else if (state === 'on') entry.enabled = 'on';
   }

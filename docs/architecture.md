@@ -275,8 +275,9 @@ adaptation bundles. The public `Agent`, `registry`, `SUPPORTED_TOOLS`, `VERIFY_T
 └────────────────────────┘
 ```
 
-Currently supported tools: **Claude Code, Codex, Kilo Code, opencode**. All four support inventory
-and diagnostics; Claude Code and Codex additionally own verification and placement bundles. See
+Currently supported tools: **Claude Code, Codex, Kilo Code, opencode, Muse**. All five support
+inventory and diagnostics; Claude Code and Codex additionally own verification and placement
+bundles. See
 [ADR 0007](adr/0007-tool-adapter-registry.md) for the exact operation/scope matrix and validation
 rules.
 

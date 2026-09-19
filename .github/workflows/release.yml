@@ -1206,7 +1206,7 @@ jobs:
           verify_fleet kilo 1 kilo
           verify_fleet opencode 1 opencode
           verify_fleet muse 1 muse
-          verify_fleet mixed 2 claude kilo
+          verify_fleet mixed 3 claude kilo muse
           set +e
           env HOME="$root/fleet-home" \
             XDG_CONFIG_HOME="$root/fleet-home/config" \
@@ -1237,6 +1237,10 @@ jobs:
           mutation_exit="$?"
           set -e
           test "$mutation_exit" = '4'
+          if grep -Fq 'is not detected' "$root/read-only-mutation-muse.json"; then
+            echo 'muse install refused as unavailable instead of read-only' >&2
+            exit 1
+          fi
           npm_home="$root/owned/npm/home"
           npm_cache="$root/owned/npm/npm-cache"
           mkdir -p "$npm_home" "$npm_cache"

@@ -17,4 +17,5 @@ for Meta's Muse CLI (`muse` binary).
 - No standalone command roots or installed-plugin discovery in this build
   (plugin commands require an authenticated session)
 
-See `research/skillsmith-skill-install-paths.md` for the dated provenance.
+Muse paths were probed against Muse 1.3.0-R3401.1 on 2026-09-19; the verified behavior is
+recorded in this directory (`skill-roots.ts`, `enablement.ts`, `index.ts`).
