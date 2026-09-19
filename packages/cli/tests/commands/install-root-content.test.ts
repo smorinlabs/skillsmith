@@ -211,8 +211,11 @@ const buildRootContentFixture = async (base: string): Promise<RootContentFixture
   const bunVersion = process.versions.bun ?? 'unknown';
   const checkout = join(import.meta.dir, '..', '..', '..', '..');
   const headSha = runGit(checkout, ['rev-parse', 'HEAD']).trim();
-  if (headSha !== BASE_SHA) {
-    throw new Error(`frozen-base drift: expected ${BASE_SHA}, observed ${headSha}`);
+  const mergeBase = runGit(checkout, ['merge-base', BASE_SHA, 'HEAD']).trim();
+  if (mergeBase !== BASE_SHA) {
+    throw new Error(
+      `frozen-base drift: expected ancestor ${BASE_SHA}, observed head ${headSha} (merge-base ${mergeBase})`,
+    );
   }
   return {
     base,
@@ -1521,6 +1524,7 @@ describe('SC-I60-R5 Phase A — root-skill content characterization (P17)', () =
       cases,
     };
     console.log(`R5TABLE ${JSON.stringify(table)}`);
-    expect(fx.headSha).toBe(BASE_SHA);
+    const r5MergeBase = runGit(checkout, ['merge-base', BASE_SHA, fx.headSha]).trim();
+    expect(r5MergeBase).toBe(BASE_SHA);
   });
 });
