@@ -273,8 +273,8 @@
       "dependsOn": [],
       "number": 41,
       "url": "https://github.com/smorinlabs/skillsmith/issues/41",
-      "scope": "P19-T08 covers inventory, selection and truthful no-matches reporting. Q1.A preserves per-tool conflicts and assigns informational cross-tool same-name reporting to a separate follow-up PR under #41. The report interface proposed in Q3 remains undecided; #41 stays open.",
-      "body": "## Task\n\nP19-T08 covers inventory, selection and truthful no-matches reporting. Q1.A preserves per-tool conflicts and assigns informational cross-tool same-name reporting to a separate follow-up PR under #41. The report interface proposed in Q3 remains undecided; #41 stays open.\n\n## Original IDs\n\n- #41\n- P17-G3A-02\n- P1-03\n- EWP-CMD-LIST-TS01..07\n- EWP-P3A-TS03\n\n## Dependencies\n\nNo unsatisfied hard dependency assigned. Historical references above do not imply blocking.\n\n## Provenance and scope\n\nUser authorized P19 implementation and publication deferral on 2026-09-15. Original P17 release completion remains pending. This issue does not authorize publishing, credentials, visibility changes or unapproved product-contract amendments.\n\n- P17 preserved checkpoint: `5a7418593ecf6a8be4b10d8a5f657bb9e4f0e402`; draft PR #44.\n- Maintenance baseline: `9c0219f69888239ef5d2cab9ddea4a4683b14a48`.\n- [P17 goal](https://github.com/smorinlabs/skillsmith/blob/5a7418593ecf6a8be4b10d8a5f657bb9e4f0e402/projects/P17-GOAL.md)\n- [G6-04 plan](https://github.com/smorinlabs/skillsmith/blob/5a7418593ecf6a8be4b10d8a5f657bb9e4f0e402/projects/p17/plans/P17-G6-04.md)\n- [G6-04 evidence](https://github.com/smorinlabs/skillsmith/blob/5a7418593ecf6a8be4b10d8a5f657bb9e4f0e402/projects/p17/evidence/P17-G6-04.md)\n- [Catalog](https://github.com/smorinlabs/skillsmith/blob/5a7418593ecf6a8be4b10d8a5f657bb9e4f0e402/projects/p17/catalog.json)\n- P19 project/plan/task registry is being recorded in branch `agent/p19-bug-closeout`.\n\nKeep original IDs and evidence. Distinguish historical/satisfied dependencies from current blockers. Close only with the acceptance evidence, not merely because a successor issue exists. Revalidate exact source and external facts on resumption; historic mapping failures are not necessarily current defects.\n\n## Linked tracking\n\n- Project: [P19 #51](https://github.com/smorinlabs/skillsmith/issues/51)\n- Publication umbrella (related, not a product-bug prerequisite): [PUB-00 #53](https://github.com/smorinlabs/skillsmith/issues/53)\n- Blocks: [FOLLOW-BUN #57](https://github.com/smorinlabs/skillsmith/issues/57)\n"
+      "scope": "P19-T08 covers inventory, selection and truthful no-matches reporting. User decision Q1.A (2026-09-15) preserves per-tool conflicts and delivers informational cross-tool name reporting in a separate follow-up PR. The report interface proposed in Q3 remains undecided. Keep #41 open until reporting acceptance and affected-line integration are complete; this addition does not block PR #66.",
+      "body": "## Task\n\nP19-T08 covers inventory, selection and truthful no-matches reporting. User decision Q1.A (2026-09-15) preserves per-tool conflicts and delivers informational cross-tool name reporting in a separate follow-up PR. The report interface proposed in Q3 remains undecided. Keep #41 open until reporting acceptance and affected-line integration are complete; this addition does not block PR #66.\n\nDecision record: https://github.com/smorinlabs/skillsmith/issues/41#issuecomment-5689778855\n\n## Original IDs\n\n- #41\n- P17-G3A-02\n- P1-03\n- EWP-CMD-LIST-TS01..07\n- EWP-P3A-TS03\n\n## Dependencies\n\nNo unsatisfied hard dependency assigned. Historical references above do not imply blocking.\n\n## Provenance and scope\n\nUser authorized P19 implementation and publication deferral on 2026-09-15. Original P17 release completion remains pending. This issue does not authorize publishing, credentials, visibility changes or unapproved product-contract amendments.\n\n- P17 preserved checkpoint: `5a7418593ecf6a8be4b10d8a5f657bb9e4f0e402`; draft PR #44.\n- Maintenance baseline: `9c0219f69888239ef5d2cab9ddea4a4683b14a48`.\n- [P17 goal](https://github.com/smorinlabs/skillsmith/blob/5a7418593ecf6a8be4b10d8a5f657bb9e4f0e402/projects/P17-GOAL.md)\n- [G6-04 plan](https://github.com/smorinlabs/skillsmith/blob/5a7418593ecf6a8be4b10d8a5f657bb9e4f0e402/projects/p17/plans/P17-G6-04.md)\n- [G6-04 evidence](https://github.com/smorinlabs/skillsmith/blob/5a7418593ecf6a8be4b10d8a5f657bb9e4f0e402/projects/p17/evidence/P17-G6-04.md)\n- [Catalog](https://github.com/smorinlabs/skillsmith/blob/5a7418593ecf6a8be4b10d8a5f657bb9e4f0e402/projects/p17/catalog.json)\n- P19 project/plan/task registry is being recorded in branch `agent/p19-bug-closeout`.\n\nKeep original IDs and evidence. Distinguish historical/satisfied dependencies from current blockers. Close only with the acceptance evidence, not merely because a successor issue exists. Revalidate exact source and external facts on resumption; historic mapping failures are not necessarily current defects.\n\n## Linked tracking\n\n- Project: [P19 #51](https://github.com/smorinlabs/skillsmith/issues/51)\n- Publication umbrella (related, not a product-bug prerequisite): [PUB-00 #53](https://github.com/smorinlabs/skillsmith/issues/53)\n- Blocks: [FOLLOW-BUN #57](https://github.com/smorinlabs/skillsmith/issues/57)\n"
     },
     {
       "key": "ISSUE-40",
@@ -315,26 +315,46 @@
       "branch": "agent/p19-bug-closeout",
       "productCommit": "3dd85a0",
       "securityCommit": "b458413",
-      "validatedHead": "38baccce45d5600bd17012f983c340ea615fb2f3",
+      "validatedHead": "7c8d8651c1d8e62ffcf2eb27a93af8862e629b81",
       "pullRequest": 66,
       "ordinaryLocalGate": "passed: 1047 pass, 28 existing live skips, 0 fail, 4971 assertions, 129 files; frozen install/secrets/audit/security lint passed",
-      "githubCi": "passed on ubuntu-latest and macos-latest at 38baccc",
-      "review": "Copilot findings corrected at 9ead9ec; fresh Codex sign-off pending"
+      "githubCi": "passed on ubuntu-latest and macos-latest at 7c8d865; run 34956291881",
+      "codeHead": "27c67e9adc6818949342ac540aa0dbd312ae4496",
+      "review": "F13/F14 runtime corrections at 5adb299 and final F17 fixture correction at 27c67e9 independently approved. Final reviewer replay: 41 pass, 0 fail, 721 assertions. Exact-head full gates/CI/integration pending. Reviewers have standing approval.",
+      "latestReceipts": "https://github.com/smorinlabs/skillsmith/issues/51"
     },
     "p17": {
       "branch": "agent/p19-p17-fixes",
       "base": "5a7418593ecf6a8be4b10d8a5f657bb9e4f0e402",
       "firstCarryCommit": "e960b2cfefe043d8f04d045fd7907870746738cb",
       "validatedHead": "d786739eb2db462540a761d56c5eaa3473402e8b",
+      "remoteHead": "d786739eb2db462540a761d56c5eaa3473402e8b",
       "ordinaryLocalGate": "passed at clean d786739: frozen install, canonical full check; 370/370 files, 3394 test cases including 28 existing live skips, 0 failures, 111520 assertions, no duplicate files. This predates the latest corrections; exact-head full replay pending",
+      "serialReceipt": {
+        "assertions": 111520,
+        "discovered": 370,
+        "duplicates": 0,
+        "executed": 370,
+        "passed": 370,
+        "skipped": 28,
+        "tests": 3394,
+        "bun": "1.3.14",
+        "manifestSha256": "bb0c3d601779accad270a2c3263128ba5ea723c8d74081ec6171c71a583e2d1c"
+      },
       "codeHead": "01d09a98fcfa1fa47017fb2096b085f5661176a5",
       "review": "F13-F16 independently approved at b33c224; affected five owners passed 144 tests. F17 fixture correction independently approved at 01d09a9; transport owner 12 pass/0 fail. Exact-head full gates/CI/integration pending. CI-only ffd1cba independently approved; no release qualification executed.",
       "pullRequest": null,
       "integrationHold": "Q2.A approved and CI separation implemented at ffd1cba. After correction/review/full gates, open maintenance PR against agent/p17-execution; keep PR #44 draft and release qualification deferred, not passed.",
       "decisionRecord": "https://github.com/smorinlabs/skillsmith/issues/51#issuecomment-5689864463",
-      "security": "full-history secrets scan (893 commits), fresh dependency audit and exact hook security lint passed; existing reviewed 37-finding suppression baseline unchanged",
+      "security": "passed at d786739: full-history secrets scan (895 commits), fresh dependency audit and exact hook security lint; existing reviewed 37-finding suppression baseline unchanged",
       "diagnosticHead": "08719851938d4bec06fac72f5e5e3cb6b7c563a3",
       "latestReceipts": "https://github.com/smorinlabs/skillsmith/issues/51"
-    }
+    },
+    "remainingCloseout": [
+      "F13-F17 corrections independently approved under #61/#64/#67; complete exact-head full gates, current CI and integration. Codex and Claude Code reviewers have standing approval",
+      "Q1.A decided: retain per-tool conflicts and deliver informational cross-tool name reporting in a separate follow-up PR; #41 stays open and this addition does not block PR #66",
+      "Q2.A decided and implemented: product-only P17 PR against agent/p17-execution after exact integration-head validation; #44 remains draft and release qualification deferred",
+      "Close product issues only after acceptance; keep PUB-00..08 deferred and #57/#60/#63 follow-ups open"
+    ]
   }
 }

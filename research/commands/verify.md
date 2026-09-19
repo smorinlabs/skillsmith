@@ -18,7 +18,7 @@ Required incomplete coverage is inconclusive, not passed.
 `skillsmith verify` loads a plugin under each target tool's own verifier and reports a **per-tool
 result matrix** — never one merged verdict. It is the artifact-facing sibling of `doctor`/`check`:
 `doctor` diagnoses the environment, `verify` diagnoses a specific plugin **or bare skill**. Static
-verification is the default; `--deep` opts into a session-backed load confirmation. Both modes are
+verification is the default; `--deep` opts into native load confirmation. Both modes are
 auth-free and model-free — the `--deep` opt-in is about startup latency, not auth or cost.
 
 Full design rationale, the JSON contract, and the empirical basis live in
@@ -43,30 +43,32 @@ plugin manifest nor a `SKILL.md` is a usage error (exit 2).
 Runs each requested tool's load verifier against `<path>` and prints one result per (tool, mode). No
 `--tool` means "every tool SkillSmith detects on PATH among `{claude-code, codex}`." Default mode is
 static — `claude plugin validate` for Claude, temp-`CODEX_HOME` marketplace/`plugin add` for Codex —
-which needs no auth and spends no model call. `--deep` additionally runs a session-backed check
-(Claude's `stream-json` `init` event; Codex's `codex exec` stderr scrape) that confirms load and, for
-Codex, is the *only* surface that validates skills — and, like static, it runs isolated under empty
-config dirs, so it too needs no auth and no model call (both tools enumerate at session init before any
-API turn). Output is a human-readable matrix by default;
+which needs no auth and spends no model call. `--deep` additionally runs a native load check
+(Claude's `stream-json` `init` event; Codex's local app-server `initialize`, `initialized`,
+`skills/list` exchange). Codex requires enabled entries or structured load errors for every exact
+staged target path; empty stderr or an authentication failure cannot prove successful loading.
+The probe isolates its home and XDG directories and sends no model turn. Output is a human-readable matrix by default;
 `--json` emits the versioned contract consumed by the smorin-harness `skill-verify` skill.
 
 Rationale for the static/deep split: static is instant, deterministic, and hermetic, so it is the
 correct CI default and the whole gate for Claude (manifest + skills). Deep is also auth-free and free of
-model spend (it runs isolated; the `init` / skill-load surfaces fire before any API turn) — its only
+model spend (it runs isolated; the `init` / local-loader surfaces require no API turn) — its only
 extra cost is startup latency (~2-8 s/tool), so it is opt-in for speed. It is load-bearing for Codex,
 whose static path checks the plugin manifest only; `verify` surfaces that coverage gap rather than hiding
 it behind a green checkmark.
 
 ## Per-tool surfaces
 
-What each (tool, mode) actually inspects (proven against Claude Code `2.1.201`, codex-cli `0.142.5`):
+What each (tool, mode) actually inspects (original matrix: Claude Code `2.1.201`, codex-cli
+`0.142.5`; P19 local-loader controls also verified on Codex `0.154.0`, without changing the
+reported verified-against baseline):
 
 | Tool · mode | Auth / model | Manifest | Skills | Reasons | Underlying command |
 |---|---|---|---|---|---|
 | claude · static | none | ✓ | ✓ | ✓ | `claude plugin validate <dir> [--strict]` |
 | claude · deep | none (isolated) | — | presence only | ✗ (silent drop) | `CLAUDE_CONFIG_DIR=$(mktemp -d) claude --print --verbose --output-format stream-json --setting-sources "" --plugin-dir <dir> "ok"` |
 | codex · static | none | ✓ | ✗ | ✓ (manifest) | temp `CODEX_HOME`; `codex plugin marketplace add` + `codex plugin add` |
-| codex · deep | none (isolated) | — | ✓ | ✓ | empty `CODEX_HOME`; `codex exec -C <proj> --skip-git-repo-check …`; grep `failed to load skill` |
+| codex · deep | none (isolated) | — | ✓ | ✓ | `codex app-server --listen stdio://`; acknowledged initialization then `skills/list` with exact staged paths |
 
 **Severity is reported per tool, never merged.** The same defect can disagree across tools — a skill
 missing `description` is a `warning` in Claude (loads unless `--strict`) and an `error` in Codex
@@ -90,25 +92,26 @@ never changes a verdict.
 Exit codes give CI a three-way distinction between a clean run, a real defect, and a can't-check:
 
 ```
-0    verified — every mode that ran passed (warnings allowed unless --strict)
+0    verified — all required modes completed successfully (warnings allowed unless --strict)
 1    verification failed — a mode produced an error-severity finding (a proven defect)
 2    usage error — missing/invalid <path>, or --tool given an unknown value
-4    could not verify — nothing ran, an explicitly --tool-named tool is absent,
-     or --deep was requested and a required tool's deep mode could not run
-     (timeout/exec-error — deep never fails for auth)
+4    could not verify — no tool could verify, an explicitly named tool is absent,
+     or an available tool has an incomplete required mode
+     (static or deep timeout, execution/protocol failure, or missing loading proof)
 130  cancelled via SIGINT
 ```
 
 A proven defect (1) outranks an environment gap (4): if one tool finds a real break while another could
 not run, the exit code is 1. An auto-detected tool that is simply absent is a silent skip and never
-forces 4 — only an explicitly requested tool (or explicit `--deep`) does.
+forces 4. An available tool with incomplete required coverage does force 4 even if another
+tool passed; a non-strict warning remains verified, not an invented pass.
 
 ## Feature table
 
 | # | Feature | Phase | Why |
 |---|---|---|---|
 | 12.1 | **`skillsmith verify <path>`** — per-tool matrix, static default, `--tool` repeatable, `--json` contract | P11 | Cross-tool load verification with no single false verdict; the `skill-verify` skill's engine. |
-| 12.2 | **`--deep`** — session-backed load confirmation (Claude `init` event, Codex `exec` stderr) | P11 | Confirms actual load; the only skill-validation surface for Codex. Auth-free and model-free (runs isolated); opt-in for startup latency only. |
+| 12.2 | **`--deep`** — native load confirmation (Claude `init` event, Codex local app-server) | P11 / P19 correction | Confirms actual load; Codex requires exact-path loading proof. Auth-free and model-free (runs isolated); opt-in for startup latency only. |
 | 12.3 | **`--strict`** — treat warnings as failures; passed through to `claude plugin validate --strict` | P11 | Publish-gate parity with `claude plugin validate --strict`; mirrors `doctor --strict`. |
 
 ## Flags
@@ -117,7 +120,7 @@ forces 4 — only an explicitly requested tool (or explicit `--deep`) does.
 |---|---|---|---|---|---|
 | `--tool` | `-t` | enum/repeatable | all detected of `{claude-code, codex}` | `SKILLSMITH_TOOL` | Restrict to tool(s). A named-but-absent tool → exit 4. |
 | `--static` | — | bool | true | — | Static mode only (no auth, no model call). Default; states it explicitly. |
-| `--deep` | — | bool | false | — | Also run deep (session-backed, isolated). Implies static. No auth, no model call; adds startup latency (~2-8 s/tool). |
+| `--deep` | — | bool | false | — | Also run native load verification (isolated). Implies static. No auth, no model call; adds startup latency. |
 | `--strict` | — | bool | false | — | Treat warnings as failures (`⚠` → exit 1); passed to `claude plugin validate --strict`. |
 | `--json` | — | bool | false | — | Emit the versioned JSON contract on stdout. |
 
@@ -136,7 +139,7 @@ USAGE
 FLAGS
   -t, --tool <name>       Restrict to tool(s): claude-code | codex. Repeatable. Default: all detected.
       --static            Static verification only (no auth, no model call). Default.
-      --deep              Also run session-backed load verification (isolated; no auth, no model call).
+      --deep              Also run native load verification (isolated; no auth, no model call).
       --strict            Treat warnings as failures (exit 1 on any ⚠).
       --json              Emit the versioned JSON report on stdout.
 
@@ -150,7 +153,7 @@ EXAMPLES
   # Only Claude, publish-strict
   $ skillsmith verify ./my-plugin --tool claude-code --strict
 
-  # Full cross-tool check including session-backed load (isolated; no auth needed)
+  # Full cross-tool check including native load (isolated; no auth needed)
   $ skillsmith verify ./my-plugin --deep
 
   # Machine-readable, isolate the failures
@@ -182,7 +185,7 @@ codex 0.142.5                                                         verdict: p
     ℹ codex.static-coverage
         codex static checked the manifest only; run --deep for skill validation
 
-1 tool failed, 1 passed.  (1 error, 1 warning, 1 notice)  Exit code: 1
+1 tool failed, 1 verified.  (1 error, 1 warning, 1 notice)  Exit code: 1
 ```
 
 **`skillsmith verify ./my-plugin --tool codex` — required tool not installed:**

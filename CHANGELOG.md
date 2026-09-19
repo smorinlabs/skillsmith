@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.8.0](https://github.com/smorinlabs/skillsmith/compare/v0.7.0...v0.8.0) (2026-09-07)
+
+
+### Features
+
+* add P17 remote connectivity test and resilient final gate ([#37](https://github.com/smorinlabs/skillsmith/issues/37)) ([091fc7d](https://github.com/smorinlabs/skillsmith/commit/091fc7d862d1e73f047630a4de9869a3d1a5c332))
+
+
+### Bug Fixes
+
+* **cli:** make package-scoped tests cwd-independent ([#28](https://github.com/smorinlabs/skillsmith/issues/28)) ([b2af417](https://github.com/smorinlabs/skillsmith/commit/b2af417b5b08ef6a318362b79cfeaeffe13cd58a)), closes [#19](https://github.com/smorinlabs/skillsmith/issues/19)
+* **core:** make doctor scope checks read-only ([#27](https://github.com/smorinlabs/skillsmith/issues/27)) ([99fdadb](https://github.com/smorinlabs/skillsmith/commit/99fdadb456f20a4b63fe34323d433bff60f3eee1)), closes [#13](https://github.com/smorinlabs/skillsmith/issues/13)
+* **core:** restore relative dev links from recorded path ([#26](https://github.com/smorinlabs/skillsmith/issues/26)) ([cc91520](https://github.com/smorinlabs/skillsmith/commit/cc91520c10155167c2770355d0acc4c14a51e162)), closes [#10](https://github.com/smorinlabs/skillsmith/issues/10)
+* **core:** scrub repository state from production git ([#24](https://github.com/smorinlabs/skillsmith/issues/24)) ([1eb5501](https://github.com/smorinlabs/skillsmith/commit/1eb55017207900479b78fa3664c873a6100d8353)), closes [#20](https://github.com/smorinlabs/skillsmith/issues/20)
+* recognize merged PRs in P17 final gate ([#32](https://github.com/smorinlabs/skillsmith/issues/32)) ([1f3446e](https://github.com/smorinlabs/skillsmith/commit/1f3446ecb10c1c4c1df08562b5325a34d2fa52b4))
+* stage P17 sandbox setup and checks ([#36](https://github.com/smorinlabs/skillsmith/issues/36)) ([7810dd8](https://github.com/smorinlabs/skillsmith/commit/7810dd83ce24f7c1dbf3d51f62d1115e4a547d8f))
+
 ## [0.7.0](https://github.com/smorinlabs/skillsmith/compare/v0.6.0...v0.7.0) (2026-07-11)
 
 

@@ -28,6 +28,7 @@ const main = async (): Promise<number> => {
 
 main().then(
   (code) => {
+    // Let piped stdout/stderr drain before Bun exits (large list JSON, #46).
     process.exitCode = code;
   },
   (e) => {

@@ -216,7 +216,7 @@ placement ledger are not written. `--dry-run` and strict `--json` expose the sam
 <!-- skillsmith-capability-matrix:start -->
 ## Capability and version matrix
 
-Generated from the live tool registry for Skillsmith 0.7.0. A scope list means the operation is supported in those scopes; “yes” means the operation is supported without a scope; “—” means it is not supported.
+Generated from the live tool registry for Skillsmith 0.8.0. A scope list means the operation is supported in those scopes; “yes” means the operation is supported without a scope; “—” means it is not supported.
 
 | Tool | Capability contract | Verifier baseline |
 |---|---|---|

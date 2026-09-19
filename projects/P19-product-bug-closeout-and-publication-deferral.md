@@ -33,7 +33,7 @@ pending; its historical catalog gates are not changed to passing by this deferra
 - [ ] [P19-T05] Fix verification aggregation: required incomplete modes/tools cannot be hidden by a pass; preserve genuine failures and optional-tool behavior.
 - [ ] [P19-T06] Reproduce and fix large piped JSON truncation (#46), including a slow consumer and compiled binary.
 - [ ] [P19-T07] Fix Codex deep loading and bounded sanitized diagnostics without a model turn; validate local protocol capabilities and negative controls.
-- [ ] [P19-T08] Integrate duplicate inventory/filter/empty-state fixes; deliver informational cross-tool name reporting in a separate follow-up PR under #41 (Q1.A). Preserve per-tool conflicts and overlapping #46 ownership; keep #41 open until all acceptance is met.
+- [ ] [P19-T08] Integrate duplicate inventory/filter/empty-state fixes; deliver informational cross-tool name reporting in a separate follow-up PR under #41 (Q1.A). Preserve per-tool conflicts and the overlapping #46 ownership; keep #41 open until all acceptance is met.
 - [ ] [P19-T09] Ignore Codex-managed legacy system entries without hiding genuine legacy user skills (#40).
 - [ ] [P19-T10] Verify each product fix against current main and P17; apply/adapt to every affected line and record commits and affected contract IDs.
 - [x] [P19-T11] Perform bounded Bun isolate diagnosis after the product bug work; preserve the accepted serial runner. Not reproduced in 17 focused files; #57 remains open for a reproducer, with no ownership/fix claim.
@@ -43,9 +43,9 @@ pending; its historical catalog gates are not changed to passing by this deferra
 - [ ] [P19-T15] Patch newly confirmed vulnerable parser/tooling dependencies (#65) on both maintained lines, with bounded malformed-TOML rejection, inspected lockfile changes, fresh audit and ordinary gates.
 - [ ] [P19-T16] Repair inherited host-tool discovery in P17 doctor and verification contract fixtures (#67), preserving exact assertions and the full ordinary gate.
 - [x] [P19-TS01] Every active/deferred/carryover item has a unique owner, acceptance criteria, dependencies, source references, and truthful status.
-- [ ] [P19-TS02] Each fixed bug has a failing-before/passing-after regression and affected-line coverage.
+- [x] [P19-TS02] Each fixed bug has a failing-before/passing-after regression and affected-line coverage; already-correct P17 behavior is preserved and regression-tested.
 - [ ] [P19-TS03] Required ordinary static/tests/build checks pass at exact reviewed commits; deferred release checks are separately identified.
-- [ ] [P19-TS04] Remote PR/issue/workflow state is freshly verified; no publication or visibility change occurred; P17 remains pending.
+- [x] [P19-TS04] Remote PR/issue/workflow state is freshly verified; no publication or visibility change occurred; P17 remains pending.
 
 ## Approved closeout direction — 2026-09-15
 

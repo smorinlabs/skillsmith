@@ -32,4 +32,11 @@ Optional positional filter(s) matching skill name patterns (glob supported): `sk
 
 ## Help output
 
+Duplicate identity is `(tool, skill-name)`: reusing a name in different tools is not a conflict.
+Tool/scope selection bounds collision identity; name, enablement, and duplicates filters apply
+after grouping and preserve the selected context's collision/shadowing metadata. A single-scope
+selection therefore has no cross-scope duplicates, though multiple roots within that scope can
+still conflict. A populated inventory with no selected conflicts reports
+"No duplicate skills matched the selected inventory.", not "No skills installed."
+
 _TBD: help mockup not yet authored._

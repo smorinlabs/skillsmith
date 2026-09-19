@@ -269,6 +269,70 @@ Product tasks remain in progress until affected-line carry-forward, review and i
   Final P19 receipts will be linked from tracking issue #51; branch-local evidence
   is an append-only snapshot, not an implied later approval.
 
+## 2026-09-15 — successful final P17 gate and saved handoff
+
+- Clean P17 head `d786739eb2db462540a761d56c5eaa3473402e8b` passed the complete
+  canonical gate, finishing at approximately 09:57 UTC. Bun 1.3.14 on Linux arm64;
+  temporary, verified CI-pinned just 1.50.0 supplied on PATH. The exact command chain
+  below exited 0; static checks, generated-reference checks, actionlint, P17 structure
+  and all serial tests passed. The runner verified a clean worktree before and after.
+
+  ```sh
+  bun install --frozen-lockfile &&
+  PATH="/tmp/skillsmith-p19-tools.lsteo0:$PATH" bun run check &&
+  ./scripts/check-gitleaks.sh full &&
+  bun audit --audit-level=high &&
+  bunx eslint --config eslint.security.config.js \
+    --suppressions-location eslint-security-suppressions.json \
+    --max-warnings 0 'packages/*/src/**/*.ts'
+  ```
+
+- Exact canonical receipt (`passed` counts files, not individual tests; `tests`
+  includes the existing 28 explicitly allowlisted opt-in live skips):
+
+  ```json
+  {"assertions":111520,"discovered":370,"duplicates":0,"executed":370,"passed":370,"skipped":28,"tests":3394,"bun":"1.3.14","manifestSha256":"bb0c3d601779accad270a2c3263128ba5ea723c8d74081ec6171c71a583e2d1c"}
+  ```
+
+- Full-history scan covered 895 commits with no leaks; dependency audit found no
+  vulnerabilities; exact-hook security lint passed with the unchanged reviewed
+  suppression baseline. Earlier failed attempts and the diagnostic-only remainder
+  are history, not components substituted for this successful full replay.
+- Pushed `agent/p19-p17-fixes` normally to origin and verified the remote is exactly
+  `d786739eb2db462540a761d56c5eaa3473402e8b`. Used `--no-verify` only after the
+  entire required manual gate above passed on that exact clean head, avoiding a
+  duplicate long hook run. No force push or push to main/P17's original branch.
+  No P17 PR opened: its existing PR CI would launch deferred Candidate-cask
+  qualification. Native PR CI and release qualification are not claimed passed.
+- Latest real CLI controls at main `c32d255` and P17 `d786739`, with Codex 0.154.0
+  and the final expanded XDG isolation: `verify .../bare-skill --tool codex --deep
+  --json` exits 0, empty stderr, static and deep ran/pass, deep skills coverage true.
+  `dummytest` exits 1 with empty stderr, deep ran/fail and coverage true, identifying
+  exactly `skills/bad-yaml/SKILL.md`, `skills/bad-nodesc/SKILL.md` and
+  `skills/bad-noframe/SKILL.md`. No model turn. Version drift remains informational;
+  verifiedAgainst was not relabeled to the installed version.
+- Main administrative head `c32d2558343e8af4769f259b977c5a439a51dfe1` passed full
+  ordinary check and security checks: 1,047 pass, 28 existing live skips, 0 fail,
+  4,971 assertions across 129 files. GitHub Linux/macOS build-test and PR-title lint
+  passed in [CI run 34953302622](https://github.com/smorinlabs/skillsmith/actions/runs/34953302622);
+  commitlint also passed. Final administrative-record-only receipts are linked from #51.
+- Fresh remote/local state checked at approximately 10:03 UTC: repository private;
+  main still `9c0219f69888239ef5d2cab9ddea4a4683b14a48`; original P17 worktree
+  clean at `5a7418593ecf6a8be4b10d8a5f657bb9e4f0e402`; #34/#44 open/draft,
+  no auto-merge; release-please `disabled_manually`; ordinary CI/commitlint active;
+  no in-progress Actions runs observed. All 20 tracked issues remain open. PR #66
+  is open without auto-merge. No publishing, release-version, tag or visibility change.
+- P19-TS02 and TS04 now have evidence and are checked. T05..T10/T14..T16 retain
+  in-progress status until acceptance/review/integration; TS03 still requires exact
+  reviewed integration heads. Fresh independent Codex review is pending, not replaced
+  by self-inspection or Copilot's earlier changes-recommended review. Review requests
+  have not been resolved as approvals. The user decisions on separate read-only
+  review, #41 semantics and product-only P17 CI remain unanswered.
+- Follow-ups #57/#60/#63 and all PUB-00..08 execution remain open/deferred as scoped.
+  Preserve the validated P17 tree; its branch-local records are earlier snapshots.
+  This canonical main-based record plus tracking issue #51 owns the final receipt
+  and remaining handoff. Neither P19 nor the original P17 release objective is complete.
+
 ## 2026-09-15 — Q2 execution and independent review corrections
 
 - Direction is recorded separately from execution:

@@ -87,9 +87,8 @@ Never push with the hook enabled from a checkout with real work on it.
 
 The CLI entrypoint sets `process.exitCode` on normal completion so pending output can drain.
 Do not replace it with a forced `process.exit(...)`: that truncated large piped `list --json`
-output on the older main line. P17 already had the safe entrypoint; its regression coverage
-now exercises source and compiled binaries with normal/slow pipes and file redirection.
-Older builds may still need the file-redirection workaround.
+output. Regression coverage exercises source and compiled binaries with normal/slow pipes and
+file redirection. Older builds may still need the file-redirection workaround.
 
 ## Breaking changes and the 0.x trap
 
