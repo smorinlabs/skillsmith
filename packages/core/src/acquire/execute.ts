@@ -846,7 +846,7 @@ export const executeAcquireReplacement = async (
   input: AcquireExecutionInput,
   plan: SwapPlan,
   intermediatePinned: PinnedRecord | null,
-): Promise<SwapExecutionResult<void>> => {
+): Promise<SwapExecutionResult<readonly SwapOutcome[]>> => {
   const install = plan.install;
   if (install === undefined) {
     return {
@@ -855,23 +855,26 @@ export const executeAcquireReplacement = async (
       state: { ledger: input.ledger },
     };
   }
-  const executed =
-    intermediatePinned === null
-      ? await executePlacementPlan(input, plan)
-      : await executePlacementPlans(input, [
-          {
-            ...plan,
-            install: {
-              ...install,
-              build: 'symlink',
-              pinned: intermediatePinned,
-              adoptedDev: null,
-            },
-          },
-          plan,
-        ]);
+  if (intermediatePinned === null) {
+    const executed = await executePlacementPlan(input, plan);
+    return executed.ok
+      ? { ok: true, value: [executed.value], state: executed.state }
+      : { ok: false, error: executed.error, state: executed.state };
+  }
+  const executed = await executePlacementPlans(input, [
+    {
+      ...plan,
+      install: {
+        ...install,
+        build: 'symlink',
+        pinned: intermediatePinned,
+        adoptedDev: null,
+      },
+    },
+    plan,
+  ]);
   return executed.ok
-    ? { ok: true, value: undefined, state: executed.state }
+    ? { ok: true, value: executed.value, state: executed.state }
     : { ok: false, error: executed.error, state: executed.state };
 };
 
@@ -880,7 +883,7 @@ export const executeAcquireReplacementObserved = async (
   plan: SwapPlan,
   intermediatePinned: PinnedRecord | null,
   observation: ObservationBundle,
-): Promise<SwapExecutionResult<void>> => {
+): Promise<SwapExecutionResult<readonly SwapOutcome[]>> => {
   const install = plan.install;
   if (install === undefined) {
     return {
@@ -889,27 +892,30 @@ export const executeAcquireReplacementObserved = async (
       state: { ledger: input.ledger },
     };
   }
-  const executed =
-    intermediatePinned === null
-      ? await executePlacementPlanObserved(input, plan, observation)
-      : await executePlacementPlansObserved(
-          input,
-          [
-            {
-              ...plan,
-              install: {
-                ...install,
-                build: 'symlink',
-                pinned: intermediatePinned,
-                adoptedDev: null,
-              },
-            },
-            plan,
-          ],
-          observation,
-        );
+  if (intermediatePinned === null) {
+    const executed = await executePlacementPlanObserved(input, plan, observation);
+    return executed.ok
+      ? { ok: true, value: [executed.value], state: executed.state }
+      : { ok: false, error: executed.error, state: executed.state };
+  }
+  const executed = await executePlacementPlansObserved(
+    input,
+    [
+      {
+        ...plan,
+        install: {
+          ...install,
+          build: 'symlink',
+          pinned: intermediatePinned,
+          adoptedDev: null,
+        },
+      },
+      plan,
+    ],
+    observation,
+  );
   return executed.ok
-    ? { ok: true, value: undefined, state: executed.state }
+    ? { ok: true, value: executed.value, state: executed.state }
     : { ok: false, error: executed.error, state: executed.state };
 };
 
@@ -918,7 +924,7 @@ export const executeAcquireReplacementWithObservation = (
   plan: SwapPlan,
   intermediatePinned: PinnedRecord | null,
   observation?: ObservationBundle,
-): Promise<SwapExecutionResult<void>> =>
+): Promise<SwapExecutionResult<readonly SwapOutcome[]>> =>
   observation === undefined
     ? executeAcquireReplacement(input, plan, intermediatePinned)
     : executeAcquireReplacementObserved(input, plan, intermediatePinned, observation);

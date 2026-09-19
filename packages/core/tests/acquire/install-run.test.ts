@@ -9,7 +9,7 @@ import {
   test,
 } from 'bun:test';
 import { writeFileSync } from 'node:fs';
-import { lstat, readlink } from 'node:fs/promises';
+import { appendFile, lstat, readFile, readlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   defaultInstallDeps,
@@ -560,6 +560,177 @@ describe('runInstall — idempotence / update / repair', () => {
     });
     if (committed === undefined) throw new Error('record-only repair history is missing');
     expectCorrelatedRecordOnlyTransaction(observed.events, committed.transactionId);
+  });
+});
+
+describe('runInstall — preserved edited-copy backup notice (SC-I60-R3)', () => {
+  const singleTool = ['claude-code'] as const;
+  const liveCopyDir = (): string => join(claudeRoot(), 'factor-scan');
+  const liveSkillFile = (): string => join(liveCopyDir(), 'SKILL.md');
+  const rootEntries = (): Promise<readonly string[]> => f.env.listDir(claudeRoot());
+  const addedEntries = (before: readonly string[], after: readonly string[]): string[] => {
+    const seen = new Set(before);
+    return after.filter((name) => !seen.has(name));
+  };
+
+  const seedDirectCopy = async (): Promise<{
+    storeSkillFile: string;
+    originalBytes: string;
+  }> => {
+    const seeded = await runInstall(
+      f.env,
+      { ...userOpts, tools: singleTool, direct: true },
+      makeDeps(),
+    );
+    if (!seeded.ok) throw new Error(msg(seeded.error));
+    expect(seeded.value.summary.installed).toBe(1);
+    const installed = seeded.value.results.find((x) => x.tool === 'claude-code');
+    expect(installed?.action).toBe('installed');
+    expect(installed?.placement).toBe('copy');
+    expect(installed?.origin?.refResolved).toBe(fixture.multiHead);
+    expect(await f.env.pathKind(liveCopyDir())).toBe('dir');
+    expect(await f.env.pathKind(liveSkillFile())).toBe('file');
+    const ledger = await led();
+    const pair = getPairAt(ledger, null, 'factor-scan', 'claude-code');
+    expect(pair?.pinned?.placement).toBe('copy');
+    expect(pair?.journal).toBeNull();
+    if (pair?.pinned?.storePath === undefined) throw new Error('seeded pair has no store path');
+    const storeSkillFile = join(pair.pinned.storePath, 'SKILL.md');
+    const originalBytes = await readFile(storeSkillFile, 'utf8');
+    expect(await readFile(liveSkillFile(), 'utf8')).toBe(originalBytes);
+    return { storeSkillFile, originalBytes };
+  };
+
+  test('edited direct-copy → symlink force replacement keeps the backup dir and reports its path', async () => {
+    const { storeSkillFile, originalBytes } = await seedDirectCopy();
+    const before = await rootEntries();
+
+    const editMarker = '\nSC-I60-R3 edited-copy marker (direct-to-symlink)\n';
+    await appendFile(liveSkillFile(), editMarker);
+    const editedBytes = await readFile(liveSkillFile(), 'utf8');
+    expect(editedBytes).toBe(`${originalBytes}${editMarker}`);
+    expect(editedBytes).not.toBe(originalBytes);
+    expect(await readFile(storeSkillFile, 'utf8')).toBe(originalBytes);
+
+    const replaced = await runInstall(
+      f.env,
+      { ...userOpts, tools: singleTool, force: true },
+      makeDeps(),
+    );
+    if (!replaced.ok) throw new Error(msg(replaced.error));
+    expect(replaced.value.summary.updated).toBe(1);
+    const result = replaced.value.results.find((x) => x.tool === 'claude-code');
+    expect(result?.action).toBe('updated');
+    expect(result?.placement).toBe('symlink');
+    expect(result?.store?.reused).toBe(true);
+    expect(await f.env.pathKind(liveCopyDir())).toBe('symlink');
+    const ledger = await led();
+    const pair = getPairAt(ledger, null, 'factor-scan', 'claude-code');
+    expect(pair?.pinned?.placement).toBe('symlink');
+    expect(pair?.journal).toBeNull();
+    expect(pair?.origin?.refResolved).toBe(fixture.multiHead);
+    if (pair?.pinned?.storePath === undefined) throw new Error('replaced pair has no store path');
+    expect(await readlink(liveCopyDir())).toBe(pair.pinned.storePath);
+    expect(await readFile(liveSkillFile(), 'utf8')).toBe(originalBytes);
+
+    const added = addedEntries(before, await rootEntries());
+    expect(added).toHaveLength(1);
+    const backupName = added[0];
+    if (backupName === undefined) throw new Error('expected one retained backup entry');
+    expect(backupName.startsWith('.skillsmith-backup-factor-scan-')).toBe(true);
+    const backupPath = join(claudeRoot(), backupName);
+    expect(await f.env.pathKind(backupPath)).toBe('dir');
+    expect(await readFile(join(backupPath, 'SKILL.md'), 'utf8')).toBe(editedBytes);
+    expect(await readFile(storeSkillFile, 'utf8')).toBe(originalBytes);
+
+    expect(result?.reason).not.toBeNull();
+    expect(result?.reason ?? '').toContain('kept backup');
+    expect(result?.reason ?? '').toContain(backupPath);
+  });
+
+  test('edited direct-copy → copy force replacement keeps the first-stage backup and reports it', async () => {
+    const { storeSkillFile, originalBytes } = await seedDirectCopy();
+    const before = await rootEntries();
+
+    const editMarker = '\nSC-I60-R3 edited-copy marker (direct-to-copy)\n';
+    await appendFile(liveSkillFile(), editMarker);
+    const editedBytes = await readFile(liveSkillFile(), 'utf8');
+    expect(editedBytes).toBe(`${originalBytes}${editMarker}`);
+    expect(editedBytes).not.toBe(originalBytes);
+    expect(await readFile(storeSkillFile, 'utf8')).toBe(originalBytes);
+
+    // dir→dir is routed as two kind changes; the first stage preserves the edited bytes while the
+    // second (symlink cleanup) is clean — the first stage's notice must survive.
+    const replaced = await runInstall(
+      f.env,
+      { ...userOpts, tools: singleTool, direct: true, force: true },
+      makeDeps(),
+    );
+    if (!replaced.ok) throw new Error(msg(replaced.error));
+    expect(replaced.value.summary.updated).toBe(1);
+    const result = replaced.value.results.find((x) => x.tool === 'claude-code');
+    expect(result?.action).toBe('updated');
+    expect(result?.placement).toBe('copy');
+    expect(result?.store?.reused).toBe(true);
+    expect(await f.env.pathKind(liveCopyDir())).toBe('dir');
+    expect(await readFile(liveSkillFile(), 'utf8')).toBe(originalBytes);
+    const ledger = await led();
+    const pair = getPairAt(ledger, null, 'factor-scan', 'claude-code');
+    expect(pair?.pinned?.placement).toBe('copy');
+    expect(pair?.journal).toBeNull();
+    expect(pair?.origin?.refResolved).toBe(fixture.multiHead);
+
+    const added = addedEntries(before, await rootEntries());
+    expect(added).toHaveLength(1);
+    const backupName = added[0];
+    if (backupName === undefined) throw new Error('expected one retained backup entry');
+    expect(backupName.startsWith('.skillsmith-backup-factor-scan-')).toBe(true);
+    const backupPath = join(claudeRoot(), backupName);
+    expect(await f.env.pathKind(backupPath)).toBe('dir');
+    expect(await readFile(join(backupPath, 'SKILL.md'), 'utf8')).toBe(editedBytes);
+    expect(await readFile(storeSkillFile, 'utf8')).toBe(originalBytes);
+
+    expect(result?.reason).not.toBeNull();
+    expect(result?.reason ?? '').toContain('kept backup');
+    expect(result?.reason ?? '').toContain(backupPath);
+  });
+
+  test('untouched direct-copy → symlink force replacement reclaims residue and claims no backup', async () => {
+    await seedDirectCopy();
+    const before = await rootEntries();
+
+    const replaced = await runInstall(
+      f.env,
+      { ...userOpts, tools: singleTool, force: true },
+      makeDeps(),
+    );
+    if (!replaced.ok) throw new Error(msg(replaced.error));
+    expect(replaced.value.summary.updated).toBe(1);
+    const result = replaced.value.results.find((x) => x.tool === 'claude-code');
+    expect(result?.action).toBe('updated');
+    expect(result?.placement).toBe('symlink');
+    expect(await f.env.pathKind(liveCopyDir())).toBe('symlink');
+    expect(addedEntries(before, await rootEntries())).toEqual([]);
+    expect(result?.reason ?? '').not.toContain('kept backup');
+  });
+
+  test('untouched direct-copy → copy force replacement reclaims residue and claims no backup', async () => {
+    await seedDirectCopy();
+    const before = await rootEntries();
+
+    const replaced = await runInstall(
+      f.env,
+      { ...userOpts, tools: singleTool, direct: true, force: true },
+      makeDeps(),
+    );
+    if (!replaced.ok) throw new Error(msg(replaced.error));
+    expect(replaced.value.summary.updated).toBe(1);
+    const result = replaced.value.results.find((x) => x.tool === 'claude-code');
+    expect(result?.action).toBe('updated');
+    expect(result?.placement).toBe('copy');
+    expect(await f.env.pathKind(liveCopyDir())).toBe('dir');
+    expect(addedEntries(before, await rootEntries())).toEqual([]);
+    expect(result?.reason ?? '').not.toContain('kept backup');
   });
 });
 
