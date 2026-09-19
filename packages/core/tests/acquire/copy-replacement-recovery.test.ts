@@ -258,12 +258,23 @@ describe('MO2 in-process controls (no crash)', () => {
       console.log(
         `MO2 policy control: action=${result?.action} placement=${result?.placement} live=${liveKind} reason=${result?.reason}`,
       );
-      // Characterization only: current policy keeps the healthy symlink
-      // (noop, no conversion without force). Whether the reported
-      // `placement` (requested build) vs live kind divergence is acceptable
-      // is the owner policy decision; the decisive crash test below carries
-      // the load-bearing convergence assertions.
+      // SC-I60-MO2 companion: the healthy symlink is still a noop (no
+      // conversion without force — policy unchanged), but the report is now
+      // truthful (recorded/live placement) and no phantom update op is
+      // emitted, so no operation-level failure shadows the noop.
       expect(result?.action).toBe('noop');
+      expect(result?.placement).toBe('symlink');
+      console.log(
+        `MO2 policy control plan kinds=${JSON.stringify(r2.value.plan.operations.map((op) => op.kind))} executionOutcomes=${JSON.stringify(r2.value.executionResults.map((r) => r.outcome))}`,
+      );
+      const liveOps = r2.value.plan.operations.filter(
+        (op) => op.kind === 'install' || op.kind === 'update' || op.kind === 'repair',
+      );
+      expect(liveOps.length).toBe(0);
+      // No phantom operation-level failure shadows the noop: the durable
+      // desired state makes the noop itself the success outcome.
+      expect(result?.executionOutcome).toBe('succeeded');
+      expect(result?.drift.status).toBe('in-sync');
     } finally {
       await destroyFixtureFleet(f);
       await destroyRemoteFixture(fixture);

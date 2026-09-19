@@ -659,13 +659,42 @@ const installAlreadyMatches = (
     live.contentRevision !== intent.source.contentHash ||
     pair.pinned.contentHash !== intent.source.contentHash ||
     pair.pinned.storePath !== store.path ||
-    (pair.pinned.placement !== undefined &&
-      pair.pinned.placement !== intent.placement.representation) ||
     !sameOperationSource(beforeSource, intent.source)
   ) {
     return false;
   }
-  if (intent.placement.representation === 'copy') {
+  const requested = intent.placement.representation;
+  const recorded = pair.pinned.placement;
+  if (recorded !== undefined && recorded !== requested) {
+    // Representation divergence with otherwise exact content. A staged
+    // two-stage replacement (SC-I60-MO2) is NOT idempotent: the recorded
+    // representation is the intermediate step, so an update op is emitted and
+    // the executor completes the remaining stage. Any other divergence whose
+    // live placement faithfully materializes the RECORD is healthy idempotence
+    // (no op emitted; the executor noops with the recorded placement).
+    const staged = pair.pendingReplacement ?? null;
+    const liveIntermediate =
+      (requested === 'copy' && live.representation === 'symlink') ||
+      (requested === 'symlink' && live.representation === 'directory');
+    if (
+      liveIntermediate &&
+      staged !== null &&
+      staged.build === requested &&
+      staged.storePath === store.path &&
+      staged.contentHash === intent.source.contentHash
+    ) {
+      return false;
+    }
+    if (recorded === 'copy') {
+      return live.representation === 'directory' && live.linkTarget === null;
+    }
+    return (
+      live.representation === 'symlink' &&
+      live.linkTarget !== null &&
+      resolve(dirname(live.path), live.linkTarget) === resolve(store.path)
+    );
+  }
+  if (requested === 'copy') {
     return live.representation === 'directory' && live.linkTarget === null;
   }
   return (

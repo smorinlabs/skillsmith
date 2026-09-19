@@ -623,7 +623,13 @@ const placePair = async (
   // staged replacement for this request still has a stage to run.
   if (liveKind !== null && !opts.force && !(stagedContinuation && recordMatches)) {
     if (recordMatches) {
-      return { ...finalize('noop'), reason: `already installed at ${sha.slice(0, 12)}` };
+      // SC-I60-MO2 companion: a noop reports the recorded/live placement,
+      // never the requested build.
+      return {
+        ...finalize('noop'),
+        placement: liveKind,
+        reason: `already installed at ${sha.slice(0, 12)}`,
+      };
     }
     // Placement intact + matching the resolved store entry but the record is missing/stale →
     // rewrite the pair record only (no filesystem change).
@@ -891,12 +897,35 @@ const predictPair = async (
   }
   const live = currentResolution.placement;
   if (live.class === 'absent') return { ...base, action: 'installed' };
+  // SC-I60-MO2 companion: predict the staged-replacement completion exactly
+  // as the executor runs it, so dry-run never foresees a noop the real run
+  // would complete.
+  const build: 'symlink' | 'copy' = opts.direct ? 'copy' : 'symlink';
+  const stagedPreview = existing?.pendingReplacement ?? null;
+  const stagedPreviewMatch =
+    stagedPreview !== null &&
+    stagedPreview.build === build &&
+    stagedPreview.refResolved === sha &&
+    stagedPreview.storePath === expectedStorePath &&
+    existing?.origin?.refResolved === sha;
+  const liveIntermediate =
+    (build === 'copy' &&
+      live.class === 'store-linked' &&
+      live.symlinkTarget === expectedStorePath) ||
+    (build === 'symlink' && live.class === 'pinned');
+  if (stagedPreviewMatch && liveIntermediate) return { ...base, action: 'updated' };
   const matchesResolved =
     (live.class === 'store-linked' && live.symlinkTarget === expectedStorePath) ||
     live.class === 'pinned';
   if (matchesResolved && !opts.force) {
     if (existing?.origin?.refResolved === sha) {
-      return { ...base, action: 'noop', reason: `already installed at ${sha.slice(0, 12)}` };
+      // A noop reports the recorded/live placement, never the requested build.
+      return {
+        ...base,
+        action: 'noop',
+        placement: existing?.pinned?.placement ?? build,
+        reason: `already installed at ${sha.slice(0, 12)}`,
+      };
     }
     return { ...base, action: 'repaired', placement: null };
   }
@@ -2714,6 +2743,11 @@ const runInstallInternal = async (
           !preserveRefusal && operation === undefined
             ? `already installed at ${prepared.seed.resolved.sha.slice(0, 12)}`
             : reportPreview.reason,
+        // SC-I60-MO2 companion: a planned noop reports the live/recorded
+        // placement from the executor preview, never the requested build.
+        ...(!preserveRefusal && operation === undefined && reportPreview.action === 'noop'
+          ? { placement: reportPreview.placement }
+          : {}),
       };
       canonicalPreviewByOriginal.set(prepared.seed.preview, canonicalPreview);
       for (const occurrence of prepared.seed.reportPreviews) {
