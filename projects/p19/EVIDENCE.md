@@ -335,7 +335,7 @@ Product tasks remain in progress until affected-line carry-forward, review and i
   with truthful in-place citation; tasks.json FOLLOW-P09 state pending to
   completed with disposition appended; P19 umbrella tracking line updated.
 - Reconciliation record: this standalone #60-slice records PR,
-  TBD-RECORDS-PR-URL (SC-I60). No SC-W04 portable file rides this slice;
+  https://github.com/smorinlabs/skillsmith/pull/74 (SC-I60). No SC-W04 portable file rides this slice;
   the future SC-W04 inventory reconciles this PR as an accepted prior
   record. Records merge SHA: recorded in the #60 closure receipt after
   merge. #60 closes only after the records merge, current required
