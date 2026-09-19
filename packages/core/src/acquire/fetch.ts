@@ -132,6 +132,54 @@ export const sparseCheckoutSkill = async (
   }
 };
 
+const ROOT_PAYLOAD_SCRATCH_NAME = '.skillsmith-payload';
+const GIT_DIR_NAME = '.git';
+
+type RootPayloadExportPorts = Pick<FileReadPort, 'listDir'> &
+  Pick<FileWritePort, 'copyTree' | 'makeDir'>;
+
+/** Export the tracked payload of a root skill (`skillPath === ''`) into an acquisition-owned
+ *  scratch dir inside `fetchDir`, excluding the top-level entry named exactly `.git`. The root
+ *  materialization is the repository root itself, so its `.git/` administration would otherwise
+ *  be hashed and stored as skill bytes. Every other top-level entry — dotfiles, symlinks, modes,
+ *  and names merely containing `.git` — copies verbatim via per-entry `copyTree`. Failures map
+ *  through `sourceFailure` (permission stays permission); the caller retains
+ *  `cleanupDirectory: fetchDirectory`, so a partial scratch dies with the whole fetch dir. */
+export const exportRootPayload = async (
+  ports: RootPayloadExportPorts,
+  opts: { fetchDir: string; materializedDir: string },
+): Promise<Result<string, SkillSmithError>> => {
+  const { fetchDir, materializedDir } = opts;
+  const scratchDir = join(fetchDir, ROOT_PAYLOAD_SCRATCH_NAME);
+  let entries: readonly string[];
+  try {
+    entries = await ports.listDir(materializedDir);
+  } catch (e) {
+    return err(sourceFailure(e, `cannot export root skill payload from ${materializedDir}`));
+  }
+  // Enumerate-before-clean: the fetch dir is fresh per fetch, so a pre-existing scratch entry
+  // can only be tracked payload sharing the reserved name — fail closed rather than deleting a
+  // payload entry. This helper never calls removeTree.
+  if (entries.includes(ROOT_PAYLOAD_SCRATCH_NAME)) {
+    return err(
+      sourceUnresolvableError(
+        `cannot export root skill payload from ${materializedDir}: payload contains reserved entry ${ROOT_PAYLOAD_SCRATCH_NAME}`,
+      ),
+    );
+  }
+  try {
+    await ports.makeDir(scratchDir);
+    for (const entry of entries) {
+      if (entry === GIT_DIR_NAME) continue;
+      if (entry === ROOT_PAYLOAD_SCRATCH_NAME) continue; // self-skip: never copy the scratch into itself
+      await ports.copyTree(join(materializedDir, entry), join(scratchDir, entry));
+    }
+  } catch (e) {
+    return err(sourceFailure(e, `cannot export root skill payload from ${materializedDir}`));
+  }
+  return ok(scratchDir);
+};
+
 /** Elision probe: resolve a ref to a full COMMIT SHA without any network round-trip when it is
  *  already a full 40-hex SHA. Otherwise ask the remote via `ls-remote`, preferring the peeled
  *  `refs/tags/<ref>^{}` commit, then the exact tag, then the exact branch, then the first (HEAD)

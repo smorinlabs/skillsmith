@@ -1,9 +1,21 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
-import { lstat, mkdir, mkdtemp, readdir, readlink, rm, utimes, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  readlink,
+  rm,
+  symlink,
+  utimes,
+  writeFile,
+} from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { basename, join } from 'node:path';
+import {
+  exportRootPayload,
   fetchRepo,
   lsTreeSkills,
   resolveRefViaLsRemote,
@@ -315,6 +327,119 @@ describe('sparseCheckoutSkill', () => {
     if (!res.ok) return;
     expect(res.value).toBe(fetchDir);
     expect(existsSync(join(fetchDir, 'SKILL.md'))).toBe(true);
+  });
+});
+
+describe('exportRootPayload', () => {
+  test('exports every top-level entry except exact `.git`, preserving dotfiles/symlinks/modes', async () => {
+    const fetchDir = await mkdtemp(join(scratch, 'export-payload-'));
+    await mkdir(join(fetchDir, '.git', 'objects'), { recursive: true });
+    await writeFile(join(fetchDir, '.git', 'config'), '[core]\n');
+    await writeFile(join(fetchDir, '.gitattributes'), '*.md text\n');
+    await writeFile(join(fetchDir, '.gitignore'), 'build/\n');
+    await mkdir(join(fetchDir, '.github'), { recursive: true });
+    await writeFile(join(fetchDir, '.github', 'workflow.yml'), 'on: push\n');
+    await mkdir(join(fetchDir, '.config'), { recursive: true });
+    await writeFile(join(fetchDir, '.config', 'example.json'), '{"example":true}\n');
+    await writeFile(join(fetchDir, 'SKILL.md'), '# root\n');
+    await mkdir(join(fetchDir, 'bin'), { recursive: true });
+    await writeFile(join(fetchDir, 'bin', 'run.sh'), '#!/bin/sh\necho hi\n', { mode: 0o755 });
+    await symlink('SKILL.md', join(fetchDir, 'link.md'));
+    // Deeper `.git` forms are out of scope: they keep existing (copied) semantics.
+    await mkdir(join(fetchDir, 'sub', '.git'), { recursive: true });
+    await writeFile(join(fetchDir, 'sub', '.git', 'marker'), 'nested git dir copies verbatim\n');
+
+    const res = await exportRootPayload(env, { fetchDir, materializedDir: fetchDir });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const exported = res.value;
+    // Scratch lives inside the fetch dir; the repository and `.git` stay in place (copy-not-move).
+    expect(exported.startsWith(`${fetchDir}/`)).toBe(true);
+    expect(existsSync(join(fetchDir, '.git', 'config'))).toBe(true);
+    const top = [...(await readdir(exported))].sort();
+    expect(top).toEqual(
+      [
+        '.config',
+        '.gitattributes',
+        '.github',
+        '.gitignore',
+        'SKILL.md',
+        'bin',
+        'link.md',
+        'sub',
+      ].sort(),
+    );
+    // No self-nesting: the scratch entry itself is never copied into the export.
+    expect(top).not.toContain(basename(exported));
+    // Symlink target stays literal, the exec bit survives, deeper `.git` copies verbatim.
+    expect(await readlink(join(exported, 'link.md'))).toBe('SKILL.md');
+    const runStat = await lstat(join(exported, 'bin', 'run.sh'));
+    expect((runStat.mode & 0o100) !== 0).toBe(true);
+    expect(await readFile(join(exported, 'sub', '.git', 'marker'), 'utf8')).toBe(
+      'nested git dir copies verbatim\n',
+    );
+    expect(await readFile(join(exported, '.gitattributes'), 'utf8')).toBe('*.md text\n');
+  });
+
+  test('a payload entry sharing the reserved scratch name fails closed without deleting payload', async () => {
+    // Learn the reserved name via a probe export (public API only).
+    const probe = await mkdtemp(join(scratch, 'export-probe-'));
+    await writeFile(join(probe, 'SKILL.md'), '# probe\n');
+    const probed = await exportRootPayload(env, { fetchDir: probe, materializedDir: probe });
+    expect(probed.ok).toBe(true);
+    if (!probed.ok) return;
+    const reserved = basename(probed.value);
+
+    const fetchDir = await mkdtemp(join(scratch, 'export-collision-'));
+    await writeFile(join(fetchDir, 'SKILL.md'), '# payload\n');
+    await writeFile(join(fetchDir, reserved), 'tracked payload sharing the reserved name\n');
+    const before = [...(await readdir(fetchDir))].sort();
+
+    const res = await exportRootPayload(env, { fetchDir, materializedDir: fetchDir });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error).toMatchObject({
+      code: 'source-unresolvable',
+      message: expect.stringContaining('reserved entry'),
+    });
+    // Nothing removed or added: the colliding payload entry and its bytes survive.
+    expect([...(await readdir(fetchDir))].sort()).toEqual(before);
+    expect(await readFile(join(fetchDir, reserved), 'utf8')).toBe(
+      'tracked payload sharing the reserved name\n',
+    );
+    expect(await readFile(join(fetchDir, 'SKILL.md'), 'utf8')).toBe('# payload\n');
+  });
+
+  test('export failures map permission stays permission, else source-unresolvable', async () => {
+    const denied = await exportRootPayload(
+      {
+        ...env,
+        listDir: async () => {
+          throw Object.assign(new Error('list denied'), { code: 'EACCES' });
+        },
+      },
+      { fetchDir: '/fetch/denied', materializedDir: '/fetch/denied' },
+    );
+    expect(denied).toMatchObject({ ok: false, error: { code: 'permission-denied' } });
+
+    const fetchDir = await mkdtemp(join(scratch, 'export-copyfail-'));
+    await writeFile(join(fetchDir, 'SKILL.md'), '# payload\n');
+    const failed = await exportRootPayload(
+      {
+        ...env,
+        copyTree: async () => {
+          throw Object.assign(new Error('copy exploded'), { code: 'EIO' });
+        },
+      },
+      { fetchDir, materializedDir: fetchDir },
+    );
+    expect(failed).toMatchObject({
+      ok: false,
+      error: {
+        code: 'source-unresolvable',
+        message: expect.stringContaining('copy exploded'),
+      },
+    });
   });
 });
 

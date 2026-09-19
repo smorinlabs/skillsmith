@@ -5,7 +5,13 @@ import { clampStoreNs } from '../place/store.ts';
 import type { FlipTool, LedgerFile } from '../place/types.ts';
 import { type Result, err, ok } from '../result.ts';
 import { containsSensitiveMaterial, redactSensitiveValue } from '../safety/redaction.ts';
-import { fetchRepo, lsTreeSkills, resolveRefViaLsRemote, sparseCheckoutSkill } from './fetch.ts';
+import {
+  exportRootPayload,
+  fetchRepo,
+  lsTreeSkills,
+  resolveRefViaLsRemote,
+  sparseCheckoutSkill,
+} from './fetch.ts';
 import type {
   AcquisitionPorts,
   CandidateSkill,
@@ -434,9 +440,18 @@ export const resolveRemoteSource = async (
       sourceUnresolvableError('source transport returned invalid materialization metadata'),
     );
   }
+  let materializedDir = materialization.value;
+  if (skillPath === '') {
+    const exported = await exportRootPayload(ports, {
+      fetchDir: fetchDirectory,
+      materializedDir,
+    });
+    if (!exported.ok) return failure(exported.error);
+    materializedDir = exported.value;
+  }
   return {
     kind: 'resolved',
-    materialization: { sha, skillName, skillPath, materializedDir: materialization.value },
+    materialization: { sha, skillName, skillPath, materializedDir },
     cleanupDirectory: fetchDirectory,
   };
 };
