@@ -8,16 +8,21 @@ Thanks for your interest. Skillsmith is pre-1.0 and the public API is still shif
 git clone https://github.com/smorinlabs/skillsmith.git
 cd skillsmith
 bun install                 # installs deps and runs `lefthook install`
-bun run check               # biome + ESLint boundaries + tsc + actionlint + bun test
+just install-gitleaks       # pinned scanner for commit and push hooks
+just install-trufflehog     # second scanner for local CI and history
+just install-actionlint    # pinned GitHub Actions linter
+bun run check               # canonical checks, including both credential scanners
 ```
 
 `bun install` wires lefthook via the `postinstall` script; once it has run, every `git commit` triggers:
 - Biome check on staged files
 - ESLint import boundaries on staged `packages/*/src/**/*.ts`
-- `tsc --noEmit`
 - `actionlint` on workflow files
+- Gitleaks on staged changes, using the staged configuration
 
-`git push` runs `bun test` via the pre-push hook. Commit messages are validated against [Conventional Commits](https://www.conventionalcommits.org/).
+`git push` scans the commits being pushed with Gitleaks, then runs typechecking, the serial test suite, dependency auditing, and security linting. Commit messages are validated against [Conventional Commits](https://www.conventionalcommits.org/).
+
+Both credential scanners must be installed for the regression suite. See [credential scanning](docs/credential-scanning.md) for scan scopes, exact exceptions, and failure handling. Synthetic test controls never contact credential providers.
 
 ## Scripts
 
@@ -30,7 +35,9 @@ bun run check               # biome + ESLint boundaries + tsc + actionlint + bun
 | `bun run lint:boundaries` | ESLint boundary rules only (no general linting). |
 | `bun run typecheck` | `tsc --noEmit`. |
 | `bun run actions-lint` | actionlint on workflow files. |
-| `bun run check` | Full pre-submit: the five above in order. |
+| `just secrets` | Gitleaks and TruffleHog on current tracked file contents. |
+| `just secrets-history` | Both scanners on all fetched Git history. |
+| `bun run check` | Credential scans, lint, boundaries, types, generated references, workflow lint, P17 validation, and serial tests. |
 | `bun run build` | Compile a single-file native binary to `dist/skillsmith`. |
 
 ## Architectural rules (enforced)
