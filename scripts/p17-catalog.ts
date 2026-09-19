@@ -268,19 +268,26 @@ export const gitRecordsExactDeletion = (
 ): boolean => {
   if (!canonicalOwnedPath(path)) return false;
   const pathspec = `:(top,literal)${path}`;
-  let log: ReturnType<typeof spawnRepositoryGit>;
-  try {
-    log = spawnRepositoryGit(
-      ['log', '-1', '--format=%H', '--', pathspec],
-      repositoryRoot,
-      environment,
-    );
-  } catch {
-    return false;
-  }
-  if (log.exitCode !== 0) return false;
-  const revision = log.stdout.toString().trim();
-  if (!/^[0-9a-f]{40}$/u.test(revision)) return false;
+  const lookupRevision = (extra: string[]): string | null => {
+    let log: ReturnType<typeof spawnRepositoryGit>;
+    try {
+      log = spawnRepositoryGit(
+        ['log', '-1', '--format=%H', ...extra, '--', pathspec],
+        repositoryRoot,
+        environment,
+      );
+    } catch {
+      return null;
+    }
+    if (log.exitCode !== 0) return null;
+    const found = log.stdout.toString().trim();
+    return /^[0-9a-f]{40}$/u.test(found) ? found : null;
+  };
+  // Default traversal prunes second-parent history through TREESAME merges, so a
+  // main-first test merge cannot see a deletion recorded on the merged branch.
+  // Fall back to full history: the deletion record must not depend on merge direction.
+  const revision = lookupRevision([]) ?? lookupRevision(['--full-history']);
+  if (revision === null) return false;
 
   let show: ReturnType<typeof spawnRepositoryGit>;
   try {

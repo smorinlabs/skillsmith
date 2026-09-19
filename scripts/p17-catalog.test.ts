@@ -1299,6 +1299,23 @@ describe('P17 group lifecycle coherence', () => {
     expect(gitRecordsExactDeletion(path, repository)).toBe(true);
   });
 
+  test('accepts a deletion recorded on the merged branch under a main-first merge', () => {
+    const repository = temporaryGitRepository('skillsmith-p17-merge-direction-');
+    const path = 'owned.ts';
+    writeFileSync(resolve(repository, 'base.txt'), 'base\n');
+    commitAll(repository, 'base without owner');
+    runGit(repository, ['checkout', '--quiet', '-b', 'feature']);
+    writeFileSync(resolve(repository, path), 'export const value = 1;\n');
+    commitAll(repository, 'add owner');
+    rmSync(resolve(repository, path));
+    commitAll(repository, 'delete owner');
+    runGit(repository, ['checkout', '--quiet', '-']);
+    writeFileSync(resolve(repository, 'unrelated.txt'), 'main work\n');
+    commitAll(repository, 'main work');
+    runGit(repository, ['merge', '--no-ff', '--quiet', '-m', 'merge feature', 'feature']);
+    expect(gitRecordsExactDeletion(path, repository)).toBe(true);
+  });
+
   test('rejects stale deletion history followed by an add or modification', () => {
     const repository = temporaryGitRepository('skillsmith-p17-stale-deletion-');
     const path = 'owned.ts';
