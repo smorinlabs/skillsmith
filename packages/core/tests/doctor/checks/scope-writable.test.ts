@@ -1,9 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { constants } from 'node:fs';
+import { resolveRuntimeConfiguration } from '../../../src/config/runtime.ts';
 import { createScopeWritableCheck } from '../../../src/doctor/checks/scope-writable.ts';
+import { focusDoctorPorts } from '../../../src/doctor/run.ts';
 import type { CheckRunContext } from '../../../src/doctor/types.ts';
 import { noopLogger } from '../../../src/env/logger.ts';
 import type { PathKind, ScanEnv } from '../../../src/env/types.ts';
+import { portError } from '../../../src/ports/errors.ts';
+import { runtimePorts } from '../../fixtures/runtime-ports.ts';
 
 const fakeEnv = (
   pathKind: (path: string) => PathKind,
@@ -36,47 +39,66 @@ const fakeEnv = (
 });
 
 const context = (overrides: Partial<CheckRunContext> = {}): CheckRunContext => ({
-  env: fakeEnv(() => 'absent'),
+  env: focusDoctorPorts(runtimePorts(fakeEnv(() => 'absent'))),
   mode: 'doctor',
   tools: ['claude-code'],
   scopes: ['user'],
   cwd: '/project',
-  envVars: {},
+  configuration: resolveRuntimeConfiguration({}),
   offline: true,
   logger: noopLogger,
   ...overrides,
 });
 
+const withAccess = (
+  env: ScanEnv,
+  assertWritableDirectory: CheckRunContext['env']['assertWritableDirectory'],
+): CheckRunContext['env'] => focusDoctorPorts({ ...runtimePorts(env), assertWritableDirectory });
+
+const denied = (uid = 501) =>
+  portError({
+    capability: 'path-access',
+    operation: 'assertWritableDirectory',
+    code: 'permission',
+    message: 'permission denied',
+    context: { uid },
+  });
+
 describe('scopeWritable', () => {
   test('probes the nearest existing ancestor without creating an absent root', async () => {
-    const accessed: { path: string; mode: number }[] = [];
+    const accessed: string[] = [];
     const made: string[] = [];
     const env = fakeEnv(
       (path) => (path === '/h' ? 'dir' : 'absent'),
       (path) => made.push(path),
     );
-    const check = createScopeWritableCheck(async (path, mode) => {
-      accessed.push({ path, mode });
-    });
+    const check = createScopeWritableCheck();
 
-    const findings = await check.run(context({ env }));
+    const findings = await check.run(
+      context({
+        env: withAccess(env, async (path) => {
+          accessed.push(path);
+        }),
+      }),
+    );
 
     expect(findings).toEqual([]);
-    expect(accessed).toEqual([{ path: '/h', mode: constants.W_OK | constants.X_OK }]);
+    expect(accessed).toEqual(['/h']);
     expect(made).toEqual([]);
   });
 
   test('reports structured context for an existing root that is not writable', async () => {
     const root = '/h/.claude/skills';
     const env = fakeEnv((path) => (path === root ? 'dir' : 'absent'));
-    const check = createScopeWritableCheck(
-      async () => {
-        throw new Error('permission denied');
-      },
-      () => 501,
-    );
+    const check = createScopeWritableCheck();
 
-    const findings = await check.run(context({ env }));
+    const findings = await check.run(
+      context({
+        env: withAccess(env, async () => {
+          throw denied();
+        }),
+      }),
+    );
 
     expect(findings).toEqual([
       expect.objectContaining({
@@ -93,15 +115,17 @@ describe('scopeWritable', () => {
 
   test('treats an expected privileged-scope failure as informational in a default sweep', async () => {
     const env = fakeEnv((path) => (path === '/etc' ? 'dir' : 'absent'));
-    const check = createScopeWritableCheck(
-      async () => {
-        throw new Error('permission denied');
-      },
-      () => 501,
-    );
+    const check = createScopeWritableCheck();
 
     const findings = await check.run(
-      context({ env, tools: ['codex'], scopes: ['system'], scopeExplicit: false }),
+      context({
+        env: withAccess(env, async () => {
+          throw denied();
+        }),
+        tools: ['codex'],
+        scopes: ['system'],
+        scopeExplicit: false,
+      }),
     );
 
     expect(findings).toEqual([
@@ -117,12 +141,17 @@ describe('scopeWritable', () => {
 
   test('keeps an explicitly requested privileged-scope failure actionable', async () => {
     const env = fakeEnv((path) => (path === '/etc' ? 'dir' : 'absent'));
-    const check = createScopeWritableCheck(async () => {
-      throw new Error('permission denied');
-    });
+    const check = createScopeWritableCheck();
 
     const findings = await check.run(
-      context({ env, tools: ['codex'], scopes: ['system'], scopeExplicit: true }),
+      context({
+        env: withAccess(env, async () => {
+          throw new Error('permission denied');
+        }),
+        tools: ['codex'],
+        scopes: ['system'],
+        scopeExplicit: true,
+      }),
     );
 
     expect(findings[0]?.severity).toBe('error');
@@ -130,11 +159,17 @@ describe('scopeWritable', () => {
 
   test('keeps privileged-scope failures actionable for older callers without scope metadata', async () => {
     const env = fakeEnv((path) => (path === '/etc' ? 'dir' : 'absent'));
-    const check = createScopeWritableCheck(async () => {
-      throw new Error('permission denied');
-    });
+    const check = createScopeWritableCheck();
 
-    const findings = await check.run(context({ env, tools: ['codex'], scopes: ['system'] }));
+    const findings = await check.run(
+      context({
+        env: withAccess(env, async () => {
+          throw new Error('permission denied');
+        }),
+        tools: ['codex'],
+        scopes: ['system'],
+      }),
+    );
 
     expect(findings[0]?.severity).toBe('error');
   });
@@ -143,11 +178,15 @@ describe('scopeWritable', () => {
     const root = '/h/.claude/skills';
     const accessed: string[] = [];
     const env = fakeEnv((path) => (path === root ? 'file' : 'absent'));
-    const check = createScopeWritableCheck(async (path) => {
-      accessed.push(path);
-    });
+    const check = createScopeWritableCheck();
 
-    const findings = await check.run(context({ env }));
+    const findings = await check.run(
+      context({
+        env: withAccess(env, async (path) => {
+          accessed.push(path);
+        }),
+      }),
+    );
 
     expect(findings).toEqual([
       expect.objectContaining({
@@ -163,11 +202,15 @@ describe('scopeWritable', () => {
     const ancestor = '/h/.claude';
     const accessed: string[] = [];
     const env = fakeEnv((path) => (path === ancestor ? 'file' : 'absent'));
-    const check = createScopeWritableCheck(async (path) => {
-      accessed.push(path);
-    });
+    const check = createScopeWritableCheck();
 
-    const findings = await check.run(context({ env }));
+    const findings = await check.run(
+      context({
+        env: withAccess(env, async (path) => {
+          accessed.push(path);
+        }),
+      }),
+    );
 
     expect(findings).toEqual([
       expect.objectContaining({

@@ -1,32 +1,43 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { cp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { z } from 'zod';
-import { defaultScanEnv } from '../../src/env/default.ts';
-import type { PathKind, ScanEnv } from '../../src/env/types.ts';
+import type { ArtifactDigest } from '../../src/artifacts/hash.ts';
+import type { LogicalJournalV1Dto } from '../../src/artifacts/journal-types.ts';
+import type { LedgerModel } from '../../src/artifacts/ledger-types.ts';
+import type { PathKind } from '../../src/env/types.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
 import {
   emptyLedger,
   getPairAt,
   readLedger,
+  readLedgerState,
   setPairAt,
+  withLedgerPairAt,
   writeLedger,
 } from '../../src/place/ledger.ts';
 import { ledgerPathOf, storeRootOf } from '../../src/place/paths.ts';
 import { contentHashOf, resolveProvenance, snapshotToStore } from '../../src/place/store.ts';
-import { resumeSwap, rollbackSwap, runSwap } from '../../src/place/swap.ts';
+import {
+  resumeSwap,
+  rollbackSwap,
+  runSwap,
+  sweepCommittedAcquireJournals,
+} from '../../src/place/swap.ts';
 import {
   type DevRecord,
   FLIP_TOOLS,
   type JournalPhase,
-  type LedgerFile,
   type OriginRecord,
   type PairRecord,
   type PinnedRecord,
-  type SwapCtx,
   type SwapPlan,
+  type SwapRequest,
 } from '../../src/place/types.ts';
+import { defaultRuntimePorts } from '../../src/ports/default.ts';
+import type { RuntimePorts } from '../../src/ports/types.ts';
+import { canonicalFixtureLedger } from '../fixtures/place/canonical-ledger.ts';
 import {
   type FixtureFleet,
   buildFixtureFleet,
@@ -76,33 +87,42 @@ const pinnedOf = (
   placement,
 });
 
-const makeCtx = (env: ScanEnv, ledgerPath: string, ledger: LedgerFile): SwapCtx => ({
-  env,
-  ledgerPath,
-  ledger,
-  persist: () => writeLedger(env, ledgerPath, ledger),
-  now: () => NOW,
-  newTxId: () => TXID,
-});
-
-const ctxFromDisk = async (env: ScanEnv, ledgerPath: string): Promise<SwapCtx> => {
-  const read = await readLedger(env, ledgerPath);
-  if (!read.ok) throw new Error(msg(read.error));
-  return makeCtx(env, ledgerPath, read.value);
+const modelCtx = (env: RuntimePorts, ledgerPath: string, ledger: LedgerModel): SwapRequest => {
+  let durableLedger = ledger;
+  return {
+    context: { env },
+    state: { ledger },
+    effects: {
+      persistLedger: async (candidate) => {
+        const written = await writeLedger(env, ledgerPath, candidate);
+        if (!written.ok) return { ok: false, error: written.error, ledger: durableLedger };
+        durableLedger = candidate;
+        return { ok: true, ledger: candidate };
+      },
+      journalNow: () => NOW,
+      newTransactionId: () => TXID,
+    },
+  };
 };
 
-const hashOf = async (env: ScanEnv, dir: string): Promise<string> => {
+const ctxFromDisk = async (env: RuntimePorts, ledgerPath: string): Promise<SwapRequest> => {
+  const read = await readLedgerState(env, ledgerPath);
+  if (!read.ok || read.value.state !== 'present') throw new Error('fixture ledger is absent');
+  return modelCtx(env, ledgerPath, read.value.model);
+};
+
+const hashOf = async (env: RuntimePorts, dir: string): Promise<string> => {
   const h = await contentHashOf(env, dir);
   if (!h.ok) throw new Error(msg(h.error));
   return h.value;
 };
 
-const residue = async (env: ScanEnv, skillsRoot: string): Promise<string[]> =>
+const residue = async (env: RuntimePorts, skillsRoot: string): Promise<string[]> =>
   (await env.listDir(skillsRoot)).filter((n) => n.startsWith('.skillsmith-'));
 
 // fsync is durability-only and uncounted by crashingEnv, so stubbing it leaves the state machine
 // identical while sparing the shared runner's disk.
-const fastEnv = (inner: ScanEnv): ScanEnv => ({
+const fastEnv = (inner: RuntimePorts): RuntimePorts => ({
   ...inner,
   fsyncFile: async () => {},
   fsyncDir: async () => {},
@@ -115,7 +135,7 @@ const managedNames = (skill: string, txId: string): string[] => [
 ];
 
 const saveState = async (
-  env: ScanEnv,
+  env: RuntimePorts,
   skillsRoot: string,
   ledgerPath: string,
   dest: string,
@@ -132,7 +152,7 @@ const saveState = async (
 };
 
 const restoreState = async (
-  env: ScanEnv,
+  env: RuntimePorts,
   skillsRoot: string,
   ledgerPath: string,
   src: string,
@@ -154,7 +174,7 @@ interface StoreSeed {
   contentHash: string;
 }
 
-const seedStore = async (f: FixtureFleet, env: ScanEnv): Promise<StoreSeed> => {
+const seedStore = async (f: FixtureFleet, env: RuntimePorts): Promise<StoreSeed> => {
   const prov = await resolveProvenance(env, f.alphaSrc);
   if (!prov.ok) throw new Error(msg(prov.error));
   const snap = await snapshotToStore(env, {
@@ -334,7 +354,7 @@ const freshInstall = async (f: FixtureFleet, build: 'symlink' | 'copy'): Promise
   const placementPath = join(skillsRoot, SKILL);
   const ledgerPath = ledgerPathOf(f.data);
   const s = await seedStore(f, env);
-  const w = await writeLedger(env, ledgerPath, emptyLedger(NOW));
+  const w = await writeLedger(env, ledgerPath, canonicalFixtureLedger(emptyLedger(NOW)));
   if (!w.ok) throw new Error(msg(w.error));
   return {
     op: 'install',
@@ -384,7 +404,7 @@ const replaceOverCopy = async (f: FixtureFleet): Promise<AcquireCfg> => {
     origin: origin(),
     journal: null,
   });
-  const w = await writeLedger(env, ledgerPath, ledger);
+  const w = await writeLedger(env, ledgerPath, canonicalFixtureLedger(ledger));
   if (!w.ok) throw new Error(msg(w.error));
   return {
     op: 'install',
@@ -434,7 +454,7 @@ const replaceOverDev = async (f: FixtureFleet): Promise<AcquireCfg> => {
     pinned: null,
     journal: null,
   });
-  const w = await writeLedger(env, ledgerPath, ledger);
+  const w = await writeLedger(env, ledgerPath, canonicalFixtureLedger(ledger));
   if (!w.ok) throw new Error(msg(w.error));
   return {
     op: 'install',
@@ -486,7 +506,7 @@ const replaceSymlinkOverSymlink = async (f: FixtureFleet): Promise<AcquireCfg> =
     origin: origin(),
     journal: null,
   });
-  const w = await writeLedger(env, ledgerPath, ledger);
+  const w = await writeLedger(env, ledgerPath, canonicalFixtureLedger(ledger));
   if (!w.ok) throw new Error(msg(w.error));
   return {
     op: 'install',
@@ -536,7 +556,7 @@ const uninstall = async (f: FixtureFleet, placement: 'symlink' | 'copy'): Promis
     origin: origin(),
     journal: null,
   });
-  const w = await writeLedger(env, ledgerPath, ledger);
+  const w = await writeLedger(env, ledgerPath, canonicalFixtureLedger(ledger));
   if (!w.ok) throw new Error(msg(w.error));
   return {
     op: 'uninstall',
@@ -585,13 +605,151 @@ suite('replace install symlink over symlink', replaceSymlinkOverSymlink);
 suite('uninstall of a symlink placement', (f) => uninstall(f, 'symlink'));
 suite('uninstall of a managed copy', (f) => uninstall(f, 'copy'));
 
+describe('committed move-scope backup sweep', () => {
+  let f: FixtureFleet;
+  beforeEach(async () => {
+    f = await buildFixtureFleet();
+  });
+  afterEach(async () => {
+    await destroyFixtureFleet(f);
+  });
+
+  test('reclaims the deterministic source backup left after the atomic terminal ledger write', async () => {
+    const env = fastEnv(f.env);
+    const store = await seedStore(f, env);
+    const digest = store.contentHash as ArtifactDigest;
+    const sourcePath = join(f.home, '.claude', 'skills', SKILL);
+    const destinationPath = join(f.projectReal, '.claude', 'skills', SKILL);
+    const backupPath = join(
+      dirname(sourcePath),
+      `.skillsmith-backup-${SKILL}-move-sweep-transaction`,
+    );
+    await Promise.all([
+      mkdir(dirname(destinationPath), { recursive: true }),
+      cp(store.storePath, backupPath, { recursive: true, verbatimSymlinks: true }),
+    ]);
+    await cp(store.storePath, destinationPath, { recursive: true, verbatimSymlinks: true });
+    const pair: PairRecord = {
+      placementPath: destinationPath,
+      mode: 'pinned',
+      dev: null,
+      pinned: pinnedOf(store.storePath, store.rev, store.contentHash, 'copy'),
+      journal: null,
+    };
+    const base = canonicalFixtureLedger(emptyLedger('2026-07-07T00:00:00.000Z'));
+    const placed = withLedgerPairAt(base, f.projectReal, SKILL, TOOL, pair);
+    if (!placed.ok) throw new Error(msg(placed.error));
+    const source = {
+      kind: 'portable' as const,
+      identity: {
+        host: 'github.com',
+        repository: 'smorinlabs/fixture-harness',
+        path: 'plugins/fh/skills/alpha',
+      },
+      requestedRef: null,
+      resolvedSha: f.headSha,
+      sourcePath: 'plugins/fh/skills/alpha',
+      contentHash: digest,
+    };
+    const before = {
+      kind: 'placement' as const,
+      resource: {
+        kind: 'live' as const,
+        skill: SKILL,
+        tool: 'claude-code' as const,
+        scope: 'user' as const,
+        projectRoot: null,
+        location: { kind: 'machine-bound' as const, path: sourcePath },
+      },
+      classification: 'pinned' as const,
+      representation: 'copy' as const,
+      linkTarget: null,
+      dangling: false,
+      source,
+      contentHash: digest,
+    };
+    const after = {
+      ...before,
+      resource: {
+        ...before.resource,
+        scope: 'project' as const,
+        projectRoot: { kind: 'machine-bound' as const, path: f.projectReal },
+        location: { kind: 'machine-bound' as const, path: destinationPath },
+      },
+    };
+    const liveBefore = {
+      resourceId: 'live:zeta:claude-code',
+      role: 'live' as const,
+      state: 'present' as const,
+      repositoryRevision: { kind: 'resource' as const, digest },
+      placementPath: sourcePath,
+      liveKind: 'directory' as const,
+      mode: 'pinned' as const,
+      symlinkTarget: null,
+      contentHash: digest,
+    };
+    const ledgerActual = {
+      resourceId: 'ledger:placements',
+      role: 'ledger' as const,
+      state: 'present' as const,
+      repositoryRevision: { kind: 'resource' as const, digest },
+      schemaVersion: 2 as const,
+      semanticHash: digest,
+    };
+    const journal: LogicalJournalV1Dto = {
+      schemaVersion: 1,
+      kind: 'skillsmith.transaction-journal',
+      transactionId: 'move-sweep-transaction',
+      intent: {
+        operationId: 'operation:move-sweep',
+        groupId: 'group:move-sweep',
+        pairId: 'pair:move-sweep',
+        kind: 'move-scope',
+        skill: SKILL,
+        source,
+        tool: TOOL,
+        scope: 'project',
+        before,
+        after,
+        mutates: { live: true, manifest: false, lock: false, ledger: true },
+        reversibility: { kind: 'conditional', retentionResourceIds: ['pair:move-sweep'] },
+        conflict: null,
+      },
+      context: {
+        parentOperationId: 'operation:move-sweep',
+        command: 'skillsmith-apply',
+        workflow: 'reconcile-move-scope',
+        attempt: 1,
+        startedAt: '2026-07-07T00:00:00.000Z',
+      },
+      disposition: 'forward',
+      phase: 'committed',
+      actual: {
+        before: [liveBefore, ledgerActual],
+        after: [{ ...liveBefore, placementPath: destinationPath }, ledgerActual],
+        retained: [],
+      },
+      updatedAt: '2026-07-07T00:00:00.000Z',
+      completedAt: '2026-07-07T00:00:00.000Z',
+    };
+    const model = { ...placed.value, history: [journal] };
+
+    const swept = await sweepCommittedAcquireJournals(modelCtx(env, ledgerPathOf(f.data), model));
+    if (!swept.ok) throw new Error(msg(swept.error));
+    expect(swept.value).toEqual([]);
+    expect(await env.pathKind(backupPath)).toBe('absent');
+    expect(await env.pathKind(destinationPath)).toBe('dir');
+    expect(swept.state.ledger.history).toEqual([journal]);
+  });
+});
+
 // ---- ledger compat probe (D6): a crash-window ledger is valid v0.6.0 but rejected by v0.5.0 ----
 
 describe('ledger compat probe (D6)', () => {
-  let env: ScanEnv;
+  let env: RuntimePorts;
   let base: string;
   beforeEach(async () => {
-    env = await defaultScanEnv();
+    env = await defaultRuntimePorts();
     base = join(tmpdir(), `skillsmith-compat-${Math.random().toString(36).slice(2)}`);
     await mkdir(base, { recursive: true });
   });

@@ -1,20 +1,29 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { cp, mkdir, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import type { PathKind, ScanEnv } from '../../src/env/types.ts';
+import type { LedgerModel } from '../../src/artifacts/ledger-types.ts';
+import type { PathKind } from '../../src/env/types.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
-import { emptyLedger, getPair, readLedger, setPair, writeLedger } from '../../src/place/ledger.ts';
+import {
+  emptyLedger,
+  getPair,
+  readLedger,
+  readLedgerState,
+  setPair,
+  writeLedger,
+} from '../../src/place/ledger.ts';
 import { ledgerPathOf, storeRootOf } from '../../src/place/paths.ts';
 import { contentHashOf, resolveProvenance, snapshotToStore } from '../../src/place/store.ts';
 import { resumeSwap, rollbackSwap, runSwap } from '../../src/place/swap.ts';
 import type {
   DevRecord,
   JournalPhase,
-  LedgerFile,
   PinnedRecord,
-  SwapCtx,
   SwapPlan,
+  SwapRequest,
 } from '../../src/place/types.ts';
+import type { RuntimePorts } from '../../src/ports/types.ts';
+import { canonicalFixtureLedger } from '../fixtures/place/canonical-ledger.ts';
 import {
   type FixtureFleet,
   buildFixtureFleet,
@@ -47,33 +56,42 @@ const pinnedOf = (storePath: string, rev: string, contentHash: string): PinnedRe
   verify: 'passed',
 });
 
-const makeCtx = (env: ScanEnv, ledgerPath: string, ledger: LedgerFile): SwapCtx => ({
-  env,
-  ledgerPath,
-  ledger,
-  persist: () => writeLedger(env, ledgerPath, ledger),
-  now: () => NOW,
-  newTxId: () => TXID,
-});
-
-const ctxFromDisk = async (env: ScanEnv, ledgerPath: string): Promise<SwapCtx> => {
-  const read = await readLedger(env, ledgerPath);
-  if (!read.ok) throw new Error(msg(read.error));
-  return makeCtx(env, ledgerPath, read.value);
+const modelCtx = (env: RuntimePorts, ledgerPath: string, ledger: LedgerModel): SwapRequest => {
+  let durableLedger = ledger;
+  return {
+    context: { env },
+    state: { ledger },
+    effects: {
+      persistLedger: async (candidate) => {
+        const written = await writeLedger(env, ledgerPath, candidate);
+        if (!written.ok) return { ok: false, error: written.error, ledger: durableLedger };
+        durableLedger = candidate;
+        return { ok: true, ledger: candidate };
+      },
+      journalNow: () => NOW,
+      newTransactionId: () => TXID,
+    },
+  };
 };
 
-const hashOf = async (env: ScanEnv, dir: string): Promise<string> => {
+const ctxFromDisk = async (env: RuntimePorts, ledgerPath: string): Promise<SwapRequest> => {
+  const read = await readLedgerState(env, ledgerPath);
+  if (!read.ok || read.value.state !== 'present') throw new Error('fixture ledger is absent');
+  return modelCtx(env, ledgerPath, read.value.model);
+};
+
+const hashOf = async (env: RuntimePorts, dir: string): Promise<string> => {
   const h = await contentHashOf(env, dir);
   if (!h.ok) throw new Error(msg(h.error));
   return h.value;
 };
 
-const residue = async (env: ScanEnv, skillsRoot: string): Promise<string[]> =>
+const residue = async (env: RuntimePorts, skillsRoot: string): Promise<string[]> =>
   (await env.listDir(skillsRoot)).filter((n) => n.startsWith('.skillsmith-'));
 
 // fsync is durability-only and uncounted by crashingEnv, so stubbing it leaves the state machine
 // identical while sparing the shared runner's disk (real fsync here starves parallel git builds).
-const fastEnv = (inner: ScanEnv): ScanEnv => ({
+const fastEnv = (inner: RuntimePorts): RuntimePorts => ({
   ...inner,
   fsyncFile: async () => {},
   fsyncDir: async () => {},
@@ -89,7 +107,7 @@ const managedNames = (skill: string, txId: string): string[] => [
 ];
 
 const saveState = async (
-  env: ScanEnv,
+  env: RuntimePorts,
   skillsRoot: string,
   ledgerPath: string,
   dest: string,
@@ -106,7 +124,7 @@ const saveState = async (
 };
 
 const restoreState = async (
-  env: ScanEnv,
+  env: RuntimePorts,
   skillsRoot: string,
   ledgerPath: string,
   src: string,
@@ -159,7 +177,7 @@ const setupPromote = async (f: FixtureFleet): Promise<SweepCfg> => {
     pinned: null,
     journal: null,
   });
-  const w = await writeLedger(env, ledgerPath, ledger);
+  const w = await writeLedger(env, ledgerPath, canonicalFixtureLedger(ledger));
   if (!w.ok) throw new Error(msg(w.error));
   return {
     op: 'promote',
@@ -192,7 +210,7 @@ const setupDev = async (f: FixtureFleet): Promise<SweepCfg> => {
   const ctx = await ctxFromDisk(env, base.ledgerPath);
   const up = await runSwap(ctx, base.makePlan());
   if (!up.ok) throw new Error(`baseline promote failed: ${msg(up.error)}`);
-  const w = await writeLedger(env, base.ledgerPath, ctx.ledger);
+  const w = await writeLedger(env, base.ledgerPath, up.state.ledger);
   if (!w.ok) throw new Error(msg(w.error));
   return {
     op: 'dev',

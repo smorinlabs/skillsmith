@@ -13,7 +13,7 @@ import { runInstall, runUninstall } from '../../src/acquire/run.ts';
 import type { InstallDeps, InstallOptions } from '../../src/acquire/types.ts';
 import type { InstallRecord } from '../../src/agents/types.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
-import { getPairAt, readLedger } from '../../src/place/ledger.ts';
+import { getPairAt, readLedger, readLedgerState } from '../../src/place/ledger.ts';
 import { ledgerPathOf } from '../../src/place/paths.ts';
 import { runDev, runPromote, runRollback } from '../../src/place/run.ts';
 import { contentHashOf } from '../../src/place/store.ts';
@@ -90,6 +90,7 @@ let installN = 0;
 const installDeps = (): InstallDeps => ({
   verify: passVerify,
   detect: detectClaudeOnly,
+  transport: fixture.transport,
   now: () => NOW,
   newTxId: () => (0x10000000 + installN++).toString(16).slice(-8),
 });
@@ -158,7 +159,7 @@ let f: FixtureFleet;
 let fsSource: string;
 beforeEach(async () => {
   f = await buildFixtureFleet();
-  fsSource = `${fixture.multiUrl}//plugins/fh/skills/factor-scan`;
+  fsSource = `${fixture.multiSource}//plugins/fh/skills/factor-scan`;
 });
 afterEach(async () => {
   await destroyFixtureFleet(f);
@@ -169,6 +170,12 @@ const led = async () => {
   const r = await readLedger(f.env, ledgerPathOf(f.data));
   if (!r.ok) throw new Error(msg(r.error));
   return r.value;
+};
+const canonicalLed = async () => {
+  const r = await readLedgerState(f.env, ledgerPathOf(f.data));
+  if (!r.ok) throw new Error(msg(r.error));
+  if (r.value.state !== 'present') throw new Error('expected canonical ledger state');
+  return r.value.model;
 };
 const pair = async () => getPairAt(await led(), null, 'factor-scan', 'claude-code');
 // The dev source used throughout: multiWork's real, on-disk factor-scan checkout (a genuine git
@@ -182,7 +189,7 @@ describe('interop round-trip — PRD scenario 4 at USER scope (O1: user-scope on
       sources: [fsSource],
       tools: CLAUDE_ONLY,
       cwd: f.base,
-      envVars: f.envVars,
+      configuration: f.configuration,
     };
 
     // --- 1. runInstall -> store symlink placement ---
@@ -209,7 +216,7 @@ describe('interop round-trip — PRD scenario 4 at USER scope (O1: user-scope on
       tools: CLAUDE_ONLY,
       noVerify: true,
       cwd: f.home,
-      envVars: f.envVars,
+      configuration: f.configuration,
       ...o,
     });
     const d1 = await runDev(f.env, flipOpts({ source: devSrc }), flipDeps());
@@ -245,10 +252,9 @@ describe('interop round-trip — PRD scenario 4 at USER scope (O1: user-scope on
     expect(p3?.pinned?.placement).toBe('symlink');
     expect(p3?.pinned?.rev).not.toBe(revR1);
     expect(p3?.origin).toEqual(originalOrigin); // retained verbatim, unchanged by the dev-mode edit
-    // D9's re-pin runs an 'install'-shaped swap under the hood (a fresh store symlink), which
-    // nulls the journal at its terminal write — unlike a plain promote/dev swap, which leaves a
-    // committed record at rest (see step 5 below).
-    expect(p3?.journal).toBeNull();
+    // D9's physical recovery shadow is install-shaped, while the read-only compatibility view
+    // truthfully projects its committed logical promote identity.
+    expect(p3?.journal).toMatchObject({ op: 'promote', phase: 'committed' });
     const revR2 = p3?.pinned?.rev;
     const contentHashR2 = p3?.pinned?.contentHash;
     if (!revR2 || !contentHashR2) throw new Error('expected a pinned rev/contentHash after re-pin');
@@ -266,6 +272,18 @@ describe('interop round-trip — PRD scenario 4 at USER scope (O1: user-scope on
     expect(pr2.value.results[0]?.action).toBe('noop');
     const p4 = await pair();
     expect(p4?.pinned?.rev).toBe(revR2); // lossless: unchanged
+    expect((await canonicalLed()).history.at(-1)?.intent.after).toMatchObject({
+      kind: 'placement',
+      classification: 'pinned',
+      representation: 'symlink',
+      linkTarget: { kind: 'machine-bound', path: storeR2 },
+      source: {
+        kind: 'local-dev',
+        path: devSrc,
+        contentHash: contentHashR2,
+      },
+      contentHash: contentHashR2,
+    });
 
     // --- 5. runRollback (op promote) -> dev symlink restored byte-identically ---
     const rb = await runRollback(f.env, { ...flipOpts(), op: 'promote' }, flipDeps());
@@ -289,7 +307,7 @@ describe('interop round-trip — PRD scenario 4 at USER scope (O1: user-scope on
         tools: CLAUDE_ONLY,
         force: true,
         cwd: f.base,
-        envVars: f.envVars,
+        configuration: f.configuration,
       },
       uninstallDeps(),
     );
@@ -320,7 +338,7 @@ describe('interop round-trip — PRD scenario 5 (deliberate up/downgrade via --f
       sources: [fsSource],
       tools: CLAUDE_ONLY,
       cwd: f.base,
-      envVars: f.envVars,
+      configuration: f.configuration,
     };
 
     const r1 = await runInstall(f.env, baseOpts, installDeps());

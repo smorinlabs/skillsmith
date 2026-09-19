@@ -1,5 +1,7 @@
 # SkillSmith P09 Implementation Plan — `skillsmith install` / `skillsmith uninstall`
 
+> P17 disposition: shipped P09 implementation evidence, not an active plan; target: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#86-install
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development
 > (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use
 > checkbox (`- [ ]`) syntax for tracking. Each task below is self-contained and dispatchable to a

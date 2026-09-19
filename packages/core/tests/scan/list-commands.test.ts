@@ -1,37 +1,33 @@
 import { describe, expect, test } from 'bun:test';
-import type { ScanEnv } from '../../src/env/types.ts';
-import { listCommands } from '../../src/scan/list-commands.ts';
+import { resolveRuntimeConfiguration } from '../../src/config/runtime.ts';
+import { INVENTORY_CANCELLED } from '../../src/inventory/cancellation.ts';
+import type { InventoryReadPorts } from '../../src/ports/types.ts';
+import { listCommands, observeCommandPlacements } from '../../src/scan/list-commands.ts';
 
-const env = (dirs: Record<string, readonly string[]>, files: Record<string, string>): ScanEnv => ({
+const configuration = resolveRuntimeConfiguration({});
+
+const env = (
+  dirs: Record<string, readonly string[]>,
+  files: Record<string, string>,
+): InventoryReadPorts => ({
   homeDir: '/h',
-  path: [],
+  executableSearchPath: [],
   platform: 'linux',
   xdg: { config: '/h/.config', data: '/h/.local/share', cache: '/h/.cache' },
   fileExists: async (p) => p in dirs || p in files,
   realpath: async (p) => p,
   listDir: async (p) => dirs[p] ?? [],
   readText: async (p) => files[p] ?? '',
-  runVersion: async () => 'unknown',
-  exec: async () => ({ code: 0, stdout: '', stderr: '', timedOut: false }),
   pathKind: async () => 'absent' as const,
   isExecutable: async () => false,
   readBytes: async () => new Uint8Array(),
   readLink: async () => '',
-  makeSymlink: async () => {},
-  rename: async () => {},
-  copyTree: async () => {},
-  removeTree: async () => {},
-  makeDir: async () => {},
-  writeTextFile: async () => {},
-  fsyncFile: async () => {},
-  fsyncDir: async () => {},
   modifiedAt: async () => null,
-  withFileLock: (_p, fn) => fn(),
 });
 
 describe('listCommands', () => {
   test('empty → []', async () => {
-    const r = await listCommands(env({}, {}), { cwd: '/proj', envVars: {} });
+    const r = await listCommands(env({}, {}), { cwd: '/proj', configuration });
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.value).toEqual([]);
   });
@@ -44,7 +40,7 @@ describe('listCommands', () => {
     const r = await listCommands(e, {
       tools: ['claude-code'],
       cwd: '/proj',
-      envVars: {},
+      configuration,
     });
     expect(r.ok).toBe(true);
     if (r.ok) {
@@ -70,12 +66,182 @@ describe('listCommands', () => {
         '/pkg/commands/do-thing.md': '---\ndescription: a plugin command\n---\n',
       },
     );
-    const r = await listCommands(e, { tools: ['claude-code'], cwd: '/proj', envVars: {} });
+    const r = await listCommands(e, { tools: ['claude-code'], cwd: '/proj', configuration });
     expect(r.ok).toBe(true);
     if (r.ok) {
       const cmd = r.value.find((x) => x.name === 'do-thing');
       expect(cmd?.origin.kind).toBe('plugin');
       expect(cmd?.enabled).toBe('on');
     }
+  });
+
+  test('does not read Claude plugin state when selected tools have no plugin command root', async () => {
+    const pluginState = '/h/.claude/plugins/installed_plugins.json';
+    const base = env({}, {});
+    const touched: string[] = [];
+    const ports: InventoryReadPorts = {
+      ...base,
+      fileExists: async (path) => {
+        touched.push(path);
+        if (path === pluginState) throw new Error('Claude plugin state must stay untouched');
+        return base.fileExists(path);
+      },
+    };
+
+    const r = await listCommands(ports, {
+      tools: ['codex'],
+      scopes: ['user'],
+      cwd: '/proj',
+      configuration,
+    });
+
+    expect(r).toMatchObject({ ok: true, value: [] });
+    expect(touched).not.toContain(pluginState);
+  });
+
+  test('filters plugin scopes before settings and plugin-root I/O', async () => {
+    const installedPath = '/h/.claude/plugins/installed_plugins.json';
+    const projectSettings = '/proj/.claude/settings.json';
+    const pluginRoot = '/pkg/commands';
+    const base = env(
+      {},
+      {
+        [installedPath]: JSON.stringify({
+          version: 2,
+          plugins: {
+            'project@market': [
+              {
+                scope: 'project',
+                installPath: '/pkg',
+                version: '1.0',
+                projectPath: '/proj',
+              },
+            ],
+          },
+        }),
+        [projectSettings]: JSON.stringify({ enabledPlugins: { 'project@market': true } }),
+      },
+    );
+    const reads: string[] = [];
+    const listed: string[] = [];
+    const ports: InventoryReadPorts = {
+      ...base,
+      readText: async (path) => {
+        reads.push(path);
+        return base.readText(path);
+      },
+      listDir: async (path) => {
+        listed.push(path);
+        return base.listDir(path);
+      },
+    };
+
+    const r = await listCommands(ports, {
+      tools: ['claude-code'],
+      scopes: ['user'],
+      cwd: '/proj',
+      configuration,
+    });
+
+    expect(r).toMatchObject({ ok: true, value: [] });
+    expect(reads).toEqual([installedPath]);
+    expect(reads).not.toContain(projectSettings);
+    expect(listed).not.toContain(pluginRoot);
+  });
+});
+
+const failingPorts = (listDirs: string[]): InventoryReadPorts => ({
+  homeDir: '/home/alice',
+  executableSearchPath: Object.freeze([]),
+  platform: 'linux',
+  xdg: Object.freeze({
+    config: '/home/alice/.config',
+    data: '/home/alice/.local/share',
+    cache: '/home/alice/.cache',
+  }),
+  fileExists: async () => true,
+  pathKind: async () => 'dir',
+  realpath: async (path) => path,
+  listDir: async (path) => {
+    listDirs.push(path);
+    throw new Error(`failed:${path}`);
+  },
+  readText: async () => '',
+  readBytes: async () => new Uint8Array(),
+  readLink: async () => '',
+  isExecutable: async () => false,
+  modifiedAt: async () => null,
+});
+
+describe('inventory command observation seam', () => {
+  test('attempts every selected root before exposing a deterministic aggregate', async () => {
+    const listDirs: string[] = [];
+    let failure: unknown;
+    try {
+      await observeCommandPlacements(failingPorts(listDirs), {
+        tools: ['claude-code'],
+        scopes: ['user', 'project'],
+        cwd: '/repo',
+        configuration,
+      });
+    } catch (error) {
+      failure = error;
+    }
+    expect(listDirs).toEqual(['/home/alice/.claude/commands', '/repo/.claude/commands']);
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect(Object.isFrozen((failure as AggregateError).errors)).toBeTrue();
+    expect((failure as AggregateError).errors.map(String)).toEqual([
+      'Error: failed:/home/alice/.claude/commands',
+      'Error: failed:/repo/.claude/commands',
+    ]);
+  });
+
+  test('pre-cancellation wins before any root read', async () => {
+    const listDirs: string[] = [];
+    const controller = new AbortController();
+    controller.abort(new Error('private reason'));
+    let failure: unknown;
+    try {
+      await observeCommandPlacements(failingPorts(listDirs), {
+        tools: ['claude-code'],
+        scopes: ['user', 'project'],
+        cwd: '/repo',
+        configuration,
+        signal: controller.signal,
+      });
+    } catch (error) {
+      failure = error;
+    }
+    expect(listDirs).toEqual([]);
+    expect(failure).toEqual({ code: 'cancelled', message: 'inventory read cancelled' });
+  });
+
+  test('mid-root cancellation stops the command walker promptly', async () => {
+    const root = '/h/.claude/commands';
+    const controller = new AbortController();
+    let reads = 0;
+    const base = env(
+      { [root]: ['one.md', 'two.md'] },
+      { [`${root}/one.md`]: '---\n---\n', [`${root}/two.md`]: '---\n---\n' },
+    );
+    const ports: InventoryReadPorts = {
+      ...base,
+      readText: async (path) => {
+        reads += 1;
+        controller.abort(new Error('private reason'));
+        return base.readText(path);
+      },
+    };
+
+    await expect(
+      observeCommandPlacements(ports, {
+        tools: ['claude-code'],
+        scopes: ['user'],
+        cwd: '/repo',
+        configuration,
+        signal: controller.signal,
+      }),
+    ).rejects.toEqual(INVENTORY_CANCELLED);
+    expect(reads).toBe(1);
   });
 });

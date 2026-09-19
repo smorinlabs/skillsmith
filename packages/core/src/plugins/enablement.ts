@@ -1,5 +1,10 @@
 import { join } from 'node:path';
-import type { Platform, ScanEnv } from '../env/types.ts';
+import { z } from 'zod';
+import type { Platform } from '../env/types.ts';
+import { type SkillSmithError, configError, errorMessage } from '../errors.ts';
+import { rethrowInventoryReadFailure, throwIfInventoryCancelled } from '../inventory-control.ts';
+import type { InventoryReadPorts } from '../ports/types.ts';
+import { type Result, err, ok } from '../result.ts';
 import type { PluginEnablement, PluginInstallation } from './types.ts';
 
 const MANAGED_SETTINGS_PATH: Record<Platform, string> = {
@@ -8,7 +13,10 @@ const MANAGED_SETTINGS_PATH: Record<Platform, string> = {
   win32: 'C:\\ProgramData\\ClaudeCode\\managed-settings.json',
 };
 
-const settingsPathForInstallation = (env: ScanEnv, inst: PluginInstallation): string | null => {
+const settingsPathForInstallation = (
+  env: InventoryReadPorts,
+  inst: PluginInstallation,
+): string | null => {
   switch (inst.scope) {
     case 'user':
       return join(env.homeDir, '.claude', 'settings.json');
@@ -21,32 +29,64 @@ const settingsPathForInstallation = (env: ScanEnv, inst: PluginInstallation): st
   }
 };
 
+const SettingsSchema = z
+  .object({
+    enabledPlugins: z.record(z.boolean()).optional(),
+  })
+  .passthrough();
+
 const readEnabledPlugins = async (
-  env: ScanEnv,
+  env: InventoryReadPorts,
   path: string,
-): Promise<Record<string, boolean> | null> => {
-  if (!(await env.fileExists(path))) return null;
+  signal?: AbortSignal,
+): Promise<Result<Record<string, boolean> | null, SkillSmithError>> => {
+  throwIfInventoryCancelled(signal);
+  const exists = await env
+    .fileExists(path)
+    .catch((failure: unknown) => rethrowInventoryReadFailure(failure, path));
+  throwIfInventoryCancelled(signal);
+  if (!exists) return ok(null);
+
+  const text = await env.readText(path).catch((failure: unknown) => {
+    throwIfInventoryCancelled(signal);
+    return rethrowInventoryReadFailure(failure, path);
+  });
+  throwIfInventoryCancelled(signal);
+
+  let parsed: unknown;
   try {
-    const text = await env.readText(path);
-    const parsed = JSON.parse(text) as unknown;
-    if (parsed && typeof parsed === 'object' && 'enabledPlugins' in parsed) {
-      const ep = (parsed as { enabledPlugins?: unknown }).enabledPlugins;
-      if (ep && typeof ep === 'object') return ep as Record<string, boolean>;
-    }
-  } catch {
-    // malformed settings file → treat as no enablement data
+    parsed = JSON.parse(text);
+  } catch (failure) {
+    return err(
+      configError(`plugin settings parse error: ${errorMessage(failure)}`, { file: path }),
+    );
   }
-  return null;
+
+  const validated = SettingsSchema.safeParse(parsed);
+  if (!validated.success) {
+    return err(
+      configError(
+        `plugin settings schema error: ${validated.error.issues[0]?.message ?? 'invalid'}`,
+        { file: path },
+      ),
+    );
+  }
+  return ok(validated.data.enabledPlugins ?? null);
 };
 
 export const resolveEnablement = async (
-  env: ScanEnv,
+  env: InventoryReadPorts,
   installation: PluginInstallation,
+  signal?: AbortSignal,
 ): Promise<PluginEnablement> => {
+  throwIfInventoryCancelled(signal);
   const path = settingsPathForInstallation(env, installation);
   if (!path) return { enabled: 'unset', source: 'none' };
 
-  const ep = await readEnabledPlugins(env, path);
+  const read = await readEnabledPlugins(env, path, signal);
+  throwIfInventoryCancelled(signal);
+  if (!read.ok) throw read.error;
+  const ep = read.value;
   if (ep === null) return { enabled: 'unset', source: 'none' };
 
   const value = ep[installation.id];

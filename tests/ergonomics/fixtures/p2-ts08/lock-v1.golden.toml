@@ -1,0 +1,18 @@
+version = 1
+hash_schema_version = 1
+manifest_hash = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+[[skills]]
+name = "lint"
+source = "github.com/acme/skills//skills/lint"
+requested_ref = "v1.2.3"
+resolved_sha = "0123456789abcdef0123456789abcdef01234567"
+source_path = "skills/lint"
+content_hash = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+[[skills]]
+name = "review"
+source = "git.example.com/team/skills//review"
+resolved_sha = "89abcdef0123456789abcdef0123456789abcdef"
+source_path = "review"
+content_hash = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"

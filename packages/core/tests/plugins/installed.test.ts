@@ -1,32 +1,21 @@
 import { describe, expect, test } from 'bun:test';
-import type { ScanEnv } from '../../src/env/types.ts';
 import { readInstalledPlugins } from '../../src/plugins/installed.ts';
+import type { InventoryReadPorts } from '../../src/ports/types.ts';
 
-const env = (files: Record<string, string>): ScanEnv => ({
+const env = (files: Record<string, string>): InventoryReadPorts => ({
   homeDir: '/h',
-  path: [],
+  executableSearchPath: [],
   platform: 'linux',
   xdg: { config: '/h/.config', data: '/h/.local/share', cache: '/h/.cache' },
   fileExists: async (p) => p in files,
   realpath: async (p) => p,
   listDir: async () => [],
   readText: async (p) => files[p] ?? '',
-  runVersion: async () => 'unknown',
-  exec: async () => ({ code: 0, stdout: '', stderr: '', timedOut: false }),
   pathKind: async () => 'absent' as const,
   isExecutable: async () => false,
   readBytes: async () => new Uint8Array(),
   readLink: async () => '',
-  makeSymlink: async () => {},
-  rename: async () => {},
-  copyTree: async () => {},
-  removeTree: async () => {},
-  makeDir: async () => {},
-  writeTextFile: async () => {},
-  fsyncFile: async () => {},
-  fsyncDir: async () => {},
   modifiedAt: async () => null,
-  withFileLock: (_p, fn) => fn(),
 });
 
 describe('readInstalledPlugins', () => {
@@ -82,6 +71,30 @@ describe('readInstalledPlugins', () => {
     const r = await readInstalledPlugins(
       env({ '/h/.claude/plugins/installed_plugins.json': 'not json' }),
     );
-    expect(r.ok).toBe(false);
+    expect(r).toMatchObject({
+      ok: false,
+      error: { code: 'config-error', file: '/h/.claude/plugins/installed_plugins.json' },
+    });
+  });
+
+  test('classifies an installed-plugin manifest EACCES as permission denied', async () => {
+    const path = '/h/.claude/plugins/installed_plugins.json';
+    const base = env({ [path]: '{}' });
+
+    await expect(
+      readInstalledPlugins({
+        ...base,
+        readText: async (candidate) => {
+          if (candidate === path) {
+            throw Object.assign(new Error('manifest denied'), { code: 'EACCES' });
+          }
+          return base.readText(candidate);
+        },
+      }),
+    ).rejects.toEqual({
+      code: 'permission-denied',
+      message: 'manifest denied',
+      path,
+    });
   });
 });

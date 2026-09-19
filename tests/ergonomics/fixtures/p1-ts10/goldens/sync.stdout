@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "kind": "skillsmith.sync",
+  "command": "sync",
+  "mode": "dry-run",
+  "state": "ready",
+  "endpoints": {
+    "from": {
+      "kind": "user",
+      "scope": "user",
+      "selectedInput": "user",
+      "projectRoot": null
+    },
+    "to": {
+      "kind": "project",
+      "scope": "project",
+      "selectedInput": "project",
+      "projectRoot": "/fixture/project"
+    }
+  },
+  "artifactPair": null,
+  "options": {
+    "force": false,
+    "delete": false,
+    "save": false,
+    "dryRun": true,
+    "continueOnError": false
+  },
+  "selection": {
+    "selectionSource": "bounded-default",
+    "selectionOutcome": "filter-noop",
+    "targets": [],
+    "skills": [],
+    "tools": [],
+    "groupIds": [],
+    "sourceMembers": 0,
+    "destinationMembers": 0
+  },
+  "operations": [],
+  "checks": [],
+  "diagnostics": [],
+  "approval": {
+    "required": false,
+    "outcome": "not-required"
+  },
+  "groups": [],
+  "effects": [],
+  "summary": {
+    "groups": 0,
+    "pairs": 0,
+    "planned": 0,
+    "succeeded": 0,
+    "failed": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "notRun": 0,
+    "changed": 0,
+    "unchanged": 0,
+    "effects": 0,
+    "drift": 0,
+    "refusals": 0
+  }
+}

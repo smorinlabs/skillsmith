@@ -1,0 +1,1618 @@
+import currentState from '../contracts/commander-current-state-v0.json' with { type: 'json' };
+import { optionsForPath } from './options.ts';
+import type {
+  CommandArgumentSpec,
+  CommandExitCodeSpec,
+  CommandGroup,
+  CommandWorkflowSafety,
+  CommandWorkflowSpec,
+  NormalizedCommandSpec,
+  OptionRelationSpec,
+} from './types.ts';
+
+const completionProviderForArgument = (
+  path: string,
+  name: string,
+): CommandArgumentSpec['completionProvider'] => {
+  if (path === 'skillsmith verify' && name === 'path') return 'path';
+  if (
+    name === 'skill' &&
+    [
+      'skillsmith dev',
+      'skillsmith promote',
+      'skillsmith status',
+      'skillsmith uninstall',
+      'skillsmith undo',
+      'skillsmith update',
+    ].includes(path)
+  ) {
+    return 'skill';
+  }
+  return undefined;
+};
+
+const PROFILE: Readonly<
+  Record<
+    string,
+    {
+      readonly group: CommandGroup;
+      readonly question: string;
+      readonly capability: string;
+      readonly application: string;
+    }
+  >
+> = {
+  skillsmith: {
+    group: 'maintain',
+    question: 'Which SkillSmith task do you want to run?',
+    capability: 'dispatch',
+    application: 'rootHelp',
+  },
+  'skillsmith agents': {
+    group: 'discover',
+    question: 'Which coding tools are detected and what can Skillsmith do with them?',
+    capability: 'read',
+    application: 'agents',
+  },
+  'skillsmith config': {
+    group: 'maintain',
+    question: 'What defaults are active and how do I change them?',
+    capability: 'config',
+    application: 'configHelp',
+  },
+  'skillsmith config get': {
+    group: 'maintain',
+    question: 'What effective configuration value is selected?',
+    capability: 'read',
+    application: 'configGet',
+  },
+  'skillsmith config set': {
+    group: 'maintain',
+    question: 'Which configuration value should be saved?',
+    capability: 'write',
+    application: 'configSet',
+  },
+  'skillsmith config list': {
+    group: 'maintain',
+    question: 'What is the effective configuration?',
+    capability: 'read',
+    application: 'configList',
+  },
+  'skillsmith config unset': {
+    group: 'maintain',
+    question: 'Which configuration value should be removed?',
+    capability: 'write',
+    application: 'configUnset',
+  },
+  'skillsmith list': {
+    group: 'discover',
+    question: 'Which skills are installed?',
+    capability: 'read',
+    application: 'list',
+  },
+  'skillsmith commands': {
+    group: 'discover',
+    question: 'Which slash commands are installed?',
+    capability: 'read',
+    application: 'commands',
+  },
+  'skillsmith cross-tool-names': {
+    group: 'discover',
+    question: 'Which skill names repeat across tools?',
+    capability: 'read',
+    application: 'crossToolNames',
+  },
+  'skillsmith status': {
+    group: 'discover',
+    question: 'How do desired, locked, ledger, and live states relate?',
+    capability: 'read',
+    application: 'status',
+  },
+  'skillsmith doctor': {
+    group: 'maintain',
+    question: 'What is unhealthy and what deterministic repair is available?',
+    capability: 'read',
+    application: 'doctor',
+  },
+  'skillsmith export': {
+    group: 'declarative',
+    question: 'How do I capture the current fleet as portable desired state?',
+    capability: 'export',
+    application: 'export',
+  },
+  'skillsmith gc': {
+    group: 'maintain',
+    question: 'Which unreachable local store objects can be reclaimed?',
+    capability: 'gc',
+    application: 'gc',
+  },
+  'skillsmith init': {
+    group: 'declarative',
+    question: 'How do I create or migrate the desired-state file?',
+    capability: 'init',
+    application: 'init',
+  },
+  'skillsmith plan': {
+    group: 'declarative',
+    question: 'What would convergence change?',
+    capability: 'plan',
+    application: 'plan',
+  },
+  'skillsmith apply': {
+    group: 'declarative',
+    question: 'How do I execute the reviewed convergence plan?',
+    capability: 'apply',
+    application: 'apply',
+  },
+  'skillsmith sync': {
+    group: 'declarative',
+    question: 'How do I reconcile one live location into another?',
+    capability: 'sync',
+    application: 'sync',
+  },
+  'skillsmith update': {
+    group: 'manage',
+    question: 'How do I check or apply source revision changes?',
+    capability: 'update',
+    application: 'update',
+  },
+  'skillsmith undo': {
+    group: 'manage',
+    question: 'How do I abort or reverse a selected retained operation?',
+    capability: 'undo',
+    application: 'undo',
+  },
+  'skillsmith check': {
+    group: 'maintain',
+    question: 'Are blocking machine/project health checks passing?',
+    capability: 'read',
+    application: 'check',
+  },
+  'skillsmith verify': {
+    group: 'develop',
+    question: 'Is this skill or plugin valid for the selected tools?',
+    capability: 'verify',
+    application: 'verify',
+  },
+  'skillsmith install': {
+    group: 'manage',
+    question: 'How do I acquire and persist a remote skill?',
+    capability: 'install',
+    application: 'install',
+  },
+  'skillsmith uninstall': {
+    group: 'manage',
+    question: 'How do I remove a skill and its desired-state declaration?',
+    capability: 'uninstall',
+    application: 'uninstall',
+  },
+  'skillsmith dev': {
+    group: 'develop',
+    question: 'How do I use a local checkout as the live development source?',
+    capability: 'dev',
+    application: 'dev',
+  },
+  'skillsmith promote': {
+    group: 'develop',
+    question: 'How do I snapshot a development placement into managed state?',
+    capability: 'promote',
+    application: 'promote',
+  },
+  'skillsmith version': {
+    group: 'maintain',
+    question: 'Which Skillsmith version is running?',
+    capability: 'read',
+    application: 'version',
+  },
+  'skillsmith completion': {
+    group: 'maintain',
+    question: 'How do I emit completion for a shell?',
+    capability: 'read',
+    application: 'completion',
+  },
+  'skillsmith help': {
+    group: 'maintain',
+    question: 'How do I learn a command, topic, or workflow?',
+    capability: 'read',
+    application: 'help',
+  },
+};
+
+const DESCRIPTION: Readonly<Record<string, string>> = {
+  skillsmith: 'SkillSmith installs and manages agent skills for AI coding tools.',
+  'skillsmith agents': 'List every supported tool SkillSmith detects on this system',
+  'skillsmith config': 'Manage SkillSmith configuration',
+  'skillsmith config get': 'Print a config value',
+  'skillsmith config set': 'Set a config value (default scope: user)',
+  'skillsmith config list': 'List effective config (or a single scope)',
+  'skillsmith config unset': 'Remove a config value (default scope: user)',
+  'skillsmith list': 'List installed skills across tools and scopes',
+  'skillsmith commands': 'List installed slash commands across tools and scopes',
+  'skillsmith cross-tool-names': 'Report skill names installed under two or more tools',
+  'skillsmith status': 'Correlate desired, locked, ledger, and live skill state',
+  'skillsmith doctor': 'Diagnose SkillSmith and target-tool readiness',
+  'skillsmith export': 'Capture portable live skill state in a manifest and lockfile',
+  'skillsmith gc': 'Reclaim unreachable local store objects under exact safety guards',
+  'skillsmith init': 'Create or safely migrate one desired-state manifest',
+  'skillsmith plan': 'Preview desired/current convergence without changing selected state',
+  'skillsmith apply': 'Converge live skill state from a manifest or exact reviewed saved plan',
+  'skillsmith sync': 'Converge one exact destination from one immutable live source',
+  'skillsmith update': 'Update selected portable declarations to exact verified revisions',
+  'skillsmith undo': 'Reverse the latest eligible retained operation for selected placements',
+  'skillsmith check': 'Error-severity subset of doctor, suitable for CI',
+  'skillsmith verify': 'Verify that a plugin loads under each target tool',
+  'skillsmith install': 'Install agent skills from a git host.',
+  'skillsmith uninstall':
+    'Remove installed skills (placements + ledger records; the store is never deleted).',
+  'skillsmith dev': 'Demote a pinned skill back to a live development source.',
+  'skillsmith promote': 'Promote a skill from dev mode (symlink) to production (pinned copy).',
+  'skillsmith version': 'Print SkillSmith version',
+  'skillsmith completion':
+    'Emit a deterministic shell completion script for manual sourcing or package-manager placement without changing startup files',
+  'skillsmith help': 'Help about a command or cross-cutting topic',
+};
+
+const ARGUMENT_DESCRIPTIONS: Readonly<Record<string, string>> = {
+  'skillsmith commands:glob': 'Glob filters for installed command names',
+  'skillsmith completion:shell': 'Target shell: bash, zsh, or fish',
+  'skillsmith config get:key': 'Configuration key to read',
+  'skillsmith config set:key': 'Configuration key to write',
+  'skillsmith config set:value': 'Configuration value to save',
+  'skillsmith config unset:key': 'Configuration key to remove',
+  'skillsmith cross-tool-names:glob': 'Glob filters for reused skill names',
+  'skillsmith dev:skill': 'Skill names or placement paths',
+  'skillsmith help:topic': 'Command name or cross-cutting help topic',
+  'skillsmith install:source':
+    'owner/repo[/name], owner/repo//path, host/owner/repo[/name], or a git URL; append @ref when needed',
+  'skillsmith list:glob': 'Glob filters for installed skill names',
+  'skillsmith promote:skill': 'Skill names or placement paths',
+  'skillsmith status:skill': 'Skill names or exact placement paths',
+  'skillsmith sync:skill': 'Skill-name or glob filters; omitted means bounded source membership',
+  'skillsmith update:skill':
+    'Declared skill names or globs; omitted is valid only for bounded check or with --all',
+  'skillsmith undo:skill':
+    'Skill names whose latest eligible retained operations should be reversed',
+  'skillsmith uninstall:skill':
+    'Installed skill names or placement paths; use scope or tool flags to disambiguate',
+  'skillsmith verify:path': 'Plugin or bare skill directory',
+};
+
+const EXAMPLES: Readonly<Record<string, readonly string[]>> = {
+  skillsmith: ['skillsmith --help', 'skillsmith list --long'],
+  'skillsmith agents': ['skillsmith agents --detected-only', 'skillsmith agents --format json'],
+  'skillsmith config': ['skillsmith config list', 'skillsmith config get tool'],
+  'skillsmith config get': ['skillsmith config get tool', 'skillsmith config get scope --json'],
+  'skillsmith config set': [
+    'skillsmith config set tool codex',
+    'skillsmith config set scope project',
+  ],
+  'skillsmith config list': [
+    'skillsmith config list',
+    'skillsmith config list --scope project --json',
+  ],
+  'skillsmith config unset': [
+    'skillsmith config unset tool',
+    'skillsmith config unset scope --scope project',
+  ],
+  'skillsmith list': ['skillsmith list', 'skillsmith list "review-*" --tool codex --long'],
+  'skillsmith commands': ['skillsmith commands', 'skillsmith commands "git-*" --project --long'],
+  'skillsmith cross-tool-names': [
+    'skillsmith cross-tool-names',
+    'skillsmith cross-tool-names "review-*" --json',
+  ],
+  'skillsmith doctor': ['skillsmith doctor', 'skillsmith doctor --all-tools --strict'],
+  'skillsmith check': ['skillsmith check', 'skillsmith check --all-tools --json'],
+  'skillsmith status': ['skillsmith status', 'skillsmith status review --tool codex --check'],
+  'skillsmith verify': [
+    'skillsmith verify ./skills/review',
+    'skillsmith verify ./plugin --deep --strict',
+  ],
+  'skillsmith install': [
+    'skillsmith install smorinlabs/smorinlabs-harness/factor-scan --user',
+    'skillsmith install acme/agent-tools/review@v1.2.0 --project --pin',
+    'skillsmith install gitlab.com/acme/platform/tools//skills/review --tool claude-code',
+  ],
+  'skillsmith export': [
+    'skillsmith export',
+    'skillsmith export --project --file ./skillsmith.toml',
+    'skillsmith export --tool claude-code --strict --dry-run',
+  ],
+  'skillsmith gc': [
+    'skillsmith gc --dry-run',
+    'skillsmith gc --older-than 30d --dry-run --json',
+    'skillsmith gc --forget-project /workspace/retired --yes',
+  ],
+  'skillsmith init': [
+    'skillsmith init',
+    'skillsmith init --project --tool codex',
+    'skillsmith init --file ./team.toml --dry-run --json',
+  ],
+  'skillsmith plan': [
+    'skillsmith plan --locked',
+    'skillsmith plan --project --prune',
+    'skillsmith plan --locked --check --json',
+  ],
+  'skillsmith apply': [
+    'skillsmith apply',
+    'skillsmith apply --project --prune',
+    'skillsmith apply --plan review.skillsmith.plan --dry-run',
+  ],
+  'skillsmith sync': [
+    'skillsmith sync --from user --to ./project-b --dry-run',
+    'skillsmith sync lint --from ./project-a --to ./project-b --tool codex',
+    'skillsmith sync --from user --to project --delete --yes',
+  ],
+  'skillsmith update': [
+    'skillsmith update --check',
+    'skillsmith update factor-scan --dry-run',
+    'skillsmith update factor-scan --ref main --pin',
+  ],
+  'skillsmith undo': [
+    'skillsmith undo factor-scan --dry-run',
+    'skillsmith undo factor-scan --tool codex --project',
+    'skillsmith undo --all --scope user --yes',
+  ],
+  'skillsmith uninstall': [
+    'skillsmith uninstall factor-scan',
+    'skillsmith uninstall review --project',
+    'skillsmith rm review --all-scopes --tool codex',
+  ],
+  'skillsmith dev': [
+    'skillsmith dev factor-scan',
+    'skillsmith dev gh-fix-ci --tool codex --source ~/c/gh-fix-ci/skills/gh-fix-ci',
+    'skillsmith dev --rollback factor-scan',
+  ],
+  'skillsmith promote': [
+    'skillsmith promote factor-scan',
+    'skillsmith promote --all --dry-run',
+    'skillsmith promote factor-scan --tool claude-code --strict',
+  ],
+  'skillsmith version': ['skillsmith version', 'skillsmith --version'],
+  'skillsmith completion': ['skillsmith completion bash', 'skillsmith completion zsh'],
+  'skillsmith help': ['skillsmith help install', 'skillsmith help exit-codes'],
+};
+
+const WORKFLOW_DESCRIPTIONS: Readonly<Record<string, readonly string[]>> = {
+  skillsmith: ['Open the grouped command index.', 'Inspect installed skills with detailed rows.'],
+  'skillsmith agents': [
+    'List only coding tools detected on this machine.',
+    'Emit the supported-tool capability inventory as JSON.',
+  ],
+  'skillsmith config': [
+    'List the effective merged configuration.',
+    'Read the effective default tool.',
+  ],
+  'skillsmith config get': [
+    'Read the effective default tool.',
+    'Read the effective scope as JSON.',
+  ],
+  'skillsmith config set': ['Set Codex as the default tool.', 'Set project as the default scope.'],
+  'skillsmith config list': [
+    'List the effective merged configuration.',
+    'Emit project-scoped configuration as JSON.',
+  ],
+  'skillsmith config unset': [
+    'Remove the default-tool override.',
+    'Remove the project-scoped scope override.',
+  ],
+  'skillsmith list': [
+    'List installed skills using the default bounds.',
+    'Find detailed Codex placements whose names begin with review-.',
+  ],
+  'skillsmith commands': [
+    'List installed slash commands using the default bounds.',
+    'Find detailed project commands whose names begin with git-.',
+  ],
+  'skillsmith cross-tool-names': [
+    'Report skill names reused across tools using the default bounds.',
+    'Emit review- name reuse across tools as JSON.',
+  ],
+  'skillsmith doctor': [
+    'Diagnose the current SkillSmith environment.',
+    'Run strict readiness diagnostics for every supported tool.',
+  ],
+  'skillsmith check': [
+    'Run the blocking health subset suitable for CI.',
+    'Emit all-tool blocking health results as JSON.',
+  ],
+  'skillsmith status': [
+    'Compare desired, locked, ledger, and live state.',
+    'Check the Codex review placement and fail when it has drift.',
+  ],
+  'skillsmith verify': [
+    'Verify one bare skill directory.',
+    'Run deep, strict verification for a plugin directory.',
+  ],
+  'skillsmith install': [
+    'Install factor-scan into user scope.',
+    'Install and pin an exact tagged review skill in project scope.',
+    'Install a nested GitLab skill path for Claude Code.',
+  ],
+  'skillsmith export': [
+    'Capture the default live fleet in portable desired state.',
+    'Write project-scoped desired state to an explicit manifest.',
+    'Preview a strict Claude Code export without writing files.',
+  ],
+  'skillsmith gc': [
+    'Preview every currently eligible store reclamation.',
+    'Preview objects older than 30 days and emit JSON.',
+    'Approve forgetting a retired project before reclamation.',
+  ],
+  'skillsmith init': [
+    'Create or migrate the default desired-state manifest.',
+    'Initialize a project manifest bounded to Codex.',
+    'Preview an explicit team manifest and emit JSON.',
+  ],
+  'skillsmith plan': [
+    'Plan convergence from exact locked desired state.',
+    'Plan project convergence including safe pruning.',
+    'Check locked convergence for drift and emit JSON.',
+  ],
+  'skillsmith apply': [
+    'Converge live state from the default manifest.',
+    'Converge project state including safe pruning.',
+    'Preview an exact previously reviewed saved plan.',
+  ],
+  'skillsmith sync': [
+    'Preview a user-to-project-directory reconciliation.',
+    'Sync the lint skill between two projects for Codex.',
+    'Approve user-to-project reconciliation including deletions.',
+  ],
+  'skillsmith update': [
+    'Check bounded declarations for newer revisions.',
+    'Preview an update of factor-scan.',
+    'Move factor-scan to main and pin the resolved revision.',
+  ],
+  'skillsmith undo': [
+    'Preview reversal of the latest eligible factor-scan operation.',
+    'Reverse the Codex project placement for factor-scan.',
+    'Approve reversal of every eligible user-scope operation.',
+  ],
+  'skillsmith uninstall': [
+    'Remove the selected factor-scan placement.',
+    'Remove review from project scope.',
+    'Use the rm alias to remove Codex review placements across scopes.',
+  ],
+  'skillsmith dev': [
+    'Return factor-scan to its recorded live development source.',
+    'Adopt an explicit local checkout as the gh-fix-ci development source.',
+    'Roll back the latest eligible factor-scan development operation.',
+  ],
+  'skillsmith promote': [
+    'Snapshot factor-scan from development into managed state.',
+    'Preview promotion of every eligible development placement.',
+    'Strictly verify and promote factor-scan for Claude Code.',
+  ],
+  'skillsmith version': [
+    'Print the version through the explicit command.',
+    'Print the version through the global flag.',
+  ],
+  'skillsmith completion': [
+    'Emit the Bash script for sourcing in the current shell session.',
+    'Emit the zsh script to save at the package-manager or user completion location.',
+  ],
+  'skillsmith help': ['Open the install command guide.', 'Open the cross-command exit-code guide.'],
+};
+
+const PUBLIC_COMMAND_ORDER = [
+  'skillsmith agents',
+  'skillsmith list',
+  'skillsmith commands',
+  'skillsmith cross-tool-names',
+  'skillsmith status',
+  'skillsmith install',
+  'skillsmith uninstall',
+  'skillsmith update',
+  'skillsmith undo',
+  'skillsmith dev',
+  'skillsmith verify',
+  'skillsmith promote',
+  'skillsmith init',
+  'skillsmith export',
+  'skillsmith plan',
+  'skillsmith apply',
+  'skillsmith sync',
+  'skillsmith doctor',
+  'skillsmith check',
+  'skillsmith gc',
+  'skillsmith config',
+  'skillsmith completion',
+  'skillsmith version',
+  'skillsmith help',
+] as const;
+
+const MINIMAL_INVOCATIONS: Readonly<Record<(typeof PUBLIC_COMMAND_ORDER)[number], string>> = {
+  'skillsmith agents': 'skillsmith agents',
+  'skillsmith list': 'skillsmith list',
+  'skillsmith commands': 'skillsmith commands',
+  'skillsmith cross-tool-names': 'skillsmith cross-tool-names',
+  'skillsmith status': 'skillsmith status',
+  'skillsmith install': 'skillsmith install <source>',
+  'skillsmith uninstall': 'skillsmith uninstall <skill>',
+  'skillsmith update': 'skillsmith update --check',
+  'skillsmith undo': 'skillsmith undo <skill>',
+  'skillsmith dev': 'skillsmith dev <skill> --source <path>',
+  'skillsmith verify': 'skillsmith verify <path>',
+  'skillsmith promote': 'skillsmith promote <skill>',
+  'skillsmith init': 'skillsmith init',
+  'skillsmith export': 'skillsmith export',
+  'skillsmith plan': 'skillsmith plan',
+  'skillsmith apply': 'skillsmith apply',
+  'skillsmith sync': 'skillsmith sync --from <A> --to <B>',
+  'skillsmith doctor': 'skillsmith doctor',
+  'skillsmith check': 'skillsmith check',
+  'skillsmith gc': 'skillsmith gc',
+  'skillsmith config': 'skillsmith config list',
+  'skillsmith completion': 'skillsmith completion zsh',
+  'skillsmith version': 'skillsmith version',
+  'skillsmith help': 'skillsmith help workflows',
+};
+
+const workflowSafety = (capability: string, invocation: string): CommandWorkflowSafety => {
+  if (/^skillsmith config (?:get|list)(?:\s|$)/u.test(invocation)) return 'read-only';
+  if (
+    capability === 'read' ||
+    capability === 'dispatch' ||
+    capability === 'plan' ||
+    capability === 'verify'
+  )
+    return 'read-only';
+  if (invocation.includes('--dry-run') || invocation.includes('--check')) return 'preview';
+  return 'changes-state';
+};
+
+const commonWorkflows = (
+  path: string,
+  capability: string,
+  examples: readonly string[],
+): readonly CommandWorkflowSpec[] => {
+  const descriptions = WORKFLOW_DESCRIPTIONS[path];
+  if (descriptions === undefined) throw new Error(`missing workflow descriptions for ${path}`);
+  return examples.map((invocation, index) => {
+    const description = descriptions[index];
+    if (description === undefined)
+      throw new Error(`missing workflow description ${index + 1} for ${path}`);
+    return {
+      label: ['Start here', 'Focused workflow', 'Advanced workflow'][index] ?? 'Workflow',
+      invocation,
+      description,
+      safety: workflowSafety(capability, invocation),
+    };
+  });
+};
+
+const exitCodes = (
+  ...rows: readonly (readonly [number, string])[]
+): readonly CommandExitCodeSpec[] => rows.map(([code, meaning]) => ({ code, meaning }));
+
+const STANDARD_READ_EXIT_CODES = exitCodes(
+  [0, 'request completed successfully'],
+  [1, 'command failed'],
+  [2, 'invalid command usage'],
+  [3, 'configuration is unreadable'],
+  [130, 'cancelled by SIGINT'],
+);
+
+const EXIT_CODES: Readonly<Record<string, readonly CommandExitCodeSpec[]>> = {
+  skillsmith: exitCodes([0, 'top-level help page emitted']),
+  'skillsmith agents': exitCodes(
+    [0, 'tool detection completed successfully'],
+    [1, 'tool detection failed'],
+    [2, 'invalid tool or output selection'],
+    [130, 'cancelled by SIGINT'],
+  ),
+  'skillsmith export': exitCodes(
+    [0, 'portable export completed or no portable rows remained'],
+    [1, 'strict portability or execution failure'],
+    [2, 'invalid selection or unresolved declaration conflict'],
+    [3, 'artifact or ledger state is invalid or stale'],
+    [4, 'required readable tool capability is unavailable'],
+    [6, 'artifact or ledger permission denied'],
+    [130, 'cancelled by SIGINT'],
+  ),
+  'skillsmith gc': exitCodes(
+    [0, 'GC was previewed, completed, or already converged'],
+    [1, 'one or more approved GC actions failed'],
+    [2, 'invalid duration, forget request, option, or approval policy'],
+    [3, 'ledger, inventory, recovery, tombstone, or execution state is unsafe'],
+    [6, 'a selected state path is permission denied'],
+    [130, 'cancelled by SIGINT'],
+  ),
+  'skillsmith init': exitCodes(
+    [0, 'manifest initialized, migrated, unchanged, or previewed'],
+    [1, 'manifest execution or detection failed'],
+    [2, 'invalid selection or unrepresentable configured path'],
+    [3, 'configuration, existing manifest, or concurrent state is invalid'],
+    [4, 'selected tool or scope is not writable by init'],
+    [6, 'manifest or parent permission denied'],
+    [130, 'cancelled by SIGINT'],
+  ),
+  'skillsmith plan': exitCodes(
+    [0, 'valid convergence preview completed'],
+    [1, 'planning or saved-output execution failed'],
+    [2, 'invalid selection, option policy, or output request'],
+    [3, 'manifest, lock, ledger, or selected state is invalid or stale'],
+    [4, 'a required planner capability is unavailable'],
+    [5, 'a selected source could not be resolved'],
+    [6, 'a selected path could not be read or written due to permissions'],
+    [7, 'a valid --check preview contains drift'],
+    [130, 'cancelled by SIGINT'],
+  ),
+  'skillsmith apply': exitCodes(
+    [0, 'selected state converged, or an exact valid plan was empty or previewed'],
+    [1, 'execution, integrity, or partial convergence failed'],
+    [2, 'invalid selection, mode, approval, or option policy'],
+    [3, 'saved authorization or selected state is invalid, incompatible, or stale'],
+    [4, 'a required apply capability is unavailable'],
+    [5, 'a selected source could not be resolved'],
+    [6, 'a selected path could not be read or written due to permissions'],
+    [7, 'a valid --check plan contains changes'],
+    [130, 'cancelled by SIGINT'],
+  ),
+  'skillsmith sync': exitCodes(
+    [0, 'selected destination converged, was already current, filtered to no-op, or was previewed'],
+    [1, 'execution, integrity, or partial convergence failed'],
+    [2, 'invalid endpoint, selection, conflict, save, option, or approval policy'],
+    [3, 'selected artifact, ledger, or precondition state is invalid or stale'],
+    [4, 'a selected tool or destination sync capability is unavailable'],
+    [6, 'a selected destination or artifact path is permission denied'],
+    [130, 'cancelled by SIGINT'],
+  ),
+  'skillsmith update': exitCodes(
+    [0, 'selected declarations are current, skipped, previewed, or updated'],
+    [1, 'verification, execution, integrity, or partial update failed'],
+    [2, 'invalid selection, option, or approval policy'],
+    [3, 'selected manifest, lock, ledger, or execution guard is invalid or stale'],
+    [4, 'a required update or selected-tool capability is unavailable'],
+    [5, 'a selected source or exact remote ref could not be resolved'],
+    [6, 'a selected artifact or placement path is permission denied'],
+    [7, 'a valid --check evaluation contains available changes'],
+    [130, 'cancelled by SIGINT'],
+  ),
+  'skillsmith undo': exitCodes(
+    [0, 'selected work was previewed, already reversed, filtered to no-op, or safely undone'],
+    [1, 'one or more selected reversals failed'],
+    [2, 'invalid target, --all, scope, approval, or option usage'],
+    [3, 'selected history, retained state, ledger, or execution guard is invalid'],
+    [4, 'a selected tool does not support the required undo capability'],
+    [6, 'a selected retained artifact or placement path is permission denied'],
+    [130, 'cancelled by SIGINT'],
+  ),
+  'skillsmith config': exitCodes([0, 'configuration help page emitted']),
+  'skillsmith config get': exitCodes(
+    [0, 'configuration value printed'],
+    [1, 'key is unset'],
+    [2, 'unknown key, value, or scope'],
+    [3, 'configuration is unreadable'],
+  ),
+  'skillsmith config set': exitCodes(
+    [0, 'configuration value saved'],
+    [2, 'unknown key, invalid value, or unsupported scope'],
+    [3, 'configuration is unreadable'],
+    [6, 'configuration is not writable'],
+  ),
+  'skillsmith config list': STANDARD_READ_EXIT_CODES,
+  'skillsmith config unset': exitCodes(
+    [0, 'configuration value removed'],
+    [2, 'unknown key or unsupported scope'],
+    [3, 'configuration is unreadable'],
+    [6, 'configuration is not writable'],
+  ),
+  'skillsmith list': STANDARD_READ_EXIT_CODES,
+  'skillsmith cross-tool-names': STANDARD_READ_EXIT_CODES,
+  'skillsmith commands': STANDARD_READ_EXIT_CODES,
+  'skillsmith doctor': exitCodes(
+    [0, 'diagnostics completed without blocking findings'],
+    [1, 'unhandled findings or repair failures remain'],
+    [2, 'invalid selection, option policy, or repair approval'],
+    [3, 'artifact state is invalid, corrupt, newer, or stale'],
+    [5, 'source resolution required for repair failed'],
+    [6, 'a selected repair path is not writable'],
+    [130, 'cancelled by SIGINT'],
+  ),
+  'skillsmith check': exitCodes(
+    [0, 'blocking checks passed, or --report-only was used'],
+    [1, 'one or more error findings exist'],
+    [2, 'invalid tool, scope, artifact, or exit-policy selection'],
+    [3, 'configuration is unreadable'],
+    [130, 'cancelled by SIGINT'],
+  ),
+  'skillsmith status': exitCodes(
+    [0, 'selected status completed successfully'],
+    [1, 'status observation failed'],
+    [2, 'invalid usage or unmatched target'],
+    [3, 'manifest, lock, or ledger state is invalid'],
+    [4, 'a required read capability is unavailable'],
+    [5, 'a signed source dependency failed'],
+    [6, 'a selected path could not be read due to permissions'],
+    [7, 'the selected status product contains drift'],
+    [130, 'cancelled by SIGINT'],
+  ),
+  'skillsmith verify': exitCodes(
+    [0, 'verification passed'],
+    [1, 'verification failed or strict mode found warnings'],
+    [2, 'path or option usage is invalid'],
+    [4, 'requested target tool or verification mode is unavailable'],
+    [130, 'cancelled by SIGINT'],
+  ),
+  'skillsmith install': exitCodes(
+    [0, 'installed, or already at the resolved revision'],
+    [1, 'verify gate, snapshot, or swap failed; state is recoverable'],
+    [2, 'usage error or refusal, including non-interactive ambiguity'],
+    [3, 'placements ledger is unreadable'],
+    [4, 'requested target tool is unavailable'],
+    [5, 'source, repository, revision, or skill is unresolvable'],
+    [6, 'skills directory, store, or ledger is not writable'],
+    [130, 'cancelled by SIGINT; state is recoverable'],
+  ),
+  'skillsmith uninstall': exitCodes(
+    [0, 'removed, or already absent'],
+    [1, 'removal failed mid-flight; state is recoverable'],
+    [2, 'usage error or refusal, including ambiguous or unmanaged placement'],
+    [3, 'placements ledger is unreadable'],
+    [6, 'skills directory or ledger is not writable'],
+    [130, 'cancelled by SIGINT; state is recoverable'],
+  ),
+  'skillsmith dev': exitCodes(
+    [0, 'demoted, or already in dev mode'],
+    [1, 'placement flip failed; state is recoverable'],
+    [2, 'usage error or refusal, including a missing recorded source'],
+    [3, 'placements ledger is unreadable'],
+    [4, 'requested skill or tool has no placement'],
+    [5, 'recorded development source no longer exists'],
+    [6, 'skills directory or ledger is not writable'],
+    [130, 'cancelled by SIGINT; state is recoverable'],
+  ),
+  'skillsmith promote': exitCodes(
+    [0, 'promoted, or already pinned'],
+    [1, 'verify gate, snapshot, or swap failed; state is recoverable'],
+    [2, 'usage error or refusal, including a disallowed dirty tree'],
+    [3, 'placements ledger is unreadable'],
+    [4, 'requested skill or tool has no placement'],
+    [5, 'development source is unresolvable'],
+    [6, 'skills directory, store, or ledger is not writable'],
+    [130, 'cancelled by SIGINT; state is recoverable'],
+  ),
+  'skillsmith version': exitCodes([0, 'version emitted']),
+  'skillsmith completion': exitCodes(
+    [0, 'completion script emitted'],
+    [2, 'required shell is missing or unsupported'],
+  ),
+  'skillsmith help': exitCodes([0, 'help page emitted'], [2, 'unknown command or topic']),
+};
+
+type StateArgument = {
+  readonly required: boolean;
+  readonly variadic: boolean;
+  readonly choices: readonly string[];
+  readonly defaultValue: string;
+};
+
+const commandPaths = currentState
+  .filter((row) => row.key.startsWith('command:'))
+  .map((row) => row.key.slice('command:'.length));
+
+const aliasesForPath = (path: string): readonly string[] =>
+  currentState
+    .filter((row) => row.key.startsWith(`alias:${path}:`))
+    .map((row) => row.key.slice(`alias:${path}:`.length))
+    .sort();
+
+const argumentsForPath = (path: string): readonly CommandArgumentSpec[] =>
+  currentState
+    .filter(
+      (row): row is (typeof currentState)[number] & { argument: StateArgument } =>
+        row.key.startsWith(`argument:${path}:`) && 'argument' in row && row.argument !== undefined,
+    )
+    .map((row) => {
+      const name = row.key.slice(`argument:${path}:`.length);
+      const description = ARGUMENT_DESCRIPTIONS[`${path}:${name}`];
+      if (description === undefined)
+        throw new Error(`missing current argument description for ${path} ${name}`);
+      const completionProvider = completionProviderForArgument(path, name);
+      return {
+        name,
+        required: row.argument.required,
+        variadic: row.argument.variadic,
+        choices: row.argument.choices,
+        defaultValue: row.argument.defaultValue === 'null' ? undefined : row.argument.defaultValue,
+        description,
+        ...(completionProvider === undefined ? {} : { completionProvider }),
+      };
+    });
+
+export const CURRENT_COMMAND_SPECS: readonly NormalizedCommandSpec[] = commandPaths.map((path) => {
+  const profile = PROFILE[path];
+  if (profile === undefined) throw new Error(`missing current CommandSpec profile for ${path}`);
+  const description = DESCRIPTION[path];
+  const examples = EXAMPLES[path];
+  const commandExitCodes = EXIT_CODES[path];
+  if (description === undefined) throw new Error(`missing current command description for ${path}`);
+  if (examples === undefined) throw new Error(`missing current command examples for ${path}`);
+  if (commandExitCodes === undefined)
+    throw new Error(`missing current command exit-code help for ${path}`);
+  return Object.freeze({
+    // The current registry is intentionally flat. A fully-qualified name keeps
+    // generic spec walkers from inventing root-level paths for nested commands.
+    name: path,
+    path,
+    aliases: aliasesForPath(path),
+    group: profile.group,
+    helpOrder:
+      path === 'skillsmith'
+        ? -1
+        : PUBLIC_COMMAND_ORDER.indexOf(path as (typeof PUBLIC_COMMAND_ORDER)[number]),
+    primaryQuestion: profile.question,
+    description,
+    arguments: argumentsForPath(path),
+    options: optionsForPath(path),
+    minimalInvocations: [
+      MINIMAL_INVOCATIONS[path as (typeof PUBLIC_COMMAND_ORDER)[number]] ?? examples[0] ?? path,
+    ],
+    commonWorkflows: commonWorkflows(path, profile.capability, examples),
+    examples,
+    exitCodes: commandExitCodes,
+    capability: profile.capability,
+    application: profile.application,
+    ...(path === 'skillsmith status' ? { reportKind: 'status' } : {}),
+    ...(path === 'skillsmith plan' ? { reportKind: 'plan' } : {}),
+    ...(path === 'skillsmith apply' ? { reportKind: 'apply' } : {}),
+    ...(path === 'skillsmith sync' ? { reportKind: 'sync' } : {}),
+    ...(path === 'skillsmith update' ? { reportKind: 'update' } : {}),
+    ...(path === 'skillsmith undo' ? { reportKind: 'undo' } : {}),
+    ...(path === 'skillsmith gc' ? { reportKind: 'gc' } : {}),
+  });
+});
+
+const conflicts = (command: string, left: string, right: string): OptionRelationSpec => ({
+  id: `${command}.${left}.${right}`.replaceAll(' ', '.').replaceAll('--', ''),
+  command,
+  kind: 'conflicts',
+  options: [left, right],
+  description: `${left} cannot be combined with ${right}`,
+});
+
+const exclusive = (command: string, options: readonly string[]): OptionRelationSpec => ({
+  id: `${command}.exclusive.${options.join('.')}`.replaceAll(' ', '.').replaceAll('--', ''),
+  command,
+  kind: 'exclusive-group',
+  options,
+  description: `options are mutually exclusive: ${options.join(', ')}`,
+});
+
+const scopeRelations = (
+  command: string,
+  values: readonly string[],
+): readonly OptionRelationSpec[] => [
+  {
+    id: `${command}.scope-consistency`.replaceAll(' ', '.'),
+    command,
+    kind: 'scope-consistency',
+    scopeOption: '--scope',
+    sugars: values.map((value) => ({ option: `--${value}`, value })),
+    description: '--scope must agree with the selected scope shorthand',
+  },
+];
+
+const singularOption = (command: string, option: string): OptionRelationSpec => ({
+  id: `${command}.${option}.single`.replaceAll(' ', '.').replaceAll('--', ''),
+  command,
+  kind: 'cardinality',
+  subject: 'option-occurrences',
+  whenOption: option,
+  option,
+  maximum: 1,
+  label: `${option} may only be specified once`,
+  description: `${option} may only be specified once`,
+});
+
+const requiredOption = (command: string, option: string): OptionRelationSpec => ({
+  id: `${command}.${option}.required`.replaceAll(' ', '.').replaceAll('--', ''),
+  command,
+  kind: 'requires',
+  option: '$command',
+  requiredOption: option,
+  description: `${option} is required`,
+});
+
+/**
+ * Materialize the required current relation contract.
+ *
+ * Keeping this as a factory gives self-validation an unmodified contract to
+ * compare against when a consumer casts and mutates the exported registry.
+ * Invocation still interprets CURRENT_OPTION_RELATIONS directly.
+ */
+const requiredCurrentOptionRelations = (): readonly OptionRelationSpec[] => [
+  conflicts('skillsmith', '--quiet', '--verbose'),
+  conflicts('skillsmith', '--quiet', '--debug'),
+  conflicts('skillsmith', '--color', '--no-color'),
+  exclusive('skillsmith list', ['--enabled', '--disabled', '--unconfigured']),
+  exclusive('skillsmith list', ['--verified', '--unverified']),
+  ...scopeRelations('skillsmith list', ['user', 'project', 'system', 'managed']),
+  exclusive('skillsmith cross-tool-names', ['--enabled', '--disabled', '--unconfigured']),
+  ...scopeRelations('skillsmith cross-tool-names', ['user', 'project', 'system', 'managed']),
+  exclusive('skillsmith commands', ['--enabled', '--disabled', '--unconfigured']),
+  ...scopeRelations('skillsmith commands', ['user', 'project']),
+  exclusive('skillsmith status', ['--system', '--user', '--project', '--managed']),
+  ...scopeRelations('skillsmith status', ['system', 'user', 'project', 'managed']),
+  {
+    id: 'skillsmith.status.lockfile.requires.file',
+    command: 'skillsmith status',
+    kind: 'requires',
+    option: '--lockfile',
+    requiredOption: '--file',
+    description: '--lockfile requires --file',
+  },
+  {
+    id: 'skillsmith.status.scope.single',
+    command: 'skillsmith status',
+    kind: 'cardinality',
+    subject: 'option-occurrences',
+    whenOption: '--scope',
+    option: '--scope',
+    maximum: 1,
+    label: '--scope may only be specified once',
+    description: '--scope may only be specified once',
+  },
+  ...scopeRelations('skillsmith config get', ['user', 'project', 'system']),
+  ...scopeRelations('skillsmith config set', ['user', 'project', 'system']),
+  ...scopeRelations('skillsmith config list', ['user', 'project', 'system']),
+  ...scopeRelations('skillsmith config unset', ['user', 'project', 'system']),
+  conflicts('skillsmith doctor', '--all-tools', '--tool'),
+  conflicts('skillsmith doctor', '--yes', '--dry-run'),
+  conflicts('skillsmith gc', '--yes', '--dry-run'),
+  singularOption('skillsmith gc', '--dry-run'),
+  singularOption('skillsmith gc', '--older-than'),
+  singularOption('skillsmith gc', '--yes'),
+  singularOption('skillsmith gc', '--json'),
+  {
+    id: 'skillsmith.doctor.dry-run.requires.fix',
+    command: 'skillsmith doctor',
+    kind: 'requires',
+    option: '--dry-run',
+    requiredOption: '--fix',
+    description: '--dry-run requires --fix',
+  },
+  {
+    id: 'skillsmith.doctor.yes.requires.fix',
+    command: 'skillsmith doctor',
+    kind: 'requires',
+    option: '--yes',
+    requiredOption: '--fix',
+    description: '--yes requires --fix',
+  },
+  ...scopeRelations('skillsmith doctor', ['user', 'project', 'system']),
+  {
+    id: 'skillsmith.doctor.lockfile.requires.file',
+    command: 'skillsmith doctor',
+    kind: 'requires',
+    option: '--lockfile',
+    requiredOption: '--file',
+    description: '--lockfile requires --file',
+  },
+  conflicts('skillsmith check', '--all-tools', '--tool'),
+  conflicts('skillsmith check', '--report-only', '--exit-code'),
+  ...scopeRelations('skillsmith check', ['user', 'project', 'system']),
+  {
+    id: 'skillsmith.check.lockfile.requires.file',
+    command: 'skillsmith check',
+    kind: 'requires',
+    option: '--lockfile',
+    requiredOption: '--file',
+    description: '--lockfile requires --file',
+  },
+  {
+    id: 'skillsmith.export.lockfile.requires.file',
+    command: 'skillsmith export',
+    kind: 'requires',
+    option: '--lockfile',
+    requiredOption: '--file',
+    description: '--lockfile requires --file',
+  },
+  ...scopeRelations('skillsmith export', ['user', 'project', 'system', 'managed']),
+  singularOption('skillsmith export', '--scope'),
+  singularOption('skillsmith export', '--file'),
+  singularOption('skillsmith export', '--lockfile'),
+  ...scopeRelations('skillsmith init', ['user', 'project']),
+  singularOption('skillsmith init', '--scope'),
+  singularOption('skillsmith init', '--file'),
+  exclusive('skillsmith plan', ['--user', '--project']),
+  conflicts('skillsmith plan', '--scope', '--user'),
+  conflicts('skillsmith plan', '--scope', '--project'),
+  ...scopeRelations('skillsmith plan', ['user', 'project']),
+  singularOption('skillsmith plan', '--scope'),
+  singularOption('skillsmith plan', '--user'),
+  singularOption('skillsmith plan', '--project'),
+  singularOption('skillsmith plan', '--file'),
+  singularOption('skillsmith plan', '--lockfile'),
+  singularOption('skillsmith plan', '--out'),
+  {
+    id: 'skillsmith.plan.lockfile.requires.file',
+    command: 'skillsmith plan',
+    kind: 'requires',
+    option: '--lockfile',
+    requiredOption: '--file',
+    description: '--lockfile requires --file',
+  },
+  conflicts('skillsmith plan', '--check', '--out'),
+  conflicts('skillsmith plan', '--check', '--force'),
+  {
+    id: 'skillsmith.plan.force.requires.out',
+    command: 'skillsmith plan',
+    kind: 'requires',
+    option: '--force',
+    requiredOption: '--out',
+    description: '--force requires --out',
+  },
+  exclusive('skillsmith apply', ['--user', '--project']),
+  conflicts('skillsmith apply', '--scope', '--user'),
+  conflicts('skillsmith apply', '--scope', '--project'),
+  ...scopeRelations('skillsmith apply', ['user', 'project']),
+  singularOption('skillsmith apply', '--scope'),
+  singularOption('skillsmith apply', '--user'),
+  singularOption('skillsmith apply', '--project'),
+  singularOption('skillsmith apply', '--file'),
+  singularOption('skillsmith apply', '--lockfile'),
+  singularOption('skillsmith apply', '--plan'),
+  {
+    id: 'skillsmith.apply.tool.distinct-values',
+    command: 'skillsmith apply',
+    kind: 'distinct-values',
+    option: '--tool',
+    description: '--tool values must be distinct',
+  },
+  {
+    id: 'skillsmith.apply.lockfile.requires.file',
+    command: 'skillsmith apply',
+    kind: 'requires',
+    option: '--lockfile',
+    requiredOption: '--file',
+    description: '--lockfile requires --file',
+  },
+  conflicts('skillsmith apply', '--dry-run', '--check'),
+  conflicts('skillsmith apply', '--yes', '--dry-run'),
+  conflicts('skillsmith apply', '--yes', '--check'),
+  conflicts('skillsmith apply', '--plan', '--file'),
+  conflicts('skillsmith apply', '--plan', '--lockfile'),
+  conflicts('skillsmith apply', '--plan', '--tool'),
+  conflicts('skillsmith apply', '--plan', '--scope'),
+  conflicts('skillsmith apply', '--plan', '--user'),
+  conflicts('skillsmith apply', '--plan', '--project'),
+  conflicts('skillsmith apply', '--plan', '--locked'),
+  conflicts('skillsmith apply', '--plan', '--prune'),
+  conflicts('skillsmith apply', '--plan', '--yes'),
+  conflicts('skillsmith apply', '--plan', '--continue-on-error'),
+  requiredOption('skillsmith sync', '--from'),
+  requiredOption('skillsmith sync', '--to'),
+  singularOption('skillsmith sync', '--from'),
+  singularOption('skillsmith sync', '--to'),
+  singularOption('skillsmith sync', '--file'),
+  singularOption('skillsmith sync', '--lockfile'),
+  {
+    id: 'skillsmith.sync.file.requires.save',
+    command: 'skillsmith sync',
+    kind: 'requires',
+    option: '--file',
+    requiredOption: '--save',
+    description: '--file requires --save',
+  },
+  {
+    id: 'skillsmith.sync.lockfile.requires.file',
+    command: 'skillsmith sync',
+    kind: 'requires',
+    option: '--lockfile',
+    requiredOption: '--file',
+    description: '--lockfile requires --file',
+  },
+  {
+    id: 'skillsmith.sync.lockfile.requires.save',
+    command: 'skillsmith sync',
+    kind: 'requires',
+    option: '--lockfile',
+    requiredOption: '--save',
+    description: '--lockfile requires --save',
+  },
+  conflicts('skillsmith sync', '--yes', '--dry-run'),
+  singularOption('skillsmith update', '--file'),
+  singularOption('skillsmith update', '--lockfile'),
+  singularOption('skillsmith update', '--ref'),
+  {
+    id: 'skillsmith.update.tool.distinct-values',
+    command: 'skillsmith update',
+    kind: 'distinct-values',
+    option: '--tool',
+    description: '--tool values must be distinct',
+  },
+  {
+    id: 'skillsmith.update.lockfile.requires.file',
+    command: 'skillsmith update',
+    kind: 'requires',
+    option: '--lockfile',
+    requiredOption: '--file',
+    description: '--lockfile requires --file',
+  },
+  {
+    id: 'skillsmith.update.ref.exactly-one-target',
+    command: 'skillsmith update',
+    kind: 'cardinality',
+    subject: 'positionals',
+    whenOption: '--ref',
+    exact: 1,
+    label: '--ref requires exactly one declaration target',
+    description: '--ref requires exactly one declaration target',
+  },
+  conflicts('skillsmith update', '--check', '--dry-run'),
+  conflicts('skillsmith update', '--check', '--yes'),
+  conflicts('skillsmith update', '--dry-run', '--yes'),
+  exclusive('skillsmith undo', ['--user', '--project']),
+  conflicts('skillsmith undo', '--scope', '--user'),
+  conflicts('skillsmith undo', '--scope', '--project'),
+  ...scopeRelations('skillsmith undo', ['user', 'project']),
+  singularOption('skillsmith undo', '--scope'),
+  singularOption('skillsmith undo', '--user'),
+  singularOption('skillsmith undo', '--project'),
+  {
+    id: 'skillsmith.undo.all.no-targets',
+    command: 'skillsmith undo',
+    kind: 'cardinality',
+    subject: 'positionals',
+    whenOption: '--all',
+    maximum: 0,
+    label: '--all cannot be combined with positional targets',
+    description: '--all cannot be combined with positional targets',
+  },
+  {
+    id: 'skillsmith.undo.tool.distinct-values',
+    command: 'skillsmith undo',
+    kind: 'distinct-values',
+    option: '--tool',
+    description: '--tool values must be distinct',
+  },
+  conflicts('skillsmith undo', '--yes', '--dry-run'),
+  conflicts('skillsmith verify', '--static', '--deep'),
+  conflicts('skillsmith install', '--deep', '--no-verify'),
+  conflicts('skillsmith install', '--yes', '--dry-run'),
+  conflicts('skillsmith install', '--no-save', '--file'),
+  conflicts('skillsmith install', '--no-save', '--lockfile'),
+  {
+    id: 'skillsmith.install.lockfile.requires.file',
+    command: 'skillsmith install',
+    kind: 'requires',
+    option: '--lockfile',
+    requiredOption: '--file',
+    description: '--lockfile requires --file',
+  },
+  conflicts('skillsmith install', '--scope', '--user'),
+  conflicts('skillsmith install', '--scope', '--project'),
+  ...scopeRelations('skillsmith install', ['user', 'project']),
+  singularOption('skillsmith install', '--scope'),
+  singularOption('skillsmith install', '--file'),
+  singularOption('skillsmith install', '--lockfile'),
+  singularOption('skillsmith install', '--ref'),
+  singularOption('skillsmith install', '--path'),
+  {
+    id: 'skillsmith.install.ref.exactly-one-source',
+    command: 'skillsmith install',
+    kind: 'cardinality',
+    subject: 'positionals',
+    whenOption: '--ref',
+    exact: 1,
+    label: '--ref requires exactly one source target',
+    description: '--ref requires exactly one source target',
+  },
+  {
+    id: 'skillsmith.install.path.exactly-one-source',
+    command: 'skillsmith install',
+    kind: 'cardinality',
+    subject: 'positionals',
+    whenOption: '--path',
+    exact: 1,
+    label: '--path requires exactly one source target',
+    description: '--path requires exactly one source target',
+  },
+  conflicts('skillsmith uninstall', '--no-save', '--file'),
+  conflicts('skillsmith uninstall', '--no-save', '--lockfile'),
+  {
+    id: 'skillsmith.uninstall.lockfile.requires.file',
+    command: 'skillsmith uninstall',
+    kind: 'requires',
+    option: '--lockfile',
+    requiredOption: '--file',
+    description: '--lockfile requires --file',
+  },
+  conflicts('skillsmith uninstall', '--scope', '--user'),
+  conflicts('skillsmith uninstall', '--scope', '--project'),
+  ...scopeRelations('skillsmith uninstall', ['user', 'project']),
+  singularOption('skillsmith uninstall', '--scope'),
+  singularOption('skillsmith uninstall', '--file'),
+  singularOption('skillsmith uninstall', '--lockfile'),
+  conflicts('skillsmith uninstall', '--all-scopes', '--scope'),
+  conflicts('skillsmith uninstall', '--all-scopes', '--user'),
+  conflicts('skillsmith uninstall', '--all-scopes', '--project'),
+  conflicts('skillsmith uninstall', '--yes', '--dry-run'),
+  ...scopeRelations('skillsmith dev', ['user', 'project']),
+  {
+    id: 'skillsmith.dev.scope.single',
+    command: 'skillsmith dev',
+    kind: 'cardinality',
+    subject: 'option-occurrences',
+    whenOption: '--scope',
+    option: '--scope',
+    maximum: 1,
+    label: '--scope may only be specified once',
+    description: '--scope may only be specified once',
+  },
+  conflicts('skillsmith dev', '--all', '--source'),
+  conflicts('skillsmith dev', '--yes', '--dry-run'),
+  conflicts('skillsmith dev', '--rollback', '--source'),
+  conflicts('skillsmith dev', '--rollback', '--dest'),
+  conflicts('skillsmith dev', '--rollback', '--strict'),
+  conflicts('skillsmith dev', '--rollback', '--no-verify'),
+  {
+    id: 'skillsmith.dev.all.no-targets',
+    command: 'skillsmith dev',
+    kind: 'cardinality',
+    subject: 'positionals',
+    whenOption: '--all',
+    maximum: 0,
+    label: '--all cannot be combined with positional targets',
+    description: '--all cannot be combined with positional targets',
+  },
+  {
+    id: 'skillsmith.dev.source.one-target',
+    command: 'skillsmith dev',
+    kind: 'cardinality',
+    subject: 'positionals',
+    whenOption: '--source',
+    exact: 1,
+    label: '--source requires exactly one target',
+    description: '--source requires exactly one target',
+  },
+  {
+    id: 'skillsmith.dev.dest.one-tool',
+    command: 'skillsmith dev',
+    kind: 'cardinality',
+    subject: 'option-occurrences',
+    whenOption: '--dest',
+    option: '--tool',
+    exact: 1,
+    label: '--dest requires exactly one --tool',
+    description: '--dest requires exactly one --tool',
+  },
+  ...scopeRelations('skillsmith promote', ['user', 'project']),
+  {
+    id: 'skillsmith.promote.scope.single',
+    command: 'skillsmith promote',
+    kind: 'cardinality',
+    subject: 'option-occurrences',
+    whenOption: '--scope',
+    option: '--scope',
+    maximum: 1,
+    label: '--scope may only be specified once',
+    description: '--scope may only be specified once',
+  },
+  conflicts('skillsmith promote', '--yes', '--dry-run'),
+  conflicts('skillsmith promote', '--rollback', '--strict'),
+  conflicts('skillsmith promote', '--rollback', '--no-verify'),
+  conflicts('skillsmith promote', '--rollback', '--allow-dirty'),
+  {
+    id: 'skillsmith.promote.all.no-targets',
+    command: 'skillsmith promote',
+    kind: 'cardinality',
+    subject: 'positionals',
+    whenOption: '--all',
+    maximum: 0,
+    label: '--all cannot be combined with positional targets',
+    description: '--all cannot be combined with positional targets',
+  },
+];
+
+export const CURRENT_OPTION_RELATIONS: readonly OptionRelationSpec[] =
+  requiredCurrentOptionRelations();
+
+export const validateCurrentCommandSpecs = (): readonly string[] => {
+  const errors: string[] = [];
+  const publicSpecs = CURRENT_COMMAND_SPECS.filter((spec) => spec.path.split(' ').length === 2);
+  if (new Set(commandPaths).size !== commandPaths.length)
+    errors.push('current command paths duplicate');
+  if (CURRENT_COMMAND_SPECS.length !== commandPaths.length)
+    errors.push('current command registry does not close the current command paths');
+  if (new Set(publicSpecs.map((spec) => spec.primaryQuestion)).size !== publicSpecs.length)
+    errors.push('public command primary questions must be unique');
+  if (
+    publicSpecs
+      .map((spec) => spec.helpOrder)
+      .toSorted((left, right) => left - right)
+      .some((order, index) => order !== index)
+  )
+    errors.push('public command help order must be a closed zero-based sequence');
+  for (const spec of CURRENT_COMMAND_SPECS) {
+    if (spec.primaryQuestion.length === 0) errors.push(`${spec.path} has no primary question`);
+    if (spec.application.length === 0) errors.push(`${spec.path} has no application reference`);
+    if (spec.description.length === 0) errors.push(`${spec.path} has no description`);
+    if (spec.minimalInvocations.length === 0) errors.push(`${spec.path} has no minimal invocation`);
+    if (spec.minimalInvocations.some((invocation) => !invocation.startsWith(spec.path)))
+      errors.push(`${spec.path} has a minimal invocation outside its command path`);
+    if (spec.commonWorkflows.length < 2 || spec.commonWorkflows.length > 3)
+      errors.push(`${spec.path} must have two or three common workflows`);
+    if (
+      spec.examples.length !== spec.commonWorkflows.length ||
+      spec.examples.some(
+        (invocation, index) => invocation !== spec.commonWorkflows[index]?.invocation,
+      )
+    )
+      errors.push(`${spec.path} examples must close exactly against common workflows`);
+    for (const workflow of spec.commonWorkflows) {
+      if (!workflow.invocation.startsWith('skillsmith '))
+        errors.push(`${spec.path} has a workflow outside the skillsmith CLI`);
+      if (workflow.label.length === 0 || workflow.description.length === 0)
+        errors.push(`${spec.path} has incomplete workflow metadata`);
+    }
+    if (spec.examples.length === 0) errors.push(`${spec.path} has no examples`);
+    if (spec.exitCodes === undefined || spec.exitCodes.length === 0)
+      errors.push(`${spec.path} has no exit-code help`);
+    for (const argument of spec.arguments) {
+      if (argument.description === undefined || argument.description.length === 0)
+        errors.push(`${spec.path} argument ${argument.name} has no description`);
+    }
+    for (const option of spec.options) {
+      if (option.description === undefined || option.description.length === 0)
+        errors.push(`${spec.path} option ${option.long} has no description`);
+      if (option.helpFamily.length === 0 || option.helpLevel.length === 0)
+        errors.push(`${spec.path} option ${option.long} has incomplete help metadata`);
+    }
+    if (new Set(spec.options.map((option) => option.long)).size !== spec.options.length)
+      errors.push(`${spec.path} has duplicate long options`);
+  }
+  return errors;
+};
+
+export const validateGlobalOptionPermutation = (): readonly string[] => {
+  const errors: string[] = [];
+  const root = CURRENT_COMMAND_SPECS.find((spec) => spec.path === 'skillsmith');
+  for (const long of [
+    '--help',
+    '--version',
+    '--cd',
+    '--config',
+    '--color',
+    '--no-color',
+    '--quiet',
+    '--verbose',
+    '--no-prompt',
+    '--debug',
+  ]) {
+    if (!root?.options.some((option) => option.long === long))
+      errors.push(`missing global ${long}`);
+  }
+  for (const spec of CURRENT_COMMAND_SPECS.filter((candidate) => candidate.path !== 'skillsmith')) {
+    if (spec.options.some((option) => option.long === '--no-prompt'))
+      errors.push(`${spec.path} redeclares inherited --no-prompt`);
+  }
+  return errors;
+};
+
+const isRelationRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const isStringArray = (value: unknown): value is readonly string[] =>
+  Array.isArray(value) && value.every((item) => typeof item === 'string');
+
+export const validateCurrentOptionRelations = (): readonly string[] => {
+  const errors: string[] = [];
+  const currentRelations = CURRENT_OPTION_RELATIONS as readonly unknown[];
+  const requiredRelations = requiredCurrentOptionRelations();
+  const records = currentRelations.filter(isRelationRecord);
+  const ids = records
+    .map((relation) => relation.id)
+    .filter((id): id is string => typeof id === 'string');
+  if (new Set(ids).size !== ids.length) errors.push('current option relation IDs duplicate');
+
+  const requiredById = new Map(requiredRelations.map((relation) => [relation.id, relation]));
+  const currentById = new Map(
+    records
+      .filter(
+        (relation): relation is Readonly<Record<string, unknown>> & { readonly id: string } =>
+          typeof relation.id === 'string',
+      )
+      .map((relation) => [relation.id, relation]),
+  );
+  for (const required of requiredRelations) {
+    const current = currentById.get(required.id);
+    if (current === undefined) {
+      errors.push(`missing required current option relation ${required.id}`);
+    } else if (JSON.stringify(current) !== JSON.stringify(required)) {
+      errors.push(`${required.id} does not match the required current option relation contract`);
+    }
+  }
+  for (const id of currentById.keys()) {
+    if (!requiredById.has(id)) errors.push(`unexpected current option relation ${id}`);
+  }
+
+  const requiredCommands = new Set(requiredRelations.map((relation) => relation.command));
+  for (const command of requiredCommands) {
+    if (!records.some((relation) => relation.command === command))
+      errors.push(`missing current option relations for ${command}`);
+  }
+
+  for (const spec of CURRENT_COMMAND_SPECS) {
+    const scope = spec.options.find((option) => option.long === '--scope');
+    if (scope === undefined) continue;
+    const sugars = spec.options.filter(
+      (option) =>
+        option.valueShape === 'boolean' && scope.allowedValues.includes(option.long.slice(2)),
+    );
+    if (
+      sugars.length > 0 &&
+      !records.some(
+        (relation) => relation.command === spec.path && relation.kind === 'scope-consistency',
+      )
+    )
+      errors.push(`${spec.path} has scope shorthands without a scope-consistency relation`);
+  }
+
+  const rootOptions =
+    CURRENT_COMMAND_SPECS.find((spec) => spec.path === 'skillsmith')?.options ?? [];
+  for (const [index, value] of currentRelations.entries()) {
+    if (!isRelationRecord(value)) {
+      errors.push(`current option relation at index ${index} must be an object`);
+      continue;
+    }
+    const relation = value;
+    const id =
+      typeof relation.id === 'string' && relation.id.length > 0
+        ? relation.id
+        : `current option relation at index ${index}`;
+    if (typeof relation.id !== 'string' || relation.id.length === 0)
+      errors.push(`${id} must have a non-empty string ID`);
+    if (typeof relation.command !== 'string' || relation.command.length === 0) {
+      errors.push(`${id} must name a command`);
+      continue;
+    }
+    if (typeof relation.description !== 'string' || relation.description.length === 0)
+      errors.push(`${id} must have a non-empty description`);
+    const spec = CURRENT_COMMAND_SPECS.find((candidate) => candidate.path === relation.command);
+    if (spec === undefined) {
+      errors.push(`${id} references unknown command ${relation.command}`);
+      continue;
+    }
+    const options = new Map(
+      (relation.command === 'skillsmith' ? rootOptions : [...rootOptions, ...spec.options]).map(
+        (option) => [option.long, option],
+      ),
+    );
+    const validateOperand = (operand: unknown, role: string): void => {
+      if (typeof operand !== 'string' || !options.has(operand))
+        errors.push(`${id} has unknown ${role} ${String(operand)}`);
+    };
+
+    if (relation.kind === 'conflicts') {
+      if (
+        !isStringArray(relation.options) ||
+        relation.options.length !== 2 ||
+        new Set(relation.options).size !== 2
+      )
+        errors.push(`${id} must name exactly two distinct options`);
+      if (isStringArray(relation.options))
+        for (const operand of relation.options) validateOperand(operand, 'option');
+      continue;
+    }
+    if (relation.kind === 'exclusive-group') {
+      if (
+        !isStringArray(relation.options) ||
+        relation.options.length < 2 ||
+        new Set(relation.options).size !== relation.options.length
+      )
+        errors.push(`${id} must name at least two distinct options`);
+      if (isStringArray(relation.options))
+        for (const operand of relation.options) validateOperand(operand, 'option');
+      continue;
+    }
+    if (relation.kind === 'requires') {
+      if (relation.option !== '$command') validateOperand(relation.option, 'option');
+      validateOperand(relation.requiredOption, 'required option');
+      if (relation.option === relation.requiredOption)
+        errors.push(`${id} cannot require an option to require itself`);
+      continue;
+    }
+    if (relation.kind === 'distinct-values') {
+      validateOperand(relation.option, 'option');
+      const operand =
+        typeof relation.option === 'string' ? options.get(relation.option) : undefined;
+      if (operand !== undefined && operand.valueShape === 'boolean')
+        errors.push(`${id} option ${String(relation.option)} must accept a value`);
+      if (operand !== undefined && !operand.repeatable)
+        errors.push(`${id} option ${String(relation.option)} must be repeatable`);
+      continue;
+    }
+    if (relation.kind === 'scope-consistency') {
+      validateOperand(relation.scopeOption, 'scope option');
+      const scope =
+        typeof relation.scopeOption === 'string' ? options.get(relation.scopeOption) : undefined;
+      if (scope?.valueShape === 'boolean') errors.push(`${id} scope option must accept a value`);
+      const sugars = Array.isArray(relation.sugars) ? relation.sugars : [];
+      if (sugars.length === 0) errors.push(`${id} must name at least one scope shorthand`);
+      if (
+        !sugars.every(isRelationRecord) ||
+        new Set(sugars.map((sugar) => sugar.option)).size !== sugars.length ||
+        new Set(sugars.map((sugar) => sugar.value)).size !== sugars.length
+      )
+        errors.push(`${id} scope shorthand options and values must be unique`);
+      for (const sugar of sugars) {
+        if (!isRelationRecord(sugar)) {
+          errors.push(`${id} scope shorthand must be an object`);
+          continue;
+        }
+        validateOperand(sugar.option, 'scope shorthand');
+        if (typeof sugar.option !== 'string' || options.get(sugar.option)?.valueShape !== 'boolean')
+          errors.push(`${id} scope shorthand ${String(sugar.option)} must be boolean`);
+        if (typeof sugar.value !== 'string' || !scope?.allowedValues.includes(sugar.value))
+          errors.push(`${id} has unsupported scope shorthand value ${String(sugar.value)}`);
+      }
+      const expectedSugars = spec.options
+        .filter(
+          (option) =>
+            option.valueShape === 'boolean' &&
+            (scope?.allowedValues ?? []).includes(option.long.slice(2)),
+        )
+        .map((option) => option.long)
+        .sort();
+      const declaredSugars = sugars
+        .filter(isRelationRecord)
+        .map((sugar) => sugar.option)
+        .filter((option): option is string => typeof option === 'string')
+        .sort();
+      if (JSON.stringify(declaredSugars) !== JSON.stringify(expectedSugars))
+        errors.push(`${id} does not close the command's scope shorthands`);
+      continue;
+    }
+
+    if (relation.kind !== 'cardinality') {
+      errors.push(`${id} has unknown relation kind ${String(relation.kind)}`);
+      continue;
+    }
+    validateOperand(relation.whenOption, 'trigger option');
+    const bounds = [relation.exact, relation.maximum].filter(
+      (bound): bound is unknown => bound !== undefined,
+    );
+    if (
+      bounds.length !== 1 ||
+      bounds.some((bound) => typeof bound !== 'number' || !Number.isInteger(bound) || bound < 0)
+    )
+      errors.push(`${id} must have one non-negative integer cardinality bound`);
+    if (typeof relation.label !== 'string' || relation.label.length === 0)
+      errors.push(`${id} must have a non-empty cardinality label`);
+    if (relation.subject === 'positionals') {
+      if (relation.option !== undefined)
+        errors.push(`${id} positional cardinality cannot name an option`);
+      if (spec.arguments.length === 0)
+        errors.push(`${id} applies positional cardinality to a command without arguments`);
+    } else if (relation.subject === 'option-occurrences') {
+      if (relation.option === undefined)
+        errors.push(`${id} option-occurrences cardinality must name an option`);
+      else validateOperand(relation.option, 'counted option');
+    } else {
+      errors.push(`${id} has unknown cardinality subject ${String(relation.subject)}`);
+      if (relation.option !== undefined)
+        errors.push(`${id} invalid cardinality subject cannot name an option`);
+    }
+  }
+  return errors;
+};
+
+export const commandSpecInventory = (specs: readonly unknown[]): unknown =>
+  specs.map((value) => {
+    if (typeof value !== 'object' || value === null) return value;
+    const spec = value as Partial<NormalizedCommandSpec>;
+    return {
+      name: spec.name,
+      aliases: spec.aliases ?? [],
+      group: spec.group,
+      primaryQuestion: spec.primaryQuestion,
+      description: spec.description,
+      arguments: spec.arguments ?? [],
+      options: spec.options ?? [],
+      examples: spec.examples ?? [],
+      exitCodes: spec.exitCodes ?? [],
+    };
+  });

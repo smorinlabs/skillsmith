@@ -1,0 +1,958 @@
+import { describe, expect, test } from 'bun:test';
+import { planInitManifest } from '../../src/artifacts/init.ts';
+import { hashInitResourceBytes, prepareInitOperationPlan } from '../../src/init/plan.ts';
+import {
+  type ExecutableOperation,
+  type ExecutableOperationKind,
+  type OperationDigest,
+  type OperationGroupIdentity,
+  type OperationIdentity,
+  type OperationImage,
+  type OperationPairIdentity,
+  type OperationPlanInput,
+  type OperationResourceIdentity,
+  type OperationSource,
+  type PlanCheckIdentity,
+  type PlanningDiagnosticIdentity,
+  type PlanningToolContext,
+  createBoundedForceEffect,
+  createOperationExecutionResult,
+  createOperationGroupId,
+  createOperationId,
+  createOperationPairId,
+  createOperationPlan,
+  createPlanCheckId,
+  createPlanningDiagnosticId,
+} from '../../src/planning/index.ts';
+
+const CONTENT_HASH = `sha256:${'a'.repeat(64)}` as OperationDigest;
+const BYTE_HASH = `sha256:${'b'.repeat(64)}` as OperationDigest;
+const SOURCE: OperationSource = {
+  kind: 'portable',
+  identity: { host: 'example.test', repository: 'fixture/repo', path: 'skills/alpha' },
+  requestedRef: null,
+  resolvedSha: 'c'.repeat(40),
+  sourcePath: 'skills/alpha',
+  contentHash: CONTENT_HASH,
+};
+const RESOURCE = {
+  kind: 'live',
+  skill: 'alpha',
+  tool: 'codex',
+  scope: 'user',
+  projectRoot: null,
+  location: { kind: 'portable', token: 'skills/user/codex/alpha' },
+} as const;
+const ABSENT: OperationImage = { kind: 'absent', resource: RESOURCE };
+const PINNED: OperationImage = {
+  kind: 'placement',
+  resource: RESOURCE,
+  classification: 'pinned',
+  representation: 'copy',
+  linkTarget: null,
+  dangling: false,
+  source: SOURCE,
+  contentHash: CONTENT_HASH,
+};
+const LOCKED: OperationImage = {
+  kind: 'lock',
+  location: { kind: 'portable', token: 'artifacts/skills-lock.json' },
+  version: 1,
+  value: {
+    version: 1,
+    hashSchemaVersion: 1,
+    manifestHash: CONTENT_HASH,
+    skills: [],
+  },
+  canonicalHash: CONTENT_HASH,
+};
+
+const groupIdentityFor = (
+  source: OperationSource | null = SOURCE,
+  skill = 'alpha',
+  target: string | null = null,
+): OperationGroupIdentity => ({
+  domain: 'skillsmith.operation-group-identity',
+  schemaVersion: 1,
+  command: 'install',
+  skill,
+  source,
+  scope: 'user',
+  target,
+});
+
+const pairIdentityFor = (groupId: string): OperationPairIdentity => ({
+  domain: 'skillsmith.operation-pair-identity',
+  schemaVersion: 1,
+  groupId,
+  tool: 'codex',
+  resource: RESOURCE,
+});
+
+const identityFor = (kind: ExecutableOperationKind): OperationIdentity => ({
+  domain: 'skillsmith.operation-identity',
+  schemaVersion: 1,
+  groupId: createOperationGroupId(groupIdentityFor()),
+  pairId: createOperationPairId(pairIdentityFor(createOperationGroupId(groupIdentityFor()))),
+  kind,
+  skill: 'alpha',
+  source: SOURCE,
+  tool: 'codex',
+  scope: 'user',
+});
+
+const operationFor = (
+  kind: ExecutableOperationKind = 'install',
+  dependencies: readonly string[] = [],
+): ExecutableOperation => ({
+  operationId: createOperationId(identityFor(kind)),
+  groupId: createOperationGroupId(groupIdentityFor()),
+  pairId: createOperationPairId(pairIdentityFor(createOperationGroupId(groupIdentityFor()))),
+  kind,
+  dependencyMetadata: {
+    domain: 'skillsmith.operation-dependency',
+    schemaVersion: 1,
+    operationIds: dependencies,
+  },
+  skill: 'alpha',
+  source: SOURCE,
+  tool: 'codex',
+  scope: 'user',
+  before: kind === 'install' ? ABSENT : PINNED,
+  after: PINNED,
+  reason: { code: `${kind}-selected`, message: `${kind} selected.` },
+  selectionSource: 'explicit-targets',
+  preconditionIds: [],
+  requiredCheckIds: [],
+  reversibility: { kind: 'none', retentionResourceIds: [] },
+  mutates: { live: true, manifest: false, lock: false, ledger: true },
+  conflict: null,
+});
+
+const planFor = (
+  operations: readonly ExecutableOperation[] = [operationFor()],
+): OperationPlanInput => ({
+  domain: 'skillsmith.operation-plan',
+  schemaVersion: 1,
+  command: 'install',
+  selection: {
+    source: 'explicit-targets',
+    skills: ['alpha'],
+    tools: ['codex'],
+    scopes: ['user'],
+  },
+  batchPolicy: 'fail-fast',
+  operations,
+  checks: [],
+  diagnostics: [],
+});
+
+type FixtureTool = 'fixture-a' | 'fixture-z';
+
+const FIXTURE_CONTEXT: PlanningToolContext<FixtureTool> = {
+  registry: {
+    get: (id) => {
+      if (id === 'fixture-a') return { descriptor: { id: 'fixture-a' } };
+      if (id === 'fixture-z') return { descriptor: { id: 'fixture-z' } };
+      return undefined;
+    },
+  },
+  toolOrder: ['fixture-z', 'fixture-a'],
+};
+
+const fixtureResourceFor = (
+  tool: FixtureTool,
+): Extract<OperationResourceIdentity<FixtureTool>, { readonly kind: 'live' }> => ({
+  kind: 'live',
+  skill: 'alpha',
+  tool,
+  scope: 'user',
+  projectRoot: null,
+  location: { kind: 'portable', token: `skills/user/${tool}/alpha` },
+});
+
+const fixtureOperationFor = (tool: FixtureTool): ExecutableOperation<FixtureTool> => {
+  const groupId = createOperationGroupId(groupIdentityFor());
+  const resource = fixtureResourceFor(tool);
+  const pairIdentity: OperationPairIdentity<FixtureTool> = {
+    domain: 'skillsmith.operation-pair-identity',
+    schemaVersion: 1,
+    groupId,
+    tool,
+    resource,
+  };
+  const pairId = createOperationPairId(pairIdentity, FIXTURE_CONTEXT);
+  const identity: OperationIdentity<FixtureTool> = {
+    domain: 'skillsmith.operation-identity',
+    schemaVersion: 1,
+    groupId,
+    pairId,
+    kind: 'install',
+    skill: 'alpha',
+    source: SOURCE,
+    tool,
+    scope: 'user',
+  };
+  const after: OperationImage<FixtureTool> = {
+    kind: 'placement',
+    resource,
+    classification: 'pinned',
+    representation: 'copy',
+    linkTarget: null,
+    dangling: false,
+    source: SOURCE,
+    contentHash: CONTENT_HASH,
+  };
+  return {
+    operationId: createOperationId(identity, FIXTURE_CONTEXT),
+    groupId,
+    pairId,
+    kind: 'install',
+    dependencyMetadata: {
+      domain: 'skillsmith.operation-dependency',
+      schemaVersion: 1,
+      operationIds: [],
+    },
+    skill: 'alpha',
+    source: SOURCE,
+    tool,
+    scope: 'user',
+    before: { kind: 'absent', resource },
+    after,
+    reason: { code: 'install-selected', message: 'install selected.' },
+    selectionSource: 'explicit-targets',
+    preconditionIds: [],
+    requiredCheckIds: [],
+    reversibility: { kind: 'none', retentionResourceIds: [] },
+    mutates: { live: true, manifest: false, lock: false, ledger: true },
+    conflict: null,
+  };
+};
+
+const fixturePlanFor = (): OperationPlanInput<'install', FixtureTool> => ({
+  domain: 'skillsmith.operation-plan',
+  schemaVersion: 1,
+  command: 'install',
+  selection: {
+    source: 'explicit-targets',
+    skills: ['alpha'],
+    tools: ['fixture-a', 'fixture-z'],
+    scopes: ['user'],
+  },
+  batchPolicy: 'fail-fast',
+  operations: [fixtureOperationFor('fixture-a'), fixtureOperationFor('fixture-z')],
+  checks: [],
+  diagnostics: [],
+});
+
+describe('planning constructors', () => {
+  test('hashes structured group, pair, check, and diagnostic identities without indexes or delimiters', () => {
+    const groupIdentity = groupIdentityFor();
+    const groupId = createOperationGroupId(groupIdentity);
+    const pairId = createOperationPairId(pairIdentityFor(groupId));
+    const installId = createOperationId({
+      ...identityFor('install'),
+      groupId,
+      pairId,
+    });
+    const repairId = createOperationId({
+      ...identityFor('repair'),
+      groupId,
+      pairId,
+    });
+
+    expect(groupId).toBe(
+      'group:v1:d904fde91d76f2c68d1b810cb70b8ab58fea79c40e6b5cf0be76c2f0cd745bb2',
+    );
+    expect(pairId).toBe('pair:v1:29c1373c528f63f4d64d14326ae8087116c572df5df55e26b20477270712157b');
+    expect(installId).toBe(
+      'operation:v1:204dab42b2550651bd7ae11d718496e6fee8fa63b715992b6b5afeed12e2ccd0',
+    );
+    expect(
+      createOperationGroupId(
+        Object.fromEntries(
+          Object.entries(groupIdentity).reverse(),
+        ) as unknown as OperationGroupIdentity,
+      ),
+    ).toBe(groupId);
+    expect(
+      createOperationPairId(
+        Object.fromEntries(
+          Object.entries(pairIdentityFor(groupId)).reverse(),
+        ) as unknown as OperationPairIdentity,
+      ),
+    ).toBe(pairId);
+
+    const changedSource: OperationSource = {
+      ...SOURCE,
+      resolvedSha: 'd'.repeat(40),
+      contentHash: BYTE_HASH,
+    };
+    expect(createOperationGroupId(groupIdentityFor(changedSource))).not.toBe(groupId);
+    expect(createOperationGroupId(groupIdentityFor(null, 'a:b', 'c'))).not.toBe(
+      createOperationGroupId(groupIdentityFor(null, 'a', 'b:c')),
+    );
+
+    const checkIdentity: PlanCheckIdentity = {
+      domain: 'skillsmith.plan-check-identity',
+      schemaVersion: 1,
+      kind: 'precondition-validation',
+      operationIds: [repairId, installId],
+      preconditionIds: ['precondition:z', 'precondition:a'],
+    };
+    const checkId = createPlanCheckId(checkIdentity);
+    expect(checkId).toMatch(/^check:v1:[0-9a-f]{64}$/);
+    expect(
+      createPlanCheckId({
+        ...checkIdentity,
+        operationIds: [installId, repairId],
+        preconditionIds: ['precondition:a', 'precondition:z'],
+      }),
+    ).toBe(checkId);
+
+    const diagnosticIdentity: PlanningDiagnosticIdentity = {
+      domain: 'skillsmith.planning-diagnostic-identity',
+      schemaVersion: 1,
+      kind: 'warning',
+      severity: 'warning',
+      refusalClass: null,
+      affected: {
+        skill: 'alpha',
+        source: SOURCE,
+        tool: 'codex',
+        scope: 'user',
+        path: RESOURCE.location,
+      },
+      correlation: { groupId, pairId, operationId: installId },
+      reasonCode: 'fixture-warning',
+      selectionSource: 'explicit-targets',
+    };
+    const diagnosticId = createPlanningDiagnosticId(diagnosticIdentity);
+    expect(diagnosticId).toMatch(/^diagnostic:v1:[0-9a-f]{64}$/);
+    expect(
+      createPlanningDiagnosticId(
+        Object.fromEntries(
+          Object.entries(diagnosticIdentity).reverse(),
+        ) as unknown as PlanningDiagnosticIdentity,
+      ),
+    ).toBe(diagnosticId);
+    expect(
+      createPlanningDiagnosticId({ ...diagnosticIdentity, reasonCode: 'other-warning' }),
+    ).not.toBe(diagnosticId);
+
+    expect(() =>
+      createOperationGroupId({
+        ...groupIdentity,
+        target: 'authorization: Bearer fixture-secret-value',
+      }),
+    ).toThrow(/sensitive material/i);
+    expect(() => createOperationPairId(new Proxy(pairIdentityFor(groupId), {}))).toThrow(
+      /proxies/i,
+    );
+  });
+
+  test('creates collision-safe IDs and immutable caller-detached canonical plans', () => {
+    const identity = identityFor('install');
+    const reversedIdentity = Object.fromEntries(Object.entries(identity).reverse());
+    expect(createOperationId(reversedIdentity as unknown as OperationIdentity)).toBe(
+      createOperationId(identity),
+    );
+
+    const install = operationFor('install');
+    const repair = operationFor('repair', [install.operationId]);
+    const input = structuredClone(planFor([repair, install]));
+    const plan = createOperationPlan(input);
+    expect(plan.operations.map(({ kind }) => kind)).toEqual(['install', 'repair']);
+    expect(plan.operations[1]?.dependencyMetadata.operationIds).toEqual([install.operationId]);
+    expect(Object.isFrozen(plan)).toBeTrue();
+    expect(Object.isFrozen(plan.operations)).toBeTrue();
+    expect(Object.isFrozen(plan.operations[1]?.dependencyMetadata.operationIds)).toBeTrue();
+
+    const mutableInput = input as unknown as { selection: { skills?: string[] } };
+    mutableInput.selection.skills?.push('caller-mutation');
+    expect(plan.selection.skills).toEqual(['alpha']);
+    expect(() => (plan.operations as ExecutableOperation[]).push(install)).toThrow(TypeError);
+  });
+
+  test('accepts plan as a current read-only planning command', () => {
+    const plan = createOperationPlan({ ...planFor(), command: 'plan' });
+    expect(plan.command).toBe('plan');
+    expect(plan.operations).toHaveLength(1);
+  });
+
+  test('uses dependency topology before the semantic comparator and rejects invalid graphs', () => {
+    const install = operationFor('install');
+    const repair = operationFor('repair');
+    const update = operationFor('update');
+    const installAfterRepair = {
+      ...install,
+      dependencyMetadata: {
+        ...install.dependencyMetadata,
+        operationIds: [repair.operationId, update.operationId],
+      },
+    };
+    const first = createOperationPlan(planFor([installAfterRepair, repair, update]));
+    const second = createOperationPlan(planFor([update, installAfterRepair, repair]));
+    expect(first.operations.map(({ kind }) => kind)).toEqual(['update', 'repair', 'install']);
+    expect(second.operations).toEqual(first.operations);
+    expect(first.operations[2]?.dependencyMetadata.operationIds).toEqual([
+      update.operationId,
+      repair.operationId,
+    ]);
+
+    const secondGroup = structuredClone(operationFor('repair'));
+    const secondGroupId = createOperationGroupId(groupIdentityFor(SOURCE, 'beta'));
+    (secondGroup as unknown as { groupId: string }).groupId = secondGroupId;
+    (secondGroup as unknown as { operationId: string }).operationId = createOperationId({
+      ...identityFor('repair'),
+      groupId: secondGroupId,
+    });
+    const crossGroup = {
+      ...install,
+      dependencyMetadata: {
+        ...install.dependencyMetadata,
+        operationIds: [secondGroup.operationId],
+      },
+    };
+    expect(() => createOperationPlan(planFor([crossGroup, secondGroup]))).toThrow(/cross-group/i);
+
+    const cyclicInstall = {
+      ...install,
+      dependencyMetadata: {
+        ...install.dependencyMetadata,
+        operationIds: [repair.operationId],
+      },
+    };
+    const cyclicRepair = {
+      ...repair,
+      dependencyMetadata: {
+        ...repair.dependencyMetadata,
+        operationIds: [install.operationId],
+      },
+    };
+    expect(() => createOperationPlan(planFor([cyclicInstall, cyclicRepair]))).toThrow(/cyclic/i);
+
+    const selfDependent = {
+      ...install,
+      dependencyMetadata: {
+        ...install.dependencyMetadata,
+        operationIds: [install.operationId],
+      },
+    };
+    expect(() => createOperationPlan(planFor([selfDependent]))).toThrow(/self dependency/i);
+
+    const groupA = operationFor('install');
+    const groupBId = createOperationGroupId(groupIdentityFor(SOURCE, 'beta'));
+    const groupB = {
+      ...operationFor('repair'),
+      groupId: groupBId,
+      operationId: createOperationId({ ...identityFor('repair'), groupId: groupBId }),
+    };
+    const artifactFor = (
+      live: ExecutableOperation,
+      kind: 'write-manifest' | 'write-lock' = 'write-manifest',
+    ): ExecutableOperation => {
+      const identity = {
+        domain: 'skillsmith.operation-identity' as const,
+        schemaVersion: 1 as const,
+        groupId: live.groupId,
+        pairId: null,
+        kind,
+        skill: null,
+        source: null,
+        tool: null,
+        scope: null,
+      };
+      return {
+        ...live,
+        operationId: createOperationId(identity),
+        pairId: null,
+        kind,
+        skill: null,
+        source: null,
+        tool: null,
+        scope: null,
+        after: kind === 'write-lock' ? LOCKED : live.after,
+      };
+    };
+    const artifactA = artifactFor(groupA);
+    const artifactB = artifactFor(groupB);
+    const dependentA = {
+      ...groupA,
+      dependencyMetadata: { ...groupA.dependencyMetadata, operationIds: [artifactA.operationId] },
+    };
+    const dependentB = {
+      ...groupB,
+      dependencyMetadata: { ...groupB.dependencyMetadata, operationIds: [artifactB.operationId] },
+    };
+    const grouped = createOperationPlan(planFor([dependentB, artifactA, dependentA, artifactB]));
+    expect(grouped.operations.map(({ groupId }) => groupId)).toSatisfy((groupIds: string[]) => {
+      const transitions = groupIds.filter((groupId, index) => groupIds[index - 1] !== groupId);
+      return transitions.length === 2 && new Set(groupIds).size === 2;
+    });
+
+    const prefix = artifactFor(groupA, 'write-lock');
+    const prefixedA = {
+      ...groupA,
+      dependencyMetadata: {
+        ...groupA.dependencyMetadata,
+        operationIds: [prefix.operationId],
+      },
+    };
+    const prefixedB = {
+      ...groupB,
+      dependencyMetadata: {
+        ...groupB.dependencyMetadata,
+        operationIds: [prefix.operationId],
+      },
+    };
+    const collisionLane = createOperationPlan(planFor([prefixedB, prefixedA, prefix]));
+    expect(collisionLane.operations.map(({ operationId }) => operationId)).toEqual([
+      prefix.operationId,
+      prefixedA.operationId,
+      prefixedB.operationId,
+    ]);
+
+    const partialB = artifactFor(groupB);
+    expect(() => createOperationPlan(planFor([prefix, prefixedA, prefixedB, partialB]))).toThrow(
+      /does not fully depend on one artifact prefix/i,
+    );
+  });
+
+  test('preserves unary Array.map constructors without accepting numeric contexts', () => {
+    const identities = [identityFor('install'), identityFor('repair')];
+    const expectedIds = identities.map((identity) => createOperationId(identity));
+
+    expect(identities.map(createOperationId)).toEqual(expectedIds);
+
+    const resultInputs = expectedIds.map((operationId) => ({
+      operationId,
+      outcome: 'succeeded' as const,
+      actualBefore: structuredClone(ABSENT),
+      actualAfter: structuredClone(PINNED),
+      force: null,
+      error: null,
+    }));
+    expect(resultInputs.map(createOperationExecutionResult)).toEqual(resultInputs);
+
+    const invokeId = createOperationId as unknown as (
+      input: OperationIdentity,
+      context: unknown,
+      callbackSource?: readonly unknown[],
+    ) => string;
+    const invokeResult = createOperationExecutionResult as unknown as (
+      input: (typeof resultInputs)[number],
+      context: unknown,
+    ) => unknown;
+    expect(() => invokeId(identities[0] as OperationIdentity, 0)).toThrow(
+      /\$planningContext must be an object/i,
+    );
+    expect(() =>
+      invokeId(identities[0] as OperationIdentity, 0, [structuredClone(identities[0])]),
+    ).toThrow(/\$planningContext must be an object/i);
+    expect(() => invokeResult(resultInputs[0] as (typeof resultInputs)[number], 0)).toThrow(
+      /\$planningContext must be an object/i,
+    );
+  });
+
+  test('accepts registered private tool IDs only with explicit planning context', () => {
+    const input = fixturePlanFor();
+    const plan = createOperationPlan(input, FIXTURE_CONTEXT);
+
+    expect(plan.selection.tools).toEqual(['fixture-z', 'fixture-a']);
+    expect(plan.operations.map(({ tool }) => tool)).toEqual(['fixture-z', 'fixture-a']);
+    expect(Object.isFrozen(plan)).toBeTrue();
+    const firstOperation = plan.operations[0];
+    if (firstOperation === undefined) throw new Error('fixture plan operation missing');
+    const resultInput = {
+      operationId: firstOperation.operationId,
+      outcome: 'succeeded',
+      actualBefore: firstOperation.before,
+      actualAfter: firstOperation.after,
+      force: null,
+      error: null,
+    } as const;
+    expect(createOperationExecutionResult(resultInput, FIXTURE_CONTEXT).outcome).toBe('succeeded');
+    expect(() =>
+      (createOperationExecutionResult as (value: unknown) => unknown)(resultInput),
+    ).toThrow(/tool.*unsupported/i);
+
+    const fixtureIdentity: OperationIdentity<FixtureTool> = {
+      ...identityFor('install'),
+      tool: 'fixture-z',
+    };
+    expect(createOperationId(fixtureIdentity, FIXTURE_CONTEXT)).toMatch(
+      /^operation:v1:[0-9a-f]{64}$/,
+    );
+    expect(() => (createOperationId as (value: unknown) => string)(fixtureIdentity)).toThrow(
+      /tool.*unsupported/i,
+    );
+    expect(() => (createOperationPlan as (value: unknown) => unknown)(input)).toThrow(
+      /tool.*unsupported/i,
+    );
+
+    const checkIdentity: PlanCheckIdentity<FixtureTool> = {
+      domain: 'skillsmith.plan-check-identity',
+      schemaVersion: 1,
+      kind: 'verification',
+      operationIds: [firstOperation.operationId],
+      tool: 'fixture-z',
+      mode: 'static',
+      expectedContentHash: CONTENT_HASH,
+    };
+    expect(createPlanCheckId(checkIdentity, FIXTURE_CONTEXT)).toMatch(/^check:v1:[0-9a-f]{64}$/);
+
+    const diagnosticIdentity: PlanningDiagnosticIdentity<FixtureTool> = {
+      domain: 'skillsmith.planning-diagnostic-identity',
+      schemaVersion: 1,
+      kind: 'warning',
+      severity: 'warning',
+      refusalClass: null,
+      affected: {
+        skill: 'alpha',
+        source: SOURCE,
+        tool: 'fixture-z',
+        scope: 'user',
+        path: fixtureResourceFor('fixture-z').location,
+      },
+      correlation: { groupId: null, pairId: null, operationId: null },
+      reasonCode: 'fixture-warning',
+      selectionSource: 'explicit-targets',
+    };
+    expect(createPlanningDiagnosticId(diagnosticIdentity, FIXTURE_CONTEXT)).toMatch(
+      /^diagnostic:v1:[0-9a-f]{64}$/,
+    );
+  });
+
+  test('keeps private tool IDs out of built-in manifest snapshots', () => {
+    const input = structuredClone(fixturePlanFor()) as unknown as {
+      operations: Record<string, unknown>[];
+    };
+    const operation = input.operations[0];
+    if (operation === undefined) throw new Error('fixture plan operation missing');
+    operation.before = {
+      kind: 'manifest',
+      location: { kind: 'portable', token: 'skillsmith.toml' },
+      shape: 'canonical',
+      version: 1,
+      byteHash: BYTE_HASH,
+      semanticHash: BYTE_HASH,
+      value: {
+        version: 1,
+        defaults: { tools: ['fixture-z'], scope: null, path: null },
+        registry: null,
+        skills: [],
+      },
+    };
+
+    expect(() =>
+      createOperationPlan(
+        input as unknown as OperationPlanInput<'install', FixtureTool>,
+        FIXTURE_CONTEXT,
+      ),
+    ).toThrow(/defaults\.tools.*unsupported/i);
+  });
+
+  test('rejects non-ordinary input and invalid dependency or identity facts', () => {
+    expect(() => createOperationId(new Proxy(identityFor('install'), {}))).toThrow(/proxies/i);
+
+    const accessorIdentity = { ...identityFor('install') } as Record<string, unknown>;
+    Object.defineProperty(accessorIdentity, 'skill', { enumerable: true, get: () => 'alpha' });
+    expect(() => createOperationId(accessorIdentity as unknown as OperationIdentity)).toThrow(
+      /accessor/i,
+    );
+
+    const prototypeKeyIdentity = Object.assign(Object.create(null), identityFor('install'));
+    Object.defineProperty(prototypeKeyIdentity, '__proto__', {
+      value: { polluted: true },
+      enumerable: true,
+    });
+    expect(() => createOperationId(prototypeKeyIdentity as OperationIdentity)).toThrow(
+      /__proto__.*unknown/i,
+    );
+    expect(Reflect.get(Object.prototype, 'polluted')).toBeUndefined();
+
+    const sparse = structuredClone(planFor()) as unknown as Record<string, unknown>;
+    (sparse.selection as Record<string, unknown>).skills = Array(1);
+    expect(() => createOperationPlan(sparse as unknown as OperationPlanInput)).toThrow(/sparse/i);
+
+    const mismatched = structuredClone(operationFor());
+    (mismatched as unknown as Record<string, unknown>).operationId = createOperationId(
+      identityFor('repair'),
+    );
+    expect(() => createOperationPlan(planFor([mismatched]))).toThrow(/semantic identity/i);
+
+    const dangling = structuredClone(operationFor('repair'));
+    (dangling.dependencyMetadata as unknown as { operationIds: string[] }).operationIds = [
+      'operation:v1:missing',
+    ];
+    expect(() => createOperationPlan(planFor([dangling]))).toThrow(/dangling dependency/i);
+
+    const implicitDev = structuredClone(planFor()) as unknown as Record<string, unknown>;
+    implicitDev.command = 'dev';
+    (implicitDev.selection as Record<string, unknown>).source = 'bounded-default';
+    expect(() => createOperationPlan(implicitDev as unknown as OperationPlanInput<'dev'>)).toThrow(
+      /selection.*explicit/i,
+    );
+
+    const explicitUndo = structuredClone(planFor()) as unknown as Record<string, unknown>;
+    explicitUndo.command = 'undo';
+    expect(createOperationPlan(explicitUndo as unknown as OperationPlanInput<'undo'>).command).toBe(
+      'undo',
+    );
+    (explicitUndo.selection as Record<string, unknown>).source = 'bounded-default';
+    expect(() =>
+      createOperationPlan(explicitUndo as unknown as OperationPlanInput<'undo'>),
+    ).toThrow(/selection.*explicit/i);
+  });
+
+  test('preserves closed hostile-data error families and ownership budgets', () => {
+    const symbolic = { ...identityFor('install'), [Symbol('trap')]: true };
+    expect(() => createOperationId(symbolic as OperationIdentity)).toThrow(
+      /^operation planning: \$ contains symbol keys$/i,
+    );
+
+    const cyclic = { ...identityFor('install') } as Record<string, unknown>;
+    cyclic.self = cyclic;
+    expect(() => createOperationId(cyclic as unknown as OperationIdentity)).toThrow(
+      /^operation planning: \$\.self contains a cycle$/i,
+    );
+
+    const nonEnumerable = { ...identityFor('install') };
+    Object.defineProperty(nonEnumerable, 'hidden', { value: true, enumerable: false });
+    expect(() => createOperationId(nonEnumerable)).toThrow(
+      /^operation planning: \$\.hidden must be an enumerable data property$/i,
+    );
+
+    const nonFinite = { ...identityFor('install'), schemaVersion: Number.POSITIVE_INFINITY };
+    expect(() => createOperationId(nonFinite as unknown as OperationIdentity)).toThrow(
+      /^operation planning: \$\.schemaVersion must contain plain data$/i,
+    );
+
+    const extendedArray = structuredClone(planFor()) as unknown as Record<string, unknown>;
+    const extendedSkills: unknown[] = [];
+    Object.defineProperty(extendedSkills, 'extra', { value: true, enumerable: true });
+    (extendedArray.selection as Record<string, unknown>).skills = extendedSkills;
+    expect(() => createOperationPlan(extendedArray as unknown as OperationPlanInput)).toThrow(
+      /^operation planning: \$\.selection\.skills contains non-index array properties$/i,
+    );
+
+    const exoticArray = structuredClone(planFor()) as unknown as Record<string, unknown>;
+    const exoticSkills: unknown[] = [];
+    Object.setPrototypeOf(exoticSkills, null);
+    (exoticArray.selection as Record<string, unknown>).skills = exoticSkills;
+    expect(() => createOperationPlan(exoticArray as unknown as OperationPlanInput)).toThrow(
+      /^operation planning: \$\.selection\.skills has an exotic array$/i,
+    );
+
+    let tooDeep: unknown = 'alpha';
+    for (let depth = 0; depth < 66; depth += 1) tooDeep = { value: tooDeep };
+    expect(() =>
+      createOperationId({
+        ...identityFor('install'),
+        skill: tooDeep,
+      } as unknown as OperationIdentity),
+    ).toThrow(/^operation planning: .* exceeds the snapshot budget$/i);
+
+    const tooWide = structuredClone(planFor()) as unknown as Record<string, unknown>;
+    (tooWide.selection as Record<string, unknown>).skills = Array.from(
+      { length: 20_001 },
+      (_, index) => `skill-${index}`,
+    );
+    expect(() => createOperationPlan(tooWide as unknown as OperationPlanInput)).toThrow(
+      /^operation planning: .* exceeds the snapshot budget$/i,
+    );
+  });
+
+  test('constructs closed execution, image, and bounded-force products', () => {
+    const operationId = createOperationId(identityFor('install'));
+    const resultInput = {
+      operationId,
+      outcome: 'succeeded',
+      actualBefore: structuredClone(ABSENT),
+      actualAfter: structuredClone(PINNED),
+      force: null,
+      error: null,
+    } as const;
+    const result = createOperationExecutionResult(resultInput);
+    expect(result).toEqual(resultInput);
+    expect(Object.isFrozen(result.actualAfter)).toBeTrue();
+    const constructExecutionResult = createOperationExecutionResult as unknown as (
+      input: unknown,
+    ) => Record<string, unknown>;
+
+    const skippedInput = {
+      ...resultInput,
+      outcome: 'skipped-after-failure',
+      actualAfter: structuredClone(ABSENT),
+    } as const;
+    const skipped = constructExecutionResult(skippedInput);
+    expect(skipped).toEqual(skippedInput);
+    expect(Object.keys(skipped).sort()).toEqual(
+      ['operationId', 'outcome', 'actualBefore', 'actualAfter', 'force', 'error'].sort(),
+    );
+    expect(Object.isFrozen(skipped.actualBefore)).toBeTrue();
+    expect(Object.isFrozen(skipped.actualAfter)).toBeTrue();
+    expect(() =>
+      constructExecutionResult({
+        ...skippedInput,
+        actualAfter: structuredClone(PINNED),
+      }),
+    ).toThrow(/skipped-after-failure.*actual|actual.*equal|unchanged/i);
+
+    const unappliedForce = createBoundedForceEffect({
+      supported: true,
+      requested: true,
+      applied: false,
+      conflict: {
+        class: 'source-changed',
+        normal: 'refuse',
+        forced: 'replace',
+        target: RESOURCE,
+        backup: 'none',
+      },
+    });
+    expect(constructExecutionResult({ ...skippedInput, force: unappliedForce }).force).toEqual(
+      unappliedForce,
+    );
+    expect(() =>
+      constructExecutionResult({
+        ...skippedInput,
+        force: createBoundedForceEffect({
+          supported: true,
+          requested: true,
+          applied: true,
+          conflict: {
+            class: 'source-changed',
+            normal: 'refuse',
+            forced: 'replace',
+            target: RESOURCE,
+            backup: 'none',
+          },
+        }),
+      }),
+    ).toThrow(/skipped-after-failure.*force|force.*not.*applied|applied.*false/i);
+
+    expect(() =>
+      createOperationExecutionResult({ ...resultInput, outcome: 'failed', error: null }),
+    ).toThrow(/error must be present exactly/i);
+    expect(() =>
+      createOperationExecutionResult({
+        ...resultInput,
+        outcome: 'failed',
+        error: {
+          code: 'fixture-failed',
+          message: 'authorization: Bearer fixture-secret-value',
+          remediation: 'Retry with a sanitized fixture.',
+        },
+      }),
+    ).toThrow(/sensitive material/i);
+    expect(() =>
+      createOperationExecutionResult({
+        ...resultInput,
+        actualAfter: {
+          kind: 'ledger',
+          projectRoot: null,
+          schemaVersion: 3,
+          byteHash: BYTE_HASH,
+          semanticHash: BYTE_HASH,
+        },
+      } as never),
+    ).toThrow(/schemaVersion/i);
+
+    const force = createBoundedForceEffect({
+      supported: true,
+      requested: true,
+      applied: true,
+      conflict: {
+        class: 'source-changed',
+        normal: 'refuse',
+        forced: 'replace',
+        target: RESOURCE,
+        backup: 'none',
+      },
+    });
+    expect(force).toMatchObject({
+      requested: true,
+      applied: true,
+      conflictType: 'source-changed',
+      forcedBehavior: 'replace',
+      backup: 'none',
+    });
+    expect(Object.isFrozen(force.target)).toBeTrue();
+  });
+
+  test('admits export as a current mutator for an exact filter-noop plan', () => {
+    const plan = createOperationPlan({
+      domain: 'skillsmith.operation-plan',
+      schemaVersion: 1,
+      command: 'export',
+      selection: {
+        source: 'bounded-default',
+        outcome: 'filter-noop',
+        tools: [],
+        scopes: [],
+      },
+      batchPolicy: 'fail-fast',
+      operations: [],
+      checks: [],
+      diagnostics: [],
+    });
+    expect(plan).toMatchObject({
+      command: 'export',
+      selection: { source: 'bounded-default', outcome: 'filter-noop' },
+      operations: [],
+    });
+  });
+
+  test('admits init and keeps opaque manifests confined to write before-images', () => {
+    const bytes = Uint8Array.from([0xff, 0xfe]);
+    const classification = planInitManifest({
+      skeleton: {},
+      current: { state: 'present', bytes },
+      legacyIntent: { requireMatch: [] },
+      force: true,
+    });
+    expect(classification.ok).toBeTrue();
+    if (!classification.ok) return;
+    const prepared = prepareInitOperationPlan({
+      request: {
+        tools: [],
+        explicitTools: false,
+        toolSource: 'none',
+        scope: null,
+        explicitScope: false,
+        file: '/work/skillsmith.toml',
+        force: true,
+      },
+      dryRun: true,
+      defaults: { tools: null, scope: null, path: null, registryDefault: null },
+      selection: {
+        outcome: 'selected',
+        selectedBy: 'explicit-file',
+        manifestPath: '/work/skillsmith.toml',
+        lockPath: '/work/skillsmith.lock',
+        lockSource: 'sibling',
+      },
+      skeleton: {},
+      classification: classification.value,
+      observed: {
+        state: 'file',
+        bytes,
+        resourceDigest: hashInitResourceBytes(bytes),
+        mode: 0o600,
+        identity: 'fixture-inode',
+        parent: { state: 'present', path: '/work', identity: 'fixture-parent' },
+      },
+    });
+    expect(prepared.plan.command).toBe('init');
+    expect(prepared.plan.operations[0]?.before.kind).toBe('opaque-manifest');
+    const operation = prepared.plan.operations[0] as ExecutableOperation;
+    expect(() =>
+      createOperationPlan({
+        ...prepared.plan,
+        operations: [{ ...operation, after: operation.before }],
+      }),
+    ).toThrow(/opaque manifest outside a write-manifest before-image/i);
+  });
+});

@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 2,
+  "kind": "skillsmith.commands",
+  "selection": {
+    "source": "bounded-default",
+    "tools": [
+      "claude-code",
+      "codex",
+      "kilo-code",
+      "opencode"
+    ],
+    "scopes": [
+      "user",
+      "project"
+    ],
+    "filters": {
+      "names": [],
+      "enabled": null
+    },
+    "outcome": "selected"
+  },
+  "summary": {
+    "total": 1
+  },
+  "entries": [
+    {
+      "name": "fixture-command",
+      "tool": "codex",
+      "scope": "project",
+      "path": "/fixture/project/commands/fixture-command.md",
+      "realpath": "/fixture/project/commands/fixture-command.md",
+      "root": "/fixture/project/commands",
+      "frontmatter": {
+        "name": "fixture-command",
+        "description": "A deterministic command fixture",
+        "version": "1.0.0"
+      },
+      "origin": {
+        "kind": "plugin",
+        "pluginId": "fixture.plugin",
+        "pluginVersion": "1.0.0",
+        "pluginScope": "project"
+      },
+      "enabled": "on",
+      "description": "A deterministic command fixture"
+    }
+  ]
+}

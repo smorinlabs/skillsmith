@@ -1,6 +1,28 @@
 import { describe, expect, test } from 'bun:test';
-import type { ScanEnv } from '@skillsmith/core';
-import { runAgents } from '../../src/commands/agents.ts';
+import {
+  type CurrentApplicationContext,
+  type ScanEnv,
+  createObservationEmitter,
+  createOperationContext,
+  noopObserver,
+  resolveRuntimeConfiguration,
+  runAgentsApplication,
+} from '@skillsmith/core';
+import { runtimePorts } from '../../../core/tests/fixtures/runtime-ports.ts';
+
+const observation = Object.freeze({
+  context: createOperationContext({
+    command: 'skillsmith agents',
+    workflow: 'agents',
+    operationId: 'agents-test-operation',
+    clock: {
+      wallNowIso: () => '2026-07-13T00:00:00.000Z',
+      monotonicMilliseconds: () => 0,
+    },
+    id: { nextId: () => 'unused' },
+  }),
+  emitter: createObservationEmitter({ observer: noopObserver }),
+});
 
 const env = (existing: string[]): ScanEnv => ({
   homeDir: '/Users/u',
@@ -29,39 +51,36 @@ const env = (existing: string[]): ScanEnv => ({
   withFileLock: (_p, fn) => fn(),
 });
 
-describe('runAgents', () => {
-  test('markdown default: contains "Tools detected" header', async () => {
-    const r = await runAgents({
-      env: env([]),
-      tools: undefined,
-      format: 'markdown',
-      detectedOnly: false,
-    });
-    expect(r.ok).toBe(true);
-    if (r.ok) expect(r.output).toContain('# Tools detected');
+const context = (scanEnv: ScanEnv): CurrentApplicationContext => ({
+  observation,
+  ports: runtimePorts(scanEnv),
+  artifactCoordinator: {} as CurrentApplicationContext['artifactCoordinator'],
+  configuration: resolveRuntimeConfiguration({}),
+  interaction: {
+    mode: 'noninteractive',
+    choose: async () => ({ status: 'refused', reason: 'test' }),
+    confirm: async () => ({ status: 'refused', reason: 'test' }),
+  },
+  invocationCwd: '/repo',
+  globalOptions: {},
+});
+
+describe('runAgentsApplication', () => {
+  test('returns structured detections for rendering', async () => {
+    const outcome = await runAgentsApplication(
+      { arguments: [], options: { tool: [], detectedOnly: false } },
+      context(env(['/opt/homebrew/bin/claude'])),
+    );
+    expect(outcome.exitClass).toBe('success');
+    expect(outcome.report.detections.get('claude-code')).toHaveLength(1);
   });
 
-  test('json format: parseable and has tools key', async () => {
-    const r = await runAgents({
-      env: env(['/opt/homebrew/bin/claude']),
-      tools: undefined,
-      format: 'json',
-      detectedOnly: false,
-    });
-    expect(r.ok).toBe(true);
-    if (r.ok) {
-      const p = JSON.parse(r.output);
-      expect(p.tools['claude-code']).toHaveLength(1);
-    }
-  });
-
-  test('unknown tool in --tool filter returns err', async () => {
-    const r = await runAgents({
-      env: env([]),
-      tools: ['nope'],
-      format: 'markdown',
-      detectedOnly: false,
-    });
-    expect(r.ok).toBe(false);
+  test('unknown tool in --tool filter returns a semantic usage outcome', async () => {
+    const outcome = await runAgentsApplication(
+      { arguments: [], options: { tool: ['nope'], detectedOnly: false } },
+      context(env([])),
+    );
+    expect(outcome.exitClass).toBe('usage');
+    expect(outcome.diagnostics[0]?.message).toContain('nope');
   });
 });

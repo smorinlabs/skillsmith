@@ -1,4 +1,4 @@
-import type { ScanEnv } from '../../src/env/types.ts';
+import type { RuntimePorts } from '../../src/ports/types.ts';
 
 /** Thrown at the START of the Nth mutating call by {@link crashingEnv} — simulates a process that
  *  dies before that filesystem action runs. */
@@ -12,20 +12,20 @@ export class SimulatedCrash extends Error {
   }
 }
 
-/** Wraps a real ScanEnv; throws SimulatedCrash at the START of the `crashAtCall`th mutating call.
+/** Wraps a real RuntimePorts; throws SimulatedCrash at the START of the `crashAtCall`th mutating call.
  *  Mutating primitives (counted, in call order): makeSymlink, rename, copyTree, removeTree, makeDir,
  *  writeTextFile. Read-only + fsync primitives pass through uncounted. `crashAtCall <= 0` disables
  *  crashing (used to count `totalMutations` of a clean run). */
 export const crashingEnv = (
-  inner: ScanEnv,
+  inner: RuntimePorts,
   crashAtCall: number,
-): { env: ScanEnv; calls: () => number } => {
+): { env: RuntimePorts; calls: () => number } => {
   let n = 0;
   const gate = (op: string): void => {
     n += 1;
     if (n === crashAtCall) throw new SimulatedCrash(n, op);
   };
-  const env: ScanEnv = {
+  const env: RuntimePorts = {
     ...inner,
     makeSymlink: async (target, linkPath) => {
       gate('makeSymlink');

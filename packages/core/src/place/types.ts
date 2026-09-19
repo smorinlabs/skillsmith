@@ -1,8 +1,51 @@
-import type { ScanEnv } from '../env/types.ts';
+import type { FLIP_TOOLS } from '../agents/registry.ts';
+import type { JournalRetainedV1Dto } from '../artifacts/journal-types.ts';
+import type { LedgerModel } from '../artifacts/ledger-types.ts';
 import type { SkillSmithError } from '../errors.ts';
+import type { FlipAction } from '../planning/legacy-action.ts';
+import type {
+  ExecutableOperation,
+  OperationExecutionResult,
+  OperationPlan,
+} from '../planning/types.ts';
+import type {
+  ClockPort,
+  FileMetadataReadPort,
+  FileModeWritePort,
+  FileReadPort,
+  FileWritePort,
+  GitPort,
+  IdPort,
+  LockPort,
+  PlatformPaths,
+  ProcessPort,
+  ResolvedRuntimeConfiguration,
+} from '../ports/types.ts';
 import type { Result } from '../result.ts';
+export { FLIP_TOOLS } from '../agents/registry.ts';
+export type { FlipAction } from '../planning/legacy-action.ts';
 
-export const FLIP_TOOLS = ['claude-code', 'codex'] as const;
+export type PlacementPorts = PlatformPaths &
+  FileReadPort &
+  FileMetadataReadPort &
+  FileWritePort &
+  FileModeWritePort &
+  LockPort &
+  ProcessPort &
+  ClockPort &
+  IdPort & { readonly git: GitPort };
+
+export type PlacementReadPorts = PlatformPaths & FileReadPort & { readonly git: GitPort };
+
+export type SwapPorts = Pick<
+  FileReadPort,
+  'listDir' | 'pathKind' | 'readLink' | 'readBytes' | 'isExecutable'
+> &
+  Pick<
+    FileWritePort,
+    'copyTree' | 'fsyncFile' | 'makeSymlink' | 'removeTree' | 'rename' | 'fsyncDir'
+  >;
+
 export type FlipTool = (typeof FLIP_TOOLS)[number];
 export type FlipOp = 'promote' | 'dev' | 'rollback';
 export type AcquireOp = 'install' | 'uninstall';
@@ -10,9 +53,9 @@ export type JournalOp = FlipOp | AcquireOp; // FlipOp is NOT widened
 export type { Placement, PlacementClass } from '../agents/placement-shared.ts';
 
 export interface OriginRecord {
-  source: string; // the literal user argument ('smorinlabs/smorinlabs-harness/factor-scan')
-  host: string; // 'github.com'
-  repo: string; // UNCLAMPED repo path (subgroups keep their '/')
+  source: string; // canonical source identity; selector/ref persist in the dedicated fields below
+  host: string; // canonical lowercase host ('github.com')
+  repo: string; // canonical unclamped repository path (subgroups keep their '/')
   skillPath: string; // repo-relative git tree path; '' for a root skill
   refRequested: string | null; // '@ref' / --ref as given; null = HEAD default
   refResolved: string; // always the full 40-hex SHA
@@ -98,15 +141,44 @@ export interface Provenance {
 }
 
 export interface SwapCtx {
-  env: ScanEnv;
-  ledgerPath: string;
-  ledger: LedgerFile; // mutated in place by the engine
-  persist: () => Promise<Result<void, SkillSmithError>>; // writeLedger(env, ledgerPath, ledger)
-  now: () => string; // injectable clock (ISO string)
-  newTxId: () => string; // injectable 8-hex generator
-  pauseAt?: JournalPhase | undefined; // test seam, see swap.ts
-  signal?: AbortSignal | undefined;
+  readonly env: SwapPorts;
+  readonly logicalOperation?: ExecutableOperation;
+  /** Exact pre-operation store authority retained across an internal copy bridge. */
+  readonly retainedPlacementBefore?: Extract<JournalRetainedV1Dto, { readonly role: 'store' }>;
+  /** Exact managed before-image retained across an internal copy bridge. */
+  readonly logicalPlacementBefore?: Extract<
+    ExecutableOperation['before'],
+    { readonly kind: 'placement' }
+  >;
+  readonly pauseAt?: JournalPhase | undefined; // test seam, see swap.ts
+  readonly signal?: AbortSignal | undefined;
 }
+
+/** Immutable canonical ledger image supplied to and returned by one physical swap attempt. */
+export interface SwapState {
+  readonly ledger: LedgerModel;
+}
+
+/** Effect authorities bound by the execute/recovery adapters, never by ledger reducers. */
+export interface SwapEffects {
+  readonly persistLedger: (candidate: LedgerModel) => Promise<SwapPersistenceResult>;
+  readonly journalNow: () => string;
+  readonly newTransactionId: (ledger: LedgerModel) => string;
+}
+
+export type SwapPersistenceResult =
+  | { readonly ok: true; readonly ledger: LedgerModel }
+  | { readonly ok: false; readonly error: SkillSmithError; readonly ledger: LedgerModel };
+
+export interface SwapRequest {
+  readonly context: SwapCtx;
+  readonly state: SwapState;
+  readonly effects: SwapEffects;
+}
+
+export type SwapExecutionResult<T> =
+  | { readonly ok: true; readonly value: T; readonly state: SwapState }
+  | { readonly ok: false; readonly error: SkillSmithError; readonly state: SwapState };
 
 export interface SwapPlan {
   op: 'promote' | 'dev' | 'install' | 'uninstall';
@@ -117,14 +189,22 @@ export interface SwapPlan {
   placementPath: string; // join(skillsRoot, skill)
   scopeKey?: string | null; // realpath project key; null/undefined = user-scope `skills` tree
   // promote: the store entry to materialize; dev: the literal symlink target to restore
-  promote?: { storePath: string; contentHash: string; pinned: PinnedRecord; devRecord: DevRecord };
+  promote?: {
+    storePath: string;
+    contentHash: string;
+    pinned: PinnedRecord;
+    devRecord: DevRecord | null;
+    /** Fresh pinned-to-pinned reversal replaces portable provenance; ordinary promote preserves it. */
+    origin?: OriginRecord | null;
+  };
   dev?: { sourcePath: string; devRecord: DevRecord };
   install?: {
     build: 'symlink' | 'copy';
     storePath: string;
     contentHash: string;
     pinned: PinnedRecord;
-    origin: OriginRecord;
+    /** Portable provenance is absent only for a machine-bound sync pinned-copy placement. */
+    origin: OriginRecord | null;
     adoptedDev: DevRecord | null;
   };
   // op 'uninstall' needs no payload — the engine reads the pair record.
@@ -135,17 +215,6 @@ export interface SwapOutcome {
   backupKept: string | null; // path of a preserved backup (hash mismatch / no pinned record)
   warning: string | null;
 }
-
-export type FlipAction =
-  | 'flipped'
-  | 'updated'
-  | 'noop'
-  | 'skipped'
-  | 'refused'
-  | 'failed'
-  | 'rolled-back'
-  | 'created'
-  | 'adopted';
 
 export interface FlipResult {
   skill: string;
@@ -170,11 +239,19 @@ export interface FlipResult {
 }
 
 export interface FlipReport {
-  op: FlipOp;
-  dryRun: boolean;
-  requested: { targets: string[]; all: boolean; tools: FlipTool[]; explicitTools: boolean };
-  results: FlipResult[];
-  summary: {
+  readonly op: FlipOp;
+  readonly dryRun: boolean;
+  readonly requested: {
+    targets: string[];
+    all: boolean;
+    tools: FlipTool[];
+    explicitTools: boolean;
+  };
+  readonly plan: OperationPlan<'dev' | 'promote'>;
+  /** Dry-run reports expose an empty array. */
+  readonly executionResults: readonly OperationExecutionResult[];
+  readonly results: FlipResult[];
+  readonly summary: {
     flipped: number;
     updated: number;
     noop: number;
@@ -191,21 +268,33 @@ export interface FlipOptions {
   targets: readonly string[];
   all?: boolean;
   tools?: readonly FlipTool[]; // explicit --tool list; undefined = auto
+  scope?: 'user' | 'project';
+  selectionSource?: 'explicit-targets' | 'explicit-all';
   source?: string; // dev only
   dest?: string; // dev --source create only: override the created placement's destination root
   strict?: boolean; // promote / dev --source only
   noVerify?: boolean; // promote / dev --source only
   allowDirty?: boolean; // promote only
+  continueOnError?: boolean;
   rollback?: boolean;
   dryRun?: boolean;
   cwd: string;
-  envVars: Record<string, string | undefined>;
+  /** Application-normalized project root; null means the effective cwd is outside a project. */
+  projectRoot?: string | null;
+  configuration: ResolvedRuntimeConfiguration;
   testPauseAt?: JournalPhase; // wired only by the CLI under SKILLSMITH_E2E=1
   signal?: AbortSignal;
 }
 
+export interface PreparedFlipRun {
+  readonly preview: FlipReport;
+  readonly plan: OperationPlan<'dev' | 'promote'>;
+  /** Executes the exact prepared operation bindings once. */
+  execute(): Promise<Result<FlipReport, SkillSmithError>>;
+}
+
 export interface FlipDeps {
   verify: typeof import('../verify/run.ts').verifyPlugin; // injectable for tests
-  now: () => string;
-  newTxId: () => string;
+  now?: () => string;
+  newTxId?: () => string;
 }

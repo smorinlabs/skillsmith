@@ -1,8 +1,12 @@
 # doctor / check
 
+> P17 disposition: shipped command-family evidence; future target authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#810-doctor-check
+
 `skillsmith doctor` is the interactive, human-facing health command. `skillsmith check` is a narrow programmatic subset designed for CI and pre-commit hooks. Both share the same underlying check registry; the difference is which checks run and how results are rendered.
 
 ## Argument order
+
+> P17 disposition: shipped command shape; future target authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#810-doctor-check
 
 For `doctor`:
 
@@ -22,6 +26,8 @@ No positional arguments.
 
 ## Commands
 
+> P17 disposition: superseded check gating and option target; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#810-doctor-check
+
 **`skillsmith doctor [--tool <name>]... [--json]`** — MVP.
 Runs the full check set: environment, drift, install-method, and version-conflict detection. No arguments means "check every target tool SkillSmith can detect." `--tool` is a repeatable flag (`--tool claude-code --tool kilo-code`) to scope the run. Default output is human-readable with colored severity markers and a remediation hint per finding. Exits 0 when all checks pass (warnings allowed unless `--strict`); exits 1 if one or more checks failed.
 
@@ -31,6 +37,8 @@ Runs only the error-severity checks from the registry — the ones that indicate
 Rationale for the split: users running `doctor` want the full picture including "you should probably migrate off the legacy installer someday." CI running `check` wants a clean yes/no on whether the repo is in a valid state — warnings in that context are noise that tempts teams to grep them out or ignore the command entirely.
 
 ## Built-in checks
+
+> P17 disposition: superseded built-in check registry; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#810-doctor-check
 
 | Check | Severity | In `doctor` | In `check` | Notes |
 |---|---|---|---|---|
@@ -43,6 +51,8 @@ Rationale for the split: users running `doctor` want the full picture including 
 | Plugin-contributed checks | varies | ✓ | error-severity only | P2 — see below. |
 
 ## Plugin-contributed healthchecks (P2)
+
+> P17 disposition: superseded speculative plugin-healthcheck target; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#810-doctor-check
 
 Defining the contract now to avoid boxing ourselves in at MVP, even though we won't ship the runner until P2.
 
@@ -58,6 +68,8 @@ We are deliberately not using a richer format (JSON-per-line, protocol buffers, 
 
 ## Output and exit behavior
 
+> P17 disposition: superseded no-fix and check-exit target; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#810-doctor-check
+
 Default human-readable output groups findings by tool, then by severity within tool. Each finding shows title, message, and remediation hint if one is available.
 
 `--json` is supported on both commands in MVP and emits a structured document with per-tool and per-check results. CI consumers should prefer JSON over parsing human output; the schema will be marked experimental in the first release so we can refine it based on real usage before committing to stability guarantees.
@@ -66,6 +78,8 @@ No `--fix` command for MVP — instead, every built-in check that can emit a fin
 
 ## Feature table
 
+> P17 disposition: superseded feature phasing; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#10-named-implementation-phases-and-slices
+
 | # | Feature | Phase | Why |
 |---|---|---|---|
 | 11.1 | **`skillsmith doctor`** — every target tool detected, skill dirs writable, no orphans, manifest matches lockfile, multi-install + legacy-installer warnings, `--tool` repeatable, `--json` | MVP | Essential for a cross-tool tool. Brew `doctor`, mise `doctor`, nvim `:checkhealth` prior art. |
@@ -73,6 +87,8 @@ No `--fix` command for MVP — instead, every built-in check that can emit a fin
 | 11.3 | **`skillsmith check`** — error-severity checks only, `--exit-code`, `--json`, `--tool` repeatable | MVP | Pre-commit / PR drift detection. Programmatic-first; warnings belong in `doctor`. |
 
 ## Flags
+
+> P17 disposition: superseded option registry; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#820-normative-command-and-option-registry
 
 ### doctor
 
@@ -100,6 +116,8 @@ No `--fix` command for MVP — instead, every built-in check that can emit a fin
 | `--json` | — | bool | false | — | JSON output |
 
 ## Help output
+
+> P17 disposition: shipped help evidence with superseded future surface; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#810-doctor-check
 
 ```
 Diagnose SkillSmith and target-tool readiness.
@@ -133,6 +151,8 @@ EXIT CODES
 ```
 
 ## Error and prompt mockups
+
+> P17 disposition: historical output examples, superseded as target authority; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#810-doctor-check
 
 **`skillsmith doctor` human output:**
 ```

@@ -1,15 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { appendFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import type { ScanEnv } from '../../src/env/types.ts';
+import { fromLedgerV1Dto } from '../../src/artifacts/ledger-codec.ts';
+import type { LedgerModel } from '../../src/artifacts/ledger-types.ts';
+import { hashSourceContentV1, projectSourceContent } from '../../src/artifacts/source-content.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
-import {
-  emptyLedger,
-  getPairAt,
-  readLedger,
-  setPairAt,
-  writeLedger,
-} from '../../src/place/ledger.ts';
+import { emptyLedger, getLedgerPairAt, setPairAt, writeLedger } from '../../src/place/ledger.ts';
 import { ledgerPathOf, storeRootOf } from '../../src/place/paths.ts';
 import { contentHashOf, resolveProvenance, snapshotToStore } from '../../src/place/store.ts';
 import { resumeSwap, runSwap, sweepCommittedAcquireJournals } from '../../src/place/swap.ts';
@@ -20,19 +16,27 @@ import type {
   OriginRecord,
   PairRecord,
   PinnedRecord,
-  SwapCtx,
   SwapPlan,
+  SwapRequest,
 } from '../../src/place/types.ts';
+import type { RuntimePorts } from '../../src/ports/types.ts';
 import {
   type FixtureFleet,
   buildFixtureFleet,
   destroyFixtureFleet,
 } from '../fixtures/place/fleet.ts';
 
-const NOW = '2026-07-07T00:00:00Z';
+const NOW = '2026-07-07T00:00:00.000Z';
 const SKILL = 'zeta'; // a name absent from the fixture skills root (alpha/copied/dangler exist)
 const TOOL = 'claude-code';
 const msg = (e: SkillSmithError): string => ('message' in e ? e.message : e.code);
+
+const getSwapPairAt = (
+  ledger: LedgerModel,
+  projectRoot: string | null,
+  skill: string,
+  tool: typeof TOOL,
+) => getLedgerPairAt(ledger, projectRoot, skill, tool);
 
 const dev = (sourcePath: string): DevRecord => ({
   sourcePath,
@@ -70,14 +74,25 @@ const pinnedOf = (
   placement,
 });
 
-const makeCtx = (env: ScanEnv, ledgerPath: string, ledger: LedgerFile): SwapCtx => ({
-  env,
-  ledgerPath,
-  ledger,
-  persist: () => writeLedger(env, ledgerPath, ledger),
-  now: () => NOW,
-  newTxId: () => 'aabbccdd',
-});
+const makeCtx = (env: RuntimePorts, ledgerPath: string, ledger: LedgerFile): SwapRequest => {
+  const canonical = fromLedgerV1Dto(ledger);
+  if (!canonical.ok) throw new Error('legacy swap fixture could not be migrated to ledger v2');
+  let durableLedger = canonical.value;
+  return {
+    context: { env },
+    state: { ledger: canonical.value },
+    effects: {
+      persistLedger: async (candidate) => {
+        const written = await writeLedger(env, ledgerPath, candidate);
+        if (!written.ok) return { ok: false, error: written.error, ledger: durableLedger };
+        durableLedger = candidate;
+        return { ok: true, ledger: candidate };
+      },
+      journalNow: () => NOW,
+      newTransactionId: () => 'aabbccdd',
+    },
+  };
+};
 
 interface StoreSeed {
   storePath: string;
@@ -103,7 +118,15 @@ const seedStore = async (f: FixtureFleet): Promise<StoreSeed> => {
   };
 };
 
-const residue = async (env: ScanEnv, skillsRoot: string): Promise<string[]> =>
+const v1ContentHashOf = async (env: RuntimePorts, path: string): Promise<string> => {
+  const projected = await projectSourceContent(env, path);
+  if (!projected.ok) throw new Error(projected.error.message);
+  const hashed = hashSourceContentV1(projected.value);
+  if (!hashed.ok) throw new Error(hashed.error.message);
+  return hashed.value;
+};
+
+const residue = async (env: RuntimePorts, skillsRoot: string): Promise<string[]> =>
   (await env.listDir(skillsRoot)).filter((n) => n.startsWith('.skillsmith-'));
 
 const installPlan = (
@@ -155,7 +178,7 @@ describe('runSwap — install', () => {
     expect(r.value.committed).toBe(true);
     expect(await f.env.pathKind(placementPath)).toBe('symlink');
     expect(await f.env.readLink(placementPath)).toBe(s.storePath);
-    const pair = getPairAt(ledger, null, SKILL, TOOL);
+    const pair = getSwapPairAt(r.state.ledger, null, SKILL, TOOL);
     expect(pair?.mode).toBe('pinned');
     expect(pair?.pinned?.placement).toBe('symlink');
     expect(pair?.origin?.source).toBe('smorinlabs/fixture-harness/alpha');
@@ -163,8 +186,9 @@ describe('runSwap — install', () => {
     expect(await residue(f.env, skillsRoot)).toEqual([]);
   });
 
-  test('fresh install, build copy → live real dir with matching content hash, placement copy', async () => {
+  test('fresh direct acquisition accepts its legacy copy hash while v1 differs', async () => {
     const s = await seedStore(f);
+    expect(await v1ContentHashOf(f.env, s.storePath)).not.toBe(s.contentHash);
     const ledger = emptyLedger(NOW);
     const ctx = makeCtx(f.env, ledgerPath, ledger);
     const r = await runSwap(ctx, installPlan(s, skillsRoot, placementPath, 'copy'));
@@ -173,7 +197,7 @@ describe('runSwap — install', () => {
     const h = await contentHashOf(f.env, placementPath);
     if (!h.ok) throw new Error(msg(h.error));
     expect(h.value).toBe(s.contentHash);
-    const pair = getPairAt(ledger, null, SKILL, TOOL);
+    const pair = getSwapPairAt(r.state.ledger, null, SKILL, TOOL);
     expect(pair?.pinned?.placement).toBe('copy');
     expect(pair?.journal).toBeNull();
   });
@@ -190,9 +214,9 @@ describe('runSwap — install', () => {
       installPlan(s, join(f.project, '.claude', 'skills'), projPlacement, 'copy', {}, key),
     );
     if (!r.ok) throw new Error(msg(r.error));
-    expect(getPairAt(ledger, key, SKILL, TOOL)?.mode).toBe('pinned');
-    expect(getPairAt(ledger, null, SKILL, TOOL)).toBeNull();
-    expect(ledger.skills[SKILL]).toBeUndefined();
+    expect(getSwapPairAt(r.state.ledger, key, SKILL, TOOL)?.mode).toBe('pinned');
+    expect(getSwapPairAt(r.state.ledger, null, SKILL, TOOL)).toBeNull();
+    expect(r.state.ledger.skills[SKILL]).toBeUndefined();
   });
 
   test('replace install over a dev symlink: backup symlink unlinked, dev = adoptedDev retained', async () => {
@@ -214,10 +238,34 @@ describe('runSwap — install', () => {
     if (!r.ok) throw new Error(msg(r.error));
     expect(r.value.backupKept).toBeNull();
     expect(await f.env.pathKind(live)).toBe('dir');
-    const pair = getPairAt(ledger, null, SKILL, TOOL);
+    const pair = getSwapPairAt(r.state.ledger, null, SKILL, TOOL);
     expect(pair?.mode).toBe('pinned');
     expect(pair?.dev).toEqual(adopted);
     expect(pair?.journal).toBeNull();
+    expect(await residue(f.env, skillsRoot)).toEqual([]);
+  });
+
+  test('replace install reclaims an unchanged v1 pinned copy without a warning', async () => {
+    const s = await seedStore(f);
+    const live = join(skillsRoot, SKILL);
+    await f.env.copyTree(s.storePath, live);
+    const v1ContentHash = await v1ContentHashOf(f.env, live);
+    const ledger = emptyLedger(NOW);
+    setPairAt(ledger, null, SKILL, TOOL, {
+      placementPath: live,
+      mode: 'pinned',
+      dev: null,
+      pinned: pinnedOf(s.storePath, s.rev, v1ContentHash, 'copy'),
+      origin: origin('smorinlabs/fixture-harness/alpha'),
+      journal: null,
+    });
+
+    const replaced = await runSwap(
+      makeCtx(f.env, ledgerPath, ledger),
+      installPlan(s, skillsRoot, live, 'symlink'),
+    );
+    if (!replaced.ok) throw new Error(msg(replaced.error));
+    expect(replaced.value).toMatchObject({ backupKept: null, warning: null });
     expect(await residue(f.env, skillsRoot)).toEqual([]);
   });
 
@@ -243,7 +291,7 @@ describe('runSwap — install', () => {
     expect(r.value.warning).not.toBeNull();
     expect(await f.env.pathKind(live)).toBe('symlink');
     expect(await f.env.pathKind(r.value.backupKept as string)).toBe('dir');
-    expect(getPairAt(ledger, null, SKILL, TOOL)?.journal).toBeNull();
+    expect(getSwapPairAt(r.state.ledger, null, SKILL, TOOL)?.journal).toBeNull();
     // store entry untouched
     expect(await f.env.pathKind(s.storePath)).not.toBe('absent');
   });
@@ -271,7 +319,7 @@ describe('runSwap — install', () => {
     }
     // refused before any mutation: live untouched, no journal written, no residue.
     expect(await f.env.pathKind(live)).toBe('dir');
-    expect(getPairAt(ledger, null, SKILL, TOOL)?.journal).toBeNull();
+    expect(getSwapPairAt(r.state.ledger, null, SKILL, TOOL)?.journal).toBeNull();
     expect(await residue(f.env, skillsRoot)).toEqual([]);
   });
 
@@ -296,7 +344,7 @@ describe('runSwap — install', () => {
     if (!r.ok) throw new Error(msg(r.error));
     expect(await f.env.pathKind(live)).toBe('symlink');
     expect(await f.env.readLink(live)).toBe(s.storePath); // retargeted to the new store entry
-    const pair = getPairAt(ledger, null, SKILL, TOOL);
+    const pair = getSwapPairAt(r.state.ledger, null, SKILL, TOOL);
     expect(pair?.pinned?.placement).toBe('symlink');
     expect(pair?.journal).toBeNull();
     expect(await residue(f.env, skillsRoot)).toEqual([]);
@@ -371,7 +419,7 @@ describe('runSwap — install', () => {
     const r = await resumeSwap(ctx, SKILL, TOOL);
     if (!r.ok) throw new Error(msg(r.error));
     expect(r.value.committed).toBe(true);
-    expect(getPairAt(ledger, null, SKILL, TOOL)?.journal).toBeNull();
+    expect(getSwapPairAt(r.state.ledger, null, SKILL, TOOL)?.journal).toBeNull();
     expect(await f.env.pathKind(backup)).toBe('absent'); // residue reclaimed
     expect(await residue(f.env, skillsRoot)).toEqual([]);
   });
@@ -415,7 +463,7 @@ describe('runSwap — uninstall', () => {
     const r = await runSwap(ctx, uninstallPlan(live));
     if (!r.ok) throw new Error(msg(r.error));
     expect(await f.env.pathKind(live)).toBe('absent');
-    expect(getPairAt(ledger, null, SKILL, TOOL)).toBeNull();
+    expect(getSwapPairAt(r.state.ledger, null, SKILL, TOOL)).toBeNull();
     expect(await f.env.pathKind(s.storePath)).not.toBe('absent'); // store entry never deleted
     expect(await residue(f.env, skillsRoot)).toEqual([]);
   });
@@ -438,7 +486,29 @@ describe('runSwap — uninstall', () => {
     if (!r.ok) throw new Error(msg(r.error));
     expect(r.value.backupKept).toBeNull();
     expect(await f.env.pathKind(live)).toBe('absent');
-    expect(getPairAt(ledger, null, SKILL, TOOL)).toBeNull();
+    expect(getSwapPairAt(r.state.ledger, null, SKILL, TOOL)).toBeNull();
+    expect(await residue(f.env, skillsRoot)).toEqual([]);
+  });
+
+  test('uninstall reclaims an unchanged v1 pinned copy without a warning', async () => {
+    const s = await seedStore(f);
+    const live = join(skillsRoot, SKILL);
+    await f.env.copyTree(s.storePath, live);
+    const v1ContentHash = await v1ContentHashOf(f.env, live);
+    const ledger = emptyLedger(NOW);
+    setPairAt(ledger, null, SKILL, TOOL, {
+      placementPath: live,
+      mode: 'pinned',
+      dev: null,
+      pinned: pinnedOf(s.storePath, s.rev, v1ContentHash, 'copy'),
+      origin: origin('smorinlabs/fixture-harness/alpha'),
+      journal: null,
+    });
+
+    const uninstalled = await runSwap(makeCtx(f.env, ledgerPath, ledger), uninstallPlan(live));
+    if (!uninstalled.ok) throw new Error(msg(uninstalled.error));
+    expect(uninstalled.value).toMatchObject({ backupKept: null, warning: null });
+    expect(getSwapPairAt(uninstalled.state.ledger, null, SKILL, TOOL)).toBeNull();
     expect(await residue(f.env, skillsRoot)).toEqual([]);
   });
 
@@ -463,7 +533,7 @@ describe('runSwap — uninstall', () => {
     expect(r.value.warning).not.toBeNull();
     expect(await f.env.pathKind(live)).toBe('absent');
     expect(await f.env.pathKind(r.value.backupKept as string)).toBe('dir');
-    expect(getPairAt(ledger, null, SKILL, TOOL)).toBeNull();
+    expect(getSwapPairAt(r.state.ledger, null, SKILL, TOOL)).toBeNull();
   });
 });
 
@@ -559,23 +629,21 @@ describe('sweepCommittedAcquireJournals', () => {
       },
     });
 
-    const w = await writeLedger(f.env, ledgerPath, ledger);
+    const ctx = makeCtx(f.env, ledgerPath, ledger);
+    const w = await writeLedger(f.env, ledgerPath, ctx.state.ledger);
     if (!w.ok) throw new Error(msg(w.error));
-    const read = await readLedger(f.env, ledgerPath);
-    if (!read.ok) throw new Error(msg(read.error));
-    const ctx = makeCtx(f.env, ledgerPath, read.value);
 
     const swept = await sweepCommittedAcquireJournals(ctx);
     if (!swept.ok) throw new Error(msg(swept.error));
 
     // install finished: journal nulled, records intact, backup gone.
-    expect(getPairAt(ctx.ledger, null, 'inst', TOOL)?.journal).toBeNull();
-    expect(getPairAt(ctx.ledger, null, 'inst', TOOL)?.mode).toBe('pinned');
+    expect(getSwapPairAt(swept.state.ledger, null, 'inst', TOOL)?.journal).toBeNull();
+    expect(getSwapPairAt(swept.state.ledger, null, 'inst', TOOL)?.mode).toBe('pinned');
     expect(await f.env.pathKind(installBackup)).toBe('absent');
     // uninstall finished: pair deleted, backup gone.
-    expect(getPairAt(ctx.ledger, key, 'unins', TOOL)).toBeNull();
+    expect(getSwapPairAt(swept.state.ledger, key, 'unins', TOOL)).toBeNull();
     expect(await f.env.pathKind(uninstBackup)).toBe('absent');
     // promote journal untouched.
-    expect(getPairAt(ctx.ledger, null, 'prom', TOOL)?.journal?.phase).toBe('committed');
+    expect(getSwapPairAt(swept.state.ledger, null, 'prom', TOOL)?.journal?.phase).toBe('committed');
   });
 });

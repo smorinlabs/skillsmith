@@ -1,6 +1,20 @@
 # P17 execution map
 
-**Status:** preparation baseline; execution has not started
+> P17 disposition: current execution state; authority: projects/p17/catalog.json
+
+**Status:** Phase 0 is `approved`. `P17-G0-01` through `P17-G0-05` are `signed-off`; all group
+lifecycle gates are passed. Whole-phase review, catalog recording of standing approval, and exit are
+passed. Phase 1 is `approved`; its entry, whole-phase review, standing approval, and exit are passed.
+Phase 2 is `approved`; its entry, whole-phase review, standing approval, and exit are passed.
+Phase 3 is `approved`; its entry, whole-phase review, standing approval, and exit are passed.
+Phase 4 is `approved`; its entry, whole-phase review, standing approval, and exit are passed.
+Phase 5 is `approved`; its entry, whole-phase review, standing approval, and exit are passed.
+Phase 6 is `active`; its entry gate is passed.
+`catalog.json` is the machine-readable status authority.
+
+The user-directed pre-G6 scope, exclusion, prioritization, sequencing, and dependency review is
+complete. P17-G6-02A is the lowest dependency-ready unfinished group; Phase-6 review, approval, and
+exit remain pending.
 
 This file groups the consolidated plan into reviewable changes. It does not replace product
 contracts in the consolidated plan or status in `catalog.json`. `CHECKLIST.md` is generated from
@@ -20,8 +34,9 @@ catalog.json --validated/rendered--> CHECKLIST.md
              phase/final sign-off
 ```
 
-The catalog tracks 425 entities: 34 P0-P3 recommendations, 65 phase tasks, 61 phase tests, 157
-command tests, 10 option gates, 16 holistic workflows, 23 commands, 43 accepted findings, and 16
+The catalog tracks 426 entities after the approved 2026-07-23 G5-04 amendment: 34 P0-P3
+recommendations, 65 phase tasks, 61 phase tests, 157 command tests, 10 option gates, 16 holistic
+workflows, 23 commands, 44 accepted findings, and 16
 decisions. The 34 recommendations are included explicitly even though the earlier 391-entity
 summary omitted them; this prevents the original P0-P3 source inventory from disappearing behind
 later phase tasks.
@@ -91,7 +106,7 @@ group.
 | P17-G1-05 | 1 | G1-03 | Executable tool-adapter/capability registry and current verify behavior |
 | P17-G1-06 | 1 | G1-03 | Canonical codecs, DTO mappings, and public wire-contract registry |
 | P17-G1-07 | 1 | G1-03 | Operation-scoped observation, correlation, redaction, and verbosity behavior |
-| P17-G2-01 | 2 | G1-04, G1-05, G1-06, G1-07 | Manifest discovery, ownership, unified schema, identity, and artifact-pair selection |
+| P17-G2-01 | 2 | G0-01, G0-02, G0-04, G0-05, G1-04, G1-05, G1-06, G1-07 | Manifest discovery, ownership, unified schema, identity, and artifact-pair selection |
 | P17-G2-02 | 2 | G2-01 | Portable lock schema, semantic hashes, canonicalization, and manifest relationship |
 | P17-G2-03 | 2 | G2-01, G2-02 | Lossless human-file editing, atomicity, portability, and secret-redaction boundary |
 | P17-G2-04 | 2 | G2-01, G2-03 | Pure init request/skeleton/migration operation model without early execution |
@@ -115,19 +130,45 @@ group.
 | P17-G5-02 | 5 | G4B-03 | Update discovery, check/preview/apply, refs, pins, and retention |
 | P17-G5-03 | 5 | G4B-03 | Scope-aware pending abort and committed undo with compatibility routing |
 | P17-G5-04 | 5 | G4B-03 | Ledger-authoritative reachability, retention, explicit forget, and safe GC |
-| P17-G5-05 | 5 | G5-01, G5-02, G5-03 | Shared bulk approval, fail-fast/continue scheduling, cancellation, and exits |
-| P17-G6-01 | 6 | G5-04, G5-05 | Native assets, checksums, Homebrew/npm distribution, and clean installs |
+| P17-G5-05 | 5 | G5-01, G5-02, G5-03 | Shared bulk approval, fail-fast/continue scheduling, cancellation, exits, and final artifact-option closure |
+| P17-G6-01 | 6 | G6-02B, G6-03 | Native assets, checksums, Homebrew/npm distribution, and clean installs |
 | P17-G6-02A | 6 | G5-04, G5-05 | Shared command metadata, five-group help, progressive options, workflows, and generated docs |
 | P17-G6-02B | 6 | G6-02A | Bash/zsh/fish completion generation and nested completion contracts |
-| P17-G6-03 | 6 | G5-04, G5-05 | Rendering matrix, legacy cleanup, versions/capabilities, install/upgrade docs |
-| P17-G6-04 | 6 | G6-01, G6-02A, G6-02B, G6-03 | Canonical PR/release recipes, exact-SHA publication gate, and final 1.0 evidence |
+| P17-G6-03 | 6 | G6-02A | Rendering matrix, legacy cleanup, versions/capabilities, install/upgrade docs |
+| P17-G6-04 | 6 | G6-01 | Canonical PR/release recipes, exact-SHA publication gate, and final 1.0 evidence |
 | P17-G7-01 | 7 | G6-04 | Explicitly deferred P3 specifications/projects; not required for P17 or 1.0 |
+
+### Phase 6 execution sequence amendment — 2026-07-25
+
+The user approved reordering Phase 6 so packaging consumes the completed user-facing command
+surface instead of forcing help, completion, rendering, and documentation to chase already-built
+artifacts. Dependency readiness therefore selects this sequence even though stable group IDs remain
+in their original table order:
+
+```text
+G6-02A shared metadata/help and parser compatibility
+   |-- G6-02B completion
+   `-- G6-03 rendering/docs/dependency cleanup
+          \                 /
+           `---- G6-01 ----'
+                    |
+                 G6-04
+```
+
+- G6-02A first stabilizes the shared metadata and Commander compatibility surface.
+- G6-02B and G6-03 may then proceed independently when their file ownership is disjoint or an
+  integration owner and merge order are recorded.
+- G6-01 packages only the completed completion scripts, generated docs, rendering behavior, and
+  dependency graph and proves clean installation of those exact outputs.
+- G6-04 remains the terminal exact-SHA/release evidence owner. Its dependency on G6-01 is
+  intentionally transitive over every other required Phase-6 group.
 
 ## Phase gates
 
 - A phase cannot start until every dependency from the prior phase is signed off.
-- A phase cannot close while any required catalog entity is planned, red, failed, skipped,
-  unmapped, or missing evidence.
+- A phase cannot close while any entity owned by that phase's required groups is planned, red,
+  failed, skipped, unmapped, or missing evidence. Required downstream entities remain planned under
+  their later owning phases and do not falsely block the current phase.
 - Each phase receives an independent whole-phase adversarial review after its groups pass.
 - The user explicitly approves each Phase 0-6 boundary. Phase 7 is not a P17 completion gate.
 - Final P17 completion additionally requires all 23 commands and all non-deferred recommendations,

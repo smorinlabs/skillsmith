@@ -1,6 +1,14 @@
-import type { ScanEnv } from '../../env/types.ts';
-import type { SkillRootsCtx } from '../claude-code/skill-roots.ts';
-import { type Placement, listPlacements } from '../placement-shared.ts';
+import { join } from 'node:path';
+import type { Scope } from '../../config/types.ts';
+import type { InventoryReadPorts } from '../../ports/types.ts';
+import type {
+  PlacementBundle,
+  PlacementInventory,
+  PlacementResolution,
+  PlacementRootFact,
+  SkillRootsCtx,
+} from '../adapter-types.ts';
+import { type Placement, classifyPlacement, listPlacements } from '../placement-shared.ts';
 import { getSkillRoots } from './skill-roots.ts';
 
 export interface CodexPlacementScan {
@@ -10,18 +18,39 @@ export interface CodexPlacementScan {
   currentRoot: string; // resolved current root (~/.agents/skills)
 }
 
-export const listCodexPlacements = async (
-  env: ScanEnv,
+export const CODEX_LEGACY_ROOT_NOTICE =
+  'codex placement is in the legacy ~/.codex/skills; the current convention is ~/.agents/skills — ' +
+  "a future 'skillsmith install' can migrate it";
+
+const codexRootFacts = (
+  env: Parameters<PlacementBundle['roots']>[0],
+  scope: Scope,
+  ctx: SkillRootsCtx,
+): readonly PlacementRootFact[] => {
+  const [destination, alternate] = getSkillRoots(env, scope, ctx);
+  if (destination === undefined) return [];
+  return [
+    { path: destination, role: 'destination' },
+    ...(alternate === undefined ? [] : [{ path: alternate, role: 'alternate' as const }]),
+  ];
+};
+
+const listCodexPlacementsScoped = async (
+  env: InventoryReadPorts,
   ctx: SkillRootsCtx,
   storeRoot: string,
+  scope: Scope,
 ): Promise<CodexPlacementScan> => {
-  const [currentRoot, legacyRoot] = getSkillRoots(env, 'user', ctx);
-  if (currentRoot === undefined || legacyRoot === undefined) {
+  const facts = codexRootFacts(env, scope, ctx);
+  const currentRoot = facts.find((fact) => fact.role === 'destination')?.path;
+  const legacyRoot = facts.find((fact) => fact.role === 'alternate')?.path;
+  if (currentRoot === undefined) {
     return { placements: [], duplicates: [], legacyRoot: '', currentRoot: '' };
   }
 
   const currentPlacements = await listPlacements(env, currentRoot, storeRoot);
-  const legacyPlacements = await listPlacements(env, legacyRoot, storeRoot);
+  const legacyPlacements =
+    legacyRoot === undefined ? [] : await listPlacements(env, legacyRoot, storeRoot);
 
   const flippable = (p: Placement): boolean => p.class !== 'absent';
   const currentBySkill = new Map(currentPlacements.map((p) => [p.skill, p]));
@@ -36,7 +65,89 @@ export const listCodexPlacements = async (
   return {
     placements: [...currentPlacements, ...legacyPlacements],
     duplicates,
-    legacyRoot,
+    legacyRoot: legacyRoot ?? '',
     currentRoot,
   };
+};
+
+export const listCodexPlacements = (
+  env: InventoryReadPorts,
+  ctx: SkillRootsCtx,
+  storeRoot: string,
+): Promise<CodexPlacementScan> => listCodexPlacementsScoped(env, ctx, storeRoot, 'user');
+
+const resolveCodexPlacementScoped = async (
+  env: InventoryReadPorts,
+  ctx: SkillRootsCtx,
+  storeRoot: string,
+  skill: string,
+  scope: Scope,
+): Promise<PlacementResolution> => {
+  const facts = codexRootFacts(env, scope, ctx);
+  const destination = facts.find((fact) => fact.role === 'destination');
+  if (destination === undefined) {
+    throw new Error(`codex placement invariant: no ${scope} destination root`);
+  }
+  const classified = await Promise.all(
+    facts.map(async (fact) => ({
+      fact,
+      placement: await classifyPlacement(env, fact.path, skill, storeRoot),
+    })),
+  );
+  const destinationPlacement = classified.find((item) => item.fact === destination);
+  if (destinationPlacement === undefined) {
+    throw new Error(`codex placement invariant: ${scope} destination was not classified`);
+  }
+  const present = classified.filter((item) => item.placement.class !== 'absent');
+  if (present.length > 1) {
+    return {
+      placement: destinationPlacement.placement,
+      notices: [],
+      duplicateReason: `found in both ${present
+        .map((item) => item.fact.path)
+        .join(' and ')}; resolve the duplicate first`,
+    };
+  }
+  const selected = present[0] ?? destinationPlacement;
+  return {
+    placement: selected.placement,
+    notices: selected.fact.role === 'alternate' ? [CODEX_LEGACY_ROOT_NOTICE] : [],
+    duplicateReason: null,
+  };
+};
+
+export const codexPlacementBundle: PlacementBundle = {
+  isManagedLegacyEntry: async (env, root, entry) => {
+    if (entry === '.codex-system-skills.marker') return true;
+    const path = join(root, entry);
+    if (!(await env.fileExists(path))) return false;
+    if ((await env.pathKind(await env.realpath(path))) !== 'dir') return false;
+    return env.fileExists(join(path, '.codex-system-skills.marker'));
+  },
+  roots: getSkillRoots,
+  rootFacts: codexRootFacts,
+  standardRoots: (env, ctx) => getSkillRoots(env, 'user', ctx),
+  list: async (env, ctx, storeRoot) => {
+    const scan = await listCodexPlacements(env, ctx, storeRoot);
+    return {
+      placements: scan.placements,
+      duplicates: scan.duplicates,
+      currentRoot: scan.currentRoot || null,
+      legacyRoot: scan.legacyRoot || null,
+    };
+  },
+  listScoped: async (env, ctx, storeRoot, scope): Promise<PlacementInventory> => {
+    const scan = await listCodexPlacementsScoped(env, ctx, storeRoot, scope);
+    return {
+      placements: scan.placements,
+      duplicates: scan.duplicates,
+      currentRoot: scan.currentRoot || null,
+      legacyRoot: scan.legacyRoot || null,
+    };
+  },
+  resolve: (env, ctx, storeRoot, skill) =>
+    resolveCodexPlacementScoped(env, ctx, storeRoot, skill, 'user'),
+  resolveScoped: resolveCodexPlacementScoped,
+  noticeForRoot: (root, inventory) =>
+    inventory.legacyRoot === root ? CODEX_LEGACY_ROOT_NOTICE : null,
 };

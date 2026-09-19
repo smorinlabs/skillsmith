@@ -1,0 +1,203 @@
+{
+  "schemaVersion": 1,
+  "expected": {
+    "uniqueNames": 14,
+    "placementRows": 15,
+    "tools": ["claude-code", "codex", "kilo-code", "opencode"],
+    "scopes": ["system", "user", "project", "managed"],
+    "verification": ["passed", "warned", "skipped", "unrecorded"]
+  },
+  "entries": [
+    {
+      "name": "clean-dev",
+      "kind": "clean-dev",
+      "placements": [
+        {
+          "tool": "kilo-code",
+          "scope": "project",
+          "path": "/repo/.kilo/skills/clean-dev",
+          "classification": "dev",
+          "verification": "skipped"
+        }
+      ]
+    },
+    {
+      "name": "clean-pinned-copy",
+      "kind": "clean-pinned-copy",
+      "placements": [
+        {
+          "tool": "claude-code",
+          "scope": "user",
+          "path": "/home/test/.claude/skills/clean-pinned-copy",
+          "classification": "pinned",
+          "verification": "passed"
+        }
+      ]
+    },
+    {
+      "name": "clean-store-link",
+      "kind": "clean-store-link",
+      "placements": [
+        {
+          "tool": "codex",
+          "scope": "system",
+          "path": "/etc/codex/skills/clean-store-link",
+          "classification": "store-linked",
+          "verification": "warned"
+        }
+      ]
+    },
+    {
+      "name": "content-drift",
+      "kind": "content-drift",
+      "placements": [
+        {
+          "tool": "opencode",
+          "scope": "managed",
+          "path": "/managed/opencode/skills/content-drift",
+          "classification": "pinned",
+          "verification": "unrecorded"
+        }
+      ]
+    },
+    {
+      "name": "declared-locked-absent",
+      "kind": "declared-locked-absent",
+      "placements": [
+        {
+          "tool": "claude-code",
+          "scope": "project",
+          "path": null,
+          "classification": "absent",
+          "verification": "unrecorded"
+        }
+      ]
+    },
+    {
+      "name": "ledger-only",
+      "kind": "ledger-only",
+      "placements": [
+        {
+          "tool": "kilo-code",
+          "scope": "user",
+          "path": "/home/test/.kilo/skills/ledger-only",
+          "classification": "broken",
+          "verification": "warned"
+        }
+      ]
+    },
+    {
+      "name": "ledger-recorded-broken-link",
+      "kind": "ledger-recorded-broken-link",
+      "placements": [
+        {
+          "tool": "codex",
+          "scope": "user",
+          "path": "/home/test/.agents/skills/ledger-recorded-broken-link",
+          "classification": "broken",
+          "verification": "skipped"
+        }
+      ]
+    },
+    {
+      "name": "live-only-unmanaged",
+      "kind": "live-only-unmanaged",
+      "placements": [
+        {
+          "tool": "opencode",
+          "scope": "project",
+          "path": "/repo/.opencode/skills/live-only-unmanaged",
+          "classification": "unmanaged",
+          "verification": "unrecorded"
+        }
+      ]
+    },
+    {
+      "name": "lock-only",
+      "kind": "lock-only",
+      "placements": []
+    },
+    {
+      "name": "manifest-only",
+      "kind": "manifest-only",
+      "placements": [
+        {
+          "tool": "codex",
+          "scope": "project",
+          "path": null,
+          "classification": "absent",
+          "verification": "unrecorded"
+        }
+      ]
+    },
+    {
+      "name": "placement-drift",
+      "kind": "placement-drift",
+      "placements": [
+        {
+          "tool": "kilo-code",
+          "scope": "project",
+          "path": "/repo/.kilo/skills/placement-drift",
+          "classification": "dev",
+          "verification": "passed"
+        },
+        {
+          "tool": "kilo-code",
+          "scope": "project",
+          "path": "/repo/.agents/skills/placement-drift",
+          "classification": "unmanaged",
+          "verification": "unrecorded"
+        }
+      ]
+    },
+    {
+      "name": "revision-drift",
+      "kind": "revision-drift",
+      "placements": [
+        {
+          "tool": "opencode",
+          "scope": "user",
+          "path": "/home/test/.config/opencode/skills/revision-drift",
+          "classification": "pinned",
+          "verification": "warned"
+        }
+      ]
+    },
+    {
+      "name": "shadowed-fleet",
+      "kind": "shadow-with-pending-journal",
+      "placements": [
+        {
+          "tool": "codex",
+          "scope": "user",
+          "path": "/home/test/.agents/skills/shadowed-fleet",
+          "classification": "pinned",
+          "verification": "passed",
+          "shadow": "shadowed"
+        },
+        {
+          "tool": "codex",
+          "scope": "project",
+          "path": "/repo/.agents/skills/shadowed-fleet",
+          "classification": "pinned",
+          "verification": "passed",
+          "shadow": "winner",
+          "journal": "pending"
+        }
+      ]
+    },
+    {
+      "name": "source-drift",
+      "kind": "source-drift",
+      "placements": [
+        {
+          "tool": "claude-code",
+          "scope": "user",
+          "path": "/home/test/.claude/skills/source-drift",
+          "classification": "store-linked",
+          "verification": "skipped"
+        }
+      ]
+    }
+  ]
+}

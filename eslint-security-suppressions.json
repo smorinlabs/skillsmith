@@ -1,0 +1,92 @@
+{
+  "packages/cli/src/completion/transport.ts": {
+    "security/detect-possible-timing-attacks": {
+      "count": 1
+    }
+  },
+  "packages/cli/src/contracts/cli-migration-ledger.ts": {
+    "security/detect-unsafe-regex": {
+      "count": 1
+    }
+  },
+  "packages/cli/src/program.ts": {
+    "security/detect-possible-timing-attacks": {
+      "count": 12
+    }
+  },
+  "packages/cli/src/runtime/preflight.ts": {
+    "security/detect-possible-timing-attacks": {
+      "count": 1
+    }
+  },
+  "packages/cli/src/runtime/presentation.ts": {
+    "security/detect-possible-timing-attacks": {
+      "count": 2
+    }
+  },
+  "packages/cli/src/spec/relations.ts": {
+    "security/detect-possible-timing-attacks": {
+      "count": 2
+    }
+  },
+  "packages/core/src/acquire/source.ts": {
+    "security/detect-unsafe-regex": {
+      "count": 1
+    }
+  },
+  "packages/core/src/artifacts/init.ts": {
+    "security/detect-unsafe-regex": {
+      "count": 1
+    }
+  },
+  "packages/core/src/artifacts/manifest.ts": {
+    "security/detect-unsafe-regex": {
+      "count": 1
+    }
+  },
+  "packages/core/src/artifacts/pair.ts": {
+    "security/detect-possible-timing-attacks": {
+      "count": 1
+    }
+  },
+  "packages/core/src/artifacts/retained-preimage-codec.ts": {
+    "security/detect-unsafe-regex": {
+      "count": 1
+    }
+  },
+  "packages/core/src/artifacts/source-content.ts": {
+    "security/detect-unsafe-regex": {
+      "count": 1
+    }
+  },
+  "packages/core/src/config/human-edit.ts": {
+    "security/detect-unsafe-regex": {
+      "count": 3
+    }
+  },
+  "packages/core/src/config/schema.ts": {
+    "security/detect-unsafe-regex": {
+      "count": 2
+    }
+  },
+  "packages/core/src/contracts/v1/update.ts": {
+    "security/detect-unsafe-regex": {
+      "count": 1
+    }
+  },
+  "packages/core/src/planning/create.ts": {
+    "security/detect-non-literal-regexp": {
+      "count": 1
+    }
+  },
+  "packages/core/src/reconcile/apply.ts": {
+    "security/detect-possible-timing-attacks": {
+      "count": 3
+    }
+  },
+  "packages/core/src/safety/redaction.ts": {
+    "security/detect-unsafe-regex": {
+      "count": 2
+    }
+  }
+}

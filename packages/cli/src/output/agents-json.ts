@@ -1,27 +1,22 @@
-import type { InstallRecord, SupportedTool } from '@skillsmith/core';
-import { z } from 'zod';
+import type { AgentsReport, InstallRecord, SupportedTool } from '@skillsmith/core';
+import { toAgentsV2Dto } from '@skillsmith/core/contracts/v2';
+import { currentWireCodecs } from '../contracts/wire-contracts.ts';
+import { encodeWire, wireSchema } from './wire-codec.ts';
 
-const InstallRecordSchema = z.object({
-  path: z.string(),
-  version: z.string(),
-  installMethod: z.enum([
-    'brew',
-    'npm-global',
-    'bun-global',
-    'native-installer',
-    'app-bundle',
-    'unknown',
-  ]),
-});
+export const AgentsJsonSchema = wireSchema(currentWireCodecs.agents);
 
-export const AgentsJsonSchema = z.object({
-  schemaVersion: z.literal(1),
-  experimental: z.literal(true),
-  tools: z.record(z.array(InstallRecordSchema)),
-});
-
-export const renderAgentsJson = (results: Map<SupportedTool, InstallRecord[]>): string => {
-  const tools: Record<string, InstallRecord[]> = {};
-  for (const [k, v] of results) tools[k] = v;
-  return JSON.stringify({ schemaVersion: 1, experimental: true, tools }, null, 2);
-};
+export const renderAgentsJson = (
+  value: ReadonlyMap<SupportedTool, readonly InstallRecord[]> | AgentsReport,
+): string =>
+  encodeWire(
+    currentWireCodecs.agents,
+    toAgentsV2Dto(
+      value instanceof Map
+        ? ({
+            detections: value,
+            format: 'json',
+            detectedOnly: false,
+          } satisfies AgentsReport)
+        : (value as AgentsReport),
+    ),
+  );

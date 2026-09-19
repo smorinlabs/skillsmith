@@ -2,7 +2,9 @@ import { describe, expect, spyOn, test } from 'bun:test';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { execCommand } from '../../src/env/exec.ts';
+import { defaultRuntimePorts } from '../../src/ports/default.ts';
+
+const { exec: execCommand } = await defaultRuntimePorts();
 
 const messages = [
   { id: 1, method: 'initialize', params: {} },
@@ -166,8 +168,11 @@ describe('bounded JSON-RPC process exchange', () => {
       controller.abort();
       const outcome = await exchange;
       expect(performance.now() - started).toBeLessThan(1200);
-      expect(outcome.result?.protocolError).toBe('cancelled');
-      expect(outcome.result?.timedOut).toBe(false);
+      expect(outcome.error).toMatchObject({
+        capability: 'process',
+        operation: 'exec',
+        code: 'cancelled',
+      });
       const heartbeat = await readFile(fixture.heartbeat, 'utf8');
       await Bun.sleep(100);
       expect(await readFile(fixture.heartbeat, 'utf8')).toBe(heartbeat);
@@ -263,13 +268,13 @@ describe('bounded JSON-RPC process exchange', () => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 40);
     try {
-      const cancelled = await execCommand(process.execPath, ['-e', 'setInterval(()=>{},1000)'], {
-        jsonRpc: messages,
-        timeoutMs: 1000,
-        signal: controller.signal,
-      });
-      expect(cancelled.timedOut).toBe(false);
-      expect(cancelled.protocolError).toContain('cancelled');
+      await expect(
+        execCommand(process.execPath, ['-e', 'setInterval(()=>{},1000)'], {
+          jsonRpc: messages,
+          timeoutMs: 1000,
+          signal: controller.signal,
+        }),
+      ).rejects.toMatchObject({ capability: 'process', operation: 'exec', code: 'cancelled' });
     } finally {
       clearTimeout(timer);
     }

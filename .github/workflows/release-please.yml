@@ -1,18 +1,101 @@
-name: release-please
+name: Release preparation
 
 on:
   push:
     branches: [main]
 
-permissions:
-  contents: write
-  pull-requests: write
+permissions: {}
+
+concurrency:
+  group: release-please-main
+  cancel-in-progress: false
 
 jobs:
   release-please:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    environment: release-please
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      pr: ${{ steps.release.outputs.pr }}
     steps:
-      - uses: googleapis/release-please-action@v4
+      - name: Mint short-lived Release Please App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
+          app-id: ${{ vars.RELEASE_PLEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require the one-shot P17 release instruction
+        run: |
+          manifest_version="$(jq -r '.["."]' .release-please-manifest.json)"
+          if [ "$manifest_version" != '1.0.0' ]; then
+            git log --format='%B' --fixed-strings --grep='Release-As: 1.0.0' HEAD -- | grep -Fx 'Release-As: 1.0.0'
+          fi
+      - name: Open or update the draft release PR
+        id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ steps.app-token.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+  sync-derived-files:
+    needs: release-please
+    if: needs.release-please.outputs.pr != ''
+    runs-on: ubuntu-24.04
+    environment: release-please
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - name: Mint fresh short-lived Release Please App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ vars.RELEASE_PLEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+      - name: Resolve and constrain the same-repository release PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          RELEASE_PR_JSON: ${{ needs.release-please.outputs.pr }}
+        run: |
+          number="$(jq -er '.number' <<<"$RELEASE_PR_JSON")"
+          gh api "repos/$GITHUB_REPOSITORY/pulls/$number" > "$RUNNER_TEMP/pr.json"
+          test "$(jq -r '.head.repo.full_name' "$RUNNER_TEMP/pr.json")" = "$GITHUB_REPOSITORY"
+          test "$(jq -r '.base.ref' "$RUNNER_TEMP/pr.json")" = 'main'
+          branch="$(jq -er '.head.ref' "$RUNNER_TEMP/pr.json")"
+          case "$branch" in release-please--branches--main*) ;; *) exit 1 ;; esac
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ steps.pr.outputs.branch }}
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: true
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.14
+      - name: Regenerate lockfile and command references
+        run: |
+          bun install --ignore-scripts
+          bun scripts/generate-command-reference.ts --write
+          unexpected="$(git diff --name-only | grep -Ev '^(bun\.lock|README\.md|docs/commands\.md)$' || true)"
+          test -z "$unexpected"
+          bun scripts/generate-command-reference.ts --check
+      - name: Commit deterministic derived files
+        run: |
+          if git diff --quiet -- bun.lock README.md docs/commands.md; then
+            exit 0
+          fi
+          git config user.name 'skillsmith-release-app[bot]'
+          git config user.email 'skillsmith-release-app[bot]@users.noreply.github.com'
+          git add -- bun.lock README.md docs/commands.md
+          git diff --cached --check
+          git commit -m 'chore(release): synchronize derived files'
+          git push origin "HEAD:${{ steps.pr.outputs.branch }}"

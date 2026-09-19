@@ -1,0 +1,852 @@
+{
+  "schemaVersion": 1,
+  "kind": "skillsmith.p17.documentation-drift",
+  "groupId": "P17-G0-04",
+  "dispositionEnum": ["current-behavior", "superseded-target", "shipped-evidence"],
+  "documents": [
+    {
+      "path": "CLAUDE.md",
+      "documentClass": "current-governance",
+      "summary": "Current repository boundary guidance reconciled to injected capability ports.",
+      "sections": [
+        {
+          "id": "architectural-boundaries-enforced-by-eslint",
+          "selector": "## Architectural boundaries — enforced by ESLint",
+          "disposition": "current-behavior",
+          "marker": "P17 disposition: current behavior; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#9-shared-application-and-planning-architecture",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "9-shared-application-and-planning-architecture"
+          }
+        }
+      ]
+    },
+    {
+      "path": "README.md",
+      "documentClass": "current-user-doc",
+      "summary": "Current command, source-build, package-publication, and architecture snapshot truth.",
+      "sections": [
+        {
+          "id": "opening-status",
+          "selector": "# Skillsmith",
+          "disposition": "current-behavior",
+          "marker": "P17 disposition: current behavior; authority: packages/cli/src/program.ts",
+          "authority": { "path": "packages/cli/src/program.ts", "anchor": null }
+        },
+        {
+          "id": "install",
+          "selector": "## Install",
+          "disposition": "current-behavior",
+          "marker": "P17 disposition: current source-build behavior; authority: package.json",
+          "authority": { "path": "package.json", "anchor": null }
+        },
+        {
+          "id": "quickstart",
+          "selector": "## Quickstart",
+          "disposition": "current-behavior",
+          "marker": "P17 disposition: current examples; authority: packages/cli/src/program.ts",
+          "authority": { "path": "packages/cli/src/program.ts", "anchor": null }
+        },
+        {
+          "id": "packages",
+          "selector": "## Packages",
+          "disposition": "current-behavior",
+          "marker": "P17 disposition: current package boundary; authority: docs/architecture.md#core-cli-split",
+          "authority": { "path": "docs/architecture.md", "anchor": "core-cli-split" }
+        },
+        {
+          "id": "architecture-snapshot",
+          "selector": "## Architecture snapshot",
+          "disposition": "current-behavior",
+          "marker": "P17 disposition: current architecture; authority: docs/architecture.md#core-cli-split",
+          "authority": { "path": "docs/architecture.md", "anchor": "core-cli-split" }
+        }
+      ]
+    },
+    {
+      "path": "docs/architecture.md",
+      "documentClass": "current-architecture",
+      "summary": "Current Core/CLI boundary distinguishes direct policy from injected capabilities.",
+      "sections": [
+        {
+          "id": "core--cli-split",
+          "selector": "## Core / CLI split",
+          "disposition": "current-behavior",
+          "marker": "P17 disposition: current behavior; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#9-shared-application-and-planning-architecture",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "9-shared-application-and-planning-architecture"
+          }
+        }
+      ]
+    },
+    {
+      "path": "packages/core/README.md",
+      "documentClass": "current-package-doc",
+      "summary": "Current embeddable-core behavior and capability-injection boundary.",
+      "sections": [
+        {
+          "id": "opening",
+          "selector": "# @skillsmith/core",
+          "disposition": "current-behavior",
+          "marker": "P17 disposition: current behavior; authority: docs/architecture.md#core-cli-split",
+          "authority": { "path": "docs/architecture.md", "anchor": "core-cli-split" }
+        }
+      ]
+    },
+    {
+      "path": "packages/cli/README.md",
+      "documentClass": "current-package-doc",
+      "summary": "Current CLI source layout without the former agents-only claim.",
+      "sections": [
+        {
+          "id": "source-layout",
+          "selector": "Source layout:",
+          "disposition": "current-behavior",
+          "marker": "P17 disposition: current command layout; authority: packages/cli/src/program.ts",
+          "authority": { "path": "packages/cli/src/program.ts", "anchor": null }
+        }
+      ]
+    },
+    {
+      "path": "packages/cli/src/help/topics.ts",
+      "documentClass": "current-help-source",
+      "summary": "Current canonical help topics close against shipped command, artifact, and runtime behavior.",
+      "sections": [
+        {
+          "id": "workflows",
+          "selector": "workflows:",
+          "disposition": "current-behavior",
+          "marker": "P17 disposition: current behavior; authority: packages/cli/src/spec/registry.ts",
+          "authority": { "path": "packages/cli/src/spec/registry.ts", "anchor": null }
+        },
+        {
+          "id": "manifest",
+          "selector": "manifest: TOPIC_CONTENT.manifest",
+          "disposition": "current-behavior",
+          "marker": "P17 disposition: current behavior; authority: packages/core/src/artifacts/manifest-codec.ts",
+          "authority": { "path": "packages/core/src/artifacts/manifest-codec.ts", "anchor": null }
+        },
+        {
+          "id": "lock",
+          "selector": "lock: TOPIC_CONTENT.lock",
+          "disposition": "current-behavior",
+          "marker": "P17 disposition: current behavior; authority: packages/core/src/artifacts/lock-codec.ts",
+          "authority": { "path": "packages/core/src/artifacts/lock-codec.ts", "anchor": null }
+        },
+        {
+          "id": "plan",
+          "selector": "plan: TOPIC_CONTENT.plan",
+          "disposition": "current-behavior",
+          "marker": "P17 disposition: current behavior; authority: packages/core/src/artifacts/plan-codec.ts",
+          "authority": { "path": "packages/core/src/artifacts/plan-codec.ts", "anchor": null }
+        },
+        {
+          "id": "source",
+          "selector": "source: TOPIC_CONTENT.source",
+          "disposition": "current-behavior",
+          "marker": "P17 disposition: current behavior; authority: packages/core/src/acquire/source.ts",
+          "authority": { "path": "packages/core/src/acquire/source.ts", "anchor": null }
+        },
+        {
+          "id": "environment",
+          "selector": "environment: TOPIC_CONTENT.environment",
+          "disposition": "current-behavior",
+          "marker": "P17 disposition: current behavior; authorities: packages/cli/src/util/color.ts, packages/core/src/config/env.ts, packages/core/src/place/paths.ts",
+          "authority": [
+            { "path": "packages/cli/src/util/color.ts", "anchor": null },
+            { "path": "packages/core/src/config/env.ts", "anchor": null },
+            { "path": "packages/core/src/place/paths.ts", "anchor": null }
+          ]
+        },
+        {
+          "id": "scope",
+          "selector": "scope: TOPIC_CONTENT.scope",
+          "disposition": "current-behavior",
+          "marker": "P17 disposition: current behavior; authority: packages/cli/src/spec/options.ts",
+          "authority": { "path": "packages/cli/src/spec/options.ts", "anchor": null }
+        },
+        {
+          "id": "exit-codes",
+          "selector": "'exit-codes': TOPIC_CONTENT['exit-codes']",
+          "disposition": "current-behavior",
+          "marker": "P17 disposition: current behavior; authority: packages/cli/src/util/exit-codes.ts",
+          "authority": { "path": "packages/cli/src/util/exit-codes.ts", "anchor": null }
+        },
+        {
+          "id": "formatting",
+          "selector": "formatting: TOPIC_CONTENT.formatting",
+          "disposition": "current-behavior",
+          "marker": "P17 disposition: current behavior; authority: packages/cli/src/runtime/io.ts",
+          "authority": { "path": "packages/cli/src/runtime/io.ts", "anchor": null }
+        }
+      ]
+    },
+    {
+      "path": "projects/p17/EXECUTION.md",
+      "documentClass": "current-execution-control",
+      "summary": "Current Phase 0 execution status rather than the preparation baseline.",
+      "sections": [
+        {
+          "id": "opening-status",
+          "selector": "# P17 execution map",
+          "disposition": "current-behavior",
+          "marker": "P17 disposition: current execution state; authority: projects/p17/catalog.json",
+          "authority": { "path": "projects/p17/catalog.json", "anchor": null }
+        }
+      ]
+    },
+    {
+      "path": "research/skillsmith-phases.md",
+      "documentClass": "superseded-roadmap",
+      "summary": "Historical release roadmap retained as input, with P17 target authority at stale sections.",
+      "sections": [
+        {
+          "id": "opening",
+          "selector": "# SkillSmith phases",
+          "disposition": "superseded-target",
+          "marker": "P17 disposition: historical roadmap, superseded target; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#10-named-implementation-phases-and-slices",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "10-named-implementation-phases-and-slices"
+          }
+        },
+        {
+          "id": "322-first-public-release",
+          "selector": "**3.2.2 MVP-2b.2 — First public release**",
+          "disposition": "superseded-target",
+          "marker": "P17 disposition: superseded 1.0 milestone; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#phase-6-distribution-and-ux-polish",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "phase-6-distribution-and-ux-polish"
+          }
+        },
+        {
+          "id": "4-mvp-3--all-four-adapters",
+          "selector": "## 4. MVP-3 — \"All four adapters\"",
+          "disposition": "superseded-target",
+          "marker": "P17 disposition: superseded four-tool write roadmap; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#phase-1-p0-cli-truthfulness",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "phase-1-p0-cli-truthfulness"
+          }
+        },
+        {
+          "id": "5-mvp-4--team-workflows",
+          "selector": "## 5. MVP-4 — \"Team workflows\"",
+          "disposition": "superseded-target",
+          "marker": "P17 disposition: superseded workflow phasing; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#phase-4-desired-state-mutation-planner-and-apply",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "phase-4-desired-state-mutation-planner-and-apply"
+          }
+        },
+        {
+          "id": "9-phase-4--npm-publishing",
+          "selector": "## 9. Phase 4 — npm publishing",
+          "disposition": "superseded-target",
+          "marker": "P17 disposition: superseded publication phasing; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#p1-12-distribution",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "p1-12-distribution"
+          }
+        }
+      ]
+    },
+    {
+      "path": "research/skillsmith-cli-design.md",
+      "documentClass": "superseded-design",
+      "summary": "Historical CLI design sections classified against the consolidated P17 command contracts.",
+      "sections": [
+        {
+          "id": "051-tool-aware-install-with-scope-selection",
+          "selector": "#### 0.5.1 Tool-aware install with scope selection",
+          "disposition": "superseded-target",
+          "marker": "P17 disposition: current behavior is shipped but this target is superseded; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#86-install",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "86-install"
+          }
+        },
+        {
+          "id": "052-content-addressed-store",
+          "selector": "#### 0.5.2 Content-addressed store with symlinked entry points",
+          "disposition": "superseded-target",
+          "marker": "P17 disposition: current store behavior retained as history, target superseded; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#24-placementsjson-local-operational-state",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "24-placementsjson-local-operational-state"
+          }
+        },
+        {
+          "id": "058-manifest-driven-apply",
+          "selector": "#### 0.5.8 Manifest-driven `apply` with drift detection",
+          "disposition": "superseded-target",
+          "marker": "P17 disposition: superseded apply schema and flags; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#814-apply",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "814-apply"
+          }
+        },
+        {
+          "id": "111-installation-model",
+          "selector": "### 1.11 Installation model: content-addressed store + symlinks",
+          "disposition": "superseded-target",
+          "marker": "P17 disposition: current store behavior retained as history, GC target superseded; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#p2-03-gc",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "p2-03-gc"
+          }
+        },
+        {
+          "id": "2-command-tree",
+          "selector": "## 2. Command tree",
+          "disposition": "superseded-target",
+          "marker": "P17 disposition: superseded command tree; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#820-normative-command-and-option-registry",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "820-normative-command-and-option-registry"
+          }
+        },
+        {
+          "id": "61-exit-codes",
+          "selector": "### 6.1 Exit codes",
+          "disposition": "superseded-target",
+          "marker": "P17 disposition: superseded exit-code target; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#811-global-exit-code-taxonomy-and-precedence",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "811-global-exit-code-taxonomy-and-precedence"
+          }
+        },
+        {
+          "id": "64-config-file-locations",
+          "selector": "### 6.4 Config file locations (XDG-compliant)",
+          "disposition": "superseded-target",
+          "marker": "P17 disposition: superseded config and manifest identity; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#ewp-cf-029-define-the-legacy-project-config-to-manifest-transition",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "ewp-cf-029-define-the-legacy-project-config-to-manifest-transition"
+          }
+        },
+        {
+          "id": "8-architecture-sketch",
+          "selector": "## 8. Architecture sketch",
+          "disposition": "superseded-target",
+          "marker": "P17 disposition: superseded architecture target; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#9-shared-application-and-planning-architecture",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "9-shared-application-and-planning-architecture"
+          }
+        }
+      ]
+    },
+    {
+      "path": "research/skillsmith-v1-stack-summary.md",
+      "documentClass": "superseded-design",
+      "summary": "Historical stack analysis classified where distribution, logging, and state targets drifted.",
+      "sections": [
+        {
+          "id": "distribution",
+          "selector": "## Runtime & build",
+          "disposition": "superseded-target",
+          "marker": "P17 disposition: superseded distribution target; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#p1-12-distribution",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "p1-12-distribution"
+          }
+        },
+        {
+          "id": "logging",
+          "selector": "## Final dependency list (9 runtime)",
+          "disposition": "superseded-target",
+          "marker": "P17 disposition: dependency list is historical and logging target is superseded; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#ewp-cf-038-add-operation-scoped-structured-observability",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "ewp-cf-038-add-operation-scoped-structured-observability"
+          }
+        },
+        {
+          "id": "state",
+          "selector": "## State management in practice",
+          "disposition": "superseded-target",
+          "marker": "P17 disposition: superseded monolithic operation-log target; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#92-planning-and-transaction-model",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "92-planning-and-transaction-model"
+          }
+        }
+      ]
+    },
+    {
+      "path": "research/commands/README.md",
+      "documentClass": "current-command-index",
+      "summary": "Complete active command-page inventory with truthful shipped and unimplemented status.",
+      "sections": [
+        {
+          "id": "opening",
+          "selector": "# SkillSmith command reference",
+          "disposition": "current-behavior",
+          "marker": "P17 disposition: current page inventory; future target authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#321-canonical-help-and-documentation-groups",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "321-canonical-help-and-documentation-groups"
+          }
+        },
+        {
+          "id": "active-command-pages",
+          "selector": "## Active command pages",
+          "disposition": "current-behavior",
+          "marker": "P17 disposition: current shipped/draft status; future target authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#820-normative-command-and-option-registry",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "820-normative-command-and-option-registry"
+          }
+        }
+      ]
+    },
+    {
+      "path": "research/commands/agents.md",
+      "documentClass": "shipped-command-reference",
+      "summary": "Shipped agents behavior retained as evidence with the P17 migration target.",
+      "sections": [
+        {
+          "id": "opening",
+          "selector": "# agents",
+          "disposition": "shipped-evidence",
+          "marker": "P17 disposition: shipped command evidence, not future target authority; target: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#82-agents",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "82-agents"
+          }
+        }
+      ]
+    },
+    {
+      "path": "research/commands/apply.md",
+      "documentClass": "superseded-command-spec",
+      "summary": "Unimplemented apply draft retained only as superseded design input.",
+      "sections": [
+        {
+          "id": "opening",
+          "selector": "# apply",
+          "disposition": "superseded-target",
+          "marker": "P17 disposition: unimplemented superseded command draft; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#814-apply",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "814-apply"
+          }
+        }
+      ]
+    },
+    {
+      "path": "research/commands/sync.md",
+      "documentClass": "superseded-command-spec",
+      "summary": "Unimplemented sync draft retained only as superseded design input.",
+      "sections": [
+        {
+          "id": "opening",
+          "selector": "# sync",
+          "disposition": "superseded-target",
+          "marker": "P17 disposition: unimplemented superseded command draft; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#815-sync",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "815-sync"
+          }
+        }
+      ]
+    },
+    {
+      "path": "research/commands/doctor.md",
+      "documentClass": "shipped-command-reference",
+      "summary": "Shipped doctor/check evidence separated from superseded options, exits, plugin checks, and future repair behavior.",
+      "sections": [
+        {
+          "id": "opening",
+          "selector": "# doctor / check",
+          "disposition": "shipped-evidence",
+          "marker": "P17 disposition: shipped command-family evidence; future target authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#810-doctor-check",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "810-doctor-check"
+          }
+        },
+        {
+          "id": "argument-order",
+          "selector": "## Argument order",
+          "disposition": "shipped-evidence",
+          "marker": "P17 disposition: shipped command shape; future target authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#810-doctor-check",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "810-doctor-check"
+          }
+        },
+        {
+          "id": "commands",
+          "selector": "## Commands",
+          "disposition": "superseded-target",
+          "marker": "P17 disposition: superseded check gating and option target; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#810-doctor-check",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "810-doctor-check"
+          }
+        },
+        {
+          "id": "built-in-checks",
+          "selector": "## Built-in checks",
+          "disposition": "superseded-target",
+          "marker": "P17 disposition: superseded built-in check registry; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#810-doctor-check",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "810-doctor-check"
+          }
+        },
+        {
+          "id": "plugin-contributed-healthchecks-p2",
+          "selector": "## Plugin-contributed healthchecks (P2)",
+          "disposition": "superseded-target",
+          "marker": "P17 disposition: superseded speculative plugin-healthcheck target; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#810-doctor-check",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "810-doctor-check"
+          }
+        },
+        {
+          "id": "output-and-exit-behavior",
+          "selector": "## Output and exit behavior",
+          "disposition": "superseded-target",
+          "marker": "P17 disposition: superseded no-fix and check-exit target; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#810-doctor-check",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "810-doctor-check"
+          }
+        },
+        {
+          "id": "feature-table",
+          "selector": "## Feature table",
+          "disposition": "superseded-target",
+          "marker": "P17 disposition: superseded feature phasing; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#10-named-implementation-phases-and-slices",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "10-named-implementation-phases-and-slices"
+          }
+        },
+        {
+          "id": "flags",
+          "selector": "## Flags",
+          "disposition": "superseded-target",
+          "marker": "P17 disposition: superseded option registry; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#820-normative-command-and-option-registry",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "820-normative-command-and-option-registry"
+          }
+        },
+        {
+          "id": "help-output",
+          "selector": "## Help output",
+          "disposition": "shipped-evidence",
+          "marker": "P17 disposition: shipped help evidence with superseded future surface; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#810-doctor-check",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "810-doctor-check"
+          }
+        },
+        {
+          "id": "error-and-prompt-mockups",
+          "selector": "## Error and prompt mockups",
+          "disposition": "superseded-target",
+          "marker": "P17 disposition: historical output examples, superseded as target authority; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#810-doctor-check",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "810-doctor-check"
+          }
+        }
+      ]
+    },
+    {
+      "path": "research/commands/install.md",
+      "documentClass": "shipped-command-reference",
+      "summary": "Shipped v0.6 command behavior retained, with P17 future target authority.",
+      "sections": [
+        {
+          "id": "opening",
+          "selector": "# install",
+          "disposition": "shipped-evidence",
+          "marker": "P17 disposition: shipped current behavior; future target authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#86-install",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "86-install"
+          }
+        }
+      ]
+    },
+    {
+      "path": "research/commands/list.md",
+      "documentClass": "shipped-command-reference",
+      "summary": "Shipped list behavior retained as evidence with the P17 migration target.",
+      "sections": [
+        {
+          "id": "opening",
+          "selector": "# list",
+          "disposition": "shipped-evidence",
+          "marker": "P17 disposition: shipped command evidence, not future target authority; target: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#83-list",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "83-list"
+          }
+        }
+      ]
+    },
+    {
+      "path": "research/commands/uninstall.md",
+      "documentClass": "shipped-command-reference",
+      "summary": "Shipped v0.6 command behavior retained, including current immortal-store behavior but not its future target.",
+      "sections": [
+        {
+          "id": "opening",
+          "selector": "# uninstall",
+          "disposition": "shipped-evidence",
+          "marker": "P17 disposition: shipped current behavior, not future GC authority; future target: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#87-uninstall",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "87-uninstall"
+          }
+        }
+      ]
+    },
+    {
+      "path": "research/commands/dev.md",
+      "documentClass": "shipped-command-reference",
+      "summary": "Shipped P12/P13 dev behavior retained, with P17 future target authority.",
+      "sections": [
+        {
+          "id": "opening",
+          "selector": "# dev",
+          "disposition": "shipped-evidence",
+          "marker": "P17 disposition: shipped current behavior; future target authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#88-dev-promote",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "88-dev-promote"
+          }
+        }
+      ]
+    },
+    {
+      "path": "research/commands/promote.md",
+      "documentClass": "shipped-command-reference",
+      "summary": "Shipped P12 promote behavior retained, with P17 future target authority.",
+      "sections": [
+        {
+          "id": "opening",
+          "selector": "# promote",
+          "disposition": "shipped-evidence",
+          "marker": "P17 disposition: shipped current behavior; future target authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#88-dev-promote",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "88-dev-promote"
+          }
+        }
+      ]
+    },
+    {
+      "path": "research/commands/verify.md",
+      "documentClass": "shipped-command-reference",
+      "summary": "Shipped verify behavior retained as evidence with the P17 migration target.",
+      "sections": [
+        {
+          "id": "opening",
+          "selector": "# verify",
+          "disposition": "shipped-evidence",
+          "marker": "P17 disposition: shipped command evidence, not future target authority; target: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#89-verify",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "89-verify"
+          }
+        }
+      ]
+    },
+    {
+      "path": "docs/superpowers/specs/2026-07-07-p09-install-design.md",
+      "documentClass": "shipped-project-record",
+      "summary": "P09 shipped design evidence, no longer target authority.",
+      "sections": [
+        {
+          "id": "opening",
+          "selector": "# SkillSmith P09 design",
+          "disposition": "shipped-evidence",
+          "marker": "P17 disposition: shipped P09 evidence, not future target authority; target: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#86-install",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "86-install"
+          }
+        }
+      ]
+    },
+    {
+      "path": "docs/superpowers/plans/2026-07-07-p09-install-implementation.md",
+      "documentClass": "shipped-project-record",
+      "summary": "P09 shipped implementation evidence, no longer an active execution plan.",
+      "sections": [
+        {
+          "id": "opening",
+          "selector": "# SkillSmith P09 Implementation Plan",
+          "disposition": "shipped-evidence",
+          "marker": "P17 disposition: shipped P09 implementation evidence, not an active plan; target: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#86-install",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "86-install"
+          }
+        }
+      ]
+    },
+    {
+      "path": "docs/superpowers/specs/2026-07-07-promote-dev-design.md",
+      "documentClass": "shipped-project-record",
+      "summary": "P12 shipped design evidence, no longer target authority.",
+      "sections": [
+        {
+          "id": "opening",
+          "selector": "# SkillSmith P12 design",
+          "disposition": "shipped-evidence",
+          "marker": "P17 disposition: shipped P12 evidence, not future target authority; target: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#88-dev-promote",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "88-dev-promote"
+          }
+        }
+      ]
+    },
+    {
+      "path": "docs/superpowers/plans/2026-07-07-promote-dev-implementation.md",
+      "documentClass": "shipped-project-record",
+      "summary": "P12 shipped implementation evidence, no longer an active execution plan.",
+      "sections": [
+        {
+          "id": "opening",
+          "selector": "# SkillSmith P12 Implementation Plan",
+          "disposition": "shipped-evidence",
+          "marker": "P17 disposition: shipped P12 implementation evidence, not an active plan; target: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#88-dev-promote",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "88-dev-promote"
+          }
+        }
+      ]
+    },
+    {
+      "path": "docs/superpowers/specs/2026-07-10-p13-dev-source-prd.md",
+      "documentClass": "shipped-project-record",
+      "summary": "P13 shipped PRD evidence, no longer target authority.",
+      "sections": [
+        {
+          "id": "opening",
+          "selector": "# P13 PRD",
+          "disposition": "shipped-evidence",
+          "marker": "P17 disposition: shipped P13 evidence, not future target authority; target: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#88-dev-promote",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "88-dev-promote"
+          }
+        }
+      ]
+    },
+    {
+      "path": "docs/superpowers/plans/2026-07-10-p13-dev-source-plan.md",
+      "documentClass": "shipped-project-record",
+      "summary": "P13 shipped plan evidence, no longer an active execution plan.",
+      "sections": [
+        {
+          "id": "opening",
+          "selector": "# P13 — `dev --source`",
+          "disposition": "shipped-evidence",
+          "marker": "P17 disposition: shipped P13 implementation evidence, not an active plan; target: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#88-dev-promote",
+          "authority": {
+            "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+            "anchor": "88-dev-promote"
+          }
+        }
+      ]
+    }
+  ],
+  "architectureDriftClosure": [
+    {
+      "id": "P17-G0-03-D01",
+      "path": "CLAUDE.md",
+      "sectionId": "architectural-boundaries-enforced-by-eslint",
+      "disposition": "closed-by-P17-G0-04"
+    },
+    {
+      "id": "P17-G0-03-D02",
+      "path": "docs/architecture.md",
+      "sectionId": "core--cli-split",
+      "disposition": "closed-by-P17-G0-04"
+    }
+  ],
+  "knownStaleClaims": [
+    {
+      "id": "four-tool-write-roadmap",
+      "family": "four-tool-write-roadmap",
+      "path": "research/skillsmith-phases.md",
+      "sectionId": "4-mvp-3--all-four-adapters",
+      "staleText": "No new commands. The MVP-1 and MVP-2 commands extend across all four supported agents.",
+      "resolution": "classified",
+      "disposition": "visibly-closed"
+    },
+    {
+      "id": "mvp-2b-public-1.0",
+      "family": "mvp-2b-public-1.0",
+      "path": "research/skillsmith-phases.md",
+      "sectionId": "322-first-public-release",
+      "staleText": "First public release",
+      "resolution": "classified",
+      "disposition": "visibly-closed"
+    },
+    {
+      "id": "repeatable-file-apply",
+      "family": "repeatable-file-apply",
+      "path": "research/skillsmith-cli-design.md",
+      "sectionId": "058-manifest-driven-apply",
+      "staleText": "`--file` is repeatable",
+      "resolution": "classified",
+      "disposition": "visibly-closed"
+    },
+    {
+      "id": "imperative-only-install",
+      "family": "imperative-only-install",
+      "path": "research/skillsmith-cli-design.md",
+      "sectionId": "051-tool-aware-install-with-scope-selection",
+      "staleText": "Given a source reference, a target tool, and a scope, place the skill",
+      "resolution": "classified",
+      "disposition": "visibly-closed"
+    },
+    {
+      "id": "immortal-no-gc-target",
+      "family": "immortal-no-gc-target",
+      "path": "research/commands/uninstall.md",
+      "sectionId": "opening",
+      "staleText": "Store entries are immortal",
+      "resolution": "classified",
+      "disposition": "visibly-closed"
+    },
+    {
+      "id": "stale-schema-flags",
+      "family": "stale-schema-flags",
+      "path": "research/skillsmith-cli-design.md",
+      "sectionId": "2-command-tree",
+      "staleText": "skillsmith apply [<manifest>]",
+      "resolution": "classified",
+      "disposition": "visibly-closed"
+    },
+    {
+      "id": "absolute-no-io",
+      "family": "absolute-no-io",
+      "path": "CLAUDE.md",
+      "sectionId": "architectural-boundaries-enforced-by-eslint",
+      "staleText": "No CLI deps, no I/O side effects.",
+      "replacementText": "No CLI deps; core domain logic uses injected capability ports",
+      "resolution": "corrected",
+      "disposition": "visibly-closed"
+    }
+  ],
+  "downstreamCoverage": ["EWP-P1-TS05", "EWP-WF16"],
+  "downstreamStatus": "deferred"
+}

@@ -1,0 +1,118 @@
+{
+  "schemaVersion": 1,
+  "stringCases": [
+    {
+      "id": "bearer",
+      "input": "request failed: Authorization: Bearer P17_SECRET_CANARY_123456",
+      "expected": "request failed: Authorization: [REDACTED]",
+      "sensitive": true
+    },
+    {
+      "id": "basic",
+      "input": "Authorization: Basic UDE3X1NFQ1JFVF9DQU5BUlk6cGFzcw==",
+      "expected": "Authorization: [REDACTED]",
+      "sensitive": true
+    },
+    {
+      "id": "github-token",
+      "input": "transport emitted ghp_P17_SECRET_CANARY_123456789",
+      "expected": "transport emitted [REDACTED]",
+      "sensitive": true
+    },
+    {
+      "id": "openai-token",
+      "input": "transport emitted sk-P17_SECRET_CANARY_123456789",
+      "expected": "transport emitted [REDACTED]",
+      "sensitive": true
+    },
+    {
+      "id": "api-key-assignment",
+      "input": "api_key=canary-canary-canary",
+      "expected": "api_key=[REDACTED]",
+      "sensitive": true
+    },
+    {
+      "id": "password-assignment",
+      "input": "password: canary-canary-canary",
+      "expected": "password: [REDACTED]",
+      "sensitive": true
+    },
+    {
+      "id": "url-userinfo-query-fragment",
+      "input": "fetch https://user:pass@example.com/acme/repo?token=P17_SECRET_CANARY#fragment now",
+      "expected": "fetch https://example.com/acme/repo now",
+      "sensitive": true
+    },
+    {
+      "id": "multiple-urls",
+      "input": "https://a.example/repo?x=1 then ssh://git@b.example/team/repo#frag",
+      "expected": "https://a.example/repo then ssh://git@b.example/team/repo",
+      "sensitive": true
+    },
+    {
+      "id": "percent-encoded-credentials",
+      "input": "clone https://user%40name:pass@example.com/acme/repo%3Ftoken=P17_SECRET_CANARY",
+      "expected": "clone https://example.com/acme/repo",
+      "sensitive": true
+    },
+    {
+      "id": "safe-repository",
+      "input": "github.com/openai/skills",
+      "expected": "github.com/openai/skills",
+      "sensitive": false
+    },
+    {
+      "id": "safe-ref-hash-host",
+      "input": "release/2026-07 0123456789abcdef0123456789abcdef01234567 git.example.com",
+      "expected": "release/2026-07 0123456789abcdef0123456789abcdef01234567 git.example.com",
+      "sensitive": false
+    },
+    {
+      "id": "safe-git-ssh",
+      "input": "ssh://git@git.example.com/acme/repo.git",
+      "expected": "ssh://git@git.example.com/acme/repo.git",
+      "sensitive": false
+    },
+    {
+      "id": "safe-local-path",
+      "input": "/home/alice/.skillsmith/stage/review",
+      "expected": "/home/alice/.skillsmith/stage/review",
+      "sensitive": false
+    }
+  ],
+  "objectCases": [
+    {
+      "id": "known-sensitive-keys",
+      "input": {
+        "authorization": "ordinary-shape",
+        "cookie": { "nested": true },
+        "credential": ["one", "two"],
+        "password": 42,
+        "secret": false,
+        "token": null,
+        "safe": "github.com/acme/repo"
+      },
+      "expected": {
+        "authorization": "[REDACTED]",
+        "cookie": "[REDACTED]",
+        "credential": "[REDACTED]",
+        "password": "[REDACTED]",
+        "secret": "[REDACTED]",
+        "token": "[REDACTED]",
+        "safe": "github.com/acme/repo"
+      }
+    },
+    {
+      "id": "nested-arrays-and-objects",
+      "input": {
+        "level": [
+          { "message": "Bearer P17_SECRET_CANARY_123456" },
+          ["github.com/acme/repo", "sk-P17_SECRET_CANARY_123456"]
+        ]
+      },
+      "expected": {
+        "level": [{ "message": "[REDACTED]" }, ["github.com/acme/repo", "[REDACTED]"]]
+      }
+    }
+  ]
+}

@@ -1,17 +1,14 @@
 import { join } from 'node:path';
 import type { Scope } from '../../config/types.ts';
-import type { ScanEnv } from '../../env/types.ts';
+import type { PlatformPaths } from '../../ports/types.ts';
 import type { SkillRootsCtx } from '../claude-code/skill-roots.ts';
 
-const compatDisabled = (envVars: Record<string, string | undefined>): boolean =>
-  envVars.KILO_DISABLE_EXTERNAL_SKILLS === 'true';
-
 export const getSkillRoots = (
-  env: ScanEnv,
+  env: PlatformPaths,
   scope: Scope,
   ctx: SkillRootsCtx,
 ): readonly string[] => {
-  const noCompat = compatDisabled(ctx.envVars);
+  const noCompat = ctx.configuration.kiloExternalSkillsDisabled;
   switch (scope) {
     case 'user': {
       const base = env.homeDir;

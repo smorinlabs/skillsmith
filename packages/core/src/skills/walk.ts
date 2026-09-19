@@ -1,7 +1,12 @@
 import { join } from 'node:path';
 import type { SupportedTool } from '../agents/types.ts';
 import type { Scope } from '../config/types.ts';
-import type { ScanEnv } from '../env/types.ts';
+import {
+  rethrowInventoryReadFailure,
+  tagInventoryRootOrdinal,
+  throwIfInventoryCancelled,
+} from '../inventory-control.ts';
+import type { FileReadPort } from '../ports/types.ts';
 import { parseSkillFrontmatter } from './frontmatter.ts';
 import type { EnabledState, Origin, SkillEntry } from './types.ts';
 
@@ -11,48 +16,68 @@ export interface WalkSkillDirOpts {
   root: string;
   origin: Origin;
   enabled: EnabledState;
+  /** Internal adapter-root order used by inventory identity/precedence projection. */
+  rootOrdinal?: number;
+  signal?: AbortSignal;
 }
 
-export const walkSkillDir = async (env: ScanEnv, opts: WalkSkillDirOpts): Promise<SkillEntry[]> => {
-  if (!(await env.fileExists(opts.root))) return [];
+export const walkSkillDir = async (
+  env: FileReadPort,
+  opts: WalkSkillDirOpts,
+): Promise<SkillEntry[]> => {
+  throwIfInventoryCancelled(opts.signal);
+  const rootExists = await env.fileExists(opts.root);
+  throwIfInventoryCancelled(opts.signal);
+  if (!rootExists) return [];
 
+  throwIfInventoryCancelled(opts.signal);
   const entries = await env.listDir(opts.root);
+  throwIfInventoryCancelled(opts.signal);
   const results: SkillEntry[] = [];
 
   for (const name of entries) {
+    throwIfInventoryCancelled(opts.signal);
     if (name.startsWith('.')) continue;
     const path = join(opts.root, name);
     const skillMd = join(path, 'SKILL.md');
-    if (!(await env.fileExists(skillMd))) continue;
+    const skillExists = await env.fileExists(skillMd);
+    throwIfInventoryCancelled(opts.signal);
+    if (!skillExists) continue;
 
-    let frontmatter: SkillEntry['frontmatter'] = null;
-    try {
-      const text = await env.readText(skillMd);
-      const parsed = parseSkillFrontmatter(text, skillMd);
-      if (parsed.ok) frontmatter = parsed.value;
-    } catch {
-      frontmatter = null;
-    }
-
-    let realpath = path;
-    try {
-      realpath = await env.realpath(path);
-    } catch {
-      // keep logical path
-    }
-
-    results.push({
-      name,
-      path,
-      realpath,
-      tool: opts.tool,
-      scope: opts.scope,
-      root: opts.root,
-      frontmatter,
-      origin: opts.origin,
-      enabled: opts.enabled,
+    throwIfInventoryCancelled(opts.signal);
+    const text = await env.readText(skillMd).catch((failure: unknown) => {
+      throwIfInventoryCancelled(opts.signal);
+      return rethrowInventoryReadFailure(failure, skillMd);
     });
+    throwIfInventoryCancelled(opts.signal);
+    let frontmatter: SkillEntry['frontmatter'] = null;
+    const parsed = parseSkillFrontmatter(text, skillMd);
+    if (parsed.ok) frontmatter = parsed.value;
+
+    throwIfInventoryCancelled(opts.signal);
+    const realpath = await env.realpath(path).catch((failure: unknown) => {
+      throwIfInventoryCancelled(opts.signal);
+      return rethrowInventoryReadFailure(failure, path);
+    });
+    throwIfInventoryCancelled(opts.signal);
+    results.push(
+      tagInventoryRootOrdinal(
+        {
+          name,
+          path,
+          realpath,
+          tool: opts.tool,
+          scope: opts.scope,
+          root: opts.root,
+          frontmatter,
+          origin: opts.origin,
+          enabled: opts.enabled,
+        },
+        opts.rootOrdinal ?? 0,
+      ),
+    );
   }
 
+  throwIfInventoryCancelled(opts.signal);
   return results;
 };

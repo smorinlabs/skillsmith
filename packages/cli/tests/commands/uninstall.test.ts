@@ -36,9 +36,9 @@ describe('skillsmith uninstall — flag validation', () => {
     expect(r.code).toBe(2);
   });
 
-  test('--scope system -> exit 2 (commander .choices() rejection)', async () => {
+  test('--scope system -> exit 4 (known but unsupported capability)', async () => {
     const r = await run(['uninstall', 'x', '--scope', 'system']);
-    expect(r.code).toBe(2);
+    expect(r.code).toBe(4);
   });
 
   test('an unknown --tool value -> exit 2', async () => {
@@ -46,13 +46,13 @@ describe('skillsmith uninstall — flag validation', () => {
     expect(r.code).toBe(2);
   });
 
-  test('--help exits 0 and includes ALIASES/EXAMPLES/EXIT CODES sections', async () => {
+  test('--help exits 0 and includes ALIASES/COMMON WORKFLOWS/EXIT CODES sections', async () => {
     const r = await run(['uninstall', '--help']);
     expect(r.code).toBe(0);
     expect(r.stdout).toContain('ALIASES');
     expect(r.stdout).toContain('rm');
     expect(r.stdout).toContain('remove');
-    expect(r.stdout).toContain('EXAMPLES');
+    expect(r.stdout).toContain('COMMON WORKFLOWS');
     expect(r.stdout).toContain('EXIT CODES');
   });
 

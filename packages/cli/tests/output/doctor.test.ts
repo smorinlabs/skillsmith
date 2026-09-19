@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import type { CheckRunResult, Finding } from '@skillsmith/core';
+import type { CheckRunResult, DoctorRunResult, Finding } from '@skillsmith/core';
+import { toHealthV2Dto } from '@skillsmith/core/contracts/v2';
 import { renderDoctorHuman } from '../../src/output/doctor-human.ts';
 import { DoctorJsonSchema, renderDoctorJson } from '../../src/output/doctor-json.ts';
 
@@ -39,5 +40,58 @@ describe('doctor output', () => {
     const parsed = DoctorJsonSchema.parse(JSON.parse(renderDoctorJson(result)));
 
     expect(parsed.findings[0]).toEqual(expect.objectContaining(finding));
+  });
+
+  test('fallback finding identities ignore unrelated findings and count structural twins', () => {
+    const unrelated: Finding = {
+      checkId: 'unrelated',
+      severity: 'warning',
+      title: 'unrelated finding',
+      message: 'does not participate in the target identity',
+    };
+    const render = (findings: Finding[]) =>
+      DoctorJsonSchema.parse(
+        JSON.parse(
+          renderDoctorJson({
+            findings,
+            counts: { ok: 0, warning: 0, error: 0 },
+          }),
+        ),
+      ).findings;
+    const baseline = render([finding, finding]);
+    const insertedBetween = render([finding, unrelated, finding]);
+    const insertedBefore = render([unrelated, finding, finding]);
+    const targetIds = (findings: typeof baseline) =>
+      findings
+        .filter((candidate) => candidate.checkId === finding.checkId)
+        .map((candidate) => candidate.findingId);
+
+    expect(targetIds(insertedBefore)).toEqual(targetIds(baseline));
+    expect(targetIds(insertedBetween)).toEqual(targetIds(baseline));
+    expect(new Set(targetIds(baseline)).size).toBe(2);
+  });
+
+  test('the public health@2 mapper canonically redacts sensitive finding values', () => {
+    const canary = 'sk-doctor-review-canary';
+    const identified: DoctorRunResult = {
+      findings: [
+        {
+          ...finding,
+          findingId: `finding:v1:${'a'.repeat(64)}`,
+          message: `authorization: Bearer ${canary}`,
+          remediation: `token=${canary}`,
+        },
+      ],
+      counts: { ok: 1, warning: 0, error: 0 },
+      repair: { mode: 'not-requested', operations: [], results: [] },
+      mutation: { kind: 'none', planned: 0, changed: 0, unchanged: 0, failed: 0 },
+    };
+
+    const dto = toHealthV2Dto(identified);
+    expect(JSON.stringify(dto)).not.toContain(canary);
+    expect(dto.findings[0]).toMatchObject({
+      message: 'authorization: [REDACTED]',
+      remediation: 'token=[REDACTED]',
+    });
   });
 });

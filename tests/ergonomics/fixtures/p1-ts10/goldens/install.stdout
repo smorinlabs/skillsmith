@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 2,
+  "kind": "skillsmith.install",
+  "dryRun": false,
+  "saveMode": "desired-state",
+  "artifactPair": {
+    "manifestPath": "/fixture/project/skills.toml",
+    "lockPath": "/fixture/project/skills.lock",
+    "lockSource": "sibling"
+  },
+  "artifactSelection": {
+    "outcome": "selected",
+    "selectedBy": "selected-project-owner"
+  },
+  "artifactEffects": [
+    {
+      "groupId": "group:v1:fixture-install",
+      "skill": "fixture-skill",
+      "manifestAction": "update",
+      "lockAction": "update",
+      "migration": "none",
+      "outcome": "succeeded",
+      "reason": null
+    }
+  ],
+  "requested": {
+    "sources": [
+      "https://github.com/fixture/repository//skills/fixture-skill"
+    ],
+    "tools": [
+      "codex"
+    ],
+    "explicitTools": true,
+    "scope": "project",
+    "explicitScope": true,
+    "ref": "main",
+    "pin": true,
+    "direct": false,
+    "force": false,
+    "verify": "static",
+    "deep": false,
+    "batchPolicy": "fail-fast",
+    "path": "./skills"
+  },
+  "results": [
+    {
+      "source": "https://github.com/fixture/repository//skills/fixture-skill",
+      "skill": "fixture-skill",
+      "tool": "codex",
+      "scope": "project",
+      "placementPath": "/fixture/project/skills/fixture-skill",
+      "action": "installed",
+      "reason": null,
+      "placement": "symlink",
+      "store": null,
+      "origin": null,
+      "verify": null,
+      "candidates": null,
+      "requestIndex": 0,
+      "groupId": "group:v1:fixture-install",
+      "pairId": "pair:v1:fixture-codex-project",
+      "executionOutcome": "succeeded",
+      "drift": {
+        "status": "in-sync",
+        "futureApply": "none",
+        "reason": null
+      },
+      "force": {
+        "requested": false,
+        "applied": false,
+        "conflictType": null,
+        "target": null,
+        "normalBehavior": null,
+        "forcedBehavior": null,
+        "backup": null
+      }
+    }
+  ],
+  "summary": {
+    "installed": 1,
+    "updated": 0,
+    "repaired": 0,
+    "noop": 0,
+    "skipped": 0,
+    "refused": 0,
+    "failed": 0,
+    "desiredState": {
+      "changed": 1,
+      "unchanged": 0,
+      "retained": 0,
+      "notWritten": 0,
+      "failed": 0
+    }
+  }
+}

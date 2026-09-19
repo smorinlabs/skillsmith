@@ -8,15 +8,50 @@ import {
   setDefaultTimeout,
   test,
 } from 'bun:test';
-import { join } from 'node:path';
-import { runInstall, runUninstall } from '../../src/acquire/run.ts';
-import type { InstallDeps, InstallOptions, UninstallDeps } from '../../src/acquire/types.ts';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import {
+  runInstall,
+  runUninstall,
+  runUninstallWithRegistry,
+  runUninstallWithRegistryObserved,
+} from '../../src/acquire/run.ts';
+import type {
+  CurrentUninstallReport,
+  InstallDeps,
+  InstallOptions,
+  PlannedUninstallReport,
+  UninstallDeps,
+} from '../../src/acquire/types.ts';
+import { createToolRegistry, toolRegistry } from '../../src/agents/registry.ts';
+import { hashManifestSemantics } from '../../src/artifacts/hash.ts';
+import {
+  type PortableLockV1,
+  readPortableLockSource,
+  serializePortableLock,
+} from '../../src/artifacts/lock.ts';
+import { normalizeManifestDocument, readManifestSource } from '../../src/artifacts/manifest.ts';
+import { createTestNodeArtifactCoordinatorPorts } from '../../src/artifacts/node-coordinator.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
-import { getPairAt, readLedger, writeLedger } from '../../src/place/ledger.ts';
+import {
+  type ObservationBundle,
+  type ObserverEvent,
+  createObservationEmitter,
+  createOperationContext,
+} from '../../src/observation/index.ts';
+import {
+  getLedgerPairAt as getPairAt,
+  legacyLedgerView,
+  readLedgerState,
+  withLedgerPairAt,
+  withoutLedgerPairAt,
+  writeLedger,
+} from '../../src/place/ledger.ts';
 import { ledgerPathOf } from '../../src/place/paths.ts';
 import { LEGACY_ROOT_NOTICE } from '../../src/place/plan.ts';
 import { runDev } from '../../src/place/run.ts';
 import type { FlipDeps, Journal } from '../../src/place/types.ts';
+import type { RuntimePorts } from '../../src/ports/types.ts';
 import { ok } from '../../src/result.ts';
 import { VERIFIED_AGAINST, type VerifyReport } from '../../src/verify/types.ts';
 import {
@@ -32,8 +67,71 @@ import {
 
 setDefaultTimeout(60_000);
 
-const NOW = '2026-07-08T00:00:00Z';
+const NOW = '2026-07-08T00:00:00.000Z';
 const msg = (e: SkillSmithError): string => ('message' in e ? e.message : e.code);
+
+const observationFixture = (): Readonly<{
+  observation: ObservationBundle;
+  events: ObserverEvent[];
+}> => {
+  const events: ObserverEvent[] = [];
+  let monotonicMilliseconds = 0;
+  const context = createOperationContext({
+    operationId: 'command:v1:record-only-stale-uninstall',
+    command: 'skillsmith uninstall factor-scan --tool claude-code',
+    workflow: 'uninstall',
+    clock: {
+      wallNowIso: () => NOW,
+      monotonicMilliseconds: () => monotonicMilliseconds++,
+    },
+    id: { nextId: () => 'unused-operation-id' },
+  });
+  return Object.freeze({
+    observation: Object.freeze({
+      context,
+      emitter: createObservationEmitter({
+        observer: {
+          observe: (event) => {
+            events.push(event);
+          },
+        },
+        toolIds: ['claude-code', 'codex'],
+      }),
+    }),
+    events,
+  });
+};
+
+const expectCorrelatedRecordOnlyTransaction = (
+  events: readonly ObserverEvent[],
+  transactionId: string,
+): void => {
+  const started = events.find((event) => event.kind === 'operation.started');
+  if (started?.kind !== 'operation.started') {
+    throw new Error('record-only stale uninstall operation did not start');
+  }
+  const transactionEvents = events.filter((event) => event.kind.startsWith('transaction.'));
+  expect(transactionEvents).toMatchObject([
+    { kind: 'transaction.stage.started', stage: 'committed' },
+    {
+      kind: 'transaction.stage.completed',
+      stage: 'committed',
+      outcome: 'success',
+      errorCode: null,
+    },
+    { kind: 'transaction.committed' },
+  ]);
+  expect(transactionId).not.toBe(started.operationId);
+  for (const event of transactionEvents) {
+    expect(event).toMatchObject({
+      operationId: transactionId,
+      parentOperationId: started.operationId,
+      groupId: started.groupId,
+      pairId: started.pairId,
+      attempt: 1,
+    });
+  }
+};
 
 const detectBoth: InstallDeps['detect'] = async (_env, tool) =>
   ok([{ path: `/usr/local/bin/${tool}`, version: '1.0.0', installMethod: 'unknown' as const }]);
@@ -80,6 +178,7 @@ const installDeps = (): InstallDeps => {
   return {
     verify: passVerify,
     detect: detectBoth,
+    transport: fixture.transport,
     now: () => NOW,
     newTxId: () => (0x10000000 + start * 1000 + n++).toString(16).slice(-8),
   };
@@ -118,9 +217,15 @@ afterAll(async () => {
 
 let f: FixtureFleet;
 let fsSource: string;
+let desiredStateArtifactCoordinator: Awaited<
+  ReturnType<typeof createTestNodeArtifactCoordinatorPorts>
+>;
 beforeEach(async () => {
   f = await buildFixtureFleet();
-  fsSource = `${fixture.multiUrl}//plugins/fh/skills/factor-scan`;
+  fsSource = `${fixture.multiSource}//plugins/fh/skills/factor-scan`;
+  desiredStateArtifactCoordinator = await createTestNodeArtifactCoordinatorPorts(
+    join(f.base, 'artifact-coordination-uninstall-step10'),
+  );
 });
 afterEach(async () => {
   await destroyFixtureFleet(f);
@@ -130,20 +235,590 @@ const claudeRoot = (): string => join(f.home, '.claude', 'skills');
 const legacyRoot = (): string => join(f.home, '.codex', 'skills');
 const projClaudeRoot = (): string => join(f.project, '.claude', 'skills');
 const led = async () => {
-  const r = await readLedger(f.env, ledgerPathOf(f.data));
+  const r = await readLedgerState(f.env, ledgerPathOf(f.data));
   if (!r.ok) throw new Error(msg(r.error));
-  return r.value;
+  if (r.value.state !== 'present') throw new Error('expected persisted ledger');
+  return r.value.model;
 };
 
-const installUser = async (opts: Partial<InstallOptions> = {}) => {
+const installUser = async (opts: Partial<InstallOptions> = {}, env: RuntimePorts = f.env) => {
   const r = await runInstall(
-    f.env,
-    { sources: [fsSource], tools: ['claude-code'], cwd: f.base, envVars: f.envVars, ...opts },
+    env,
+    {
+      sources: [fsSource],
+      tools: ['claude-code'],
+      cwd: f.base,
+      configuration: f.configuration,
+      ...opts,
+    },
     installDeps(),
   );
   if (!r.ok) throw new Error(msg(r.error));
   return r.value;
 };
+const installUserTools = async (
+  tools: readonly ('claude-code' | 'codex')[],
+  env: RuntimePorts = f.env,
+) => {
+  const r = await runInstall(
+    env,
+    {
+      sources: [fsSource],
+      tools,
+      noSave: true,
+      cwd: f.base,
+      configuration: f.configuration,
+    },
+    installDeps(),
+  );
+  if (!r.ok) throw new Error(msg(r.error));
+  return r.value;
+};
+const portableManifest = (names: readonly string[]): string =>
+  `${[
+    'version = 1',
+    '[defaults]',
+    'scope = "project"',
+    'tools = ["claude-code"]',
+    ...names.flatMap((name) => [
+      '[[skills]]',
+      `name = "${name}"`,
+      `source = "github.com/acme/skills//${name}"`,
+    ]),
+  ].join('\n')}\n`;
+
+type TestCurrentUninstallReport = CurrentUninstallReport &
+  Pick<PlannedUninstallReport, 'plan' | 'executionResults'>;
+
+const currentUninstallReport = (report: PlannedUninstallReport): TestCurrentUninstallReport =>
+  report as unknown as TestCurrentUninstallReport;
+
+const desiredStateUninstallDeps = (): UninstallDeps =>
+  ({
+    ...uninstallDeps(),
+    artifactCoordinator: desiredStateArtifactCoordinator,
+  }) as UninstallDeps;
+
+const desiredManifestSource = (
+  tools: readonly ('claude-code' | 'codex')[],
+): string => `# retained-step10-comment
+version = 1
+
+[[skills]]
+name = "factor-scan"
+source = "github.com/acme/skills//factor-scan"
+tools = [${tools.map((tool) => `"${tool}"`).join(', ')}]
+scope = "user"
+placement = "symlink"
+`;
+
+const normalizeDesiredManifest = (source: string) => {
+  const document = readManifestSource(source);
+  if (!document.ok) throw new Error(document.error.message);
+  const normalized = normalizeManifestDocument(document.value);
+  if (!normalized.ok) throw new Error(normalized.error.message);
+  return normalized.value;
+};
+
+const writeDesiredPair = async (
+  manifestPath: string,
+  lockPath: string,
+  tools: readonly ('claude-code' | 'codex')[],
+): Promise<Readonly<{ manifest: string; lock: string }>> => {
+  const manifest = desiredManifestSource(tools);
+  const normalized = normalizeDesiredManifest(manifest);
+  const semanticHash = hashManifestSemantics(normalized);
+  const lock: PortableLockV1 = {
+    version: 1,
+    hashSchemaVersion: 1,
+    manifestHash: semanticHash,
+    skills: [
+      {
+        name: 'factor-scan',
+        source: 'github.com/acme/skills//factor-scan',
+        requestedRef: null,
+        resolvedSha: fixture.multiHead,
+        sourcePath: 'factor-scan',
+        contentHash: semanticHash,
+      },
+    ],
+  };
+  const serialized = serializePortableLock(lock);
+  if (!serialized.ok) throw new Error(serialized.error.message);
+  for (const parent of new Set([dirname(manifestPath), dirname(lockPath)])) {
+    await f.env.makeDir(parent);
+  }
+  await Promise.all([
+    f.env.writeTextFile(manifestPath, manifest),
+    f.env.writeTextFile(lockPath, serialized.value),
+  ]);
+  return { manifest, lock: serialized.value };
+};
+
+const readDesiredManifest = async (path: string) =>
+  normalizeDesiredManifest(await f.env.readText(path));
+
+const readDesiredLock = async (path: string): Promise<PortableLockV1> => {
+  const lock = readPortableLockSource(await f.env.readBytes(path));
+  if (!lock.ok) throw new Error(lock.error.message);
+  return lock.value;
+};
+
+describe('runUninstall — G4A-01 step10 desired-state integration', () => {
+  test('G4A-01 step10 partial then final tool removal updates one explicit pair losslessly', async () => {
+    await installUserTools(['claude-code', 'codex']);
+    const root = join(f.base, 'step10-partial-final');
+    const manifestPath = join(root, 'skillsmith.toml');
+    const lockPath = join(root, 'skillsmith.lock');
+    await writeDesiredPair(manifestPath, lockPath, ['claude-code', 'codex']);
+
+    const partial = await runUninstall(
+      f.env,
+      {
+        targets: ['factor-scan'],
+        tools: ['claude-code'],
+        scope: 'user',
+        file: manifestPath,
+        lockfile: lockPath,
+        cwd: f.base,
+        configuration: f.configuration,
+      },
+      desiredStateUninstallDeps(),
+    );
+    if (!partial.ok) throw new Error(msg(partial.error));
+
+    const partialManifestSource = await f.env.readText(manifestPath);
+    const partialManifest = normalizeDesiredManifest(partialManifestSource);
+    const partialLock = await readDesiredLock(lockPath);
+    expect(partialManifest.skills).toHaveLength(1);
+    expect(partialManifest.skills[0]?.tools).toEqual(['codex']);
+    expect(partialLock.skills).toHaveLength(1);
+    expect(partialLock.skills[0]?.name).toBe('factor-scan');
+    expect(partialLock.manifestHash).toBe(hashManifestSemantics(partialManifest));
+    expect(partialManifestSource).toContain('# retained-step10-comment');
+    expect(partial.value.plan.operations.map(({ kind }) => kind)).toEqual([
+      'remove',
+      'write-manifest',
+      'write-lock',
+    ]);
+    expect(currentUninstallReport(partial.value)).toMatchObject({
+      reportVersion: 2,
+      saveMode: 'desired-state',
+      summary: { desiredState: { changed: 1, retained: 0 } },
+    });
+
+    const final = await runUninstall(
+      f.env,
+      {
+        targets: ['factor-scan'],
+        tools: ['codex'],
+        scope: 'user',
+        file: manifestPath,
+        lockfile: lockPath,
+        cwd: f.base,
+        configuration: f.configuration,
+      },
+      desiredStateUninstallDeps(),
+    );
+    if (!final.ok) throw new Error(msg(final.error));
+
+    const finalManifestSource = await f.env.readText(manifestPath);
+    const finalManifest = normalizeDesiredManifest(finalManifestSource);
+    const finalLock = await readDesiredLock(lockPath);
+    expect(finalManifest.skills).toEqual([]);
+    expect(finalLock.skills).toEqual([]);
+    expect(finalLock.manifestHash).toBe(hashManifestSemantics(finalManifest));
+    expect(finalManifestSource).toContain('# retained-step10-comment');
+    expect(await f.env.pathKind(manifestPath)).toBe('file');
+    expect(await f.env.pathKind(lockPath)).toBe('file');
+    expect(currentUninstallReport(final.value)).toMatchObject({
+      reportVersion: 2,
+      saveMode: 'desired-state',
+      summary: { desiredState: { changed: 1, retained: 0 } },
+    });
+  });
+
+  test('G4A-01 step10 declared-only removal commits an artifact-only explicit plan', async () => {
+    const root = join(f.base, 'step10-declared-only');
+    const manifestPath = join(root, 'skillsmith.toml');
+    const lockPath = join(root, 'skillsmith.lock');
+    await writeDesiredPair(manifestPath, lockPath, ['claude-code']);
+
+    const result = await runUninstall(
+      f.env,
+      {
+        targets: ['factor-scan'],
+        tools: ['claude-code'],
+        scope: 'user',
+        file: manifestPath,
+        lockfile: lockPath,
+        cwd: f.base,
+        configuration: f.configuration,
+      },
+      desiredStateUninstallDeps(),
+    );
+    if (!result.ok) throw new Error(msg(result.error));
+
+    expect(result.value.plan.operations.map(({ kind }) => kind)).toEqual([
+      'write-manifest',
+      'write-lock',
+    ]);
+    const manifest = await readDesiredManifest(manifestPath);
+    const lock = await readDesiredLock(lockPath);
+    expect(manifest.skills).toEqual([]);
+    expect(lock.skills).toEqual([]);
+    expect(lock.manifestHash).toBe(hashManifestSemantics(manifest));
+    expect(await f.env.readText(manifestPath)).toContain('# retained-step10-comment');
+    expect(await f.env.pathKind(manifestPath)).toBe('file');
+    expect(await f.env.pathKind(lockPath)).toBe('file');
+    expect(currentUninstallReport(result.value)).toMatchObject({
+      reportVersion: 2,
+      summary: { removed: 0, desiredState: { changed: 1 } },
+    });
+  });
+
+  test('G4A-01 step10 incomplete two-tool group retains exact pair and reports desired-without-live', async () => {
+    const seeded = await installUserTools(['claude-code', 'codex']);
+    const claudePath = seeded.results.find(({ tool }) => tool === 'claude-code')?.placementPath;
+    const codexPath = seeded.results.find(({ tool }) => tool === 'codex')?.placementPath;
+    if (claudePath == null || codexPath == null) {
+      throw new Error('two-tool uninstall fixture did not materialize both placements');
+    }
+    const ledger = await led();
+    const unmanagedCodex = withoutLedgerPairAt(ledger, null, 'factor-scan', 'codex');
+    if (!unmanagedCodex.ok) throw new Error(msg(unmanagedCodex.error));
+    const written = await writeLedger(f.env, ledgerPathOf(f.data), unmanagedCodex.value);
+    if (!written.ok) throw new Error(msg(written.error));
+
+    const root = join(f.base, 'step10-incomplete-group');
+    const manifestPath = join(root, 'skillsmith.toml');
+    const lockPath = join(root, 'skillsmith.lock');
+    const before = await writeDesiredPair(manifestPath, lockPath, ['claude-code', 'codex']);
+
+    const result = await runUninstall(
+      f.env,
+      {
+        targets: ['factor-scan'],
+        tools: ['claude-code', 'codex'],
+        scope: 'user',
+        file: manifestPath,
+        lockfile: lockPath,
+        cwd: f.base,
+        configuration: f.configuration,
+      },
+      desiredStateUninstallDeps(),
+    );
+    if (!result.ok) throw new Error(msg(result.error));
+
+    expect(await f.env.readText(manifestPath)).toBe(before.manifest);
+    expect(await f.env.readText(lockPath)).toBe(before.lock);
+    expect(await f.env.pathKind(claudePath)).toBe('absent');
+    expect(await f.env.pathKind(codexPath)).not.toBe('absent');
+    const report = currentUninstallReport(result.value);
+    expect(report.reportVersion).toBe(2);
+    expect(report.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          tool: 'claude-code',
+          action: 'removed',
+          executionOutcome: 'succeeded',
+          drift: expect.objectContaining({ status: 'desired-without-live' }),
+        }),
+        expect.objectContaining({
+          tool: 'codex',
+          action: 'refused',
+          executionOutcome: 'failed',
+        }),
+      ]),
+    );
+    expect(report.results.map(({ requestIndex }) => requestIndex)).toEqual([0, 0]);
+    expect(report.summary.desiredState).toMatchObject({ retained: 1, changed: 0 });
+  });
+
+  test('G4A-01 step10 no-save removal performs no portable reads, writes, or artifact operations', async () => {
+    const configRoot = join(f.home, '.config');
+    const manifestPath = join(configRoot, 'skillsmith', 'skillsmith.toml');
+    const lockPath = join(configRoot, 'skillsmith', 'skillsmith.lock');
+    const hermeticEnv: RuntimePorts = {
+      ...f.env,
+      xdg: {
+        config: configRoot,
+        data: join(f.home, '.local', 'share'),
+        cache: join(f.home, '.cache'),
+      },
+    };
+    await installUserTools(['claude-code'], hermeticEnv);
+    const before = await writeDesiredPair(manifestPath, lockPath, ['claude-code']);
+    const artifactPaths = new Set([
+      manifestPath,
+      lockPath,
+      join(f.base, 'skillsmith.toml'),
+      join(f.base, 'skillsmith.lock'),
+      join(f.project, 'skillsmith.toml'),
+      join(f.project, 'skillsmith.lock'),
+    ]);
+    let artifactAccesses = 0;
+    const counted = (path: string): void => {
+      if (artifactPaths.has(path)) artifactAccesses++;
+    };
+    const env: RuntimePorts = {
+      ...hermeticEnv,
+      pathKind: async (path) => {
+        counted(path);
+        return hermeticEnv.pathKind(path);
+      },
+      readText: async (path) => {
+        counted(path);
+        return hermeticEnv.readText(path);
+      },
+      readBytes: async (path) => {
+        counted(path);
+        return hermeticEnv.readBytes(path);
+      },
+      readFileMetadata: async (path) => {
+        counted(path);
+        return hermeticEnv.readFileMetadata(path);
+      },
+      realpath: async (path) => {
+        counted(path);
+        return hermeticEnv.realpath(path);
+      },
+    };
+
+    const result = await runUninstall(
+      env,
+      {
+        targets: ['factor-scan'],
+        tools: ['claude-code'],
+        scope: 'user',
+        noSave: true,
+        cwd: f.base,
+        configuration: f.configuration,
+      },
+      desiredStateUninstallDeps(),
+    );
+    if (!result.ok) throw new Error(msg(result.error));
+
+    expect(artifactAccesses).toBe(0);
+    expect(await f.env.readText(manifestPath)).toBe(before.manifest);
+    expect(await f.env.readText(lockPath)).toBe(before.lock);
+    expect(
+      result.value.plan.operations.filter(({ kind }) =>
+        ['migrate-project-config', 'write-manifest', 'write-lock'].includes(kind),
+      ),
+    ).toEqual([]);
+    expect(currentUninstallReport(result.value)).toMatchObject({
+      reportVersion: 2,
+      saveMode: 'live-only',
+      artifactPair: null,
+      artifactSelection: { outcome: 'none', reason: 'no-save' },
+      artifactEffects: [],
+    });
+  });
+
+  test('G4A-04 multiple saving declarations commit cumulative exact pairs behind one barrier', async () => {
+    const root = join(f.base, 'step10-multiple-declarations');
+    const manifestPath = join(root, 'skillsmith.toml');
+    const lockPath = join(root, 'skillsmith.lock');
+    const manifest = `# exact-before-image
+version = 1
+
+[[skills]]
+name = "alpha"
+source = "github.com/acme/skills//alpha"
+tools = ["claude-code"]
+scope = "user"
+placement = "symlink"
+
+[[skills]]
+name = "beta"
+source = "github.com/acme/skills//beta"
+tools = ["claude-code"]
+scope = "user"
+placement = "symlink"
+`;
+    const normalized = normalizeDesiredManifest(manifest);
+    const semanticHash = hashManifestSemantics(normalized);
+    const serialized = serializePortableLock({
+      version: 1,
+      hashSchemaVersion: 1,
+      manifestHash: semanticHash,
+      skills: ['alpha', 'beta'].map((name) => ({
+        name,
+        source: `github.com/acme/skills//${name}`,
+        requestedRef: null,
+        resolvedSha: fixture.multiHead,
+        sourcePath: name,
+        contentHash: semanticHash,
+      })),
+    });
+    if (!serialized.ok) throw new Error(serialized.error.message);
+    await f.env.makeDir(root);
+    await Promise.all([
+      f.env.writeTextFile(manifestPath, manifest),
+      f.env.writeTextFile(lockPath, serialized.value),
+    ]);
+
+    const result = await runUninstall(
+      f.env,
+      {
+        targets: ['alpha', 'beta'],
+        tools: ['claude-code'],
+        file: manifestPath,
+        lockfile: lockPath,
+        force: true,
+        continueOnError: true,
+        cwd: f.base,
+        configuration: f.configuration,
+      },
+      desiredStateUninstallDeps(),
+    );
+    if (!result.ok) throw new Error(msg(result.error));
+
+    expect(result.value.dryRun).toBeFalse();
+    expect(result.value.plan.operations.map(({ kind }) => kind)).toEqual([
+      'remove',
+      'write-manifest',
+      'write-lock',
+      'write-manifest',
+      'write-lock',
+    ]);
+    expect(result.value.results).toHaveLength(2);
+    expect(result.value.results.map(({ action }) => action)).toEqual(['removed', 'noop']);
+    expect(result.value.artifactEffects).toHaveLength(2);
+    expect(result.value.summary.desiredState.changed).toBe(2);
+    const groups = [...new Set(result.value.plan.operations.map(({ groupId }) => groupId))];
+    const first = result.value.plan.operations.filter(({ groupId }) => groupId === groups[0]);
+    const second = result.value.plan.operations.filter(({ groupId }) => groupId === groups[1]);
+    const prefix = first.find(({ kind }) => kind === 'write-lock');
+    if (prefix === undefined) throw new Error('missing first uninstall lock terminal');
+    expect(
+      second.every(({ dependencyMetadata }) =>
+        dependencyMetadata.operationIds.includes(prefix.operationId),
+      ),
+    ).toBeTrue();
+    expect(await f.env.readText(manifestPath)).not.toContain('[[skills]]');
+    expect(await f.env.readText(lockPath)).not.toContain('[[skills]]');
+  });
+
+  test('G4A-01 step10 duplicate declared-only occurrences retain request indices', async () => {
+    const root = join(f.base, 'step10-duplicate-occurrences');
+    const manifestPath = join(root, 'skillsmith.toml');
+    const lockPath = join(root, 'skillsmith.lock');
+    await writeDesiredPair(manifestPath, lockPath, ['claude-code']);
+
+    const result = await runUninstall(
+      f.env,
+      {
+        targets: ['factor-scan', 'factor-scan'],
+        tools: ['claude-code'],
+        scope: 'user',
+        file: manifestPath,
+        lockfile: lockPath,
+        cwd: f.base,
+        configuration: f.configuration,
+      },
+      desiredStateUninstallDeps(),
+    );
+    if (!result.ok) throw new Error(msg(result.error));
+
+    const report = currentUninstallReport(result.value);
+    expect(report.results).toHaveLength(2);
+    expect(report.results.map(({ requestIndex }) => requestIndex)).toEqual([0, 1]);
+    expect(report.results.every(({ action }) => action === 'noop')).toBeTrue();
+    expect(result.value.plan.operations.map(({ kind }) => kind)).toEqual([
+      'write-manifest',
+      'write-lock',
+    ]);
+  });
+
+  test('G4A-01 step10 explicit absent pair reports both artifacts not-written', async () => {
+    const root = join(f.base, 'step10-explicit-absent');
+    const manifestPath = join(root, 'skillsmith.toml');
+    const lockPath = join(root, 'skillsmith.lock');
+
+    const result = await runUninstall(
+      f.env,
+      {
+        targets: ['not-installed'],
+        tools: ['claude-code'],
+        scope: 'user',
+        file: manifestPath,
+        lockfile: lockPath,
+        cwd: f.base,
+        configuration: f.configuration,
+      },
+      desiredStateUninstallDeps(),
+    );
+    if (!result.ok) throw new Error(msg(result.error));
+
+    expect(result.value.plan.operations).toEqual([]);
+    expect(currentUninstallReport(result.value)).toMatchObject({
+      artifactPair: { manifestPath, lockPath, lockSource: 'explicit' },
+      artifactEffects: [
+        {
+          skill: 'not-installed',
+          manifestAction: 'not-write',
+          lockAction: 'not-write',
+          outcome: 'not-run',
+        },
+      ],
+      summary: { desiredState: { notWritten: 1 } },
+    });
+    expect(await f.env.pathKind(manifestPath)).toBe('absent');
+    expect(await f.env.pathKind(lockPath)).toBe('absent');
+  });
+
+  test('G4A-01 step10 no-save fail-fast skips and continue runs later groups truthfully', async () => {
+    await installUser({ noSave: true });
+    const options = {
+      targets: ['copied', 'factor-scan'],
+      tools: ['claude-code'] as const,
+      scope: 'user' as const,
+      noSave: true,
+      cwd: f.base,
+      configuration: f.configuration,
+    };
+
+    const failFast = await runUninstall(f.env, options, uninstallDeps());
+    if (!failFast.ok) throw new Error(msg(failFast.error));
+    expect(currentUninstallReport(failFast.value).requested.batchPolicy).toBe('fail-fast');
+    expect(failFast.value.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          skill: 'copied',
+          action: 'refused',
+          executionOutcome: 'failed',
+        }),
+        expect.objectContaining({
+          skill: 'factor-scan',
+          action: 'skipped',
+          executionOutcome: 'skipped-after-failure',
+        }),
+      ]),
+    );
+    expect(await f.env.pathKind(join(claudeRoot(), 'factor-scan'))).not.toBe('absent');
+
+    const continued = await runUninstall(
+      f.env,
+      { ...options, continueOnError: true },
+      uninstallDeps(),
+    );
+    if (!continued.ok) throw new Error(msg(continued.error));
+    expect(currentUninstallReport(continued.value).requested.batchPolicy).toBe('continue-on-error');
+    expect(continued.value.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ skill: 'copied', action: 'refused' }),
+        expect.objectContaining({
+          skill: 'factor-scan',
+          action: 'removed',
+          executionOutcome: 'succeeded',
+        }),
+      ]),
+    );
+    expect(await f.env.pathKind(join(claudeRoot(), 'factor-scan'))).toBe('absent');
+  });
+});
 
 describe('runUninstall — managed store-symlink removal', () => {
   test('placement gone, pair deleted, store entry retained, before.placement is symlink', async () => {
@@ -153,7 +828,12 @@ describe('runUninstall — managed store-symlink removal', () => {
 
     const r = await runUninstall(
       f.env,
-      { targets: ['factor-scan'], tools: ['claude-code'], cwd: f.base, envVars: f.envVars },
+      {
+        targets: ['factor-scan'],
+        tools: ['claude-code'],
+        cwd: f.base,
+        configuration: f.configuration,
+      },
       uninstallDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -176,7 +856,12 @@ describe('runUninstall — managed --direct copy removal', () => {
     await installUser({ direct: true });
     const r = await runUninstall(
       f.env,
-      { targets: ['factor-scan'], tools: ['claude-code'], cwd: f.base, envVars: f.envVars },
+      {
+        targets: ['factor-scan'],
+        tools: ['claude-code'],
+        cwd: f.base,
+        configuration: f.configuration,
+      },
       uninstallDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -187,7 +872,7 @@ describe('runUninstall — managed --direct copy removal', () => {
     expect(await f.env.pathKind(join(claudeRoot(), 'factor-scan'))).toBe('absent');
   });
 
-  test('edited copy: backup kept + warning, still removed', async () => {
+  test('edited copy: force keeps backup and removes the managed copy', async () => {
     await installUser({ direct: true });
     await f.env.writeTextFile(
       join(claudeRoot(), 'factor-scan', 'SKILL.md'),
@@ -195,7 +880,13 @@ describe('runUninstall — managed --direct copy removal', () => {
     );
     const r = await runUninstall(
       f.env,
-      { targets: ['factor-scan'], tools: ['claude-code'], cwd: f.base, envVars: f.envVars },
+      {
+        targets: ['factor-scan'],
+        tools: ['claude-code'],
+        force: true,
+        cwd: f.base,
+        configuration: f.configuration,
+      },
       uninstallDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -217,7 +908,7 @@ describe('runUninstall — U2 ambiguity', () => {
         sources: [fsSource],
         tools: ['claude-code'],
         cwd: f.project,
-        envVars: f.envVars,
+        configuration: f.configuration,
         force: true,
       },
       installDeps(),
@@ -229,7 +920,13 @@ describe('runUninstall — U2 ambiguity', () => {
     await installBoth();
     const r = await runUninstall(
       f.env,
-      { targets: ['factor-scan'], tools: ['claude-code'], cwd: f.project, envVars: f.envVars },
+      {
+        targets: ['factor-scan'],
+        tools: ['claude-code'],
+        noSave: true,
+        cwd: f.project,
+        configuration: f.configuration,
+      },
       uninstallDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -251,8 +948,9 @@ describe('runUninstall — U2 ambiguity', () => {
         targets: ['factor-scan'],
         tools: ['claude-code'],
         scope: 'user',
+        noSave: true,
         cwd: f.project,
-        envVars: f.envVars,
+        configuration: f.configuration,
       },
       uninstallDeps(),
     );
@@ -273,7 +971,7 @@ describe('runUninstall — U2 ambiguity', () => {
         tools: ['claude-code'],
         allScopes: true,
         cwd: f.project,
-        envVars: f.envVars,
+        configuration: f.configuration,
       },
       uninstallDeps(),
     );
@@ -296,7 +994,7 @@ describe('runUninstall — U3 dev mode', () => {
         source: f.gammaSrc,
         noVerify: true,
         cwd: f.base,
-        envVars: f.envVars,
+        configuration: f.configuration,
       },
       flipDeps(),
     );
@@ -308,7 +1006,12 @@ describe('runUninstall — U3 dev mode', () => {
     await flipToDev();
     const r = await runUninstall(
       f.env,
-      { targets: ['factor-scan'], tools: ['claude-code'], cwd: f.base, envVars: f.envVars },
+      {
+        targets: ['factor-scan'],
+        tools: ['claude-code'],
+        cwd: f.base,
+        configuration: f.configuration,
+      },
       uninstallDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -332,7 +1035,7 @@ describe('runUninstall — U3 dev mode', () => {
         tools: ['claude-code'],
         force: true,
         cwd: f.base,
-        envVars: f.envVars,
+        configuration: f.configuration,
       },
       uninstallDeps(),
     );
@@ -350,7 +1053,7 @@ describe('runUninstall — unmanaged', () => {
   test('hand-copied dir refused without --force', async () => {
     const r = await runUninstall(
       f.env,
-      { targets: ['copied'], tools: ['claude-code'], cwd: f.base, envVars: f.envVars },
+      { targets: ['copied'], tools: ['claude-code'], cwd: f.base, configuration: f.configuration },
       uninstallDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -365,14 +1068,20 @@ describe('runUninstall — unmanaged', () => {
   test('--force removes it; backup KEPT (no store entry to match) + warning', async () => {
     const r = await runUninstall(
       f.env,
-      { targets: ['copied'], tools: ['claude-code'], force: true, cwd: f.base, envVars: f.envVars },
+      {
+        targets: ['copied'],
+        tools: ['claude-code'],
+        force: true,
+        cwd: f.base,
+        configuration: f.configuration,
+      },
       uninstallDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
     const res = r.value.results[0];
     expect(res?.action).toBe('removed');
     expect(res?.backupKept).not.toBeNull();
-    expect(res?.reason ?? '').toContain('hash mismatch');
+    expect(res?.reason ?? '').toContain('no trusted before-image');
     expect(res?.storeRetained).toBeNull();
     expect(await f.env.pathKind(join(claudeRoot(), 'copied'))).toBe('absent');
     expect(await f.env.pathKind(res?.backupKept as string)).not.toBe('absent');
@@ -383,7 +1092,7 @@ describe('runUninstall — absent / stale', () => {
   test('absent everywhere → noop, exit-0 class, notice', async () => {
     const r = await runUninstall(
       f.env,
-      { targets: ['totally-unknown-skill'], cwd: f.base, envVars: f.envVars },
+      { targets: ['totally-unknown-skill'], cwd: f.base, configuration: f.configuration },
       uninstallDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -402,7 +1111,12 @@ describe('runUninstall — absent / stale', () => {
 
     const r = await runUninstall(
       f.env,
-      { targets: ['factor-scan'], tools: ['claude-code'], cwd: f.base, envVars: f.envVars },
+      {
+        targets: ['factor-scan'],
+        tools: ['claude-code'],
+        cwd: f.base,
+        configuration: f.configuration,
+      },
       uninstallDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -411,6 +1125,49 @@ describe('runUninstall — absent / stale', () => {
     expect(res?.reason).toBe('placement was already gone');
     const ledger = await led();
     expect(getPairAt(ledger, null, 'factor-scan', 'claude-code')).toBeNull();
+    expect(ledger.history.at(-1)).toMatchObject({
+      intent: { kind: 'remove', skill: 'factor-scan', tool: 'claude-code' },
+      phase: 'committed',
+    });
+    expect(Object.keys(ledger.transactions)).toEqual([]);
+  });
+
+  test('observed stale removal emits one correlated record-only transaction', async () => {
+    await installUser();
+    await f.env.removeTree(join(claudeRoot(), 'factor-scan'));
+    const observed = observationFixture();
+
+    const removed = await runUninstallWithRegistryObserved(
+      f.env,
+      {
+        targets: ['factor-scan'],
+        tools: ['claude-code'],
+        cwd: f.base,
+        configuration: f.configuration,
+      },
+      uninstallDeps(),
+      toolRegistry,
+      observed.observation,
+    );
+    if (!removed.ok) throw new Error(msg(removed.error));
+
+    expect(removed.value.summary).toMatchObject({ removed: 1, failed: 0 });
+    expect(removed.value.results).toMatchObject([
+      {
+        tool: 'claude-code',
+        action: 'removed',
+        reason: 'placement was already gone',
+      },
+    ]);
+    const durable = await led();
+    expect(getPairAt(durable, null, 'factor-scan', 'claude-code')).toBeNull();
+    const committed = durable.history.at(-1);
+    expect(committed).toMatchObject({
+      intent: { kind: 'remove', skill: 'factor-scan', tool: 'claude-code' },
+      phase: 'committed',
+    });
+    if (committed === undefined) throw new Error('record-only removal history is missing');
+    expectCorrelatedRecordOnlyTransaction(observed.events, committed.transactionId);
   });
 });
 
@@ -418,7 +1175,7 @@ describe('runUninstall — legacy root', () => {
   test('unmanaged legacy dev symlink refused without --force', async () => {
     const r = await runUninstall(
       f.env,
-      { targets: ['legacy-only'], tools: ['codex'], cwd: f.base, envVars: f.envVars },
+      { targets: ['legacy-only'], tools: ['codex'], cwd: f.base, configuration: f.configuration },
       uninstallDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -433,7 +1190,7 @@ describe('runUninstall — legacy root', () => {
         tools: ['codex'],
         force: true,
         cwd: f.base,
-        envVars: f.envVars,
+        configuration: f.configuration,
       },
       uninstallDeps(),
     );
@@ -447,13 +1204,208 @@ describe('runUninstall — legacy root', () => {
   });
 });
 
+describe('runUninstall — artifact destination preflight', () => {
+  test('normalizes and deduplicates names once while preserving raw target order', async () => {
+    const configRoot = join(f.home, '.config');
+    const userManifest = join(configRoot, 'skillsmith', 'skillsmith.toml');
+    const projectManifest = join(f.project, 'skillsmith.toml');
+    await f.env.makeDir(join(configRoot, 'skillsmith'));
+    await f.env.writeTextFile(userManifest, portableManifest(['z-last', 'a-first']));
+    await f.env.writeTextFile(projectManifest, portableManifest(['z-last', 'a-first']));
+    const targets = ['z-last', join(claudeRoot(), 'a-first'), 'a-first', 'z-last'];
+    const observed = { artifacts: 0, ledger: 0, sweep: 0, live: 0, writes: 0 };
+    const env: RuntimePorts = {
+      ...f.env,
+      xdg: {
+        config: configRoot,
+        data: join(f.home, '.local', 'share'),
+        cache: join(f.home, '.cache'),
+      },
+      pathKind: async (path) => {
+        if (path === ledgerPathOf(f.data)) observed.ledger++;
+        if (path === join(f.data, '.fetch') || path === join(f.data, 'store', '.staging')) {
+          observed.sweep++;
+        }
+        if (path.startsWith(`${claudeRoot()}/`)) observed.live++;
+        return f.env.pathKind(path);
+      },
+      readText: async (path) => {
+        if (path === userManifest || path === projectManifest) observed.artifacts++;
+        return f.env.readText(path);
+      },
+      writeTextFile: async (...args) => {
+        observed.writes++;
+        return f.env.writeTextFile(...args);
+      },
+      removeTree: async (...args) => {
+        observed.writes++;
+        return f.env.removeTree(...args);
+      },
+    };
+    const result = await runUninstall(
+      env,
+      { targets, cwd: f.project, configuration: f.configuration },
+      uninstallDeps(),
+    );
+    if (!result.ok) throw new Error(msg(result.error));
+    expect(result.value.requested.targets).toEqual(targets);
+    expect(result.value.results.map(({ skill }) => skill)).toEqual([
+      'z-last',
+      'a-first',
+      'a-first',
+      'z-last',
+    ]);
+    expect(result.value.results[0]?.reason).toContain("declaration 'z-last'");
+    expect(result.value.results.every(({ error }) => error?.code === 'flip-refused')).toBeTrue();
+    expect(result.value.plan.operations).toHaveLength(0);
+    expect(observed).toEqual({ artifacts: 2, ledger: 0, sweep: 0, live: 0, writes: 0 });
+  });
+
+  test('invalid artifact state refuses before ledger, sweep, or live access', async () => {
+    const file = join(f.project, 'invalid-skillsmith.toml');
+    await f.env.writeTextFile(file, 'not valid toml = [');
+    const observed = { artifacts: 0, ledger: 0, sweep: 0, live: 0, writes: 0 };
+    const env: RuntimePorts = {
+      ...f.env,
+      pathKind: async (path) => {
+        if (path === ledgerPathOf(f.data)) observed.ledger++;
+        if (path === join(f.data, '.fetch') || path === join(f.data, 'store', '.staging')) {
+          observed.sweep++;
+        }
+        if (path.startsWith(`${claudeRoot()}/`)) observed.live++;
+        return f.env.pathKind(path);
+      },
+      readText: async (path) => {
+        if (path === file) observed.artifacts++;
+        return f.env.readText(path);
+      },
+      writeTextFile: async (...args) => {
+        observed.writes++;
+        return f.env.writeTextFile(...args);
+      },
+      removeTree: async (...args) => {
+        observed.writes++;
+        return f.env.removeTree(...args);
+      },
+    };
+    const result = await runUninstall(
+      env,
+      { targets: ['ghost'], file, cwd: f.project, configuration: f.configuration },
+      uninstallDeps(),
+    );
+    if (!result.ok) throw new Error(msg(result.error));
+    expect(result.value.requested.targets).toEqual(['ghost']);
+    expect(result.value.results[0]).toMatchObject({ skill: 'ghost', action: 'refused' });
+    expect(result.value.results[0]?.error?.code).toBe('config-error');
+    expect(result.value.plan.operations).toHaveLength(0);
+    expect(observed).toEqual({ artifacts: 1, ledger: 0, sweep: 0, live: 0, writes: 0 });
+  });
+
+  test('empty derived target names refuse before artifact or ledger access in both save modes', async () => {
+    const observed = { artifact: 0, ledger: 0, sweep: 0, live: 0 };
+    const env: RuntimePorts = {
+      ...f.env,
+      pathKind: async (path) => {
+        if (path === ledgerPathOf(f.data)) observed.ledger++;
+        if (path === join(f.data, '.fetch') || path === join(f.data, 'store', '.staging')) {
+          observed.sweep++;
+        }
+        if (path.startsWith(`${claudeRoot()}/`)) observed.live++;
+        return f.env.pathKind(path);
+      },
+      readText: async (path) => {
+        observed.artifact++;
+        return f.env.readText(path);
+      },
+    };
+    for (const noSave of [undefined, true] as const) {
+      const result = await runUninstall(
+        env,
+        {
+          targets: [''],
+          cwd: f.project,
+          configuration: f.configuration,
+          ...(noSave === undefined ? {} : { noSave }),
+        },
+        uninstallDeps(),
+      );
+      if (!result.ok) throw new Error(msg(result.error));
+      expect(result.value.requested.targets).toEqual(['']);
+      expect(result.value.results[0]).toMatchObject({ action: 'refused' });
+      expect(result.value.results[0]?.error?.code).toBe('flip-refused');
+      expect(result.value.plan.operations).toHaveLength(0);
+    }
+    expect(observed).toEqual({ artifact: 0, ledger: 0, sweep: 0, live: 0 });
+  });
+
+  test('no-save performs no portable artifact I/O for the whole invocation', async () => {
+    const configRoot = join(f.home, '.config');
+    const userManifest = join(configRoot, 'skillsmith', 'skillsmith.toml');
+    const artifactPaths = new Set([
+      userManifest,
+      join(configRoot, 'skillsmith', 'skillsmith.lock'),
+      join(f.base, 'skillsmith.toml'),
+      join(f.base, 'skillsmith.lock'),
+      join(f.project, 'skillsmith.toml'),
+      join(f.project, 'skillsmith.lock'),
+    ]);
+    const hermeticEnv: RuntimePorts = {
+      ...f.env,
+      xdg: {
+        config: configRoot,
+        data: join(f.home, '.local', 'share'),
+        cache: join(f.home, '.cache'),
+      },
+    };
+    await installUser({ noSave: true }, hermeticEnv);
+    let artifactReads = 0;
+    const env: RuntimePorts = {
+      ...hermeticEnv,
+      pathKind: async (path) => {
+        if (artifactPaths.has(path)) artifactReads++;
+        return hermeticEnv.pathKind(path);
+      },
+      readText: async (path) => {
+        if (artifactPaths.has(path)) artifactReads++;
+        return hermeticEnv.readText(path);
+      },
+      readBytes: async (path) => {
+        if (artifactPaths.has(path)) artifactReads++;
+        return hermeticEnv.readBytes(path);
+      },
+      readFileMetadata: async (path) => {
+        if (artifactPaths.has(path)) artifactReads++;
+        return hermeticEnv.readFileMetadata(path);
+      },
+      realpath: async (path) => {
+        if (artifactPaths.has(path)) artifactReads++;
+        return hermeticEnv.realpath(path);
+      },
+    };
+    const result = await runUninstall(
+      env,
+      {
+        targets: ['factor-scan'],
+        tools: ['claude-code'],
+        noSave: true,
+        cwd: f.base,
+        configuration: f.configuration,
+      },
+      uninstallDeps(),
+    );
+    if (!result.ok) throw new Error(msg(result.error));
+    expect(result.value.results[0]?.action).toBe('removed');
+    expect(artifactReads).toBe(0);
+  });
+});
+
 describe('runUninstall — path target', () => {
   test('a placement path resolves tool + scope and removes', async () => {
     await installUser();
     const path = join(claudeRoot(), 'factor-scan');
     const r = await runUninstall(
       f.env,
-      { targets: [path], cwd: f.base, envVars: f.envVars },
+      { targets: [path], cwd: f.base, configuration: f.configuration },
       uninstallDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -464,11 +1416,48 @@ describe('runUninstall — path target', () => {
     expect(await f.env.pathKind(path)).toBe('absent');
   });
 
+  test('joins every adapter notice for an alternate-root path target', async () => {
+    const registry = createToolRegistry(
+      toolRegistry.adapters.map((adapter) => {
+        if (adapter.descriptor.id !== 'codex' || adapter.placement === undefined) return adapter;
+        const placement = adapter.placement;
+        return {
+          ...adapter,
+          placement: {
+            ...placement,
+            resolveScoped: async (...args: Parameters<typeof placement.resolveScoped>) => {
+              const resolution = await placement.resolveScoped(...args);
+              return { ...resolution, notices: ['NOTICE-ONE', 'NOTICE-TWO'] };
+            },
+          },
+        };
+      }),
+    );
+    const path = join(legacyRoot(), 'legacy-only');
+    const r = await runUninstallWithRegistry(
+      f.env,
+      {
+        targets: [path],
+        tools: ['codex'],
+        force: true,
+        dryRun: true,
+        cwd: f.base,
+        configuration: f.configuration,
+      },
+      uninstallDeps(),
+      registry,
+    );
+    if (!r.ok) throw new Error(msg(r.error));
+
+    expect(r.value.results[0]?.action).toBe('removed');
+    expect(r.value.results[0]?.reason).toBe('NOTICE-ONE; NOTICE-TWO');
+  });
+
   test('a path outside every known root → refused', async () => {
     const path = join(f.base, 'nowhere', 'ghost');
     const r = await runUninstall(
       f.env,
-      { targets: [path], cwd: f.base, envVars: f.envVars },
+      { targets: [path], cwd: f.base, configuration: f.configuration },
       uninstallDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -476,6 +1465,73 @@ describe('runUninstall — path target', () => {
     expect(res?.action).toBe('refused');
     expect(res?.error?.code).toBe('flip-refused');
     expect(res?.reason).toContain('outside every known skills root');
+  });
+});
+
+describe('runUninstall — relevant capability scope', () => {
+  test('a custom placement fingerprints uninstall/custom rather than its ledger scope', async () => {
+    const dest = join(f.base, 'custom-skills');
+    await f.env.makeDir(dest);
+    const created = await runDev(
+      f.env,
+      {
+        targets: ['beta'],
+        tools: ['claude-code'],
+        source: f.betaSrc,
+        dest,
+        cwd: f.home,
+        configuration: f.configuration,
+        noVerify: true,
+      },
+      flipDeps(),
+    );
+    if (!created.ok) throw new Error(msg(created.error));
+    expect(created.value.results[0]?.action).toBe('created');
+
+    const withUninstallScopes = (scopes: readonly ('user' | 'project' | 'custom')[]) =>
+      createToolRegistry(
+        toolRegistry.adapters.map((adapter) =>
+          adapter.descriptor.id === 'claude-code'
+            ? {
+                ...adapter,
+                descriptor: {
+                  ...adapter.descriptor,
+                  operations: {
+                    ...adapter.descriptor.operations,
+                    uninstall: {
+                      ...adapter.descriptor.operations.uninstall,
+                      scopes,
+                    },
+                  },
+                },
+              }
+            : adapter,
+        ),
+      );
+    const prepare = async (registry: ReturnType<typeof createToolRegistry>) => {
+      const result = await runUninstallWithRegistry(
+        f.env,
+        {
+          targets: ['beta'],
+          tools: ['claude-code'],
+          cwd: f.home,
+          configuration: f.configuration,
+          dryRun: true,
+        },
+        uninstallDeps(),
+        registry,
+      );
+      if (!result.ok) throw new Error(msg(result.error));
+      expect(result.value.results[0]?.placementPath).toBe(join(dest, 'beta'));
+      return result.value.plan.operations[0]?.preconditionIds ?? [];
+    };
+
+    const baseline = await prepare(toolRegistry);
+    const withoutUser = await prepare(withUninstallScopes(['project', 'custom']));
+    const withoutCustom = await prepare(withUninstallScopes(['user', 'project']));
+
+    expect(withoutUser).toEqual(baseline);
+    expect(withoutCustom).not.toEqual(baseline);
   });
 });
 
@@ -495,13 +1551,22 @@ describe('runUninstall — uncommitted journal (Global Constraint #6)', () => {
       stagingPath: join(claudeRoot(), '.skillsmith-staging-factor-scan-deadbeef'),
       backupPath: join(claudeRoot(), '.skillsmith-backup-factor-scan-deadbeef'),
     };
-    pair.journal = journal;
-    const w = await writeLedger(f.env, ledgerPathOf(f.data), ledger);
+    const next = withLedgerPairAt(ledger, null, 'factor-scan', 'claude-code', {
+      ...pair,
+      journal,
+    });
+    if (!next.ok) throw new Error(msg(next.error));
+    const w = await writeLedger(f.env, ledgerPathOf(f.data), next.value);
     if (!w.ok) throw new Error(msg(w.error));
 
     const r = await runUninstall(
       f.env,
-      { targets: ['factor-scan'], tools: ['claude-code'], cwd: f.base, envVars: f.envVars },
+      {
+        targets: ['factor-scan'],
+        tools: ['claude-code'],
+        cwd: f.base,
+        configuration: f.configuration,
+      },
       uninstallDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -537,13 +1602,22 @@ describe('runUninstall — uncommitted journal (Global Constraint #6)', () => {
       stagingPath: join(claudeRoot(), '.skillsmith-staging-factor-scan-deadbeef'),
       backupPath: join(claudeRoot(), '.skillsmith-backup-factor-scan-deadbeef'),
     };
-    pair.journal = journal;
-    const w = await writeLedger(f.env, ledgerPathOf(f.data), ledger);
+    const next = withLedgerPairAt(ledger, null, 'factor-scan', 'claude-code', {
+      ...pair,
+      journal,
+    });
+    if (!next.ok) throw new Error(msg(next.error));
+    const w = await writeLedger(f.env, ledgerPathOf(f.data), next.value);
     if (!w.ok) throw new Error(msg(w.error));
 
     const r = await runUninstall(
       f.env,
-      { targets: ['factor-scan'], tools: ['claude-code'], cwd: f.base, envVars: f.envVars },
+      {
+        targets: ['factor-scan'],
+        tools: ['claude-code'],
+        cwd: f.base,
+        configuration: f.configuration,
+      },
       uninstallDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -557,6 +1631,207 @@ describe('runUninstall — uncommitted journal (Global Constraint #6)', () => {
 });
 
 describe('runUninstall — dry run', () => {
+  test('prepares the exact immutable match plan before removal and reuses preview IDs', async () => {
+    await installUser();
+    const options = {
+      targets: ['factor-scan'],
+      tools: ['claude-code'] as const,
+      cwd: f.base,
+      configuration: f.configuration,
+    };
+    let previewPlan: Parameters<NonNullable<UninstallDeps['observePreparedPlan']>>[0] | undefined;
+    const preview = await runUninstall(
+      f.env,
+      { ...options, dryRun: true },
+      {
+        ...uninstallDeps(),
+        observePreparedPlan: (plan) => {
+          previewPlan = plan;
+        },
+      },
+    );
+    if (!preview.ok) throw new Error(msg(preview.error));
+    expect(previewPlan).toBe(preview.value.plan);
+    expect(Object.isFrozen(previewPlan)).toBeTrue();
+    expect(preview.value.executionResults).toEqual([]);
+    for (const operation of preview.value.plan.operations) {
+      expect(operation.preconditionIds.length).toBeGreaterThanOrEqual(5);
+      expect(new Set(operation.preconditionIds).size).toBe(operation.preconditionIds.length);
+      expect(
+        operation.preconditionIds.every((id) => /^precondition:v1:[0-9a-f]{64}$/.test(id)),
+      ).toBeTrue();
+    }
+
+    let executionPlan: typeof previewPlan;
+    const invokedOperationIds = new Set<string>();
+    const livePath = join(claudeRoot(), 'factor-scan');
+    const observeLiveMutation = (path: string): void => {
+      if (path !== livePath) return;
+      expect(executionPlan, 'the plan must exist before the first live removal').toBeDefined();
+      const operation = executionPlan?.operations.find(
+        (candidate) =>
+          candidate.before.kind === 'placement' &&
+          candidate.before.resource.location.kind === 'machine-bound' &&
+          candidate.before.resource.location.path === path,
+      );
+      expect(operation, `missing exact prepared match binding for ${path}`).toBeDefined();
+      if (operation) invokedOperationIds.add(operation.operationId);
+    };
+    const executionEnv: RuntimePorts = {
+      ...f.env,
+      rename: async (from, to) => {
+        observeLiveMutation(from);
+        await f.env.rename(from, to);
+      },
+      removeTree: async (path) => {
+        observeLiveMutation(path);
+        await f.env.removeTree(path);
+      },
+    };
+    const executed = await runUninstall(executionEnv, options, {
+      ...uninstallDeps(),
+      observePreparedPlan: (plan) => {
+        executionPlan = plan;
+      },
+    });
+    if (!executed.ok) throw new Error(msg(executed.error));
+    expect(executionPlan).toBe(executed.value.plan);
+    expect(executed.value.plan).toEqual(preview.value.plan);
+    expect(executed.value.plan.operations.map(({ operationId }) => operationId)).toEqual(
+      preview.value.plan.operations.map(({ operationId }) => operationId),
+    );
+    expect([...invokedOperationIds].sort()).toEqual(
+      executed.value.plan.operations
+        .filter(({ pairId }) => pairId !== null)
+        .map(({ operationId }) => operationId)
+        .sort(),
+    );
+    expect(executed.value.executionResults.map(({ operationId }) => operationId)).toEqual(
+      executed.value.plan.operations.map(({ operationId }) => operationId),
+    );
+  });
+
+  test('G3B-02: changed live facts after preview refuse without writes or replanning', async () => {
+    await installUser();
+    const livePath = join(claudeRoot(), 'factor-scan');
+    const sentinelPath = join(livePath, 'FOREIGN.txt');
+    const targetWrites: string[] = [];
+    let prepared = false;
+    let observedPlans = 0;
+    const executionEnv: RuntimePorts = {
+      ...f.env,
+      writeTextFile: async (path, text) => {
+        if (prepared) targetWrites.push(`write:${path}`);
+        await f.env.writeTextFile(path, text);
+      },
+      makeSymlink: async (target, linkPath) => {
+        if (prepared) targetWrites.push(`symlink:${linkPath}`);
+        await f.env.makeSymlink(target, linkPath);
+      },
+      rename: async (from, to) => {
+        if (prepared) targetWrites.push(`rename:${from}->${to}`);
+        await f.env.rename(from, to);
+      },
+      copyTree: async (from, to) => {
+        if (prepared) targetWrites.push(`copy:${from}->${to}`);
+        await f.env.copyTree(from, to);
+      },
+      removeTree: async (path) => {
+        if (prepared) targetWrites.push(`remove:${path}`);
+        await f.env.removeTree(path);
+      },
+    };
+    const r = await runUninstall(
+      executionEnv,
+      {
+        targets: ['factor-scan'],
+        tools: ['claude-code'],
+        cwd: f.base,
+        configuration: f.configuration,
+      },
+      {
+        ...uninstallDeps(),
+        observePreparedPlan: () => {
+          observedPlans++;
+          rmSync(livePath, { recursive: true, force: true });
+          mkdirSync(livePath, { recursive: true });
+          writeFileSync(sentinelPath, 'foreign placement\n');
+          prepared = true;
+        },
+      },
+    );
+    if (!r.ok) throw new Error(msg(r.error));
+
+    expect(observedPlans).toBe(1);
+    expect(r.value.results).toHaveLength(1);
+    expect(r.value.results[0]?.action).toBe('refused');
+    expect(r.value.executionResults[0]?.outcome).toBe('failed');
+    expect(
+      r.value.executionResults
+        .filter((execution) => execution.operationId !== r.value.executionResults[0]?.operationId)
+        .every((execution) => execution.error?.code === 'precondition-state-changed'),
+    ).toBeTrue();
+    expect(targetWrites).toEqual([]);
+    expect(await f.env.pathKind(livePath)).toBe('dir');
+    expect(await f.env.readText(sentinelPath)).toBe('foreign placement\n');
+    expect(getPairAt(await led(), null, 'factor-scan', 'claude-code')).not.toBeNull();
+  });
+
+  test('G3B-02: changed copied bytes after preview refuse without runner writes', async () => {
+    await installUser({ direct: true });
+    const livePath = join(claudeRoot(), 'factor-scan');
+    const ledgerPath = ledgerPathOf(f.data);
+    const ledgerBefore = await f.env.readText(ledgerPath);
+    const targetWrites: string[] = [];
+    let prepared = false;
+    const executionEnv: RuntimePorts = {
+      ...f.env,
+      writeTextFile: async (path, text) => {
+        if (prepared) targetWrites.push(`write:${path}`);
+        await f.env.writeTextFile(path, text);
+      },
+      makeSymlink: async (target, linkPath) => {
+        if (prepared) targetWrites.push(`symlink:${linkPath}`);
+        await f.env.makeSymlink(target, linkPath);
+      },
+      rename: async (from, to) => {
+        if (prepared) targetWrites.push(`rename:${from}->${to}`);
+        await f.env.rename(from, to);
+      },
+      copyTree: async (from, to) => {
+        if (prepared) targetWrites.push(`copy:${from}->${to}`);
+        await f.env.copyTree(from, to);
+      },
+      removeTree: async (path) => {
+        if (prepared && !path.includes('/.fetch/')) targetWrites.push(`remove:${path}`);
+        await f.env.removeTree(path);
+      },
+    };
+    const result = await runUninstall(
+      executionEnv,
+      {
+        targets: ['factor-scan'],
+        tools: ['claude-code'],
+        cwd: f.base,
+        configuration: f.configuration,
+      },
+      {
+        ...uninstallDeps(),
+        observePreparedPlan: () => {
+          writeFileSync(join(livePath, 'SKILL.md'), '# changed live copy\n');
+          prepared = true;
+        },
+      },
+    );
+    if (!result.ok) throw new Error(msg(result.error));
+
+    expect(result.value.results[0]?.action).toBe('refused');
+    expect(result.value.executionResults[0]?.outcome).toBe('failed');
+    expect(targetWrites).toEqual([]);
+    expect(await f.env.pathKind(livePath)).toBe('dir');
+    expect(await f.env.readText(ledgerPath)).toBe(ledgerBefore);
+  });
+
   test('writes nothing; ledger byte-identical afterward', async () => {
     await installUser();
     const before = await f.env.readText(ledgerPathOf(f.data));
@@ -568,16 +1843,261 @@ describe('runUninstall — dry run', () => {
         tools: ['claude-code'],
         dryRun: true,
         cwd: f.base,
-        envVars: f.envVars,
+        configuration: f.configuration,
       },
       uninstallDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
     expect(r.value.dryRun).toBe(true);
     expect(r.value.results[0]?.action).toBe('removed');
+    expect(r.value.plan).toMatchObject({
+      domain: 'skillsmith.operation-plan',
+      schemaVersion: 1,
+      command: 'uninstall',
+    });
+    expect(Object.isFrozen(r.value.plan)).toBe(true);
+    expect(r.value.plan.operations.map(({ kind }) => kind)).toEqual([
+      'remove',
+      'write-manifest',
+      'write-lock',
+    ]);
+    expect(r.value.executionResults).toEqual([]);
 
     const after = await f.env.readText(ledgerPathOf(f.data));
     expect(after).toBe(before);
     expect(await f.env.pathKind(join(claudeRoot(), 'factor-scan'))).toBe('symlink');
+  });
+
+  test('supported v1 dry-run visibly prefixes migrate-ledger before uninstall', async () => {
+    await installUser();
+    const ledgerPath = ledgerPathOf(f.data);
+    const current = await readLedgerState(f.env, ledgerPath);
+    if (!current.ok || current.value.state !== 'present') {
+      throw new Error('expected installed canonical ledger');
+    }
+    const source = JSON.stringify(legacyLedgerView(current.value.model));
+    await f.env.writeTextFile(ledgerPath, source);
+    let preparedKinds: readonly string[] = [];
+
+    const result = await runUninstall(
+      f.env,
+      {
+        targets: ['factor-scan'],
+        tools: ['claude-code'],
+        dryRun: true,
+        cwd: f.base,
+        configuration: f.configuration,
+      },
+      {
+        ...uninstallDeps(),
+        observePreparedPlan: (plan) => {
+          preparedKinds = plan.operations.map((operation) => operation.kind);
+        },
+      },
+    );
+    if (!result.ok) throw new Error(msg(result.error));
+
+    expect(preparedKinds[0]).toBe('migrate-ledger');
+    expect(result.value.plan.operations.map((operation) => operation.kind)).toEqual([
+      'migrate-ledger',
+      'remove',
+      'write-manifest',
+      'write-lock',
+    ]);
+    expect(await f.env.readText(ledgerPath)).toBe(source);
+  });
+
+  test('supported v1 execution migrates before removal and commits exact histories', async () => {
+    await installUser();
+    const ledgerPath = ledgerPathOf(f.data);
+    const current = await readLedgerState(f.env, ledgerPath);
+    if (!current.ok || current.value.state !== 'present') {
+      throw new Error('expected installed canonical ledger');
+    }
+    await f.env.writeTextFile(ledgerPath, JSON.stringify(legacyLedgerView(current.value.model)));
+
+    const result = await runUninstall(
+      f.env,
+      {
+        targets: ['factor-scan'],
+        tools: ['claude-code'],
+        cwd: f.base,
+        configuration: f.configuration,
+      },
+      uninstallDeps(),
+    );
+    if (!result.ok) throw new Error(msg(result.error));
+    expect(result.value.plan.operations.map((operation) => operation.kind)).toEqual([
+      'migrate-ledger',
+      'remove',
+      'write-manifest',
+      'write-lock',
+    ]);
+
+    const state = await readLedgerState(f.env, ledgerPath);
+    if (!state.ok || state.value.state !== 'present') {
+      throw new Error('expected migrated uninstall ledger');
+    }
+    expect(state.value.sourceVersion).toBe(2);
+    expect(state.value.model.history.map((journal) => journal.intent.kind)).toEqual([
+      'migrate-ledger',
+      'remove',
+    ]);
+    expect(Object.keys(state.value.model.transactions)).toEqual([]);
+  });
+});
+
+describe('runUninstall — public error boundary', () => {
+  test('redacts ledger-read and outer-lock failures in dry and locked paths', async () => {
+    const canary = 'ghp_P17_SECRET_CANARY_123456789';
+    const ledgerPath = ledgerPathOf(f.data);
+    const ledgerFailure: RuntimePorts = {
+      ...f.env,
+      pathKind: async (path) => (path === ledgerPath ? 'file' : f.env.pathKind(path)),
+      readBytes: async (path) => {
+        if (path === ledgerPath) throw new Error(`password=${canary}`);
+        return f.env.readBytes(path);
+      },
+    };
+    const lockFailure: RuntimePorts = {
+      ...f.env,
+      withFileLock: async () => {
+        throw new Error(`authorization=Bearer ${canary}`);
+      },
+    };
+    const options = {
+      targets: ['not-installed'],
+      tools: ['claude-code'] as const,
+      cwd: f.base,
+      configuration: f.configuration,
+    };
+
+    const dryLedgerFailure = await runUninstall(
+      ledgerFailure,
+      { ...options, dryRun: true },
+      uninstallDeps(),
+    );
+    const lockedLedgerFailure = await runUninstall(ledgerFailure, options, uninstallDeps());
+    const outerLockFailure = await runUninstall(lockFailure, options, uninstallDeps());
+    const cases = [dryLedgerFailure, lockedLedgerFailure, outerLockFailure];
+    for (const result of cases) {
+      expect(result.ok).toBeFalse();
+      expect(JSON.stringify(result)).not.toContain(canary);
+      expect(JSON.stringify(result)).toContain('[REDACTED]');
+    }
+    if (dryLedgerFailure.ok || lockedLedgerFailure.ok || outerLockFailure.ok) {
+      throw new Error('expected failures');
+    }
+    expect(dryLedgerFailure.error.code).toBe('ledger-error');
+    expect(lockedLedgerFailure.error.code).toBe('ledger-error');
+    expect(outerLockFailure.error.code).toBe('flip-failed');
+  });
+
+  test('returns redacted Results for hostile proxy throwables without invoking traps', async () => {
+    const canary = 'ghp_P17_PROXY_THROWABLE_123456789';
+    let trapReads = 0;
+    const hostile = new Proxy(
+      { code: 'EIO', message: `password=${canary}` },
+      {
+        get: () => {
+          trapReads++;
+          throw new Error('get trap fired');
+        },
+        has: () => {
+          trapReads++;
+          throw new Error('has trap fired');
+        },
+        ownKeys: () => {
+          trapReads++;
+          throw new Error('ownKeys trap fired');
+        },
+      },
+    );
+    const ledgerPath = ledgerPathOf(f.data);
+    const ledgerFailure: RuntimePorts = {
+      ...f.env,
+      pathKind: async (path) => (path === ledgerPath ? 'file' : f.env.pathKind(path)),
+      readBytes: async (path) => {
+        if (path === ledgerPath) throw hostile;
+        return f.env.readBytes(path);
+      },
+    };
+    const lockFailure: RuntimePorts = {
+      ...f.env,
+      withFileLock: async () => {
+        throw hostile;
+      },
+    };
+    const options = {
+      targets: ['not-installed'],
+      tools: ['claude-code'] as const,
+      cwd: f.base,
+      configuration: f.configuration,
+    };
+
+    const results = [
+      await runUninstall(ledgerFailure, { ...options, dryRun: true }, uninstallDeps()),
+      await runUninstall(lockFailure, options, uninstallDeps()),
+    ];
+    for (const result of results) {
+      expect(result.ok).toBeFalse();
+      expect(JSON.stringify(result)).not.toContain(canary);
+      expect(JSON.stringify(result)).toContain('[PROXY]');
+    }
+    expect(trapReads).toBe(0);
+  });
+
+  test('redacts a non-ledger committed-journal sweep failure', async () => {
+    const canary = 'ghp_P17_SECRET_CANARY_123456789';
+    await installUser();
+    const ledger = await led();
+    const pair = getPairAt(ledger, null, 'factor-scan', 'claude-code');
+    if (!pair?.pinned) throw new Error('expected seeded pinned pair');
+    const backupPath = join(claudeRoot(), '.skillsmith-backup-factor-scan-deadbeef');
+    const journal: Journal = {
+      op: 'uninstall',
+      txId: 'deadbeef',
+      phase: 'committed',
+      startedAt: NOW,
+      completedAt: NOW,
+      before: {
+        mode: 'pinned',
+        storePath: pair.pinned.storePath,
+        contentHash: pair.pinned.contentHash,
+        liveKind: 'symlink',
+      },
+      stagingPath: join(claudeRoot(), '.skillsmith-staging-factor-scan-deadbeef'),
+      backupPath,
+    };
+    const next = withLedgerPairAt(ledger, null, 'factor-scan', 'claude-code', {
+      ...pair,
+      journal,
+    });
+    if (!next.ok) throw new Error(msg(next.error));
+    const persisted = await writeLedger(f.env, ledgerPathOf(f.data), next.value);
+    if (!persisted.ok) throw new Error(msg(persisted.error));
+    const sweepFailure: RuntimePorts = {
+      ...f.env,
+      pathKind: async (path) => {
+        if (path === backupPath) throw new Error(`password=${canary}`);
+        return f.env.pathKind(path);
+      },
+    };
+
+    const result = await runUninstall(
+      sweepFailure,
+      {
+        targets: ['factor-scan'],
+        tools: ['claude-code'],
+        cwd: f.base,
+        configuration: f.configuration,
+      },
+      uninstallDeps(),
+    );
+    expect(result.ok).toBeFalse();
+    if (result.ok) throw new Error('expected sweep failure');
+    expect(result.error.code).toBe('flip-failed');
+    expect(JSON.stringify(result)).not.toContain(canary);
+    expect(JSON.stringify(result)).toContain('[REDACTED]');
   });
 });

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { defaultScanEnv } from '../../src/env/default.ts';
+import { defaultRuntimePorts as defaultScanEnv } from '../../src/ports/default.ts';
 import { ok } from '../../src/result.ts';
 import { resolveTarget, runVerify, verifyPlugin } from '../../src/verify/run.ts';
 import type { ToolVerifier, VerifyOutcome, VerifyTool } from '../../src/verify/types.ts';
@@ -95,8 +95,8 @@ describe('resolveTarget', () => {
     try {
       const r = await resolveTarget(env, empty);
       expect(r.ok).toBe(false);
-      if (!r.ok) expect(r.error.code).toBe('generic');
-      if (!r.ok && r.error.code === 'generic') {
+      if (!r.ok) expect(r.error.code).toBe('invalid-argument');
+      if (!r.ok && r.error.code === 'invalid-argument') {
         expect(r.error.message).toContain('is not a plugin or skill directory');
       }
     } finally {
@@ -256,7 +256,7 @@ describe('verifyPlugin', () => {
     // actually installed on the machine running this test.
     const env = {
       ...base,
-      path: [] as string[],
+      executableSearchPath: [] as string[],
       fileExists: async (p: string) =>
         p.endsWith('/claude') || p.endsWith('/codex') ? false : base.fileExists(p),
     };

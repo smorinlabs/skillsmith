@@ -2,14 +2,18 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { FlipReport } from '@skillsmith/core';
-import { FlipJsonSchema, renderFlipJson } from '../../src/output/flip-json.ts';
+import { flipV2Codec } from '@skillsmith/core/contracts/v2';
+import { renderFlipJson } from '../../src/output/flip-json.ts';
+import { wireSchema } from '../../src/output/wire-codec.ts';
 
 const GOLDEN_PATH = join(import.meta.dir, '..', 'fixtures', 'flip-report.golden.json');
 const goldenText = readFileSync(GOLDEN_PATH, 'utf8');
+const FlipV2JsonSchema = wireSchema(flipV2Codec);
+const renderFlipV2Json = (value: FlipReport): string => renderFlipJson(value, flipV2Codec);
 
 // Matches the spec §11 contract example verbatim, minus `kind`/`schemaVersion` (renderFlipJson
 // adds those) and minus `error` (core-only, never rendered).
-const report: FlipReport = {
+const report = {
   op: 'promote',
   dryRun: false,
   requested: {
@@ -71,21 +75,21 @@ const report: FlipReport = {
     created: 0,
     adopted: 0,
   },
-};
+} as unknown as FlipReport;
 
 describe('renderFlipJson', () => {
   test('matches the committed golden (parse-compare, formatting-proof)', () => {
-    const rendered = renderFlipJson(report);
+    const rendered = renderFlipV2Json(report);
     expect(JSON.parse(rendered)).toEqual(JSON.parse(goldenText));
   });
 
   test('validates against FlipJsonSchema', () => {
-    const rendered = renderFlipJson(report);
-    expect(() => FlipJsonSchema.parse(JSON.parse(rendered))).not.toThrow();
+    const rendered = renderFlipV2Json(report);
+    expect(() => FlipV2JsonSchema.parse(JSON.parse(rendered))).not.toThrow();
   });
 
   test('top-level field set is exact; kind and schemaVersion are correct', () => {
-    const rendered = JSON.parse(renderFlipJson(report)) as Record<string, unknown>;
+    const rendered = JSON.parse(renderFlipV2Json(report)) as Record<string, unknown>;
     expect(Object.keys(rendered).sort()).toEqual(
       ['kind', 'schemaVersion', 'op', 'dryRun', 'requested', 'results', 'summary'].sort(),
     );
@@ -94,7 +98,7 @@ describe('renderFlipJson', () => {
   });
 
   test('the core-only `error` field never appears in the rendered output', () => {
-    const rendered = JSON.parse(renderFlipJson(report)) as { results: Record<string, unknown>[] };
+    const rendered = JSON.parse(renderFlipV2Json(report)) as { results: Record<string, unknown>[] };
     for (const r of rendered.results) expect('error' in r).toBe(false);
   });
 
@@ -103,13 +107,13 @@ describe('renderFlipJson', () => {
       ...report,
       results: [{ ...report.results[0], action: 'installed' }],
     } as unknown as FlipReport;
-    expect(() => renderFlipJson(bad)).toThrow();
+    expect(() => renderFlipV2Json(bad)).toThrow();
   });
 
   test('schema rejects a wrong `kind`', () => {
-    const rendered = JSON.parse(renderFlipJson(report));
+    const rendered = JSON.parse(renderFlipV2Json(report));
     rendered.kind = 'skillsmith.verify';
-    expect(() => FlipJsonSchema.parse(rendered)).toThrow();
+    expect(() => FlipV2JsonSchema.parse(rendered)).toThrow();
   });
 
   test('a rollback report renders with op "rollback"', () => {
@@ -147,7 +151,7 @@ describe('renderFlipJson', () => {
         adopted: 0,
       },
     };
-    const rendered = JSON.parse(renderFlipJson(rollback));
+    const rendered = JSON.parse(renderFlipV2Json(rollback));
     expect(rendered.op).toBe('rollback');
     expect(rendered.results[0].action).toBe('rolled-back');
   });

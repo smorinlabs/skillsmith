@@ -4,6 +4,9 @@ import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseCodexExecStderr, verifyCodex } from '../../../src/agents/codex/verify.ts';
 import type { ExecResult, ScanEnv } from '../../../src/env/types.ts';
+import { runVerify } from '../../../src/verify/run.ts';
+import type { VerifyPorts } from '../../../src/verify/types.ts';
+import { runtimePorts } from '../../fixtures/runtime-ports.ts';
 
 const FIXTURES = join(import.meta.dir, '..', '..', 'fixtures', 'verify');
 const DUMMY = join(FIXTURES, 'dummytest');
@@ -29,7 +32,7 @@ const fileExistsFake = (p: string): boolean => {
   return false;
 };
 
-const env = (): ScanEnv => ({
+const scanEnvFixture = (): ScanEnv => ({
   homeDir: '/h',
   path: [],
   platform: 'linux',
@@ -56,12 +59,13 @@ const env = (): ScanEnv => ({
   withFileLock: (_p, fn) => fn(),
 });
 
-const fakeInstalled = (overrides: Partial<ScanEnv> = {}): ScanEnv => ({
-  ...env(),
-  path: ['/fake'],
-  runVersion: async () => '0.142.5 (Codex CLI)',
-  ...overrides,
-});
+const fakeInstalled = (overrides: Partial<ScanEnv> = {}): VerifyPorts =>
+  runtimePorts({
+    ...scanEnvFixture(),
+    path: ['/fake'],
+    runVersion: async () => '0.142.5 (Codex CLI)',
+    ...overrides,
+  });
 
 // Static happy-path exec sequence (Task 5), used by the combined static+deep run.
 const staticHappyPath = (_cmd: string, args: readonly string[]): ExecResult | null => {
@@ -123,6 +127,37 @@ const reply = (proj: string, skills: unknown = loaded(proj), errors: unknown = [
   `${JSON.stringify({ id: 1, result: {} })}\n${JSON.stringify({ id: 2, result: { data: [{ cwd: proj, skills, errors }] } })}\n`;
 
 describe('verifyCodex deep mode', () => {
+  test('in-flight Codex cancellation reaches the runVerify cancellation boundary', async () => {
+    const controller = new AbortController();
+    let stagedProject = '';
+    let isolatedHome = '';
+    const ports = fakeInstalled({
+      exec: async (binary, args, opts) => {
+        const staticResult = staticHappyPath(binary, args);
+        if (staticResult) return staticResult;
+        expect(args[0]).toBe('app-server');
+        stagedProject = opts?.cwd ?? '';
+        isolatedHome = opts?.env?.CODEX_HOME ?? '';
+        controller.abort();
+        throw new Error('fixture process operation cancelled');
+      },
+    });
+    const result = await runVerify(ports, {
+      path: DUMMY,
+      tools: ['codex'],
+      deep: true,
+      signal: controller.signal,
+    });
+    expect(stagedProject).not.toBe('');
+    expect(isolatedHome).not.toBe('');
+    expect(existsSync(stagedProject)).toBe(false);
+    expect(existsSync(isolatedHome)).toBe(false);
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: 'generic', message: 'runVerify aborted' },
+    });
+  });
+
   const probe = async (
     respond: (proj: string) => Partial<ExecResult> = (proj) => ({ stdout: reply(proj) }),
     options: { kind?: 'plugin' | 'skill'; canonical?: boolean; combined?: boolean } = {},

@@ -1,77 +1,61 @@
 import { describe, expect, test } from 'bun:test';
+import { resolveRuntimeConfiguration } from '../../src/config/runtime.ts';
 import { crossScopeDuplicate } from '../../src/doctor/checks/cross-scope-duplicate.ts';
 import { noopLogger } from '../../src/env/logger.ts';
-import type { ScanEnv } from '../../src/env/types.ts';
-import { listSkills } from '../../src/scan/list-skills.ts';
+import { INVENTORY_CANCELLED } from '../../src/inventory/cancellation.ts';
+import { inventoryRootOrdinalOf } from '../../src/inventory/types.ts';
+import type { InventoryReadPorts } from '../../src/ports/types.ts';
+import { listSkills, observeSkillPlacements } from '../../src/scan/list-skills.ts';
+
+const configuration = resolveRuntimeConfiguration({});
 
 const fakeEnv = (
   existing: Record<string, readonly string[]>,
   files: Record<string, string> = {},
-): ScanEnv => ({
+): InventoryReadPorts => ({
   homeDir: '/h',
-  path: [],
+  executableSearchPath: [],
   platform: 'linux',
   xdg: { config: '/h/.config', data: '/h/.local/share', cache: '/h/.cache' },
   fileExists: async (p) => p in existing || p in files,
   realpath: async (p) => p,
   listDir: async (p) => existing[p] ?? [],
   readText: async (p) => files[p] ?? '',
-  runVersion: async () => 'unknown',
-  exec: async () => ({ code: 0, stdout: '', stderr: '', timedOut: false }),
   pathKind: async () => 'absent' as const,
   isExecutable: async () => false,
   readBytes: async () => new Uint8Array(),
   readLink: async () => '',
-  makeSymlink: async () => {},
-  rename: async () => {},
-  copyTree: async () => {},
-  removeTree: async () => {},
-  makeDir: async () => {},
-  writeTextFile: async () => {},
-  fsyncFile: async () => {},
-  fsyncDir: async () => {},
   modifiedAt: async () => null,
-  withFileLock: (_p, fn) => fn(),
 });
 
 describe('listSkills', () => {
-  test('duplicate groups use the final selected scopes and enablement', async () => {
+  test('doctor uses canonical conflicts, including two roots within one scope', async () => {
     const env = fakeEnv(
-      { '/h/.claude/skills': ['shared'], '/plugin/skills': ['shared'] },
+      { '/h/.agents/skills': ['shared'], '/h/.codex/skills': ['shared'] },
       {
-        '/h/.claude/skills/shared/SKILL.md': '---\nname: shared\n---\n',
-        '/plugin/skills/shared/SKILL.md': '---\nname: shared\n---\n',
-        '/h/.claude/plugins/installed_plugins.json': JSON.stringify({
-          version: 2,
-          plugins: {
-            'test@fixture': [
-              { scope: 'project', projectPath: '/proj', installPath: '/plugin', version: '1.0' },
-            ],
-          },
-        }),
-        '/proj/.claude/settings.json': JSON.stringify({
-          enabledPlugins: { 'test@fixture': false },
-        }),
+        '/h/.agents/skills/shared/SKILL.md': '---\nname: shared\n---\n',
+        '/h/.codex/skills/shared/SKILL.md': '---\nname: shared\n---\n',
       },
     );
-    const opts = {
-      tools: ['claude-code'] as const,
+    const findings = await crossScopeDuplicate.run({
+      env: {
+        ...env,
+        assertWritableDirectory: async () => {},
+        http: { request: async () => ({ status: 200, ok: true }) },
+      },
+      mode: 'doctor',
+      tools: ['codex'],
+      scopes: ['user'],
       cwd: '/proj',
-      envVars: {},
-      duplicatesOnly: true,
-    };
-    const all = await listSkills(env, opts);
-    expect(all.ok && all.value.length).toBe(2);
-    for (const selection of [
-      { scopes: ['user'] as const },
-      { enabledFilter: 'enabled-only' as const },
-      { enabledFilter: 'disabled-only' as const },
-    ]) {
-      const narrowed = await listSkills(env, { ...opts, ...selection });
-      expect(narrowed.ok && narrowed.value).toEqual([]);
-    }
+      configuration,
+      offline: true,
+      logger: noopLogger,
+    });
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.tool).toBe('codex');
+    expect(findings[0]?.message).toContain('/h/.agents/skills/shared');
+    expect(findings[0]?.message).toContain('/h/.codex/skills/shared');
   });
-
   test('cross-tool name reuse is not a same-tool cross-scope duplicate', async () => {
     const env = fakeEnv(
       {
@@ -83,7 +67,7 @@ describe('listSkills', () => {
         '/proj/.agents/skills/shared/SKILL.md': '---\nname: shared\n---\n',
       },
     );
-    const opts = { tools: ['claude-code', 'codex'] as const, cwd: '/proj', envVars: {} };
+    const opts = { tools: ['claude-code', 'codex'] as const, cwd: '/proj', configuration };
     const inventory = await listSkills(env, opts);
     const duplicates = await listSkills(env, { ...opts, duplicatesOnly: true });
     expect(inventory.ok && inventory.value.length).toBe(2);
@@ -104,12 +88,16 @@ describe('listSkills', () => {
       ),
     );
     const findings = await crossScopeDuplicate.run({
-      env,
+      env: {
+        ...env,
+        assertWritableDirectory: async () => {},
+        http: { request: async () => ({ status: 200, ok: true }) },
+      },
       mode: 'doctor',
       tools: ['claude-code', 'codex'],
       scopes: ['user', 'project'],
       cwd: '/proj',
-      envVars: {},
+      configuration,
       offline: true,
       logger: noopLogger,
     });
@@ -118,7 +106,7 @@ describe('listSkills', () => {
   });
 
   test('empty system → []', async () => {
-    const r = await listSkills(fakeEnv({}), { cwd: '/proj', envVars: {} });
+    const r = await listSkills(fakeEnv({}), { cwd: '/proj', configuration });
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.value).toEqual([]);
   });
@@ -134,7 +122,7 @@ describe('listSkills', () => {
     const r = await listSkills(env, {
       tools: ['claude-code'],
       cwd: '/proj',
-      envVars: {},
+      configuration,
     });
     expect(r.ok).toBe(true);
     if (r.ok) {
@@ -160,7 +148,7 @@ describe('listSkills', () => {
     const r = await listSkills(env, {
       tools: ['claude-code'],
       cwd: '/proj',
-      envVars: {},
+      configuration,
       duplicatesOnly: true,
     });
     expect(r.ok).toBe(true);
@@ -185,10 +173,142 @@ describe('listSkills', () => {
     const r = await listSkills(env, {
       tools: ['claude-code'],
       cwd: '/proj',
-      envVars: {},
+      configuration,
       globs: ['gr*'],
     });
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.value.map((e) => e.name)).toEqual(['grep']);
+  });
+
+  test('internal observations retain each adapter root ordinal', async () => {
+    const currentRoot = '/h/.agents/skills';
+    const legacyRoot = '/h/.codex/skills';
+    const observed = await observeSkillPlacements(
+      fakeEnv(
+        {
+          [currentRoot]: ['current'],
+          [legacyRoot]: ['legacy'],
+        },
+        {
+          [`${currentRoot}/current/SKILL.md`]: '---\n---\n',
+          [`${legacyRoot}/legacy/SKILL.md`]: '---\n---\n',
+        },
+      ),
+      { tools: ['codex'], scopes: ['user'], cwd: '/proj', configuration },
+    );
+
+    expect(observed.ok).toBeTrue();
+    if (observed.ok) {
+      expect(observed.value.map((entry) => [entry.root, inventoryRootOrdinalOf(entry)])).toEqual([
+        [currentRoot, 0],
+        [legacyRoot, 1],
+      ]);
+    }
+  });
+
+  test('does not read Claude plugin state when selected tools have no plugin skill root', async () => {
+    const pluginState = '/h/.claude/plugins/installed_plugins.json';
+    const base = fakeEnv({});
+    const touched: string[] = [];
+    const env: InventoryReadPorts = {
+      ...base,
+      fileExists: async (path) => {
+        touched.push(path);
+        if (path === pluginState) throw new Error('Claude plugin state must stay untouched');
+        return base.fileExists(path);
+      },
+    };
+
+    const r = await listSkills(env, {
+      tools: ['codex'],
+      scopes: ['user'],
+      cwd: '/proj',
+      configuration,
+    });
+
+    expect(r).toMatchObject({ ok: true, value: [] });
+    expect(touched).not.toContain(pluginState);
+  });
+
+  test('filters plugin scopes before settings and plugin-root I/O', async () => {
+    const installedPath = '/h/.claude/plugins/installed_plugins.json';
+    const projectSettings = '/proj/.claude/settings.json';
+    const pluginRoot = '/pkg/skills';
+    const base = fakeEnv(
+      {},
+      {
+        [installedPath]: JSON.stringify({
+          version: 2,
+          plugins: {
+            'project@market': [
+              {
+                scope: 'project',
+                installPath: '/pkg',
+                version: '1.0',
+                projectPath: '/proj',
+              },
+            ],
+          },
+        }),
+        [projectSettings]: JSON.stringify({ enabledPlugins: { 'project@market': true } }),
+      },
+    );
+    const reads: string[] = [];
+    const listed: string[] = [];
+    const env: InventoryReadPorts = {
+      ...base,
+      readText: async (path) => {
+        reads.push(path);
+        return base.readText(path);
+      },
+      listDir: async (path) => {
+        listed.push(path);
+        return base.listDir(path);
+      },
+    };
+
+    const r = await listSkills(env, {
+      tools: ['claude-code'],
+      scopes: ['user'],
+      cwd: '/proj',
+      configuration,
+    });
+
+    expect(r).toMatchObject({ ok: true, value: [] });
+    expect(reads).toEqual([installedPath]);
+    expect(reads).not.toContain(projectSettings);
+    expect(listed).not.toContain(pluginRoot);
+  });
+
+  test('mid-root cancellation stops the skill walker promptly', async () => {
+    const root = '/h/.claude/skills';
+    const controller = new AbortController();
+    let reads = 0;
+    const base = fakeEnv(
+      { [root]: ['one', 'two'] },
+      {
+        [`${root}/one/SKILL.md`]: '---\n---\n',
+        [`${root}/two/SKILL.md`]: '---\n---\n',
+      },
+    );
+    const env: InventoryReadPorts = {
+      ...base,
+      readText: async (path) => {
+        reads += 1;
+        controller.abort(new Error('private reason'));
+        return base.readText(path);
+      },
+    };
+
+    await expect(
+      observeSkillPlacements(env, {
+        tools: ['claude-code'],
+        scopes: ['user'],
+        cwd: '/proj',
+        configuration,
+        signal: controller.signal,
+      }),
+    ).rejects.toEqual(INVENTORY_CANCELLED);
+    expect(reads).toBe(1);
   });
 });

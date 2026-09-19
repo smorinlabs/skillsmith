@@ -1,21 +1,37 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { defaultScanEnv } from '../../src/env/default.ts';
-import type { ScanEnv } from '../../src/env/types.ts';
+import type { LogicalJournalV1Dto } from '../../src/artifacts/journal-types.ts';
+import {
+  describeLedgerV1Migration,
+  fromLedgerV1Dto,
+  fromLedgerV2Dto,
+  ledgerV1Codec,
+  ledgerV2Codec,
+  migrateLedgerV1DtoToV2Dto,
+  toLedgerV1Dto,
+} from '../../src/artifacts/ledger-codec.ts';
+import type { LedgerV1Dto, LedgerV2Dto } from '../../src/artifacts/ledger-types.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
 import {
   deletePairAt,
   emptyLedger,
+  emptyLedgerModel,
+  getLedgerPairAt,
   getPair,
   getPairAt,
   readLedger,
+  readLedgerState,
   setPair,
   setPairAt,
+  withLedgerPairAt,
+  withoutLedgerPairAt,
   writeLedger,
 } from '../../src/place/ledger.ts';
 import type { OriginRecord, PairRecord, PinnedRecord } from '../../src/place/types.ts';
+import { defaultRuntimePorts } from '../../src/ports/default.ts';
+import type { RuntimePorts } from '../../src/ports/types.ts';
 
 const P12_GOLDEN = join(import.meta.dir, '..', 'fixtures', 'place', 'ledger.golden.json');
 const INSTALL_GOLDEN = join(
@@ -24,6 +40,16 @@ const INSTALL_GOLDEN = join(
   'fixtures',
   'place',
   'ledger-install.golden.json',
+);
+const CONTRACT_FIXTURES = join(
+  import.meta.dir,
+  '..',
+  '..',
+  '..',
+  '..',
+  'tests',
+  'ergonomics',
+  'fixtures',
 );
 
 const msg = (e: SkillSmithError): string => ('message' in e ? e.message : e.code);
@@ -59,11 +85,163 @@ const installPair = (path: string, placement: 'symlink' | 'copy'): PairRecord =>
   journal: null,
 });
 
+const unwrap = <T>(result: { ok: true; value: T } | { ok: false; error: unknown }): T => {
+  if (!result.ok) throw new Error(JSON.stringify(result.error));
+  return result.value;
+};
+
+describe('artifact ledger codecs', () => {
+  test('v1 compatibility and v2 canonical codecs reproduce the contract goldens', async () => {
+    const v1Bytes = new Uint8Array(
+      await readFile(join(CONTRACT_FIXTURES, 'p2-ts08', 'ledger-v1.golden.json')),
+    );
+    const v2Bytes = new Uint8Array(
+      await readFile(join(CONTRACT_FIXTURES, 'p2-ts08', 'ledger-v2.golden.json')),
+    );
+    const v1 = unwrap(ledgerV1Codec.decode(v1Bytes));
+    const v2 = unwrap(ledgerV2Codec.decode(v2Bytes));
+    expect(unwrap(ledgerV1Codec.encode(v1.model))).toEqual(v1Bytes);
+    expect(unwrap(ledgerV2Codec.encode(v2.model))).toEqual(v2Bytes);
+    expect(v1Bytes.at(-1)).not.toBe(0x0a);
+    expect(v2Bytes.at(-1)).toBe(0x0a);
+    expect(Object.isFrozen(v1.model)).toBe(true);
+    expect(Object.isFrozen(v2.model)).toBe(true);
+  });
+
+  test('pure v1 migration matches the exact DTO, revisions, and retained-journal identities', async () => {
+    const fixtureSource = await readFile(
+      join(CONTRACT_FIXTURES, 'p2-ts06', 'migration-cases.json'),
+      'utf8',
+    );
+    const fixtures = (
+      JSON.parse(fixtureSource) as {
+        ledgerMigrations: readonly {
+          id: string;
+          before: string;
+          after: string;
+          sourceByteRevision: string;
+          targetByteRevision: string;
+          semanticRevision: string;
+          preservedLegacyJournals: readonly unknown[];
+        }[];
+      }
+    ).ledgerMigrations;
+    for (const fixture of fixtures) {
+      const dto = JSON.parse(fixture.before) as LedgerV1Dto;
+      const snapshot = structuredClone(dto);
+      const migrated = unwrap(migrateLedgerV1DtoToV2Dto(dto));
+      const metadata = unwrap(
+        describeLedgerV1Migration(new TextEncoder().encode(fixture.before), dto),
+      );
+      expect(dto, fixture.id).toEqual(snapshot);
+      expect(`${JSON.stringify(migrated, null, 2)}\n`, fixture.id).toBe(fixture.after);
+      expect(String(metadata.sourceByteRevision), fixture.id).toBe(fixture.sourceByteRevision);
+      expect(String(metadata.targetByteRevision), fixture.id).toBe(fixture.targetByteRevision);
+      expect(String(metadata.sourceSemanticRevision), fixture.id).toBe(fixture.semanticRevision);
+      expect(String(metadata.targetSemanticRevision), fixture.id).toBe(fixture.semanticRevision);
+      expect(metadata.targetCanonicalSource, fixture.id).toBe(fixture.after);
+      expect(metadata.preservedLegacyJournals as readonly unknown[], fixture.id).toEqual(
+        fixture.preservedLegacyJournals,
+      );
+    }
+  });
+
+  test('v2 permits normalized dynamic tools but enforces registrations and journal placement', async () => {
+    const golden = JSON.parse(
+      await readFile(join(CONTRACT_FIXTURES, 'p2-ts08', 'ledger-v2.golden.json'), 'utf8'),
+    ) as LedgerV2Dto;
+    const dynamic = structuredClone(golden) as LedgerV2Dto;
+    const sample = dynamic.skills.review?.tools.codex;
+    if (sample === undefined) throw new Error('ledger golden lacks sample pair');
+    (dynamic.skills as Record<string, { tools: Record<string, typeof sample> }>).dynamic = {
+      tools: { 'kilo-code': { ...sample, journal: null } },
+    };
+    const model = unwrap(fromLedgerV2Dto(dynamic));
+    expect(unwrap(ledgerV2Codec.toDto(model)).skills.dynamic?.tools['kilo-code']).toEqual({
+      ...sample,
+      journal: null,
+    });
+    expect(toLedgerV1Dto(model).ok).toBe(false);
+
+    const registrationMismatch = structuredClone(golden) as LedgerV2Dto;
+    const registration = registrationMismatch.projectRegistrations['/workspace/project'];
+    if (registration === undefined) throw new Error('ledger golden lacks project registration');
+    (registration.consumers[0] as { placementPath: string }).placementPath = '/wrong';
+    expect(fromLedgerV2Dto(registrationMismatch).ok).toBe(false);
+
+    const committedInFlight = structuredClone(golden) as LedgerV2Dto;
+    const committed = committedInFlight.history[0];
+    if (committed === undefined) throw new Error('ledger golden lacks history journal');
+    (committedInFlight.transactions as Record<string, typeof committed>)[committed.transactionId] =
+      committed;
+    expect(fromLedgerV2Dto(committedInFlight).ok).toBe(false);
+
+    const liveInHistory = structuredClone(golden) as LedgerV2Dto;
+    const live = liveInHistory.transactions['tx:migrate-ledger-live'];
+    if (live === undefined) throw new Error('ledger golden lacks live journal');
+    (liveInHistory.history as (typeof live)[]).push(live);
+    expect(fromLedgerV2Dto(liveInHistory).ok).toBe(false);
+
+    const repeatedHistoryId = structuredClone(golden) as LedgerV2Dto;
+    const repeated = repeatedHistoryId.history[0];
+    if (repeated === undefined) throw new Error('ledger golden lacks history journal');
+    (repeatedHistoryId.history as LogicalJournalV1Dto[]).push(repeated);
+    expect(fromLedgerV2Dto(repeatedHistoryId).ok).toBe(false);
+
+    const repeatedLegacyId = structuredClone(golden) as LedgerV2Dto;
+    const legacyPair = repeatedLegacyId.skills.review?.tools.codex;
+    if (legacyPair === undefined) throw new Error('ledger golden lacks legacy journal');
+    (
+      repeatedLegacyId.skills as Record<string, { tools: Record<string, typeof legacyPair> }>
+    ).other = {
+      tools: { codex: { ...legacyPair, placementPath: '/other' } },
+    };
+    expect(fromLedgerV2Dto(repeatedLegacyId).ok).toBe(false);
+  });
+});
+
+describe('canonical immutable pair facade', () => {
+  test('derives project registrations atomically and preserves its input model', () => {
+    const before = emptyLedgerModel('2026-07-15T00:00:00.000Z');
+    const snapshot = structuredClone(before);
+    const pair = installPair('/workspace/project/.agents/skills/alpha', 'copy');
+    if (pair.pinned === undefined || pair.pinned === null) {
+      throw new Error('canonical registration fixture requires pinned state');
+    }
+    const added = withLedgerPairAt(before, '/workspace/project', 'alpha', 'kilo-code', pair);
+    if (!added.ok) throw new Error(msg(added.error));
+
+    expect(before).toEqual(snapshot);
+    expect(Object.isFrozen(added.value)).toBeTrue();
+    expect(getLedgerPairAt(added.value, '/workspace/project', 'alpha', 'kilo-code')).toEqual(pair);
+    expect(added.value.projectRegistrations).toEqual({
+      '/workspace/project': {
+        consumers: [
+          {
+            skill: 'alpha',
+            tool: 'kilo-code',
+            placementPath: pair.placementPath,
+            store: {
+              path: pair.pinned.storePath,
+              contentHash: pair.pinned.contentHash,
+            },
+          },
+        ],
+      },
+    });
+
+    const removed = withoutLedgerPairAt(added.value, '/workspace/project', 'alpha', 'kilo-code');
+    if (!removed.ok) throw new Error(msg(removed.error));
+    expect(removed.value.projects).toEqual({});
+    expect(removed.value.projectRegistrations).toEqual({});
+  });
+});
+
 describe('additive schema — golden round trips', () => {
-  let env: ScanEnv;
+  let env: RuntimePorts;
   let base: string;
   beforeEach(async () => {
-    env = await defaultScanEnv();
+    env = await defaultRuntimePorts();
     base = await mkdtemp(join(tmpdir(), 'skillsmith-ledger-add-'));
   });
   afterEach(async () => {
@@ -90,20 +268,20 @@ describe('additive schema — golden round trips', () => {
     expect(proj?.origin?.refRequested).toBe('v1.0.0');
 
     const p = join(base, 'placements.json');
-    const w = await writeLedger(env, p, read.value);
+    const w = await writeLedger(env, p, unwrap(fromLedgerV1Dto(read.value)));
     if (!w.ok) throw new Error(msg(w.error));
-    const back = await readLedger(env, p);
-    if (!back.ok) throw new Error(msg(back.error));
-    expect(back.value.skills).toEqual(read.value.skills);
-    expect(back.value.projects).toEqual(read.value.projects);
+    const back = await readLedgerState(env, p);
+    if (!back.ok || back.value.state !== 'present') throw new Error('missing canonical ledger');
+    expect(back.value.model.skills).toEqual(read.value.skills);
+    expect(back.value.model.projects).toEqual(read.value.projects ?? {});
   });
 });
 
-describe('additive schema — zod locks', () => {
-  let env: ScanEnv;
+describe('additive schema — codec locks', () => {
+  let env: RuntimePorts;
   let base: string;
   beforeEach(async () => {
-    env = await defaultScanEnv();
+    env = await defaultRuntimePorts();
     base = await mkdtemp(join(tmpdir(), 'skillsmith-ledger-add-'));
   });
   afterEach(async () => {
@@ -218,6 +396,33 @@ describe('additive schema — zod locks', () => {
     const r = await writeAndRead(l);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe('ledger-error');
+  });
+
+  test('rejects unknown fields recursively instead of stripping them', async () => {
+    const rootUnknown = {
+      ...emptyLedger('2026-07-07T00:00:00Z'),
+      ignoredByTheLegacyParser: true,
+    };
+    const pairUnknown = {
+      schemaVersion: 1,
+      kind: 'skillsmith.placements',
+      updatedAt: '2026-07-07T00:00:00Z',
+      skills: {
+        alpha: {
+          tools: {
+            codex: {
+              ...installPair('/x', 'copy'),
+              ignoredByTheLegacyParser: true,
+            },
+          },
+        },
+      },
+    };
+    for (const candidate of [rootUnknown, pairUnknown]) {
+      const r = await writeAndRead(candidate);
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error.code).toBe('ledger-error');
+    }
   });
 });
 

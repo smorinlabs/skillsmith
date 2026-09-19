@@ -1,9 +1,10 @@
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { lstat, readdir, readlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import type { FlipDeps, FlipOptions, ScanEnv, SkillSmithError } from '@skillsmith/core';
-import { runDev, runPromote, runRollback } from '@skillsmith/core';
-import { getPair, readLedger } from '../../../core/src/place/ledger.ts';
+import type { FlipDeps, FlipOptions, RuntimePorts, SkillSmithError } from '@skillsmith/core';
+import { resolveRuntimeConfiguration, runDev, runPromote, runRollback } from '@skillsmith/core';
+import type { LedgerWriterBarrier } from '../../../core/src/artifacts/ledger-writer.ts';
+import { getPair, readLedger, readLedgerState } from '../../../core/src/place/ledger.ts';
 import { ledgerPathOf, resolveDataDir } from '../../../core/src/place/paths.ts';
 import {
   type FixtureFleet,
@@ -59,7 +60,7 @@ const passDeps = (): FlipDeps => ({
 const opts = (f: FixtureFleet, o: Partial<FlipOptions> = {}): FlipOptions => ({
   targets: [],
   cwd: f.home,
-  envVars: f.envVars,
+  configuration: resolveRuntimeConfiguration(f.envVars),
   ...o,
 });
 
@@ -69,7 +70,7 @@ const opts = (f: FixtureFleet, o: Partial<FlipOptions> = {}): FlipOptions => ({
 // stranded: classifyPlacement returns 'absent', so pre-fix planning dropped the pair from every
 // route. Only the live-install rename is faulted; the ledger's own renames (tmp -> placements.json)
 // and store renames have different destinations and pass through untouched.
-const crashOnInstall = (env: ScanEnv, livePath: string): ScanEnv => ({
+const crashOnInstall = (env: RuntimePorts, livePath: string): RuntimePorts => ({
   ...env,
   rename: async (src: string, dst: string): Promise<void> => {
     if (dst === livePath) throw new Error('injected crash: P4 install rename');
@@ -96,10 +97,33 @@ const journalPhaseOf = async (
   f: FixtureFleet,
   skill: string,
 ): Promise<string | null | undefined> => {
-  const ledgerPath = ledgerPathOf(resolveDataDir(f.env, f.envVars));
+  const ledgerPath = ledgerPathOf(resolveDataDir(f.env, resolveRuntimeConfiguration(f.envVars)));
   const l = await readLedger(f.env, ledgerPath);
   if (!l.ok) throw new Error(msg(l.error));
   return getPair(l.value, skill, 'claude-code')?.journal?.phase;
+};
+
+const expectCanonicalRollbackFinal = async (
+  f: FixtureFleet,
+  skill: string,
+  transactionId: string,
+): Promise<void> => {
+  const ledgerPath = ledgerPathOf(resolveDataDir(f.env, resolveRuntimeConfiguration(f.envVars)));
+  const state = await readLedgerState(f.env, ledgerPath);
+  if (!state.ok || state.value.state !== 'present') {
+    throw new Error('canonical rollback ledger is absent');
+  }
+  expect(state.value.model.transactions).toEqual({});
+  const committed = state.value.model.history.find(
+    (journal) => journal.transactionId === transactionId,
+  );
+  expect(committed).toMatchObject({
+    transactionId,
+    disposition: 'rollback',
+    phase: 'committed',
+  });
+  expect(committed?.actual.after).toEqual(committed?.actual.before);
+  expect(state.value.model.skills[skill]?.tools['claude-code']?.journal).toBeNull();
 };
 
 // Drive a swap into the absent-live crash window and return the (still-present) old live target so
@@ -110,7 +134,12 @@ const crashAtInstall = async (
   f: FixtureFleet,
   driver: 'promote' | 'dev',
   seed?: (f: FixtureFleet) => Promise<void>,
-): Promise<{ livePath: string; skillsRoot: string; oldTarget: string | null }> => {
+): Promise<{
+  livePath: string;
+  skillsRoot: string;
+  oldTarget: string | null;
+  transactionId: string;
+}> => {
   const skillsRoot = join(f.home, '.claude', 'skills');
   const livePath = join(skillsRoot, 'alpha');
   const oldTarget = (await kindOf(livePath)) === 'symlink' ? await readlink(livePath) : null;
@@ -128,7 +157,16 @@ const crashAtInstall = async (
     true,
   );
   expect(await journalPhaseOf(f, 'alpha')).toBe('live');
-  return { livePath, skillsRoot, oldTarget };
+  const ledgerPath = ledgerPathOf(resolveDataDir(f.env, resolveRuntimeConfiguration(f.envVars)));
+  const state = await readLedgerState(f.env, ledgerPath);
+  if (!state.ok || state.value.state !== 'present') {
+    throw new Error('crashed canonical ledger is absent');
+  }
+  const transactions = Object.values(state.value.model.transactions);
+  expect(transactions).toHaveLength(1);
+  const transactionId = transactions[0]?.transactionId;
+  if (transactionId === undefined) throw new Error('crashed logical transaction is missing');
+  return { livePath, skillsRoot, oldTarget, transactionId };
 };
 
 const promoteFully = async (f: FixtureFleet): Promise<void> => {
@@ -142,7 +180,10 @@ describe('F1: an absent-live journaled pair is reachable by every recovery route
     test('named --rollback restores the dev symlink byte-identically', async () => {
       const f = await buildFixtureFleet();
       try {
-        const { livePath, skillsRoot, oldTarget } = await crashAtInstall(f, 'promote');
+        const { livePath, skillsRoot, oldTarget, transactionId } = await crashAtInstall(
+          f,
+          'promote',
+        );
 
         const rb = await runRollback(
           f.env,
@@ -157,6 +198,7 @@ describe('F1: an absent-live journaled pair is reachable by every recovery route
         expect(await readlink(livePath)).toBe(oldTarget);
         expect(await journalPhaseOf(f, 'alpha')).toBeUndefined();
         expect(await residueNames(skillsRoot)).toEqual([]);
+        await expectCanonicalRollbackFinal(f, 'alpha', transactionId);
       } finally {
         await destroyFixtureFleet(f);
       }
@@ -165,7 +207,7 @@ describe('F1: an absent-live journaled pair is reachable by every recovery route
     test('--all --rollback reaches the same absent-live pair', async () => {
       const f = await buildFixtureFleet();
       try {
-        const { livePath, oldTarget } = await crashAtInstall(f, 'promote');
+        const { livePath, oldTarget, transactionId } = await crashAtInstall(f, 'promote');
 
         const rb = await runRollback(
           f.env,
@@ -180,6 +222,7 @@ describe('F1: an absent-live journaled pair is reachable by every recovery route
         if (oldTarget === null) throw new Error('expected a symlink live entry before the crash');
         expect(await readlink(livePath)).toBe(oldTarget);
         expect(await journalPhaseOf(f, 'alpha')).toBeUndefined();
+        await expectCanonicalRollbackFinal(f, 'alpha', transactionId);
       } finally {
         await destroyFixtureFleet(f);
       }
@@ -200,13 +243,71 @@ describe('F1: an absent-live journaled pair is reachable by every recovery route
         await destroyFixtureFleet(f);
       }
     });
+
+    test('rollback resumes after its durable direction boundary is interrupted', async () => {
+      const f = await buildFixtureFleet();
+      try {
+        const { livePath, oldTarget, transactionId } = await crashAtInstall(f, 'promote');
+        let liveParentFsyncs = 0;
+        const boundaryEnv = {
+          ...f.env,
+          afterLedgerBarrier: async ({ kind }: LedgerWriterBarrier) => {
+            if (kind !== 'writer-live-parent-fsync') return;
+            liveParentFsyncs += 1;
+            if (liveParentFsyncs !== 2) return;
+            throw Object.assign(new Error('injected rollback boundary interruption'), {
+              code: 'cancelled',
+            });
+          },
+        };
+
+        const interrupted = await runRollback(
+          boundaryEnv,
+          { ...opts(f, { targets: ['alpha'] }), op: 'promote' },
+          passDeps(),
+        );
+        if (!interrupted.ok) throw new Error(msg(interrupted.error));
+        expect(liveParentFsyncs).toBe(2);
+        expect(interrupted.value.results[0]?.action).not.toBe('rolled-back');
+        expect(await kindOf(livePath)).toBe('absent');
+
+        const ledgerPath = ledgerPathOf(
+          resolveDataDir(f.env, resolveRuntimeConfiguration(f.envVars)),
+        );
+        const boundary = await readLedgerState(f.env, ledgerPath);
+        if (!boundary.ok || boundary.value.state !== 'present') {
+          throw new Error('durable rollback boundary ledger is absent');
+        }
+        expect(Object.values(boundary.value.model.transactions)).toContainEqual(
+          expect.objectContaining({ disposition: 'rollback', phase: 'prepared' }),
+        );
+
+        const resumed = await runRollback(
+          f.env,
+          { ...opts(f, { targets: ['alpha'] }), op: 'promote' },
+          passDeps(),
+        );
+        if (!resumed.ok) throw new Error(msg(resumed.error));
+        expect(resumed.value.results[0]?.action).toBe('rolled-back');
+        if (oldTarget === null) throw new Error('expected a symlink live entry before the crash');
+        expect(await readlink(livePath)).toBe(oldTarget);
+        expect(await journalPhaseOf(f, 'alpha')).toBeUndefined();
+        await expectCanonicalRollbackFinal(f, 'alpha', transactionId);
+      } finally {
+        await destroyFixtureFleet(f);
+      }
+    });
   });
 
   describe('dev crash (P4 rename faulted, after a full promote)', () => {
     test('named --rollback restores the pinned copy', async () => {
       const f = await buildFixtureFleet();
       try {
-        const { livePath, skillsRoot } = await crashAtInstall(f, 'dev', promoteFully);
+        const { livePath, skillsRoot, transactionId } = await crashAtInstall(
+          f,
+          'dev',
+          promoteFully,
+        );
 
         const rb = await runRollback(
           f.env,
@@ -219,6 +320,7 @@ describe('F1: an absent-live journaled pair is reachable by every recovery route
         expect(await kindOf(livePath)).toBe('dir');
         expect(await journalPhaseOf(f, 'alpha')).toBeUndefined();
         expect(await residueNames(skillsRoot)).toEqual([]);
+        await expectCanonicalRollbackFinal(f, 'alpha', transactionId);
       } finally {
         await destroyFixtureFleet(f);
       }
@@ -227,7 +329,7 @@ describe('F1: an absent-live journaled pair is reachable by every recovery route
     test('--all --rollback reaches it; same-op re-run then converges to the dev symlink', async () => {
       const f = await buildFixtureFleet();
       try {
-        const { livePath } = await crashAtInstall(f, 'dev', promoteFully);
+        const { livePath, transactionId } = await crashAtInstall(f, 'dev', promoteFully);
         const devSource = resolve(f.alphaSrc); // the adopted dev source recorded at promote time
 
         const rb = await runRollback(f.env, { ...opts(f, { all: true }), op: 'dev' }, passDeps());
@@ -237,6 +339,7 @@ describe('F1: an absent-live journaled pair is reachable by every recovery route
         expect(rb.value.results.find((res) => res.skill === 'alpha')?.action).toBe('rolled-back');
         expect(await kindOf(livePath)).toBe('dir');
         expect(await journalPhaseOf(f, 'alpha')).toBeUndefined();
+        await expectCanonicalRollbackFinal(f, 'alpha', transactionId);
 
         // Re-crash (live is now the restored pinned dir) and let a plain `dev` re-run drive the
         // interrupted swap forward to committed.

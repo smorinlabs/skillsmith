@@ -31,7 +31,8 @@ not the execution checkpoint's status; no catalog gate is signed off by this tra
   adversarial review, traceability closure, and sign-off for every change group.
 - Close documentation drift and executable structural validation in Phase 0.
 - Prevent phase advancement while required entries are missing, failing, or skipped.
-- Require explicit user approval at each phase boundary and at final P17 completion.
+- Apply the user's 2026-07-12 standing approval at each phase boundary and final P17 completion;
+  record it mechanically without additional human-review pauses.
 
 ### Out of scope
 
@@ -47,11 +48,11 @@ None.
 ### Tests & Tasks
 
 - [x] [P17-TS01] Preparation package validated and PR-openable.
-- [ ] [P17-T01] Phase 0 executable consistency/control-plane gate approved.
-- [ ] [P17-T02] Phase 1 CLI truthfulness approved.
-- [ ] [P17-T03] Phase 2 portable artifact foundation approved.
-- [ ] [P17-T04] Phase 3 inspection and operation foundation approved.
-- [ ] [P17-T05] Phase 4 desired-state mutation, planner, and apply approved.
-- [ ] [P17-T06] Phase 5 sync, update, undo, and GC approved.
+- [x] [P17-T01] Phase 0 executable consistency/control-plane gate approved.
+- [x] [P17-T02] Phase 1 CLI truthfulness approved.
+- [x] [P17-T03] Phase 2 portable artifact foundation approved.
+- [x] [P17-T04] Phase 3 inspection and operation foundation approved.
+- [x] [P17-T05] Phase 4 desired-state mutation, planner, and apply approved.
+- [x] [P17-T06] Phase 5 sync, update, undo, and GC approved.
 - [ ] [P17-T07] Phase 6 distribution and UX approved.
-- [ ] [P17-TS02] Final P17 validation, user approval, and P14 handoff complete.
+- [ ] [P17-TS02] Final P17 validation, recorded standing user approval, and P14 handoff complete.

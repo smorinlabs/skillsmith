@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { claudeCodeAgent } from '../../src/agents/claude-code/index.ts';
-import type { ScanEnv } from '../../src/env/types.ts';
+import { claudeCodeAdapter, claudeCodeAgent } from '../../src/agents/claude-code/index.ts';
+import type { DetectionPorts } from '../../src/ports/types.ts';
 
-const env = (existing: string[]): ScanEnv => ({
+const env = (existing: string[]): DetectionPorts => ({
   homeDir: '/Users/u',
-  path: ['/usr/bin'],
+  executableSearchPath: ['/usr/bin'],
   platform: 'darwin',
   xdg: { config: '/c', data: '/d', cache: '/k' },
   fileExists: async (p) => existing.includes(p),
@@ -12,27 +12,21 @@ const env = (existing: string[]): ScanEnv => ({
   listDir: async () => [],
   readText: async () => '',
   runVersion: async () => '1.2.3',
-  exec: async () => ({ code: 0, stdout: '', stderr: '', timedOut: false }),
   pathKind: async () => 'absent' as const,
   isExecutable: async () => false,
   readBytes: async () => new Uint8Array(),
   readLink: async () => '',
-  makeSymlink: async () => {},
-  rename: async () => {},
-  copyTree: async () => {},
-  removeTree: async () => {},
-  makeDir: async () => {},
-  writeTextFile: async () => {},
-  fsyncFile: async () => {},
-  fsyncDir: async () => {},
   modifiedAt: async () => null,
-  withFileLock: (_p, fn) => fn(),
 });
 
 describe('claudeCodeAgent', () => {
   test('tool identity + installHint', () => {
     expect(claudeCodeAgent.tool).toBe('claude-code');
     expect(claudeCodeAgent.installHint).toContain('claude');
+  });
+
+  test('owns the static update verification policy', () => {
+    expect(claudeCodeAdapter.verification.gatePolicy.update).toBe('static');
   });
 
   test('returns empty list when not detected', async () => {

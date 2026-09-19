@@ -15,6 +15,13 @@ beforeEach(async () => {
   project = join(root, 'project');
   await mkdir(home);
   await mkdir(project);
+  // P17 includes project scope only when an actual project context is present.
+  const init = Bun.spawn(['git', 'init', '--quiet', project], {
+    env: hermeticGitEnv(),
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  if ((await init.exited) !== 0) throw new Error(await new Response(init.stderr).text());
 });
 
 afterEach(async () => {
@@ -55,8 +62,8 @@ const list = async (...args: string[]) => {
 describe('list duplicate inventory (#41)', () => {
   test('populated inventory with no conflict has truthful human and JSON empty states', async () => {
     await skill(home, '.agents', 'unique');
-    expect(JSON.parse(await list('--tool', 'codex', '--json')).skills).toHaveLength(1);
-    expect(JSON.parse(await list('--tool', 'codex', '--duplicates', '--json')).skills).toEqual([]);
+    expect(JSON.parse(await list('--tool', 'codex', '--json')).entries).toHaveLength(1);
+    expect(JSON.parse(await list('--tool', 'codex', '--duplicates', '--json')).entries).toEqual([]);
     expect(await list('--tool', 'codex', '--duplicates')).toBe(
       'No duplicate skills matched the selected inventory.\n',
     );
@@ -65,7 +72,7 @@ describe('list duplicate inventory (#41)', () => {
   test('same-tool user/project conflicts agree across human, JSON and filters', async () => {
     await skill(home, '.agents', 'shared');
     await skill(project, '.agents', 'shared');
-    const duplicates = JSON.parse(await list('--tool', 'codex', '--duplicates', '--json')).skills;
+    const duplicates = JSON.parse(await list('--tool', 'codex', '--duplicates', '--json')).entries;
     expect(duplicates).toHaveLength(2);
     expect(duplicates.map((entry: { scope: string }) => entry.scope).sort()).toEqual([
       'project',
@@ -81,7 +88,7 @@ describe('list duplicate inventory (#41)', () => {
     await skill(home, '.claude', 'shared');
     await skill(project, '.agents', 'shared');
     const tools = ['--tool', 'codex', '--tool', 'claude-code'];
-    expect(JSON.parse(await list(...tools, '--json')).skills).toHaveLength(2);
-    expect(JSON.parse(await list(...tools, '--duplicates', '--json')).skills).toEqual([]);
+    expect(JSON.parse(await list(...tools, '--json')).entries).toHaveLength(2);
+    expect(JSON.parse(await list(...tools, '--duplicates', '--json')).entries).toEqual([]);
   });
 });

@@ -39,7 +39,7 @@ describe('dev --source — verify gate (create)', () => {
   const opts = (o: Partial<DevSourceFlipOptions> = {}): DevSourceFlipOptions => ({
     targets: [],
     cwd: f.home,
-    envVars: f.envVars,
+    configuration: f.configuration,
     ...o,
   });
 
@@ -169,7 +169,7 @@ describe('dev --source — verify gate (adopt)', () => {
   const opts = (o: Partial<DevSourceFlipOptions> = {}): DevSourceFlipOptions => ({
     targets: [],
     cwd: f.home,
-    envVars: f.envVars,
+    configuration: f.configuration,
     ...o,
   });
 

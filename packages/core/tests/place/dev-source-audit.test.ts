@@ -47,7 +47,7 @@ describe('dev --source — pin-assumption audit on the dev-only record', () => {
   const opts = (o: Partial<DevSourceFlipOptions> = {}): DevSourceFlipOptions => ({
     targets: [],
     cwd: f.home,
-    envVars: f.envVars,
+    configuration: f.configuration,
     ...o,
   });
 
@@ -138,7 +138,7 @@ describe('dev --source — pin-assumption audit on the dev-only record', () => {
     await createBeta();
     const r = await runUninstall(
       f.env,
-      { targets: ['beta'], tools: ['claude-code'], cwd: f.home, envVars: f.envVars },
+      { targets: ['beta'], tools: ['claude-code'], cwd: f.home, configuration: f.configuration },
       uninstallDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));

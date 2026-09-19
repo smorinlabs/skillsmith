@@ -1,20 +1,40 @@
 import { afterEach, beforeEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
-import { rm } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
-import type { ScanEnv } from '../../src/env/types.ts';
+import { readlink, rm, symlink } from 'node:fs/promises';
+import { dirname, join, resolve } from 'node:path';
+import { createToolRegistry, toolRegistry } from '../../src/agents/registry.ts';
+import { fromLedgerV1Dto } from '../../src/artifacts/registry.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
-import { emptyLedger, getPair, readLedger, setPair, writeLedger } from '../../src/place/ledger.ts';
+import {
+  emptyLedger,
+  getLedgerPairAt,
+  getPair,
+  readLedger,
+  readLedgerState,
+  setPair,
+  writeLedger,
+} from '../../src/place/ledger.ts';
 import { ledgerPathOf } from '../../src/place/paths.ts';
-import { runDev, runPromote, runRollback } from '../../src/place/run.ts';
+import {
+  prepareDev,
+  prepareDevWithRegistry,
+  preparePromote,
+  runDev,
+  runPromote,
+  runRollback,
+} from '../../src/place/run.ts';
+import { contentHashOf } from '../../src/place/store.ts';
 import type {
   DevRecord,
   FlipDeps,
   FlipOptions,
+  FlipReport,
   Journal,
   OriginRecord,
   PairRecord,
   PinnedRecord,
 } from '../../src/place/types.ts';
+import type { OperationImage } from '../../src/planning/types.ts';
+import type { RuntimePorts } from '../../src/ports/types.ts';
 import type { Result } from '../../src/result.ts';
 import { ok } from '../../src/result.ts';
 import type { VerifyOptions } from '../../src/verify/run.ts';
@@ -39,6 +59,76 @@ setDefaultTimeout(20_000);
 
 const NOW = '2026-07-07T00:00:00Z';
 const msg = (e: SkillSmithError): string => ('message' in e ? e.message : e.code);
+
+const userLiveResource = (skill: string, path: string) => ({
+  kind: 'live' as const,
+  skill,
+  tool: 'claude-code' as const,
+  scope: 'user' as const,
+  projectRoot: null,
+  location: { kind: 'machine-bound' as const, path },
+});
+
+const pinnedImage = (
+  skill: string,
+  path: string,
+  contentHash: `sha256:${string}` | null,
+  sourcePath: string | null = null,
+): OperationImage => ({
+  kind: 'placement',
+  resource: userLiveResource(skill, path),
+  classification: 'pinned',
+  representation: 'copy',
+  linkTarget: null,
+  dangling: false,
+  source:
+    contentHash === null || sourcePath === null
+      ? null
+      : { kind: 'local-dev', path: sourcePath, contentHash },
+  contentHash: sourcePath === null ? null : contentHash,
+});
+
+const devImage = (
+  skill: string,
+  path: string,
+  target: string,
+  contentHash: `sha256:${string}` | null = null,
+): OperationImage => ({
+  kind: 'placement',
+  resource: userLiveResource(skill, path),
+  classification: 'dev',
+  representation: 'symlink',
+  linkTarget: { kind: 'machine-bound', path: target },
+  dangling: false,
+  source: contentHash === null ? null : { kind: 'local-dev', path: target, contentHash },
+  contentHash,
+});
+
+const absentImage = (skill: string, path: string): OperationImage => ({
+  kind: 'absent',
+  resource: userLiveResource(skill, path),
+});
+
+const expectRolledBackExecution = (
+  report: FlipReport,
+  actualBefore: OperationImage,
+  actualAfter: OperationImage,
+): void => {
+  const operation = report.plan.operations[0];
+  if (operation === undefined) throw new Error('rollback operation is missing');
+  expect(operation.before).toEqual(actualBefore);
+  expect(operation.after).toEqual(actualAfter);
+  expect(report.executionResults).toEqual([
+    {
+      operationId: operation.operationId,
+      outcome: 'rolled-back',
+      actualBefore,
+      actualAfter,
+      force: null,
+      error: null,
+    },
+  ]);
+};
 
 const runGit = (checkout: string, args: string[]): void => {
   const result = Bun.spawnSync(['git', ...args], {
@@ -156,7 +246,7 @@ const cannedDeps = (
 ): FlipDeps => ({
   now: () => NOW,
   newTxId: nextTxId,
-  verify: async (_env: ScanEnv, opts: VerifyOptions) => {
+  verify: async (_env, opts: VerifyOptions) => {
     calls.push(opts);
     const tool = opts.tools?.[0] ?? 'claude-code';
     return ok(makeVerifyReport(tool, verdict)) as Result<VerifyReport, SkillSmithError>;
@@ -168,11 +258,46 @@ const passDeps = (calls: VerifyOptions[] = []): FlipDeps => cannedDeps('pass', c
 const opts = (f: FixtureFleet, o: Partial<FlipOptions> = {}): FlipOptions => ({
   targets: [],
   cwd: f.home,
-  envVars: f.envVars,
+  configuration: f.configuration,
   ...o,
 });
 
 const readLedgerOf = async (f: FixtureFleet) => readLedger(f.env, ledgerPathOf(f.data));
+
+const trackExecutionWrites = (f: FixtureFleet) => {
+  const writes: string[] = [];
+  let active = false;
+  const env: typeof f.env = {
+    ...f.env,
+    writeTextFile: async (path, text) => {
+      if (active) writes.push(`write:${path}`);
+      await f.env.writeTextFile(path, text);
+    },
+    makeSymlink: async (target, linkPath) => {
+      if (active) writes.push(`symlink:${linkPath}`);
+      await f.env.makeSymlink(target, linkPath);
+    },
+    rename: async (from, to) => {
+      if (active) writes.push(`rename:${from}->${to}`);
+      await f.env.rename(from, to);
+    },
+    copyTree: async (from, to) => {
+      if (active) writes.push(`copy:${from}->${to}`);
+      await f.env.copyTree(from, to);
+    },
+    removeTree: async (path) => {
+      if (active) writes.push(`remove:${path}`);
+      await f.env.removeTree(path);
+    },
+  };
+  return {
+    env,
+    writes,
+    start: () => {
+      active = true;
+    },
+  };
+};
 
 describe('runPromote / runDev — verify gate matrix', () => {
   const VERDICTS: (VerifyOutcome | 'inconclusive')[] = ['pass', 'warn', 'fail', 'inconclusive'];
@@ -244,6 +369,52 @@ describe('runPromote / runDev — verify gate matrix', () => {
       await destroyFixtureFleet(f);
     }
   });
+
+  test('default verification dispatch uses the injected lifecycle registry adapter', async () => {
+    const f = await buildFixtureFleet();
+    try {
+      const verifierCalls: string[] = [];
+      const registry = createToolRegistry(
+        toolRegistry.adapters.map((adapter) =>
+          adapter.descriptor.id === 'claude-code' && adapter.verification
+            ? {
+                ...adapter,
+                verification: {
+                  ...adapter.verification,
+                  verify: async (_env, verifyOpts) => {
+                    verifierCalls.push(verifyOpts.path);
+                    const verdict = makeVerifyReport('claude-code', 'pass').tools[0];
+                    if (verdict === undefined) throw new Error('fixture verdict is missing');
+                    return ok(verdict);
+                  },
+                },
+              }
+            : adapter,
+        ),
+      );
+      const prepared = await prepareDevWithRegistry(
+        registry,
+        f.env,
+        opts(f, {
+          targets: ['beta'],
+          tools: ['claude-code'],
+          source: resolve(f.betaSrc),
+        }),
+      );
+      if (!prepared.ok) throw new Error(msg(prepared.error));
+
+      const executed = await prepared.value.execute();
+
+      if (!executed.ok) throw new Error(msg(executed.error));
+      expect(executed.value.results[0]).toMatchObject({
+        action: 'created',
+        verify: { gate: 'passed', verdict: 'pass' },
+      });
+      expect(verifierCalls).toHaveLength(1);
+    } finally {
+      await destroyFixtureFleet(f);
+    }
+  });
 });
 
 describe('runPromote — happy paths and convergence', () => {
@@ -265,9 +436,153 @@ describe('runPromote — happy paths and convergence', () => {
     const ledgerRes = await readLedgerOf(f);
     if (!ledgerRes.ok) throw new Error(msg(ledgerRes.error));
     const pair = getPair(ledgerRes.value, 'alpha', 'claude-code');
+    if (!pair) throw new Error('promoted pair is missing');
     expect(pair?.mode).toBe('pinned');
     expect(pair?.dev).not.toBeNull();
     expect(pair?.pinned?.verify).toBe('passed');
+    const journal = pair.journal;
+    if (!journal) throw new Error('promoted pair compatibility journal is missing');
+    expect(journal).toMatchObject({ op: 'promote', phase: 'committed' });
+    expect(journal.stagingPath).toBe(
+      join(dirname(pair.placementPath), `.skillsmith-staging-alpha-${journal.txId}`),
+    );
+    expect(journal.backupPath).toBe(
+      join(dirname(pair.placementPath), `.skillsmith-backup-alpha-${journal.txId}`),
+    );
+    const canonical = await readLedgerState(f.env, ledgerPathOf(f.data));
+    if (!canonical.ok || canonical.value.state !== 'present') {
+      throw new Error('canonical promoted ledger is missing');
+    }
+    expect(
+      getLedgerPairAt(canonical.value.model, null, 'alpha', 'claude-code')?.journal ?? null,
+    ).toBeNull();
+    const operation = r.value.plan.operations[0];
+    const logicalJournal = canonical.value.model.history.at(-1);
+    if (operation?.source?.kind !== 'local-dev' || logicalJournal === undefined) {
+      throw new Error('prepared promotion journal identity is missing');
+    }
+    const journalSource = logicalJournal.intent.source;
+    if (journalSource?.kind !== 'portable') {
+      throw new Error('prepared promotion journal source is not codec-portable');
+    }
+    expect(journalSource.identity).toEqual({
+      host: 'local.skillsmith.invalid',
+      repository: 'content/placement',
+      path: 'alpha',
+    });
+    expect(journalSource.requestedRef).toBeNull();
+    expect(journalSource.resolvedSha).toBe(
+      operation.source.contentHash.slice('sha256:'.length).slice(0, 40),
+    );
+    expect(journalSource.sourcePath).toBe('alpha');
+    expect(String(journalSource.contentHash)).toBe(operation.source.contentHash);
+  });
+
+  test('ledger persistence cancellation remains a cancelled placement result', async () => {
+    const controller = new AbortController();
+    const executionEnv = {
+      ...f.env,
+      afterLedgerBarrier: async (barrier: Readonly<{ kind: string }>) => {
+        if (barrier.kind === 'writer-stage-write') controller.abort();
+      },
+    } as RuntimePorts;
+
+    const result = await runPromote(
+      executionEnv,
+      opts(f, { targets: ['alpha'], signal: controller.signal }),
+      passDeps(),
+    );
+    if (!result.ok) throw new Error(msg(result.error));
+
+    expect(result.value.results[0]).toMatchObject({
+      action: 'failed',
+      reason: 'interrupted',
+      error: { code: 'cancelled' },
+    });
+    expect(result.value.executionResults[0]).toMatchObject({
+      outcome: 'cancelled',
+      actualAfter: result.value.plan.operations[0]?.before,
+      error: null,
+    });
+  });
+
+  test('preparation binds one fresh project context including an explicit config path', async () => {
+    const projectSkills = join(f.project, '.claude', 'skills');
+    await f.env.makeDir(projectSkills);
+    await f.env.makeSymlink(resolve(f.alphaSrc), join(projectSkills, 'alpha'));
+    const explicitConfigPath = join(f.project, 'placement-config.toml');
+
+    const prepared = await preparePromote(
+      f.env,
+      opts(f, {
+        cwd: f.project,
+        scope: 'project',
+        projectRoot: join(f.base, 'stale-project-root'),
+        targets: ['alpha'],
+        tools: ['claude-code'],
+        dryRun: true,
+        configuration: { ...f.configuration, explicitConfigPath },
+      }),
+      passDeps(),
+    );
+    if (!prepared.ok) throw new Error(msg(prepared.error));
+    const operation = prepared.value.plan.operations[0];
+    if (operation?.before.kind !== 'placement') {
+      throw new Error('project placement operation is missing');
+    }
+
+    expect(operation.scope).toBe('project');
+    expect(operation.before.resource.projectRoot).toEqual({
+      kind: 'machine-bound',
+      path: f.projectReal,
+    });
+    expect(operation.before.resource.location).toEqual({
+      kind: 'machine-bound',
+      path: join(f.projectReal, '.claude', 'skills', 'alpha'),
+    });
+  });
+
+  test('preparation refuses when the project context changes during snapshot observation', async () => {
+    const projectSkills = join(f.project, '.claude', 'skills');
+    await f.env.makeDir(projectSkills);
+    await f.env.makeSymlink(resolve(f.alphaSrc), join(projectSkills, 'alpha'));
+    const explicitConfigPath = join(f.project, 'placement-config.toml');
+    let projectContextReads = 0;
+    const driftingEnv: RuntimePorts = {
+      ...f.env,
+      git: {
+        ...f.env.git,
+        findRepositoryRoot: async (options) => {
+          if (resolve(options.cwd) === resolve(f.project)) {
+            projectContextReads++;
+            return projectContextReads === 1 ? f.project : f.checkout;
+          }
+          return f.env.git.findRepositoryRoot(options);
+        },
+      },
+    };
+
+    const prepared = await preparePromote(
+      driftingEnv,
+      opts(f, {
+        cwd: f.project,
+        scope: 'project',
+        projectRoot: join(f.base, 'stale-project-root'),
+        targets: ['alpha'],
+        tools: ['claude-code'],
+        dryRun: true,
+        configuration: { ...f.configuration, explicitConfigPath },
+      }),
+      passDeps(),
+    );
+
+    expect(projectContextReads).toBe(3);
+    expect(prepared.ok).toBeFalse();
+    if (prepared.ok) throw new Error('expected changed project context refusal');
+    expect(prepared.error).toEqual({
+      code: 'flip-refused',
+      message: 'project context changed while preparing the operation; retry',
+    });
   });
 
   test('re-pin after source moves: action updated, new rev', async () => {
@@ -328,6 +643,114 @@ describe('runPromote — happy paths and convergence', () => {
     expect(result?.store?.rev).toMatch(/^content-[0-9a-f]{12}$/);
     expect(result?.store?.path).toContain(join('local', `gamma@${result?.store?.rev}`));
   });
+
+  test('G3B-02: a changed dev target after preview refuses with zero execution writes', async () => {
+    const tracked = trackExecutionWrites(f);
+    const prepared = await preparePromote(tracked.env, opts(f, { targets: ['alpha'] }), passDeps());
+    if (!prepared.ok) throw new Error(msg(prepared.error));
+    const preparedPlan = prepared.value.plan;
+    const preparedResultOrder = prepared.value.preview.results.map((result) => [
+      result.skill,
+      result.tool,
+      result.placementPath,
+    ]);
+    const livePath = join(f.home, '.claude', 'skills', 'alpha');
+    await f.env.removeTree(livePath);
+    await f.env.makeSymlink(resolve(f.betaSrc), livePath);
+    tracked.start();
+
+    const executed = await prepared.value.execute();
+    if (!executed.ok) throw new Error(msg(executed.error));
+    expect(executed.value.plan).toBe(preparedPlan);
+    expect(
+      executed.value.results.map((result) => [result.skill, result.tool, result.placementPath]),
+    ).toEqual(preparedResultOrder);
+    expect(
+      executed.value.results.map(({ action, reason, error }) => ({
+        action,
+        reason,
+        error: error?.code ?? null,
+      })),
+    ).toEqual([
+      {
+        action: 'refused',
+        reason: 'prepared placement state changed before execution',
+        error: 'flip-refused',
+      },
+    ]);
+    expect(executed.value.executionResults).toEqual(
+      preparedPlan.operations.map((operation) => ({
+        operationId: operation.operationId,
+        outcome: 'failed',
+        actualBefore: operation.before,
+        actualAfter: operation.before,
+        force: null,
+        error: {
+          code: 'flip-refused',
+          message: 'prepared placement state changed before execution',
+          remediation: 'Re-run the command to prepare and approve the current state.',
+        },
+      })),
+    );
+    expect(tracked.writes).toEqual([]);
+    expect(await f.env.pathKind(livePath)).toBe('symlink');
+    expect(await f.env.readLink(livePath)).toBe(resolve(f.betaSrc));
+    const ledger = await readLedgerOf(f);
+    if (!ledger.ok) throw new Error(msg(ledger.error));
+    expect(getPair(ledger.value, 'alpha', 'claude-code')).toBeNull();
+  });
+
+  test('G3B-02: source drift after preview is refused before verify or execution writes', async () => {
+    const tracked = trackExecutionWrites(f);
+    const verifyCalls: VerifyOptions[] = [];
+    const prepared = await preparePromote(
+      tracked.env,
+      opts(f, { targets: ['alpha'] }),
+      passDeps(verifyCalls),
+    );
+    if (!prepared.ok) throw new Error(msg(prepared.error));
+    const preparedPlan = prepared.value.plan;
+    const preparedResultOrder = prepared.value.preview.results.map((result) => [
+      result.skill,
+      result.tool,
+      result.placementPath,
+    ]);
+    const operation = prepared.value.plan.operations[0];
+    expect(operation?.preconditionIds.length).toBeGreaterThan(1);
+    expect(
+      operation?.preconditionIds.every((id) => /^precondition:v1:[0-9a-f]{64}$/u.test(id)),
+    ).toBeTrue();
+
+    await f.env.writeTextFile(
+      join(f.alphaSrc, 'SKILL.md'),
+      '---\nname: alpha\ndescription: changed after preview.\n---\n',
+    );
+    tracked.start();
+    const executed = await prepared.value.execute();
+
+    if (!executed.ok) throw new Error(msg(executed.error));
+    expect(executed.value.plan).toBe(preparedPlan);
+    expect(
+      executed.value.results.map((result) => [result.skill, result.tool, result.placementPath]),
+    ).toEqual(preparedResultOrder);
+    expect(executed.value.results[0]).toMatchObject({
+      action: 'refused',
+      reason: 'prepared placement state changed before execution',
+      error: { code: 'flip-refused' },
+    });
+    expect(executed.value.executionResults.map(({ operationId }) => operationId)).toEqual(
+      preparedPlan.operations.map(({ operationId }) => operationId),
+    );
+    expect(executed.value.executionResults.map(({ outcome }) => outcome)).toEqual(['failed']);
+    expect(executed.value.executionResults.map(({ actualBefore }) => actualBefore)).toEqual(
+      preparedPlan.operations.map(({ before }) => before),
+    );
+    expect(executed.value.executionResults.map(({ actualAfter }) => actualAfter)).toEqual(
+      preparedPlan.operations.map(({ before }) => before),
+    );
+    expect(verifyCalls).toEqual([]);
+    expect(tracked.writes).toEqual([]);
+  });
 });
 
 describe('runDev — happy paths, --source adoption, missing source', () => {
@@ -354,6 +777,171 @@ describe('runDev — happy paths, --source adoption, missing source', () => {
     const pair = getPair(ledgerRes.value, 'alpha', 'claude-code');
     expect(pair?.mode).toBe('dev');
     expect(pair?.pinned).not.toBeNull();
+  });
+
+  test('fresh and adopted dev records commit exact logical history', async () => {
+    const betaLive = join(f.home, '.claude', 'skills', 'beta');
+    const created = await runDev(
+      f.env,
+      opts(f, { targets: ['beta'], tools: ['claude-code'], source: resolve(f.betaSrc) }),
+      passDeps(),
+    );
+    if (!created.ok) throw new Error(msg(created.error));
+    expect(created.value.results[0]?.action).toBe('created');
+
+    const afterCreate = await readLedgerState(f.env, ledgerPathOf(f.data));
+    if (!afterCreate.ok || afterCreate.value.state !== 'present') {
+      throw new Error('created dev placement did not persist a ledger');
+    }
+    expect(afterCreate.value.model.history).toHaveLength(1);
+    expect(afterCreate.value.model.history[0]).toMatchObject({
+      intent: { kind: 'link-dev', skill: 'beta', tool: 'claude-code' },
+      phase: 'committed',
+    });
+    expect(Object.keys(afterCreate.value.model.transactions)).toEqual([]);
+
+    await rm(betaLive, { force: true });
+    const withoutPair = { ...afterCreate.value.model, skills: {} };
+    const reset = await writeLedger(f.env, ledgerPathOf(f.data), withoutPair);
+    if (!reset.ok) throw new Error(msg(reset.error));
+    await symlink(resolve(f.betaSrc), betaLive);
+    const beforeTarget = await readlink(betaLive);
+
+    const adopted = await runDev(
+      f.env,
+      opts(f, { targets: ['beta'], tools: ['claude-code'], source: resolve(f.betaSrc) }),
+      passDeps(),
+    );
+    if (!adopted.ok) throw new Error(msg(adopted.error));
+    expect(adopted.value.results[0]?.action).toBe('adopted');
+    expect(await readlink(betaLive)).toBe(beforeTarget);
+
+    const afterAdopt = await readLedgerState(f.env, ledgerPathOf(f.data));
+    if (!afterAdopt.ok || afterAdopt.value.state !== 'present') {
+      throw new Error('adopted dev placement did not persist a ledger');
+    }
+    expect(afterAdopt.value.model.history).toHaveLength(2);
+    expect(afterAdopt.value.model.history.at(-1)).toMatchObject({
+      intent: { kind: 'link-dev', skill: 'beta', tool: 'claude-code' },
+      phase: 'committed',
+    });
+    expect(Object.keys(afterAdopt.value.model.transactions)).toEqual([]);
+  });
+
+  test('a failed mandatory post-operation ledger reread aborts the remaining tool in its group', async () => {
+    const ledgerPath = ledgerPathOf(f.data);
+    const firstLive = join(f.home, '.claude', 'skills', 'boundary-fail');
+    const secondLive = join(f.home, '.agents', 'skills', 'boundary-fail');
+    const verifyCalls: VerifyOptions[] = [];
+    let crossedDurableBoundary = 0;
+    let failedMandatoryReads = 0;
+    let failLedgerReads = false;
+    const executionEnv: RuntimePorts & {
+      readonly afterLedgerBarrier: (barrier: Readonly<{ readonly kind: string }>) => Promise<void>;
+    } = {
+      ...f.env,
+      readBytes: async (path) => {
+        if (path === ledgerPath && failLedgerReads) {
+          failedMandatoryReads += 1;
+          const error = new Error('injected mandatory post-operation ledger reread failure');
+          Object.assign(error, { code: 'EIO' });
+          throw error;
+        }
+        return f.env.readBytes(path);
+      },
+      afterLedgerBarrier: async (barrier) => {
+        if (barrier.kind !== 'writer-live-parent-fsync' || crossedDurableBoundary > 0) return;
+        crossedDurableBoundary += 1;
+        failLedgerReads = true;
+        const error = new Error('injected failure after durable ledger publication');
+        Object.assign(error, { code: 'EIO' });
+        throw error;
+      },
+    };
+    const prepared = await prepareDev(
+      executionEnv,
+      opts(f, { targets: ['boundary-fail'], source: resolve(f.betaSrc) }),
+      passDeps(verifyCalls),
+    );
+    if (!prepared.ok) throw new Error(msg(prepared.error));
+    expect(prepared.value.plan.operations).toHaveLength(2);
+    expect(new Set(prepared.value.plan.operations.map(({ groupId }) => groupId)).size).toBe(1);
+
+    const executed = await prepared.value.execute();
+
+    expect(executed.ok).toBeFalse();
+    if (executed.ok) throw new Error('mandatory ledger reread failure was ignored');
+    expect(executed.error.code).toBe('ledger-error');
+    expect(crossedDurableBoundary).toBe(1);
+    expect(failedMandatoryReads).toBe(1);
+    expect(verifyCalls.map(({ tools }) => tools?.[0])).toEqual(['claude-code']);
+    expect(await f.env.pathKind(firstLive)).toBe('symlink');
+    expect(await f.env.pathKind(secondLive)).toBe('absent');
+
+    const canonical = await readLedgerState(f.env, ledgerPath);
+    if (!canonical.ok || canonical.value.state !== 'present') {
+      throw new Error('durably published first-tool ledger is missing');
+    }
+    expect(
+      getLedgerPairAt(canonical.value.model, null, 'boundary-fail', 'claude-code'),
+    ).not.toBeNull();
+    expect(getLedgerPairAt(canonical.value.model, null, 'boundary-fail', 'codex')).toBeNull();
+  });
+
+  test('G3B-02: selected store drift after preview is refused with zero execution writes', async () => {
+    const promoted = await runPromote(
+      f.env,
+      opts(f, { targets: ['alpha'], noVerify: true }),
+      passDeps(),
+    );
+    if (!promoted.ok) throw new Error(msg(promoted.error));
+    const ledger = await readLedgerOf(f);
+    if (!ledger.ok) throw new Error(msg(ledger.error));
+    const storePath = getPair(ledger.value, 'alpha', 'claude-code')?.pinned?.storePath;
+    if (!storePath) throw new Error('promoted store path is missing');
+
+    const tracked = trackExecutionWrites(f);
+    const prepared = await prepareDev(
+      tracked.env,
+      opts(f, { targets: ['alpha'], noVerify: true }),
+      passDeps(),
+    );
+    if (!prepared.ok) throw new Error(msg(prepared.error));
+    const preparedPlan = prepared.value.plan;
+    const preparedResultOrder = prepared.value.preview.results.map((result) => [
+      result.skill,
+      result.tool,
+      result.placementPath,
+    ]);
+    await f.env.writeTextFile(
+      join(storePath, 'SKILL.md'),
+      '---\nname: alpha\ndescription: changed store after preview.\n---\n',
+    );
+    tracked.start();
+    const executed = await prepared.value.execute();
+
+    if (!executed.ok) throw new Error(msg(executed.error));
+    expect(executed.value.plan).toBe(preparedPlan);
+    expect(
+      executed.value.results.map((result) => [result.skill, result.tool, result.placementPath]),
+    ).toEqual(preparedResultOrder);
+    expect(executed.value.results[0]).toMatchObject({
+      action: 'refused',
+      reason: 'prepared placement state changed before execution',
+      error: { code: 'flip-refused' },
+    });
+    expect(executed.value.executionResults.map(({ operationId }) => operationId)).toEqual(
+      preparedPlan.operations.map(({ operationId }) => operationId),
+    );
+    expect(executed.value.executionResults.map(({ outcome }) => outcome)).toEqual(['failed']);
+    expect(executed.value.executionResults.map(({ actualBefore }) => actualBefore)).toEqual(
+      preparedPlan.operations.map(({ before }) => before),
+    );
+    expect(executed.value.executionResults.map(({ actualAfter }) => actualAfter)).toEqual(
+      preparedPlan.operations.map(({ before }) => before),
+    );
+    expect(tracked.writes).toEqual([]);
+    expect(await f.env.pathKind(join(f.home, '.claude', 'skills', 'alpha'))).toBe('dir');
   });
 
   test('dev --source adopts the hand-copied "copied" dir', async () => {
@@ -420,6 +1008,11 @@ describe('runRollback', () => {
   test('rollback of a committed promote restores the dev symlink', async () => {
     const up = await runPromote(f.env, opts(f, { targets: ['alpha'] }), passDeps());
     if (!up.ok) throw new Error(msg(up.error));
+    const live = join(f.home, '.claude', 'skills', 'alpha');
+    const promotedLedger = await readLedgerOf(f);
+    if (!promotedLedger.ok) throw new Error(msg(promotedLedger.error));
+    const promotedPair = getPair(promotedLedger.value, 'alpha', 'claude-code');
+    if (!promotedPair?.pinned) throw new Error('promoted pair is missing its pinned record');
 
     const rb = await runRollback(
       f.env,
@@ -429,7 +1022,22 @@ describe('runRollback', () => {
     if (!rb.ok) throw new Error(msg(rb.error));
     const result = rb.value.results[0];
     expect(result?.action).toBe('rolled-back');
-    expect(await f.env.pathKind(join(f.home, '.claude', 'skills', 'alpha'))).toBe('symlink');
+    expectRolledBackExecution(
+      rb.value,
+      pinnedImage(
+        'alpha',
+        live,
+        promotedPair.pinned.contentHash as `sha256:${string}`,
+        resolve(f.alphaSrc),
+      ),
+      devImage(
+        'alpha',
+        live,
+        resolve(f.alphaSrc),
+        promotedPair.pinned.contentHash as `sha256:${string}`,
+      ),
+    );
+    expect(await f.env.pathKind(live)).toBe('symlink');
   });
 
   test('rollback with nothing to roll back -> refused', async () => {
@@ -538,7 +1146,9 @@ describe('runRollback — interrupted install-replace reconciliation warning (I2
     const ledgerPath = ledgerPathOf(f.data);
     const ledger = emptyLedger(NOW);
     setPair(ledger, skill, 'claude-code', { ...pair, journal });
-    const w = await writeLedger(f.env, ledgerPath, ledger);
+    const model = fromLedgerV1Dto(ledger);
+    if (!model.ok) throw new Error(JSON.stringify(model.error));
+    const w = await writeLedger(f.env, ledgerPath, model.value);
     if (!w.ok) throw new Error(msg(w.error));
     return ledgerPath;
   };
@@ -579,6 +1189,11 @@ describe('runRollback — interrupted install-replace reconciliation warning (I2
     expect(result?.reason).toContain('reconcile');
     expect(result?.reason).toContain('ledger');
     expect(result?.reason).toContain('skillsmith install');
+    expectRolledBackExecution(
+      rb.value,
+      pinnedImage(skill, live, null),
+      pinnedImage(skill, live, null),
+    );
 
     // The old placement bytes are restored/preserved (the engine already did this part right).
     expect(await f.env.pathKind(live)).toBe('dir');
@@ -623,6 +1238,7 @@ describe('runRollback — interrupted install-replace reconciliation warning (I2
     const result = rb.value.results[0];
     expect(result?.action).toBe('rolled-back');
     expect(result?.reason ?? '').not.toContain('reconcile');
+    expectRolledBackExecution(rb.value, pinnedImage(skill, live, null), absentImage(skill, live));
 
     // Fresh install rollback deletes the pair entirely (coherent — nothing left to reconcile).
     expect(await f.env.pathKind(live)).toBe('absent');
@@ -666,6 +1282,7 @@ describe('runRollback — interrupted install-replace reconciliation warning (I2
     const result = rb.value.results[0];
     expect(result?.action).toBe('rolled-back');
     expect(result?.reason ?? '').not.toContain('reconcile');
+    expectRolledBackExecution(rb.value, absentImage(skill, live), pinnedImage(skill, live, null));
   });
 
   test('negative: interrupted promote-journal rollback does NOT surface the reconcile warning', async () => {
@@ -673,6 +1290,8 @@ describe('runRollback — interrupted install-replace reconciliation warning (I2
     const skillsRoot = join(f.home, '.claude', 'skills');
     const live = join(skillsRoot, skill);
     const target = resolve(f.alphaSrc);
+    const targetHash = await contentHashOf(f.env, target);
+    if (!targetHash.ok) throw new Error(msg(targetHash.error));
     // Live still the old dev symlink — the promote journal never got past 'staged'.
     await f.env.makeSymlink(target, live);
 
@@ -702,6 +1321,11 @@ describe('runRollback — interrupted install-replace reconciliation warning (I2
     const result = rb.value.results[0];
     expect(result?.action).toBe('rolled-back');
     expect(result?.reason ?? '').not.toContain('reconcile');
+    expectRolledBackExecution(
+      rb.value,
+      devImage(skill, live, target, targetHash.value as `sha256:${string}`),
+      devImage(skill, live, target, targetHash.value as `sha256:${string}`),
+    );
   });
 });
 

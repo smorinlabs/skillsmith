@@ -7,6 +7,7 @@ import type {
   UninstallResult,
 } from '@skillsmith/core';
 import { acquireExitCode } from '../../src/util/acquire-exit.ts';
+import type { ExitCode } from '../../src/util/exit-codes.ts';
 
 const installResult = (overrides: Partial<InstallResult> = {}): InstallResult => ({
   source: 'acme/repo/x',
@@ -85,7 +86,7 @@ describe('acquireExitCode', () => {
     expect(acquireExitCode(uninstallReport([]))).toBe(0);
   });
 
-  const codeTable: [SkillSmithError, number][] = [
+  const codeTable: [SkillSmithError, ExitCode][] = [
     [{ code: 'generic', message: 'x' }, 1],
     [{ code: 'flip-failed', message: 'x' }, 1],
     [{ code: 'flip-refused', message: 'x' }, 2],

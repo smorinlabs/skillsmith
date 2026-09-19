@@ -1,0 +1,198 @@
+{
+  "schemaVersion": 4,
+  "kind": "skillsmith.flip",
+  "op": "promote",
+  "dryRun": false,
+  "summary": {
+    "flipped": 1,
+    "updated": 0,
+    "noop": 0,
+    "skipped": 0,
+    "refused": 0,
+    "failed": 0,
+    "rolledBack": 0,
+    "created": 0,
+    "adopted": 0
+  },
+  "selection": {
+    "source": "explicit-targets",
+    "outcome": "selected",
+    "targets": [
+      "fixture-skill"
+    ],
+    "all": false,
+    "tools": [
+      "codex"
+    ],
+    "scopes": [
+      "project"
+    ],
+    "groupIds": [
+      "group:v1:fixture-skill-promote"
+    ],
+    "batchPolicy": "fail-fast"
+  },
+  "operations": [
+    {
+      "operationId": "operation:v1:fixture-skill-promote",
+      "groupId": "group:v1:fixture-skill-promote",
+      "pairId": "pair:v1:fixture-skill-codex-project",
+      "kind": "promote",
+      "dependencyMetadata": {
+        "domain": "skillsmith.operation-dependency",
+        "schemaVersion": 1,
+        "operationIds": []
+      },
+      "skill": "fixture-skill",
+      "source": {
+        "kind": "local-dev",
+        "path": "/fixture/source/fixture-skill",
+        "contentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "tool": "codex",
+      "scope": "project",
+      "before": {
+        "kind": "placement",
+        "resource": {
+          "kind": "live",
+          "skill": "fixture-skill",
+          "tool": "codex",
+          "scope": "project",
+          "projectRoot": {
+            "kind": "machine-bound",
+            "path": "/fixture/project"
+          },
+          "location": {
+            "kind": "machine-bound",
+            "path": "/fixture/project/skills/fixture-skill"
+          }
+        },
+        "classification": "dev",
+        "representation": "symlink",
+        "linkTarget": {
+          "kind": "machine-bound",
+          "path": "/fixture/source/fixture-skill"
+        },
+        "dangling": false,
+        "source": {
+          "kind": "local-dev",
+          "path": "/fixture/source/fixture-skill",
+          "contentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "contentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "after": {
+        "kind": "placement",
+        "resource": {
+          "kind": "live",
+          "skill": "fixture-skill",
+          "tool": "codex",
+          "scope": "project",
+          "projectRoot": {
+            "kind": "machine-bound",
+            "path": "/fixture/project"
+          },
+          "location": {
+            "kind": "machine-bound",
+            "path": "/fixture/project/skills/fixture-skill"
+          }
+        },
+        "classification": "pinned",
+        "representation": "copy",
+        "linkTarget": null,
+        "dangling": false,
+        "source": {
+          "kind": "local-dev",
+          "path": "/fixture/source/fixture-skill",
+          "contentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "contentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "reason": {
+        "code": "promote",
+        "message": "promote fixture-skill"
+      },
+      "selectionSource": "explicit-targets",
+      "preconditionIds": [],
+      "requiredCheckIds": [],
+      "reversibility": {
+        "kind": "none",
+        "retentionResourceIds": []
+      },
+      "mutates": {
+        "live": true,
+        "manifest": false,
+        "lock": false,
+        "ledger": true
+      },
+      "conflict": null
+    }
+  ],
+  "checks": [],
+  "diagnostics": [],
+  "results": [
+    {
+      "operationId": "operation:v1:fixture-skill-promote",
+      "outcome": "succeeded",
+      "actualBefore": {
+        "kind": "placement",
+        "resource": {
+          "kind": "live",
+          "skill": "fixture-skill",
+          "tool": "codex",
+          "scope": "project",
+          "projectRoot": {
+            "kind": "machine-bound",
+            "path": "/fixture/project"
+          },
+          "location": {
+            "kind": "machine-bound",
+            "path": "/fixture/project/skills/fixture-skill"
+          }
+        },
+        "classification": "dev",
+        "representation": "symlink",
+        "linkTarget": {
+          "kind": "machine-bound",
+          "path": "/fixture/source/fixture-skill"
+        },
+        "dangling": false,
+        "source": {
+          "kind": "local-dev",
+          "path": "/fixture/source/fixture-skill",
+          "contentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "contentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "actualAfter": {
+        "kind": "placement",
+        "resource": {
+          "kind": "live",
+          "skill": "fixture-skill",
+          "tool": "codex",
+          "scope": "project",
+          "projectRoot": {
+            "kind": "machine-bound",
+            "path": "/fixture/project"
+          },
+          "location": {
+            "kind": "machine-bound",
+            "path": "/fixture/project/skills/fixture-skill"
+          }
+        },
+        "classification": "pinned",
+        "representation": "copy",
+        "linkTarget": null,
+        "dangling": false,
+        "source": {
+          "kind": "local-dev",
+          "path": "/fixture/source/fixture-skill",
+          "contentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "contentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "force": null,
+      "error": null
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "extends": "../../../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": "../../../..",
+    "paths": {
+      "@skillsmith/core": ["packages/core/src/index.ts"]
+    }
+  },
+  "include": ["./public-types.ts"]
+}

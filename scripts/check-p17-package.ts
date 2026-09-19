@@ -6,7 +6,7 @@ import { dirname, resolve } from 'node:path';
 const root = resolve(import.meta.dir, '..');
 const repository = 'smorinlabs/skillsmith';
 const bootstrap =
-  '/goal Execute P17 completely by reading and following projects/P17-GOAL.md as the canonical objective and completion contract, pausing for every human approval it requires and marking complete only after all referenced gates and final sign-off pass.';
+  '/goal Execute P17 completely by reading and following projects/P17-GOAL.md as the canonical objective and completion contract, applying the recorded standing human approval without additional review pauses and marking complete only after all referenced gates and final sign-off pass.';
 const preparationBranch = 'agent/p17-execution-package';
 const linkFiles = [
   'projects/P17-skillsmith-ergonomics-and-declarative-workflow.md',
@@ -49,7 +49,24 @@ function text(path: string): string {
 }
 
 function run(command: string[]): string {
-  const result = Bun.spawnSync(command, { cwd: root, stdout: 'pipe', stderr: 'pipe' });
+  // Porcelain diff can refresh index stat data even with optional locks disabled.
+  const isGit = command[0] === 'git';
+  const argv = isGit
+    ? [
+        'git',
+        '-c',
+        'core.fsmonitor=false',
+        '-c',
+        'diff.autoRefreshIndex=false',
+        ...command.slice(1),
+      ]
+    : command;
+  const result = Bun.spawnSync(argv, {
+    cwd: root,
+    stdout: 'pipe',
+    stderr: 'pipe',
+    ...(isGit ? { env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' } } : {}),
+  });
   const stdout = result.stdout.toString();
   const stderr = result.stderr.toString();
   if (result.exitCode !== 0) fail(`${command.join(' ')} failed\n${stdout}${stderr}`);
@@ -107,6 +124,7 @@ type Gate = { status?: string; evidence?: string[] };
 type Catalog = {
   counts?: { total?: number };
   groups?: Array<{
+    id?: string;
     phase?: string;
     status?: string;
     gates?: Record<string, Gate>;
@@ -170,6 +188,79 @@ function terminalP17(catalog: Catalog): boolean {
   return requiredEntities && requiredGroups && requiredPhases && phase7 && final;
 }
 
+const lifecycleGateNames = [
+  'mapped',
+  'ready',
+  'test-first',
+  'minimal-implementation',
+  'targeted-green',
+  'impacted-green',
+  'refactor',
+  'adversarial-review',
+  'traceability-closure',
+  'signed-off',
+] as const;
+
+function renderCheckOutputV1(baseLine: string): string {
+  // Frozen compatibility renderer: this is the complete pre-progress stdout contract.
+  return baseLine;
+}
+
+function renderCheckOutputV2(baseLine: string, catalog: Catalog): string {
+  const entities = catalog.entities ?? [];
+  const groups = catalog.groups ?? [];
+  const phases = catalog.phases ?? [];
+  const requiredEntities = entities.filter((entity) => entity.tier !== 'deferred');
+  const signedEntities = requiredEntities.filter((entity) => entity.status === 'signed-off').length;
+  const deferredEntities = entities.length - requiredEntities.length;
+  const requiredGroups = groups.filter((group) => group.phase !== '7');
+  const signedGroups = requiredGroups.filter((group) => group.status === 'signed-off').length;
+  const activeGroups = requiredGroups.filter((group) => group.status === 'active').length;
+  const plannedGroups = requiredGroups.filter((group) => group.status === 'planned').length;
+  const otherOpenGroups = requiredGroups.length - signedGroups - activeGroups - plannedGroups;
+  const requiredPhases = phases.filter((phase) => phase.id !== '7');
+  const approvedPhases = requiredPhases.filter((phase) => phase.status === 'approved').length;
+  const activePhases = requiredPhases
+    .filter((phase) => phase.status === 'active')
+    .map((phase) => `Phase ${phase.id}`);
+  const groupParts = [
+    `${signedGroups}/${requiredGroups.length} required groups signed off`,
+    `${activeGroups} active`,
+    `${plannedGroups} planned`,
+  ];
+  if (otherOpenGroups > 0) groupParts.push(`${otherOpenGroups} other open`);
+
+  const lines = [
+    baseLine,
+    '',
+    'recorded progress:',
+    `  phases:   ${approvedPhases}/${requiredPhases.length} approved${activePhases.length > 0 ? `; ${activePhases.join(', ')} active` : ''}`,
+    `  groups:   ${groupParts.join('; ')}`,
+    `  entities: ${signedEntities}/${requiredEntities.length} required entities signed off; ${requiredEntities.length - signedEntities} incomplete; ${deferredEntities} deferred`,
+  ];
+
+  const currentGroups = requiredGroups.filter(
+    (group) => !['planned', 'signed-off', 'deferred'].includes(group.status ?? ''),
+  );
+  for (const group of currentGroups) {
+    const gates = group.gates ?? {};
+    const passed = lifecycleGateNames.filter((name) => gates[name]?.status === 'passed').length;
+    const nextGate = lifecycleGateNames.find((name) => gates[name]?.status !== 'passed');
+    lines.push(
+      `  current:  ${group.id ?? 'unknown group'} — ${group.status ?? 'unknown'} — ${passed}/${lifecycleGateNames.length} lifecycle gates passed`,
+    );
+    if (nextGate) {
+      lines.push(
+        `  next:     ${group.id ?? 'unknown group'}:${nextGate} (${gates[nextGate]?.status ?? 'missing'})`,
+      );
+    }
+  }
+  lines.push(
+    `  final:    review ${catalog.finalReview?.status ?? 'missing'}; approval ${catalog.finalApproval?.status ?? 'missing'}; sign-off ${catalog.finalSignoff?.status ?? 'missing'}`,
+  );
+  return lines.join('\n');
+}
+
 const mode = Bun.argv[2] ?? '--check';
 if (!['--check', '--pr-openable', '--merge-ready', '--final'].includes(mode)) {
   fail(`unknown mode ${mode}; use --check, --pr-openable, --merge-ready, or --final`);
@@ -221,8 +312,29 @@ if (
 }
 
 const plan = text('docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md');
-if (!plan.includes('Phase 0 executable closure is still open')) {
-  fail('plan does not declare open executable Phase 0 closure');
+const phaseCatalog = JSON.parse(text('projects/p17/catalog.json')) as {
+  groups: Array<{ id: string; status: string }>;
+  phases: Array<{
+    id: string;
+    requiredGroups: string[];
+    review: { status: string };
+    approval: { status: string };
+    exit: { status: string };
+  }>;
+};
+const phase0 = phaseCatalog.phases.find((phase) => phase.id === '0');
+if (!phase0) fail('catalog has no Phase 0 record');
+const phase0GroupsSigned = phase0.requiredGroups.every(
+  (id) => phaseCatalog.groups.find((group) => group.id === id)?.status === 'signed-off',
+);
+const phase0Marker =
+  `**Phase 0 execution:** groups=${phase0GroupsSigned ? 'signed-off' : 'incomplete'}; ` +
+  `review=${phase0.review.status}; approval=${phase0.approval.status}; exit=${phase0.exit.status}.`;
+const phase0Markers = [...plan.matchAll(/^> (\*\*Phase 0 execution:\*\* .+)$/gm)].map(
+  (match) => match[1],
+);
+if (phase0Markers.length !== 1 || phase0Markers[0] !== phase0Marker) {
+  fail('plan must contain exactly one Phase 0 execution marker matching catalog');
 }
 if (plan.includes('no planning gate remains open'))
   fail('plan retains stale all-gates-closed language');
@@ -398,7 +510,7 @@ const prepOpenable =
   prepStatus === 'pr-openable' && requiredPrepChecked && reviewClosed && summaryComplete;
 
 const catalog = JSON.parse(text('projects/p17/catalog.json')) as Catalog;
-if (catalog.counts?.total !== 425) fail(`catalog total is ${catalog.counts?.total}, expected 425`);
+if (catalog.counts?.total !== 426) fail(`catalog total is ${catalog.counts?.total}, expected 426`);
 if (catalog.groups?.length !== 45) {
   fail(`catalog group count is ${catalog.groups?.length}, expected 45`);
 }
@@ -442,11 +554,12 @@ const packageJson = JSON.parse(text('package.json')) as { scripts?: Record<strin
 if (packageJson.scripts?.['check:p17'] !== 'bun scripts/check-p17-package.ts --pr-openable') {
   fail('package.json check:p17 registration drifted');
 }
-if (!packageJson.scripts?.check?.includes('bun run check:p17')) {
-  fail('package.json check does not invoke check:p17');
+if (packageJson.scripts?.check !== 'just check') {
+  fail('package.json check must delegate only to the canonical just check recipe');
 }
 const just = text('justfile');
-if (!/^p17-check:\n\s+bun run check:p17$/m.test(just) || !/^check:.*\bp17-check\b/m.test(just)) {
+const checkRecipe = just.match(/^check:\n((?: {4}[^\n]*\n)+)/m)?.[1] ?? '';
+if (!/^p17-check:\n\s+bun run check:p17$/m.test(just) || !checkRecipe.includes('just p17-check')) {
   fail('justfile P17 gate registration drifted');
 }
 
@@ -745,4 +858,14 @@ const label =
   mode === '--pr-openable'
     ? 'pr-openable'
     : 'structurally valid; preparation/PR/merge readiness was not asserted';
-console.log(`${label}: ${prepById.size} prep IDs, ${links} local links, ${catalogResult}`);
+const baseOutput = `${label}: ${prepById.size} prep IDs, ${links} local links, ${catalogResult}`;
+// Atomic output cutover: version 1 remains available as the immediate rollback path.
+const outputVersion = process.env.P17_CHECK_OUTPUT_VERSION ?? '2';
+if (outputVersion !== '1' && outputVersion !== '2') {
+  fail(`unsupported P17_CHECK_OUTPUT_VERSION ${outputVersion}; use 1 or 2`);
+}
+console.log(
+  outputVersion === '1'
+    ? renderCheckOutputV1(baseOutput)
+    : renderCheckOutputV2(baseOutput, catalog),
+);

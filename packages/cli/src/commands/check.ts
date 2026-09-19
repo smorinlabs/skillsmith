@@ -1,70 +1,91 @@
 import {
+  type CheckRunResult,
+  type Result,
   SCOPES,
   SUPPORTED_TOOLS,
   type Scope,
   type SupportedTool,
-  builtInChecks,
-  defaultScanEnv,
-  noopLogger,
-  runChecks,
+  err,
+  ok,
 } from '@skillsmith/core';
-import { Command, Option } from 'commander';
-import { renderDoctorHuman } from '../output/doctor-human.ts';
-import { renderDoctorJson } from '../output/doctor-json.ts';
-import { resolveScopeFlags } from '../util/scope-resolver.ts';
+import { resolveArtifactPair } from '../util/artifact-pair.ts';
 
-export const checkCommand = (): Command =>
-  new Command('check')
-    .description('Error-severity subset of doctor, suitable for CI')
-    .option(
-      '-t, --tool <name>',
-      'Limit checks to tool(s).',
-      (value: string, prev: string[]) => [...prev, value],
-      [] as string[],
-    )
-    .addOption(
-      new Option('-s, --scope <scope>', 'Limit to scope').choices(['user', 'project', 'system']),
-    )
-    .option('--user', 'shorthand for --scope=user', false)
-    .option('--system', 'shorthand for --scope=system', false)
-    .option('--project', 'shorthand for --scope=project', false)
-    .option('--exit-code', 'Exit non-zero on any error finding', false)
-    .option('--json', 'Emit JSON', false)
-    .action(
-      async (opts: {
-        tool: string[];
-        scope?: string;
-        user: boolean;
-        system: boolean;
-        project: boolean;
-        exitCode: boolean;
-        json: boolean;
-      }) => {
-        const scopeR = resolveScopeFlags(opts);
-        if (!scopeR.ok) {
-          process.stderr.write(`error: ${scopeR.error.message}\n`);
-          process.exit(2);
-        }
-        const tools: readonly SupportedTool[] =
-          opts.tool.length > 0 ? (opts.tool as SupportedTool[]) : SUPPORTED_TOOLS;
-        const scopes: readonly Scope[] = scopeR.value ? [scopeR.value] : SCOPES;
-        const env = await defaultScanEnv();
-        const r = await runChecks(builtInChecks, {
-          env,
-          mode: 'check',
-          tools,
-          scopes,
-          scopeExplicit: scopeR.value !== null,
-          cwd: process.cwd(),
-          envVars: process.env,
-          offline: false,
-          logger: noopLogger,
-        });
-        if (!r.ok) {
-          process.stderr.write(`error: ${JSON.stringify(r.error)}\n`);
-          process.exit(1);
-        }
-        process.stdout.write(opts.json ? renderDoctorJson(r.value) : renderDoctorHuman(r.value));
-        if (opts.exitCode && r.value.counts.error > 0) process.exit(1);
-      },
-    );
+export interface CheckFlags {
+  readonly reportOnly: boolean;
+  readonly exitCode: boolean;
+}
+export interface CheckUsageError {
+  readonly code: 'usage';
+  readonly exitCode: 2;
+  readonly message: string;
+}
+export interface CheckInputs {
+  readonly cli: {
+    readonly tools: readonly string[];
+    readonly scope?: string;
+    readonly allTools: boolean;
+    readonly file?: string;
+    readonly lockfile?: string;
+  };
+  readonly effectiveConfig: { readonly tool?: string; readonly scope?: string };
+  readonly effectiveCwd: string;
+}
+export interface ResolvedCheckInputs {
+  readonly tools: readonly SupportedTool[];
+  readonly scopes: readonly Scope[];
+  readonly file?: string;
+  readonly lockfile?: string;
+}
+
+const usageError = (message: string): CheckUsageError => ({ code: 'usage', exitCode: 2, message });
+
+export const resolveCheckExitCode = (
+  report: CheckRunResult,
+  flags: CheckFlags,
+): Result<0 | 1, CheckUsageError> => {
+  if (flags.reportOnly && flags.exitCode)
+    return err(usageError('--report-only cannot be combined with --exit-code'));
+  if (flags.reportOnly) return ok(0);
+  return ok(report.counts.error > 0 ? 1 : 0);
+};
+
+export const resolveCheckInputs = (
+  input: CheckInputs,
+): Result<ResolvedCheckInputs, CheckUsageError> => {
+  if (input.cli.allTools && input.cli.tools.length > 0)
+    return err(usageError('--all-tools cannot be combined with --tool'));
+  const artifacts = resolveArtifactPair({
+    effectiveCwd: input.effectiveCwd,
+    ...(input.cli.file === undefined ? {} : { file: input.cli.file }),
+    ...(input.cli.lockfile === undefined ? {} : { lockfile: input.cli.lockfile }),
+  });
+  if (!artifacts.ok) return artifacts;
+  const rawTools = input.cli.allTools
+    ? SUPPORTED_TOOLS
+    : input.cli.tools.length > 0
+      ? input.cli.tools
+      : input.effectiveConfig.tool
+        ? [input.effectiveConfig.tool]
+        : SUPPORTED_TOOLS;
+  const tools: SupportedTool[] = [];
+  for (const raw of rawTools) {
+    const tool = SUPPORTED_TOOLS.find((candidate) => candidate === raw);
+    if (tool === undefined) return err(usageError(`unknown tool '${raw}'`));
+    tools.push(tool);
+  }
+  const rawScope = input.cli.scope ?? input.effectiveConfig.scope;
+  let scopes: readonly Scope[] = SCOPES;
+  if (rawScope !== undefined) {
+    const scope = SCOPES.find((candidate) => candidate === rawScope);
+    if (scope === undefined) return err(usageError(`unknown scope '${rawScope}'`));
+    scopes = [scope];
+  }
+  if (artifacts.value.file === null || artifacts.value.lockfile === null)
+    return ok({ tools, scopes });
+  return ok({
+    tools,
+    scopes,
+    file: artifacts.value.file,
+    lockfile: artifacts.value.lockfile,
+  });
+};

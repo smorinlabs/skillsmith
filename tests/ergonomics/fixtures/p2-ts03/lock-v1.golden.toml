@@ -1,0 +1,18 @@
+version = 1
+hash_schema_version = 1
+manifest_hash = "sha256:0a6f886554ddb1c3e8ea8855e9d925510bd8e4b7ab019acad00fc439ffc19928"
+
+[[skills]]
+name = "lint"
+source = "git.example.com/acme/tools//skills/lint"
+resolved_sha = "0123456789abcdef0123456789abcdef01234567"
+source_path = "skills/lint"
+content_hash = "sha256:bb3c0bcb637ca8f405ecb0e2906cb5ddaaa3360a046bc2b6bf777f1e5dab8044"
+
+[[skills]]
+name = "review"
+source = "github.com/acme/tools//skills/review"
+requested_ref = "main"
+resolved_sha = "89abcdef0123456789abcdef0123456789abcdef"
+source_path = "skills/review"
+content_hash = "sha256:bb3c0bcb637ca8f405ecb0e2906cb5ddaaa3360a046bc2b6bf777f1e5dab8044"

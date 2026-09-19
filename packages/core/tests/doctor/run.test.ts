@@ -1,8 +1,16 @@
 import { describe, expect, test } from 'bun:test';
-import { runChecks } from '../../src/doctor/run.ts';
-import type { Check, CheckRunContext } from '../../src/doctor/types.ts';
+import { resolveRuntimeConfiguration } from '../../src/config/runtime.ts';
+import { configParse } from '../../src/doctor/checks/config-parse.ts';
+import { focusDoctorPorts, runChecks } from '../../src/doctor/run.ts';
+import type { Check, CheckRunContext, DoctorPorts } from '../../src/doctor/types.ts';
 import { noopLogger } from '../../src/env/logger.ts';
 import type { ScanEnv } from '../../src/env/types.ts';
+import {
+  type ObserverEvent,
+  createObservationEmitter,
+  createOperationContext,
+} from '../../src/observation/index.ts';
+import { runtimePorts } from '../fixtures/runtime-ports.ts';
 
 const env: ScanEnv = {
   homeDir: '/h',
@@ -32,12 +40,12 @@ const env: ScanEnv = {
 };
 
 const ctx: CheckRunContext = {
-  env,
+  env: focusDoctorPorts(runtimePorts(env)),
   mode: 'doctor',
   tools: [],
   scopes: [],
   cwd: '/p',
-  envVars: {},
+  configuration: resolveRuntimeConfiguration({}),
   offline: false,
   logger: noopLogger,
 };
@@ -60,7 +68,66 @@ const mkCheck = (
     })),
 });
 
+const assertNoProcessAuthority = (ports: DoctorPorts): void => {
+  // @ts-expect-error health checks cannot execute arbitrary processes
+  void ports.exec;
+  // @ts-expect-error health checks cannot run subprocess-backed version probes
+  void ports.runVersion;
+};
+
 describe('runChecks', () => {
+  test('emits one diagnostics operation with null inventory counts', async () => {
+    const events: ObserverEvent[] = [];
+    const observation = {
+      context: createOperationContext({
+        operationId: 'diagnostics-operation',
+        command: 'skillsmith doctor',
+        workflow: 'doctor',
+        clock: {
+          wallNowIso: () => '2026-07-13T00:00:00.000Z',
+          monotonicMilliseconds: () => 1,
+        },
+        id: { nextId: () => 'unused' },
+      }),
+      emitter: createObservationEmitter({
+        observer: {
+          observe: (event) => {
+            events.push(event);
+          },
+        },
+      }),
+    };
+    const result = await runChecks([], { ...ctx, observation });
+    expect(result.ok).toBeTrue();
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatchObject({
+      kind: 'operation.started',
+      operationKind: 'diagnostics',
+    });
+    expect(events[1]).toMatchObject({
+      kind: 'operation.completed',
+      operationKind: 'diagnostics',
+      outcome: 'success',
+      errorCode: null,
+      standaloneCount: null,
+      bundledCount: null,
+      resultCount: null,
+    });
+  });
+
+  test('projects runtime authority without arbitrary process or mutation capabilities', () => {
+    const focused = focusDoctorPorts(runtimePorts(env));
+    assertNoProcessAuthority(focused);
+
+    expect(focused.http.request).toBeFunction();
+    expect(focused.assertWritableDirectory).toBeFunction();
+    expect(focused).not.toHaveProperty('exec');
+    expect(focused).not.toHaveProperty('runVersion');
+    expect(focused).not.toHaveProperty('writeTextFile');
+    expect(focused).not.toHaveProperty('withFileLock');
+    expect(focused).not.toHaveProperty('git');
+  });
+
   test('filters registry by mode', async () => {
     const registry: Check[] = [
       mkCheck('a', 'warning', ['doctor'], 1),
@@ -70,6 +137,66 @@ describe('runChecks', () => {
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.value.findings.map((f) => f.checkId)).toEqual(['b']);
+    }
+  });
+
+  test('check mode executes only checks declared as error severity', async () => {
+    let warningRuns = 0;
+    const warning: Check = {
+      id: 'advisory',
+      severity: 'warning',
+      runsIn: ['doctor', 'check'],
+      run: async () => {
+        warningRuns += 1;
+        return [
+          {
+            checkId: 'advisory',
+            severity: 'warning',
+            title: 'advisory finding',
+            message: '',
+          },
+        ];
+      },
+    };
+    const error = mkCheck('blocking', 'error', ['check'], 1);
+
+    const result = await runChecks([warning, error], { ...ctx, mode: 'check' });
+
+    expect(result.ok).toBe(true);
+    expect(warningRuns).toBe(0);
+    if (result.ok) {
+      expect(result.value.findings.map((finding) => finding.checkId)).toEqual(['blocking']);
+      expect(result.value.counts).toEqual({ ok: 0, warning: 0, error: 1 });
+    }
+  });
+
+  test('doctor mode retains advisory checks', async () => {
+    const result = await runChecks([mkCheck('advisory', 'warning', ['doctor', 'check'], 1)], ctx);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.findings.map((finding) => finding.checkId)).toEqual(['advisory']);
+      expect(result.value.counts).toEqual({ ok: 0, warning: 1, error: 0 });
+    }
+  });
+
+  test('check mode tallies actual findings from error-class checks', async () => {
+    const declaredError: Check = {
+      id: 'blocking-family',
+      severity: 'error',
+      runsIn: ['check'],
+      run: async () => [
+        { checkId: 'blocking-family', severity: 'info', title: 'healthy', message: '' },
+        { checkId: 'blocking-family', severity: 'warning', title: 'warning', message: '' },
+        { checkId: 'blocking-family', severity: 'error', title: 'failure', message: '' },
+      ],
+    };
+
+    const result = await runChecks([declaredError], { ...ctx, mode: 'check' });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.counts).toEqual({ ok: 1, warning: 1, error: 1 });
     }
   });
 
@@ -100,5 +227,32 @@ describe('runChecks', () => {
       expect(r.value.findings[0]?.title).toMatch(/bad/);
       expect(r.value.findings[0]?.severity).toBe('error');
     }
+  });
+});
+
+describe('config-parse artifact selection', () => {
+  test('an explicit selected file is diagnosed without reading or writing its sibling lock', async () => {
+    const file = '/p/custom/team.toml';
+    const selectedEnv: ScanEnv = {
+      ...env,
+      fileExists: async (path) => path === file,
+      readText: async (path) => {
+        if (path !== file) throw new Error(`unexpected read: ${path}`);
+        return 'tool = [invalid toml\n';
+      },
+    };
+
+    const findings = await configParse.run({
+      ...ctx,
+      env: focusDoctorPorts(runtimePorts(selectedEnv)),
+      artifactPair: { file, lockfile: '/p/custom/team.lock' },
+    });
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({
+      checkId: 'config-parse',
+      severity: 'error',
+    });
+    expect(findings[0]?.remediation).toContain(file);
   });
 });

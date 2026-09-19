@@ -10,17 +10,26 @@ import {
 } from 'bun:test';
 import { dirname, join } from 'node:path';
 import type {
-  ExecResult,
   FlipDeps,
   InstallDeps,
   InstallOptions,
   InstallRecord,
-  ScanEnv,
+  RuntimePorts,
   SkillSmithError,
 } from '@skillsmith/core';
-import { VERIFIED_AGAINST, ok, runInstall, runUninstall } from '@skillsmith/core';
+import {
+  VERIFIED_AGAINST,
+  ok,
+  resolveRuntimeConfiguration,
+  runInstall,
+  runUninstall,
+} from '@skillsmith/core';
 import type { VerifyReport } from '@skillsmith/core';
-import { readLedger, writeLedger } from '../../../core/src/place/ledger.ts';
+import {
+  readLedgerState,
+  withoutLedgerPairAt,
+  writeLedger,
+} from '../../../core/src/place/ledger.ts';
 import { ledgerPathOf, resolveDataDir } from '../../../core/src/place/paths.ts';
 import { runDev } from '../../../core/src/place/run.ts';
 import {
@@ -40,7 +49,8 @@ import { exitCodeForError } from '../../src/util/exit-codes.ts';
 // mirrors flip-exit-codes.test.ts's shape (one row, one assertion of the FINAL exit code) but for
 // the acquisition verbs. Rows that are pure pre-flight (grammar rejection, `--ref` with two
 // sources, an explicitly undetected tool, a corrupt ledger) need no fixture/fetch at all; the
-// fetch-dependent rows use the hermetic `file://` RemoteFixture. This also closes the Task-9
+// fetch-dependent rows use safe fixture HTTPS identities with an injected trusted transport. This
+// also closes the Task-9
 // coverage gap noted in the brief: install.test.ts previously had no hermetic real-flow smoke.
 setDefaultTimeout(60_000);
 
@@ -111,6 +121,7 @@ const installDeps = (
   detect,
   now: () => NOW,
   newTxId: () => (0x10000000 + txN++).toString(16).slice(-8),
+  transport: fixture.transport,
 });
 
 let unTxN = 0;
@@ -124,13 +135,11 @@ const uninstallDeps = () => ({
 // entry that way. To exercise the REAL integrity check (a fresh fetch compared against the corrupt
 // entry) this forces `ls-remote` to fail, which is `resolveRefViaLsRemote`'s documented fallback
 // ("a miss or an `ls-remote` failure is `ok(null)`... callers fall back to the full fetch").
-const blockLsRemote = (env: ScanEnv): ScanEnv => ({
+const blockLsRemote = (env: RuntimePorts): RuntimePorts => ({
   ...env,
-  exec: async (cmd: string, args: readonly string[], opts): Promise<ExecResult> => {
-    if (cmd === 'git' && args.includes('ls-remote')) {
-      return { code: 128, stdout: '', stderr: 'ls-remote forbidden by test', timedOut: false };
-    }
-    return env.exec(cmd, args, opts);
+  git: {
+    ...env.git,
+    resolveRemoteRef: async () => null,
   },
 });
 
@@ -146,7 +155,7 @@ let f: FixtureFleet;
 let fsSource: string;
 beforeEach(async () => {
   f = await buildFixtureFleet();
-  fsSource = `${fixture.multiUrl}//plugins/fh/skills/factor-scan`;
+  fsSource = `${fixture.multiSource}//plugins/fh/skills/factor-scan`;
 });
 afterEach(async () => {
   await destroyFixtureFleet(f);
@@ -156,7 +165,7 @@ describe('install/uninstall exit-code table (§13)', () => {
   test('fresh install, both tools detected -> exit 0', async () => {
     const r = await runInstall(
       f.env,
-      { sources: [fsSource], cwd: f.base, envVars: f.envVars },
+      { sources: [fsSource], cwd: f.base, configuration: resolveRuntimeConfiguration(f.envVars) },
       installDeps(detectBoth),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -169,7 +178,7 @@ describe('install/uninstall exit-code table (§13)', () => {
       sources: [fsSource],
       tools: CLAUDE_ONLY,
       cwd: f.base,
-      envVars: f.envVars,
+      configuration: resolveRuntimeConfiguration(f.envVars),
     };
     const r1 = await runInstall(f.env, opts, installDeps(detectClaudeOnly));
     if (!r1.ok) throw new Error(msg(r1.error));
@@ -184,16 +193,24 @@ describe('install/uninstall exit-code table (§13)', () => {
       sources: [fsSource],
       tools: CLAUDE_ONLY,
       cwd: f.base,
-      envVars: f.envVars,
+      configuration: resolveRuntimeConfiguration(f.envVars),
     };
     const r1 = await runInstall(f.env, opts, installDeps(detectClaudeOnly));
     if (!r1.ok) throw new Error(msg(r1.error));
     // drop the ledger's skills entry, leave the placement on disk untouched
-    const ledgerPath = ledgerPathOf(resolveDataDir(f.env, f.envVars));
-    const ledgerRes = await readLedger(f.env, ledgerPath);
-    if (!ledgerRes.ok) throw new Error(msg(ledgerRes.error));
-    Reflect.deleteProperty(ledgerRes.value.skills, 'factor-scan');
-    const w = await writeLedger(f.env, ledgerPath, ledgerRes.value);
+    const ledgerPath = ledgerPathOf(resolveDataDir(f.env, resolveRuntimeConfiguration(f.envVars)));
+    const ledgerRes = await readLedgerState(f.env, ledgerPath);
+    if (!ledgerRes.ok || ledgerRes.value.state !== 'present') {
+      throw new Error('installed ledger is absent');
+    }
+    const withoutPair = withoutLedgerPairAt(
+      ledgerRes.value.model,
+      null,
+      'factor-scan',
+      'claude-code',
+    );
+    if (!withoutPair.ok) throw new Error(msg(withoutPair.error));
+    const w = await writeLedger(f.env, ledgerPath, withoutPair.value);
     if (!w.ok) throw new Error(msg(w.error));
 
     const r2 = await runInstall(f.env, opts, installDeps(detectClaudeOnly));
@@ -205,7 +222,12 @@ describe('install/uninstall exit-code table (§13)', () => {
   test('verify gateFail install -> exit 1', async () => {
     const r = await runInstall(
       f.env,
-      { sources: [fsSource], tools: CLAUDE_ONLY, cwd: f.base, envVars: f.envVars },
+      {
+        sources: [fsSource],
+        tools: CLAUDE_ONLY,
+        cwd: f.base,
+        configuration: resolveRuntimeConfiguration(f.envVars),
+      },
       installDeps(detectClaudeOnly, failVerify),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -218,7 +240,7 @@ describe('install/uninstall exit-code table (§13)', () => {
       sources: [fsSource],
       tools: CLAUDE_ONLY,
       cwd: f.base,
-      envVars: f.envVars,
+      configuration: resolveRuntimeConfiguration(f.envVars),
     };
     const seed = await runInstall(f.env, opts, installDeps(detectClaudeOnly));
     if (!seed.ok) throw new Error(msg(seed.error));
@@ -236,7 +258,11 @@ describe('install/uninstall exit-code table (§13)', () => {
   test('grammar reject (`factor-scan` one-part) -> exit 2', async () => {
     const r = await runInstall(
       f.env,
-      { sources: ['factor-scan'], cwd: f.base, envVars: f.envVars },
+      {
+        sources: ['factor-scan'],
+        cwd: f.base,
+        configuration: resolveRuntimeConfiguration(f.envVars),
+      },
       installDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -247,7 +273,11 @@ describe('install/uninstall exit-code table (§13)', () => {
   test('R2 ambiguity, no pick -> exit 2', async () => {
     const r = await runInstall(
       f.env,
-      { sources: [fixture.multiUrl], cwd: f.base, envVars: f.envVars },
+      {
+        sources: [fixture.multiSource],
+        cwd: f.base,
+        configuration: resolveRuntimeConfiguration(f.envVars),
+      },
       installDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -259,13 +289,23 @@ describe('install/uninstall exit-code table (§13)', () => {
   test('shadowing without --force -> exit 2', async () => {
     const userIns = await runInstall(
       f.env,
-      { sources: [fsSource], tools: CLAUDE_ONLY, cwd: f.base, envVars: f.envVars },
+      {
+        sources: [fsSource],
+        tools: CLAUDE_ONLY,
+        cwd: f.base,
+        configuration: resolveRuntimeConfiguration(f.envVars),
+      },
       installDeps(detectClaudeOnly),
     );
     if (!userIns.ok) throw new Error(msg(userIns.error));
     const r = await runInstall(
       f.env,
-      { sources: [fsSource], tools: CLAUDE_ONLY, cwd: f.project, envVars: f.envVars },
+      {
+        sources: [fsSource],
+        tools: CLAUDE_ONLY,
+        cwd: f.project,
+        configuration: resolveRuntimeConfiguration(f.envVars),
+      },
       installDeps(detectClaudeOnly),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -284,7 +324,12 @@ describe('install/uninstall exit-code table (§13)', () => {
 
     const r = await runInstall(
       f.env,
-      { sources: [fsSource], tools: ['codex'], cwd: f.base, envVars: f.envVars },
+      {
+        sources: [fsSource],
+        tools: ['codex'],
+        cwd: f.base,
+        configuration: resolveRuntimeConfiguration(f.envVars),
+      },
       installDeps(detectBoth),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -296,7 +341,12 @@ describe('install/uninstall exit-code table (§13)', () => {
   test('--ref with two sources -> exit 2', async () => {
     const r = await runInstall(
       f.env,
-      { sources: ['acme/repo', 'acme/other'], ref: 'v1.0.0', cwd: f.base, envVars: f.envVars },
+      {
+        sources: ['acme/repo', 'acme/other'],
+        ref: 'v1.0.0',
+        cwd: f.base,
+        configuration: resolveRuntimeConfiguration(f.envVars),
+      },
       installDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -305,13 +355,17 @@ describe('install/uninstall exit-code table (§13)', () => {
   });
 
   test('corrupt ledger (`{"schemaVersion":` truncated) -> install exit 3', async () => {
-    const ledgerPath = ledgerPathOf(resolveDataDir(f.env, f.envVars));
+    const ledgerPath = ledgerPathOf(resolveDataDir(f.env, resolveRuntimeConfiguration(f.envVars)));
     await f.env.makeDir(dirname(ledgerPath));
     await f.env.writeTextFile(ledgerPath, '{"schemaVersion":');
 
     const r = await runInstall(
       f.env,
-      { sources: ['acme/repo'], cwd: f.base, envVars: f.envVars },
+      {
+        sources: ['acme/repo'],
+        cwd: f.base,
+        configuration: resolveRuntimeConfiguration(f.envVars),
+      },
       installDeps(),
     );
     expect(r.ok).toBe(false);
@@ -322,13 +376,13 @@ describe('install/uninstall exit-code table (§13)', () => {
   });
 
   test('corrupt ledger -> uninstall exit 3 too (any op)', async () => {
-    const ledgerPath = ledgerPathOf(resolveDataDir(f.env, f.envVars));
+    const ledgerPath = ledgerPathOf(resolveDataDir(f.env, resolveRuntimeConfiguration(f.envVars)));
     await f.env.makeDir(dirname(ledgerPath));
     await f.env.writeTextFile(ledgerPath, '{"schemaVersion":');
 
     const r = await runUninstall(
       f.env,
-      { targets: ['whatever'], cwd: f.base, envVars: f.envVars },
+      { targets: ['whatever'], cwd: f.base, configuration: resolveRuntimeConfiguration(f.envVars) },
       uninstallDeps(),
     );
     expect(r.ok).toBe(false);
@@ -341,7 +395,12 @@ describe('install/uninstall exit-code table (§13)', () => {
   test('explicit --tool codex, detect -> [] -> exit 4', async () => {
     const r = await runInstall(
       f.env,
-      { sources: ['acme/repo'], tools: ['codex'], cwd: f.base, envVars: f.envVars },
+      {
+        sources: ['acme/repo'],
+        tools: ['codex'],
+        cwd: f.base,
+        configuration: resolveRuntimeConfiguration(f.envVars),
+      },
       installDeps(detectNone),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -351,10 +410,15 @@ describe('install/uninstall exit-code table (§13)', () => {
   });
 
   test('unreachable URL / bad ref / zero-match name -> exit 5', async () => {
-    const zeroMatch = `${fixture.multiUrl}/totally-not-a-real-skill-name`;
+    const zeroMatch = `${fixture.multiSource}/totally-not-a-real-skill-name`;
     const r = await runInstall(
       f.env,
-      { sources: [zeroMatch], tools: CLAUDE_ONLY, cwd: f.base, envVars: f.envVars },
+      {
+        sources: [zeroMatch],
+        tools: CLAUDE_ONLY,
+        cwd: f.base,
+        configuration: resolveRuntimeConfiguration(f.envVars),
+      },
       installDeps(detectClaudeOnly),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -368,7 +432,7 @@ describe('install/uninstall exit-code table (§13)', () => {
       sources: [fsSource],
       tools: CLAUDE_ONLY,
       cwd: f.base,
-      envVars: f.envVars,
+      configuration: resolveRuntimeConfiguration(f.envVars),
     };
     const u = await runInstall(f.env, opts, installDeps(detectClaudeOnly));
     if (!u.ok) throw new Error(msg(u.error));
@@ -381,7 +445,12 @@ describe('install/uninstall exit-code table (§13)', () => {
 
     const r = await runUninstall(
       f.env,
-      { targets: ['factor-scan'], tools: CLAUDE_ONLY, cwd: f.project, envVars: f.envVars },
+      {
+        targets: ['factor-scan'],
+        tools: CLAUDE_ONLY,
+        cwd: f.project,
+        configuration: resolveRuntimeConfiguration(f.envVars),
+      },
       uninstallDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -394,7 +463,7 @@ describe('install/uninstall exit-code table (§13)', () => {
       sources: [fsSource],
       tools: CLAUDE_ONLY,
       cwd: f.base,
-      envVars: f.envVars,
+      configuration: resolveRuntimeConfiguration(f.envVars),
     };
     const ins = await runInstall(f.env, opts, installDeps(detectClaudeOnly));
     if (!ins.ok) throw new Error(msg(ins.error));
@@ -409,7 +478,7 @@ describe('install/uninstall exit-code table (§13)', () => {
         source: f.gammaSrc,
         noVerify: true,
         cwd: f.base,
-        envVars: f.envVars,
+        configuration: resolveRuntimeConfiguration(f.envVars),
       },
       { now: () => NOW, newTxId: () => 'aaaaaaaa', verify: unusedVerify },
     );
@@ -417,7 +486,12 @@ describe('install/uninstall exit-code table (§13)', () => {
 
     const r = await runUninstall(
       f.env,
-      { targets: ['factor-scan'], tools: CLAUDE_ONLY, cwd: f.base, envVars: f.envVars },
+      {
+        targets: ['factor-scan'],
+        tools: CLAUDE_ONLY,
+        cwd: f.base,
+        configuration: resolveRuntimeConfiguration(f.envVars),
+      },
       uninstallDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -429,7 +503,12 @@ describe('install/uninstall exit-code table (§13)', () => {
   test('uninstall unmanaged placement without --force -> exit 2', async () => {
     const r = await runUninstall(
       f.env,
-      { targets: ['copied'], tools: CLAUDE_ONLY, cwd: f.base, envVars: f.envVars },
+      {
+        targets: ['copied'],
+        tools: CLAUDE_ONLY,
+        cwd: f.base,
+        configuration: resolveRuntimeConfiguration(f.envVars),
+      },
       uninstallDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -440,7 +519,11 @@ describe('install/uninstall exit-code table (§13)', () => {
   test('uninstall: absent everywhere -> exit 0', async () => {
     const r = await runUninstall(
       f.env,
-      { targets: ['totally-unknown-skill'], cwd: f.base, envVars: f.envVars },
+      {
+        targets: ['totally-unknown-skill'],
+        cwd: f.base,
+        configuration: resolveRuntimeConfiguration(f.envVars),
+      },
       uninstallDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
@@ -449,15 +532,21 @@ describe('install/uninstall exit-code table (§13)', () => {
   });
 
   test('mixed batch: one installed + one refused -> exit 2 (max rule, with and without --continue-on-error)', async () => {
-    // `fixture.multiUrl` bare (whole-repo, R2-ambiguous: 3 skills) must be a DIFFERENT repo than the
+    // `fixture.multiSource` bare (whole-repo, R2-ambiguous: 3 skills) must be a DIFFERENT repo than
+    // the
     // one installed first — F-fetch elision (tryElide) trusts an already-installed (repo, sha) pair
     // and would otherwise resolve the bare source straight to that one skill (a 'noop', not R2).
-    const singleSource = `${fixture.singleUrl}//tools/deep/skills/lint`;
-    const sources = [singleSource, fixture.multiUrl];
+    const singleSource = `${fixture.singleSource}//tools/deep/skills/lint`;
+    const sources = [singleSource, fixture.multiSource];
 
     const withoutCoe = await runInstall(
       f.env,
-      { sources, tools: CLAUDE_ONLY, cwd: f.base, envVars: f.envVars },
+      {
+        sources,
+        tools: CLAUDE_ONLY,
+        cwd: f.base,
+        configuration: resolveRuntimeConfiguration(f.envVars),
+      },
       installDeps(detectClaudeOnly),
     );
     if (!withoutCoe.ok) throw new Error(msg(withoutCoe.error));
@@ -469,7 +558,13 @@ describe('install/uninstall exit-code table (§13)', () => {
     try {
       const withCoe = await runInstall(
         f2.env,
-        { sources, tools: CLAUDE_ONLY, cwd: f2.base, envVars: f2.envVars, continueOnError: true },
+        {
+          sources,
+          tools: CLAUDE_ONLY,
+          cwd: f2.base,
+          configuration: resolveRuntimeConfiguration(f2.envVars),
+          continueOnError: true,
+        },
         installDeps(detectClaudeOnly),
       );
       if (!withCoe.ok) throw new Error(msg(withCoe.error));

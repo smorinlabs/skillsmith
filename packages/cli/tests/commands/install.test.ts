@@ -38,9 +38,9 @@ describe('skillsmith install — flag validation', () => {
     expect(r.stderr).toContain('--no-verify');
   });
 
-  test('--scope system -> exit 2 (commander .choices() rejection)', async () => {
+  test('--scope system -> exit 4 (known but unsupported capability)', async () => {
     const r = await run(['install', 'acme/repo', '--scope', 'system']);
-    expect(r.code).toBe(2);
+    expect(r.code).toBe(4);
   });
 
   test('an unknown --tool value -> exit 2', async () => {
@@ -48,11 +48,11 @@ describe('skillsmith install — flag validation', () => {
     expect(r.code).toBe(2);
   });
 
-  test('--help exits 0 and includes ALIASES/EXAMPLES/EXIT CODES sections', async () => {
+  test('--help exits 0 and includes ALIASES/COMMON WORKFLOWS/EXIT CODES sections', async () => {
     const r = await run(['install', '--help']);
     expect(r.code).toBe(0);
     expect(r.stdout).toContain('ALIASES');
-    expect(r.stdout).toContain('EXAMPLES');
+    expect(r.stdout).toContain('COMMON WORKFLOWS');
     expect(r.stdout).toContain('EXIT CODES');
   });
 
@@ -104,12 +104,12 @@ describe('install picker gating (D4)', () => {
     expect(typeof deps.pick).toBe('function');
   });
 
-  test('buildInstallDeps still carries the default verify/detect/now/newTxId deps', () => {
+  test('buildInstallDeps carries domain defaults while clock and ID stay port-owned', () => {
     const deps = buildInstallDeps({ json: true, noPrompt: false }, { stderr: true, stdin: true });
     expect(typeof deps.verify).toBe('function');
     expect(typeof deps.detect).toBe('function');
-    expect(typeof deps.now).toBe('function');
-    expect(typeof deps.newTxId).toBe('function');
+    expect(deps.now).toBeUndefined();
+    expect(deps.newTxId).toBeUndefined();
   });
 
   // `--yes` is not part of the gating signature at all — it structurally cannot auto-pick,

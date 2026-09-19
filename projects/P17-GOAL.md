@@ -15,7 +15,9 @@ This pause supersedes automatic continuation into G6-04 publication, not its tec
 Execute P17 completely: implement and validate every required Phase 0-6 contract in the approved
 Skillsmith ergonomics plan through dependency-aware change groups, test-driven development,
 mechanical traceability, independent Codex adversarial review, explicit phase approvals, and final
-evidence-based sign-off. Keep Phase 7 deferred and P14 blocked until P17 Phase 6 is complete.
+evidence-based sign-off. The user granted standing approval for all P17 phase boundaries and final
+completion on 2026-07-12, so record that approval mechanically without pausing for another human
+review prompt. Keep Phase 7 deferred and P14 blocked until P17 Phase 6 is complete.
 
 ## Terminal completion condition
 
@@ -26,7 +28,8 @@ Mark this goal complete only when all of the following are true:
   structural check, supported-platform check, and release check passes at its assigned tier;
 - no required validation is missing, orphaned, duplicate-owned, prose-only, failing, or skipped;
 - every group and phase adversarial-review finding is fixed or explicitly resolved;
-- the user has explicitly approved every phase boundary and final P17 completion;
+- every phase boundary and final P17 completion records the user's standing approval from
+  `projects/p17/evidence/standing-authorization.md`; no additional human-review pause is required;
 - the final implementation PR state, remote default branch, commits, checks, merge, and preserved
   local worktree state are freshly verified rather than inferred;
 - P14 has a truthful, validated handoff and no Phase 7/P3 work has been silently pulled into 1.0.
@@ -40,7 +43,7 @@ From the Skillsmith repository root in a fresh interactive Codex thread, the use
 one-sentence goal objective:
 
 ```text
-/goal Execute P17 completely by reading and following projects/P17-GOAL.md as the canonical objective and completion contract, pausing for every human approval it requires and marking complete only after all referenced gates and final sign-off pass.
+/goal Execute P17 completely by reading and following projects/P17-GOAL.md as the canonical objective and completion contract, applying the recorded standing human approval without additional review pauses and marking complete only after all referenced gates and final sign-off pass.
 ```
 
 The sentence points to this file; it is not a special file-ingestion syntax. Do not add a token
@@ -96,7 +99,7 @@ update, structural validation, adversarial review, and user approval before impl
 
 ## Inventory invariants
 
-The baseline catalog contains 425 entities:
+The approved baseline plus the 2026-07-23 G5-04 contract amendment contains 426 entities:
 
 - 34 original P0-P3 recommendations;
 - 65 phase tasks;
@@ -105,7 +108,7 @@ The baseline catalog contains 425 entities:
 - 10 option-consistency gates;
 - 16 holistic workflows;
 - 23 commands;
-- 43 accepted findings;
+- 44 accepted findings;
 - 16 accepted decisions.
 
 These prose counts are navigation, not proof. Recompute them from the consolidated plan and require
@@ -121,7 +124,8 @@ count toward P17 or 1.0 completion.
 - Do not begin dependent implementation speculatively.
 - Dependency-independent groups may run in parallel only with disjoint file ownership or one named
   integration owner and a declared merge order.
-- Complete and explicitly approve each Phase 0-6 boundary before beginning the next phase.
+- Complete each Phase 0-6 boundary, record the standing approval evidence, and advance without an
+  additional human-review pause.
 - Keep the current group small enough for independent review but large enough that its contract and
   tests form one coherent state transition.
 
@@ -199,20 +203,19 @@ does not contradict the plan.
   in committed evidence.
 - Never infer that work is committed, pushed, reviewed, merged, clean, synchronized, or released.
   Verify each claim from fresh Git/GitHub state.
-- Send concise progress updates during long work and a complete checkpoint before every approval.
+- Send concise progress updates during long work and a complete checkpoint at every phase boundary.
 
 ## Human-controlled boundaries
 
-Explicit user approval is required:
+The user granted standing approval on 2026-07-12 for every Phase 0-6 boundary, final P17 completion,
+and the P14 handoff. The canonical evidence is
+`projects/p17/evidence/standing-authorization.md`. Once the applicable automated gates and fresh
+independent Codex review pass, record `approvedBy: user-standing-authorization-2026-07-12` and
+advance without stopping for another human review.
 
-- before advancing from each Phase 0-6 boundary;
-- for any product-contract change or meaningful scope expansion;
-- before destructive or external actions not already authorized by the active group;
-- before the final P17 completion transition and P14 handoff.
-
-Automated gates plus independent adversarial review sign off individual change groups. Waiting for a
-phase approval is a pause, not immediate proof that the goal is blocked. Continue any safe,
-dependency-independent in-scope work that does not cross the boundary.
+This standing approval does not waive technical gates and does not authorize a product-contract
+change, meaningful scope expansion, or destructive/external action outside the active group's
+existing authority. Those materially different actions still require explicit direction.
 
 ## Resume and context-compaction protocol
 
@@ -255,8 +258,8 @@ After Phase 6 group completion:
    exact-SHA release validation with no required skips.
 3. Run a fresh whole-program Codex adversarial review and close every finding.
 4. Re-run all affected validation after final corrections.
-5. Present the complete evidence rollup and request explicit user approval.
-6. After approval, verify final commits, PR checks, merge state, remote default branch, and preserved
+5. Present the complete evidence rollup and record the standing user approval without pausing.
+6. After recording approval, verify final commits, PR checks, merge state, remote default branch, and preserved
    local worktree state.
 7. Mark the goal complete only when the terminal completion condition is proven and no required work
    remains. Report final goal usage if the runtime supplies it.

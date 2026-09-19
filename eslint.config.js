@@ -64,6 +64,100 @@ export const hermeticTestSpawnRule = {
   },
 };
 
+const importedName = (specifier) => {
+  if (specifier.type !== 'ImportSpecifier') return null;
+  return specifier.imported.type === 'Identifier'
+    ? specifier.imported.name
+    : String(specifier.imported.value);
+};
+
+const memberName = (node) => {
+  if (node.type !== 'MemberExpression') return null;
+  if (!node.computed && node.property.type === 'Identifier') return node.property.name;
+  return node.computed && node.property.type === 'Literal' ? String(node.property.value) : null;
+};
+
+export const capabilityOwnershipRule = {
+  meta: {
+    type: 'problem',
+    schema: [],
+    docs: {
+      description:
+        'Own process.env, process.cwd, process.getuid, ScanEnv, RuntimePorts, Date.now, Math.random, randomUUID, fetch, and ports/default',
+    },
+    messages: { forbidden: '{{capability}} belongs to the runtime capability adapter' },
+  },
+  create(context) {
+    const filename = context.filename.replaceAll('\\', '/');
+    const is = (suffix) => filename.endsWith(suffix);
+    const defaultAdapter = is('/packages/core/src/ports/default.ts');
+    const httpAdapter = is('/packages/core/src/ports/http.ts');
+    const rawRuntimeComposition =
+      is('/packages/cli/src/runtime/context.ts') || is('/packages/cli/src/runtime/environment.ts');
+    const scanEnvOwner =
+      is('/packages/core/src/env/types.ts') ||
+      is('/packages/core/src/env/default.ts') ||
+      is('/packages/core/src/ports/compatibility.ts');
+    const runtimePortsOwner =
+      defaultAdapter ||
+      is('/packages/core/src/ports/types.ts') ||
+      is('/packages/core/src/ports/compatibility.ts') ||
+      is('/packages/core/src/application/types.ts') ||
+      is('/packages/cli/src/runtime/context.ts');
+    const defaultAdapterConsumer =
+      is('/packages/core/src/env/default.ts') || is('/packages/core/src/index.ts');
+    const report = (node, capability) =>
+      context.report({ node, messageId: 'forbidden', data: { capability } });
+
+    return {
+      ImportDeclaration(node) {
+        const source = String(node.source.value);
+        const names = node.specifiers.map(importedName);
+        if (names.includes('ScanEnv') && !scanEnvOwner) report(node, 'ScanEnv');
+        if (names.includes('RuntimePorts') && !runtimePortsOwner) report(node, 'RuntimePorts');
+        if (/ports\/default(?:\.ts)?$/.test(source) && !defaultAdapterConsumer)
+          report(node, 'ports/default');
+        if (
+          (/^node:(?:fs|os)(?:\/|$)/.test(source) || source === 'proper-lockfile') &&
+          !defaultAdapter
+        )
+          report(node, source);
+      },
+      MemberExpression(node) {
+        const property = memberName(node);
+        if (node.object.type === 'Identifier' && node.object.name === 'process') {
+          if (
+            (property === 'env' || property === 'cwd') &&
+            !defaultAdapter &&
+            !rawRuntimeComposition
+          )
+            report(node, `process.${property}`);
+          if (property === 'getuid' && !defaultAdapter) report(node, 'process.getuid');
+        }
+        if (
+          node.object.type === 'Identifier' &&
+          ((node.object.name === 'Date' && property === 'now') ||
+            (node.object.name === 'Math' && property === 'random') ||
+            (node.object.name === 'crypto' && property === 'randomUUID')) &&
+          !defaultAdapter
+        )
+          report(node, `${node.object.name}.${property}`);
+        if (
+          node.object.type === 'Identifier' &&
+          node.object.name === 'Bun' &&
+          (property === 'spawn' || property === 'spawnSync') &&
+          !defaultAdapter
+        )
+          report(node, `Bun.${property}`);
+      },
+      CallExpression(node) {
+        if (node.callee.type === 'Identifier' && node.callee.name === 'fetch' && !httpAdapter)
+          report(node, 'fetch');
+      },
+    };
+  },
+};
+
 export default [
   {
     ignores: ['**/node_modules/**', 'dist/**', 'docs/**', 'research/**', 'scripts/**', '**/*.d.ts'],
@@ -99,6 +193,9 @@ export default [
     },
     plugins: {
       import: importPlugin,
+      skillsmith: {
+        rules: { 'capability-ownership': capabilityOwnershipRule },
+      },
     },
     settings: {
       'import/resolver': {
@@ -111,6 +208,7 @@ export default [
       },
     },
     rules: {
+      'skillsmith/capability-ownership': 'error',
       'import/no-restricted-paths': [
         'error',
         {
@@ -119,7 +217,21 @@ export default [
             {
               target: './packages/cli/src',
               from: './packages/core/src',
-              except: ['./index.ts'],
+              // CLI consumes core only through reviewed package entry points. Versioned wire
+              // contracts intentionally remain separate from the 1.x compatibility root.
+              except: [
+                './index.ts',
+                './contracts/index.ts',
+                './contracts/index.d.ts',
+                './contracts/v1/index.ts',
+                './contracts/v1/index.d.ts',
+                './contracts/v2/index.ts',
+                './contracts/v2/index.d.ts',
+                './contracts/v3/index.ts',
+                './contracts/v3/index.d.ts',
+                './contracts/v4/index.ts',
+                './contracts/v4/index.d.ts',
+              ],
             },
             { target: './packages/cli/src/output', from: './packages/cli/src/commands' },
             { target: './packages/cli/src/output', from: './packages/cli/src/index.ts' },
@@ -130,6 +242,10 @@ export default [
             { target: './packages/cli/src/util', from: './packages/cli/src/output' },
             { target: './packages/cli/src/util', from: './packages/cli/src/help' },
             { target: './packages/cli/src/util', from: './packages/cli/src/index.ts' },
+            // The shared runtime may depend on pure compatibility helpers, but it must never
+            // rediscover command-local action implementations.
+            { target: './packages/cli/src/runtime', from: './packages/cli/src/commands' },
+            { target: './packages/cli/src/program.ts', from: './packages/cli/src/commands' },
             { target: './packages/core/src/env', from: './packages/core/src/agents' },
             { target: './packages/core/src/env', from: './packages/core/src/detect' },
             { target: './packages/core/src/detect', from: './packages/core/src/agents' },
@@ -180,7 +296,83 @@ export default [
             { target: './packages/core/src/commands', from: './packages/core/src/acquire' },
             { target: './packages/core/src/verify', from: './packages/core/src/acquire' },
             { target: './packages/core/src/place', from: './packages/core/src/acquire' },
+            // Application services are the top core orchestration layer. Domain modules,
+            // adapters, and codecs may be composed by applications but must not import them.
+            { target: './packages/core/src/acquire', from: './packages/core/src/application' },
+            { target: './packages/core/src/agents', from: './packages/core/src/application' },
+            { target: './packages/core/src/commands', from: './packages/core/src/application' },
+            { target: './packages/core/src/config', from: './packages/core/src/application' },
+            { target: './packages/core/src/context', from: './packages/core/src/application' },
+            { target: './packages/core/src/detect', from: './packages/core/src/application' },
+            { target: './packages/core/src/doctor', from: './packages/core/src/application' },
+            { target: './packages/core/src/env', from: './packages/core/src/application' },
+            { target: './packages/core/src/place', from: './packages/core/src/application' },
+            { target: './packages/core/src/plugins', from: './packages/core/src/application' },
+            { target: './packages/core/src/scan', from: './packages/core/src/application' },
+            { target: './packages/core/src/selection', from: './packages/core/src/application' },
+            { target: './packages/core/src/skills', from: './packages/core/src/application' },
+            { target: './packages/core/src/verify', from: './packages/core/src/application' },
           ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['packages/cli/src/commands/**/*.ts'],
+    languageOptions: {
+      parser: tsParser,
+      parserOptions: {
+        ecmaVersion: 'latest',
+        sourceType: 'module',
+      },
+    },
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            { name: 'commander', message: 'Commander declarations belong to CommandSpec runtime' },
+            { name: '@clack/prompts', message: 'prompts belong to the shared interaction adapter' },
+            {
+              name: '@skillsmith/core',
+              importNames: ['defaultScanEnv'],
+              message: 'environment discovery belongs to the shared runtime context adapter',
+            },
+          ],
+          patterns: [
+            { group: ['../output/**', '../../output/**'], message: 'rendering belongs to runtime' },
+            {
+              group: [
+                '**/runtime/context',
+                '**/runtime/context.*',
+                '**/runtime/environment',
+                '**/runtime/environment.*',
+                '**/runtime/interaction',
+                '**/runtime/interaction.*',
+                '**/runtime/io',
+                '**/runtime/io.*',
+                '**/runtime/adapter',
+                '**/runtime/adapter.*',
+                '**/runtime/current-renderers',
+                '**/runtime/current-renderers.*',
+                '**/runtime/command-spec',
+                '**/runtime/command-spec.*',
+                '**/runtime/preflight',
+                '**/runtime/preflight.*',
+                '**/spec',
+                '**/spec/**',
+              ],
+              message: 'runtime composition and command declarations belong to the shared runtime',
+            },
+          ],
+        },
+      ],
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "MemberExpression[object.name='process'][property.name=/^(exit|stdout|stderr|stdin|env|cwd)$/]",
+          message: 'process policy belongs to the shared runtime context and IO adapters',
         },
       ],
     },

@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "fixtureCanary": "p3b-ts03-fixture-canary",
+  "timeoutMs": 30000,
+  "journalPhases": ["prepared", "staged", "backed-up", "live", "committed"],
+  "protocol": {
+    "accepts": ["start", "release", "cancel"],
+    "emits": [
+      "fixture-ready",
+      "attempting",
+      "acquired",
+      "callback-complete",
+      "cancel-ack",
+      "cancelled",
+      "completed",
+      "fixture-error"
+    ]
+  },
+  "schedulerCases": [
+    {
+      "id": "fail-fast-later-group",
+      "command": "install",
+      "policy": "fail-fast",
+      "operations": [
+        { "skill": "alpha", "tool": "claude-code", "scope": "user" },
+        { "skill": "alpha", "tool": "codex", "scope": "user" },
+        { "skill": "beta", "tool": "claude-code", "scope": "user" }
+      ],
+      "failureIndex": 1,
+      "abortAfterIndex": null,
+      "expected": ["succeeded", "failed", "skipped-after-failure"]
+    },
+    {
+      "id": "continue-later-group",
+      "command": "install",
+      "policy": "continue-on-error",
+      "operations": [
+        { "skill": "alpha", "tool": "claude-code", "scope": "user" },
+        { "skill": "alpha", "tool": "codex", "scope": "user" },
+        { "skill": "beta", "tool": "claude-code", "scope": "user" }
+      ],
+      "failureIndex": 1,
+      "abortAfterIndex": null,
+      "expected": ["succeeded", "failed", "succeeded"]
+    },
+    {
+      "id": "cancel-between-pairs",
+      "command": "install",
+      "policy": "continue-on-error",
+      "operations": [
+        { "skill": "alpha", "tool": "claude-code", "scope": "user" },
+        { "skill": "alpha", "tool": "codex", "scope": "user" },
+        { "skill": "beta", "tool": "claude-code", "scope": "user" }
+      ],
+      "failureIndex": null,
+      "abortAfterIndex": 0,
+      "expected": ["succeeded", "cancelled", "cancelled"]
+    },
+    {
+      "id": "same-name-distinct-scope",
+      "command": "install",
+      "policy": "fail-fast",
+      "operations": [
+        { "skill": "alpha", "tool": "codex", "scope": "user" },
+        { "skill": "alpha", "tool": "codex", "scope": "project" }
+      ],
+      "failureIndex": null,
+      "abortAfterIndex": null,
+      "expected": ["succeeded", "succeeded"]
+    }
+  ]
+}

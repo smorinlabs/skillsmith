@@ -17,9 +17,9 @@ describe('renderAgentsJson', () => {
     expect(r.success).toBe(true);
   });
 
-  test('includes all four tools as top-level keys', () => {
+  test('includes all four tools in current agents@2 detections', () => {
     const parsed = JSON.parse(renderAgentsJson(sample));
-    expect(Object.keys(parsed.tools).sort()).toEqual([
+    expect(parsed.detections.map((detection: { tool: string }) => detection.tool)).toEqual([
       'claude-code',
       'codex',
       'kilo-code',

@@ -37,6 +37,11 @@ describe('getConfigPath', () => {
   test('system scope uses /etc', () => {
     expect(getConfigPath(env(), 'system')).toBe('/etc/skillsmith/config.toml');
   });
+  test('system scope accepts a hermetic port override', () => {
+    expect(
+      getConfigPath({ ...env(), systemConfigPath: '/fixture/system/config.toml' }, 'system'),
+    ).toBe('/fixture/system/config.toml');
+  });
   test('project scope uses given cwd', () => {
     expect(getConfigPath(env(), 'project', '/tmp/proj')).toBe('/tmp/proj/skillsmith.toml');
   });

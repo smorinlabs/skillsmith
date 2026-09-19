@@ -1,0 +1,109 @@
+# Tools detected
+
+## claude-code — not detected
+
+## codex — one installation
+
+| Path | Version | Install method |
+|---|---|---|
+| /opt/codex\|stable | 1.2\|3 | npm-global |
+
+## kilo-code — multiple installations (2)
+
+| Path | Version | Install method |
+|---|---|---|
+| /opt/kilo/a | 10.0.0 | native-installer |
+| /opt/kilo/z | 2.0.0 | app-bundle |
+
+## opencode — multiple installations (2)
+
+| Path | Version | Install method |
+|---|---|---|
+| /opt/opencode | 0.1.0 | bun-global |
+| /opt/opencode nightly | 0.2 next | brew |
+
+# Capabilities
+
+## claude-code
+
+| Operation | Supported | Scopes | Remediation |
+|---|---|---|---|
+| detect | yes | — | — |
+| inventory-skills | yes | user, project, system, managed | — |
+| inventory-commands | yes | user, project, system, managed | — |
+| diagnostics | yes | user, project, system, managed | — |
+| install | yes | user, project, custom | — |
+| uninstall | yes | user, project, custom | — |
+| dev | yes | user, project, custom | — |
+| promote | yes | user, project, custom | — |
+| undo | yes | user, project, custom | — |
+| verify-static | yes | artifact | — |
+| verify-deep | yes | artifact | — |
+| plan | yes | user, project, custom | — |
+| apply | yes | user, project, custom | — |
+| sync | yes | user, project, custom | — |
+| update | yes | user, project, custom | — |
+| adapt | no | — | claude-code adaptation is not available |
+
+## codex
+
+| Operation | Supported | Scopes | Remediation |
+|---|---|---|---|
+| detect | yes | — | — |
+| inventory-skills | yes | user, project, system, managed | — |
+| inventory-commands | yes | user, project, system, managed | — |
+| diagnostics | yes | user, project, system, managed | — |
+| install | yes | user, project, custom | — |
+| uninstall | yes | user, project, custom | — |
+| dev | yes | user, project, custom | — |
+| promote | yes | user, project, custom | — |
+| undo | yes | user, project, custom | — |
+| verify-static | yes | artifact | — |
+| verify-deep | yes | artifact | — |
+| plan | yes | user, project, custom | — |
+| apply | yes | user, project, custom | — |
+| sync | yes | user, project, custom | — |
+| update | yes | user, project, custom | — |
+| adapt | no | — | codex adaptation is not available |
+
+## kilo-code
+
+| Operation | Supported | Scopes | Remediation |
+|---|---|---|---|
+| detect | yes | — | — |
+| inventory-skills | yes | user, project, system, managed | — |
+| inventory-commands | yes | user, project, system, managed | — |
+| diagnostics | yes | user, project, system, managed | — |
+| install | no | — | kilo-code is read-only; choose claude-code or codex |
+| uninstall | no | — | kilo-code is read-only; choose claude-code or codex |
+| dev | no | — | kilo-code is read-only; choose claude-code or codex |
+| promote | no | — | kilo-code is read-only; choose claude-code or codex |
+| undo | no | — | kilo-code is read-only; choose claude-code or codex |
+| verify-static | no | — | kilo-code has no registered static verifier |
+| verify-deep | no | — | kilo-code has no registered deep verifier |
+| plan | no | — | kilo-code cannot participate in desired-state mutations |
+| apply | no | — | kilo-code cannot participate in desired-state mutations |
+| sync | no | — | kilo-code cannot participate in desired-state mutations |
+| update | no | — | kilo-code cannot participate in desired-state mutations |
+| adapt | no | — | kilo-code adaptation is not available |
+
+## opencode
+
+| Operation | Supported | Scopes | Remediation |
+|---|---|---|---|
+| detect | yes | — | — |
+| inventory-skills | yes | user, project, system, managed | — |
+| inventory-commands | yes | user, project, system, managed | — |
+| diagnostics | yes | user, project, system, managed | — |
+| install | no | — | opencode is read-only; choose claude-code or codex |
+| uninstall | no | — | opencode is read-only; choose claude-code or codex |
+| dev | no | — | opencode is read-only; choose claude-code or codex |
+| promote | no | — | opencode is read-only; choose claude-code or codex |
+| undo | no | — | opencode is read-only; choose claude-code or codex |
+| verify-static | no | — | opencode has no registered static verifier |
+| verify-deep | no | — | opencode has no registered deep verifier |
+| plan | no | — | opencode cannot participate in desired-state mutations |
+| apply | no | — | opencode cannot participate in desired-state mutations |
+| sync | no | — | opencode cannot participate in desired-state mutations |
+| update | no | — | opencode cannot participate in desired-state mutations |
+| adapt | no | — | opencode adaptation is not available |

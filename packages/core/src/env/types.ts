@@ -10,11 +10,11 @@ export interface XdgDirs {
 
 export interface ExecOptions {
   cwd?: string;
-  env?: Record<string, string>; // merged over process.env, e.g. { CODEX_HOME: '<tmp>' }
+  env?: Record<string, string>; // merged over the host environment, e.g. { CODEX_HOME: '<tmp>' }
   unsetEnv?: readonly string[]; // removed after env merge; callers cannot reintroduce these keys
   timeoutMs?: number;
   input?: string;
-  // Bounded JSON-lines exchange: await each request's response before sending the next message.
+  // Finite JSON-lines conversation; wait for each matching response before advancing.
   jsonRpc?: readonly { id?: number; method: string; params?: unknown }[];
   signal?: AbortSignal;
 }
@@ -25,6 +25,10 @@ export interface ExecResult {
   stderr: string;
   timedOut: boolean;
   protocolError?: string;
+}
+
+export interface LockRequest {
+  readonly signal?: AbortSignal | undefined;
 }
 
 export interface ScanEnv {
@@ -54,6 +58,6 @@ export interface ScanEnv {
   writeTextFile(p: string, text: string): Promise<void>;
   fsyncFile(p: string): Promise<void>;
   fsyncDir(p: string): Promise<void>;
-  withFileLock<T>(p: string, fn: () => Promise<T>): Promise<T>;
+  withFileLock<T>(p: string, fn: () => Promise<T>, options?: LockRequest): Promise<T>;
   modifiedAt(p: string): Promise<number | null>; // lstat mtimeMs; null when absent (ENOENT)
 }

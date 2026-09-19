@@ -1,0 +1,305 @@
+{
+  "schemaVersion": 1,
+  "kind": "skillsmith.plan",
+  "skillsmithVersion": "0.1.0",
+  "executorSchemaVersion": 1,
+  "hashSchemaVersion": 1,
+  "portability": {
+    "kind": "portable",
+    "reasons": []
+  },
+  "artifactPair": {
+    "manifest": {
+      "kind": "portable",
+      "token": "project:skills.toml"
+    },
+    "lock": {
+      "kind": "portable",
+      "token": "project:skills.lock"
+    },
+    "lockSource": "sibling"
+  },
+  "manifestSemanticHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "lockCanonicalHash": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "options": {
+    "prune": false,
+    "locked": true
+  },
+  "selection": {
+    "selectionSource": "explicit-targets",
+    "skills": [
+      "review"
+    ],
+    "tools": [
+      "codex"
+    ],
+    "scopes": [
+      "project"
+    ]
+  },
+  "operations": [
+    {
+      "operationId": "operation:install-review-codex",
+      "groupId": "group:review",
+      "pairId": "pair:review-codex-project",
+      "kind": "install",
+      "dependsOn": [],
+      "skill": "review",
+      "source": {
+        "kind": "portable",
+        "identity": {
+          "host": "git.example.com",
+          "repository": "team/skills",
+          "path": "review"
+        },
+        "requestedRef": null,
+        "resolvedSha": "89abcdef0123456789abcdef0123456789abcdef",
+        "sourcePath": "review",
+        "contentHash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "tool": "codex",
+      "scope": "project",
+      "before": {
+        "kind": "absent",
+        "resource": {
+          "kind": "live",
+          "skill": "review",
+          "tool": "codex",
+          "scope": "project",
+          "projectRoot": {
+            "kind": "portable",
+            "token": "project:root"
+          },
+          "location": {
+            "kind": "portable",
+            "token": "project:.codex/skills/review"
+          }
+        }
+      },
+      "after": {
+        "kind": "placement",
+        "resource": {
+          "kind": "live",
+          "skill": "review",
+          "tool": "codex",
+          "scope": "project",
+          "projectRoot": {
+            "kind": "portable",
+            "token": "project:root"
+          },
+          "location": {
+            "kind": "portable",
+            "token": "project:.codex/skills/review"
+          }
+        },
+        "classification": "pinned",
+        "representation": "symlink",
+        "linkTarget": {
+          "kind": "portable",
+          "token": "store:sha256-cccc/review"
+        },
+        "dangling": false,
+        "source": {
+          "kind": "portable",
+          "identity": {
+            "host": "git.example.com",
+            "repository": "team/skills",
+            "path": "review"
+          },
+          "requestedRef": null,
+          "resolvedSha": "89abcdef0123456789abcdef0123456789abcdef",
+          "sourcePath": "review",
+          "contentHash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "contentHash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "reason": {
+        "code": "install-requested",
+        "message": "selected skill is absent"
+      },
+      "selectionSource": "explicit-targets",
+      "preconditionIds": [
+        "precondition:capability",
+        "precondition:live-absent",
+        "precondition:selection"
+      ],
+      "requiredCheckIds": [
+        "check:01-source-resolution",
+        "check:02-capability",
+        "check:03-content-integrity",
+        "check:04-verification",
+        "check:05-preconditions"
+      ],
+      "reversibility": {
+        "kind": "none",
+        "retentionResourceIds": []
+      },
+      "mutates": {
+        "live": true,
+        "manifest": false,
+        "lock": false,
+        "ledger": true
+      },
+      "conflict": null
+    }
+  ],
+  "checks": [
+    {
+      "checkId": "check:01-source-resolution",
+      "blocking": true,
+      "operationIds": [
+        "operation:install-review-codex"
+      ],
+      "kind": "source-resolution",
+      "source": {
+        "kind": "portable",
+        "identity": {
+          "host": "git.example.com",
+          "repository": "team/skills",
+          "path": "review"
+        },
+        "requestedRef": null,
+        "resolvedSha": "89abcdef0123456789abcdef0123456789abcdef",
+        "sourcePath": "review",
+        "contentHash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      }
+    },
+    {
+      "checkId": "check:02-capability",
+      "blocking": true,
+      "operationIds": [
+        "operation:install-review-codex"
+      ],
+      "kind": "capability",
+      "capabilityPreconditionId": "precondition:capability"
+    },
+    {
+      "checkId": "check:03-content-integrity",
+      "blocking": true,
+      "operationIds": [
+        "operation:install-review-codex"
+      ],
+      "kind": "content-integrity",
+      "source": {
+        "kind": "portable",
+        "identity": {
+          "host": "git.example.com",
+          "repository": "team/skills",
+          "path": "review"
+        },
+        "requestedRef": null,
+        "resolvedSha": "89abcdef0123456789abcdef0123456789abcdef",
+        "sourcePath": "review",
+        "contentHash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "expectedContentHash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    {
+      "checkId": "check:04-verification",
+      "blocking": true,
+      "operationIds": [
+        "operation:install-review-codex"
+      ],
+      "kind": "verification",
+      "tool": "codex",
+      "mode": "static",
+      "expectedContentHash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    {
+      "checkId": "check:05-preconditions",
+      "blocking": true,
+      "operationIds": [
+        "operation:install-review-codex"
+      ],
+      "kind": "precondition-validation",
+      "preconditionIds": [
+        "precondition:capability",
+        "precondition:live-absent",
+        "precondition:selection"
+      ]
+    }
+  ],
+  "diagnostics": [],
+  "resourcePreconditions": [
+    {
+      "preconditionId": "precondition:live-absent",
+      "resource": {
+        "kind": "live",
+        "skill": "review",
+        "tool": "codex",
+        "scope": "project",
+        "projectRoot": {
+          "kind": "portable",
+          "token": "project:root"
+        },
+        "location": {
+          "kind": "portable",
+          "token": "project:.codex/skills/review"
+        }
+      },
+      "expectedState": "absent",
+      "expectedHash": {
+        "domain": "resource",
+        "hashSchemaVersion": 1,
+        "digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      },
+      "expectedRevision": null
+    }
+  ],
+  "selectionPreconditions": [
+    {
+      "preconditionId": "precondition:selection",
+      "domain": "selection-set",
+      "hashSchemaVersion": 1,
+      "expectedHash": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "selectionSource": "explicit-targets",
+      "skills": [
+        "review"
+      ],
+      "tools": [
+        "codex"
+      ],
+      "scopes": [
+        "project"
+      ],
+      "members": [
+        {
+          "resource": {
+            "kind": "live",
+            "skill": "review",
+            "tool": "codex",
+            "scope": "project",
+            "projectRoot": {
+              "kind": "portable",
+              "token": "project:root"
+            },
+            "location": {
+              "kind": "portable",
+              "token": "project:.codex/skills/review"
+            }
+          },
+          "resourceHash": {
+            "domain": "resource",
+            "hashSchemaVersion": 1,
+            "digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+          }
+        }
+      ]
+    }
+  ],
+  "capabilityPreconditions": [
+    {
+      "preconditionId": "precondition:capability",
+      "domain": "capability",
+      "hashSchemaVersion": 1,
+      "expectedHash": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+      "tool": "codex",
+      "operation": "install",
+      "capabilityVersion": 1,
+      "supported": true,
+      "scopes": [
+        "project"
+      ]
+    }
+  ]
+}

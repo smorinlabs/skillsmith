@@ -1,5 +1,7 @@
 # apply
 
+> P17 disposition: unimplemented superseded command draft; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#814-apply
+
 Install skills declared in a manifest. Idempotent, drift-aware.
 
 ## Argument order

@@ -1,21 +1,26 @@
 #!/usr/bin/env bun
-import { errorMessage } from '@skillsmith/core';
+import { resolveCompletionRequest } from './completion/transport.ts';
+import { emitFinalCliError } from './output/error-boundary.ts';
 import { buildProgram } from './program.ts';
+import { createCompletionRuntimeContext } from './runtime/context.ts';
+import { processRuntimeIo } from './runtime/io.ts';
 import { installSignalHandler } from './util/signals.ts';
 
 const main = async (): Promise<number> => {
+  const invocation = process.argv.slice(2);
+  if (invocation[0] === 'complete' && invocation[1] === '--') {
+    const context = await createCompletionRuntimeContext();
+    process.stdout.write(await resolveCompletionRequest(invocation.slice(2), context));
+    return 0;
+  }
+
   const controller = new AbortController();
   const signals = installSignalHandler(controller);
 
   try {
-    const args = process.argv.slice(2);
     const program = buildProgram(controller.signal);
-    if (args.length === 0) {
-      program.outputHelp();
-      return 0;
-    }
     await program.parseAsync(process.argv);
-    return signals.exitCode() ?? 0;
+    return signals.exitCode() ?? (typeof process.exitCode === 'number' ? process.exitCode : 0);
   } finally {
     signals.uninstall();
   }
@@ -27,7 +32,8 @@ main().then(
     process.exitCode = code;
   },
   (e) => {
-    process.stderr.write(`fatal: ${errorMessage(e)}\n`);
-    process.exitCode = 1;
+    const invocation = process.argv.slice(2);
+    const error = emitFinalCliError(e, invocation, processRuntimeIo);
+    process.exitCode = error.exitCode;
   },
 );

@@ -1,52 +1,39 @@
 import { describe, expect, test } from 'bun:test';
-import { Argument, Command, Option } from 'commander';
-import { renderBash } from '../../src/completion/bash.ts';
-import { walk } from '../../src/completion/walk.ts';
+import { hermeticGitEnv } from '../../../core/tests/fixtures/git-env.ts';
+import { generateCompletionScript } from '../../src/completion/adapter.ts';
 
-const fixture = () => {
-  const p = new Command().name('sk').description('root');
-  p.command('agents')
-    .description('list')
-    .addOption(new Option('--format <f>', 'out').choices(['md', 'json']));
-  p.command('completion')
-    .description('scripts')
-    .addArgument(new Argument('<shell>').choices(['bash', 'zsh']));
-  return walk(p);
-};
+describe('Bash completion adapter', () => {
+  const script = generateCompletionScript('bash');
 
-describe('renderBash', () => {
-  const out = renderBash(fixture());
-
-  test('starts with a shebang-ish comment and install hint', () => {
-    expect(out.split('\n')[0]).toMatch(/^#/);
-    expect(out).toMatch(/To install:/);
+  test('emits the pinned Bash skeleton and registers Skillsmith', () => {
+    expect(script).toMatch(/^# bash completion for skillsmith/m);
+    expect(script).toContain('complete -F __skillsmith_complete skillsmith');
   });
 
-  test('defines a _sk completion function and registers it', () => {
-    expect(out).toMatch(/_sk\s*\(\s*\)/);
-    expect(out).toMatch(/complete\s+-F\s+_sk\s+sk\b/);
+  test('invokes the hidden transport as an argv array', () => {
+    expect(script).toContain('requestComp=(skillsmith complete -- "${words[@]:1}")');
+    expect(script).toContain('out=$("${requestComp[@]}" 2>/dev/null)');
   });
 
-  test('includes subcommand names', () => {
-    expect(out).toContain('agents');
-    expect(out).toContain('completion');
+  test('contains no request reparsing boundary', () => {
+    expect(script).not.toMatch(/\beval\b/);
+    expect(script).not.toContain('requestComp="skillsmith complete --');
   });
 
-  test('includes enum values for options', () => {
-    expect(out).toContain('md');
-    expect(out).toContain('json');
+  test('preserves an explicit trailing empty argument', () => {
+    expect(script).toContain('requestComp+=("")');
   });
 
-  test('includes enum values for positional args', () => {
-    expect(out).toContain('bash');
-    expect(out).toContain('zsh');
+  test('handles attached values without filtering against the option prefix', () => {
+    expect(script).toContain('completionPrefix="${cur%%=*}="');
+    expect(script).toContain('filterCur="${cur#*=}"');
   });
 
-  test('dispatches on first non-flag word, not COMP_WORDS[1]', () => {
-    // Guards BUG-04: global flags like --color preceding the subcommand
-    // must not defeat the case arms.
-    expect(out).not.toMatch(/case\s+"\$\{COMP_WORDS\[1\]/);
-    expect(out).toMatch(/for\s*\(\(\s*i=1;\s*i<COMP_CWORD/);
-    expect(out).toMatch(/case\s+"\$sub"/);
+  test('passes the host Bash parser', () => {
+    const parsed = Bun.spawnSync(['bash', '-n'], {
+      env: hermeticGitEnv(),
+      stdin: Buffer.from(script),
+    });
+    expect(parsed.exitCode, parsed.stderr.toString()).toBe(0);
   });
 });

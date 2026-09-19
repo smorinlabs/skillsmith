@@ -1,46 +1,24 @@
 import { describe, expect, test } from 'bun:test';
-import { Argument, Command, Option } from 'commander';
-import { renderFish } from '../../src/completion/fish.ts';
-import { walk } from '../../src/completion/walk.ts';
+import { generateCompletionScript } from '../../src/completion/adapter.ts';
 
-const fixture = () => {
-  const p = new Command().name('sk').description('root');
-  p.command('agents')
-    .description('list')
-    .addOption(new Option('--format <f>', 'out').choices(['md', 'json']));
-  p.command('completion')
-    .description('scripts')
-    .addArgument(new Argument('<shell>').choices(['bash', 'zsh']));
-  return walk(p);
-};
+describe('Fish completion adapter', () => {
+  const script = generateCompletionScript('fish');
 
-describe('renderFish', () => {
-  const out = renderFish(fixture());
-
-  test('emits per-command complete lines', () => {
-    expect(out).toMatch(/complete -c sk -f -n '__fish_use_subcommand' -a agents/);
-    expect(out).toMatch(/complete -c sk -f -n '__fish_use_subcommand' -a completion/);
+  test('retains the sourceable Fish function shape', () => {
+    expect(script).toMatch(/^# fish completion for skillsmith/m);
+    expect(script).toContain('function __skillsmith_perform_completion');
   });
 
-  test('emits enum values for options', () => {
-    expect(out).toContain('md');
-    expect(out).toContain('json');
+  test('invokes the hidden transport directly with argv elements', () => {
+    expect(script).toContain('skillsmith complete -- $args[2..-1] "$lastArg"');
   });
 
-  test('emits positional choices for subcommands', () => {
-    expect(out).toContain('bash');
-    expect(out).toContain('zsh');
+  test('contains no runtime eval', () => {
+    expect(script).not.toMatch(/\beval\b/);
   });
 
-  test('escapes backslashes before quotes (BUG-09)', () => {
-    const p = new Command().name('sk');
-    p.command('grep').description("Pattern e.g. '\\d+' matches digits");
-    const out2 = renderFish(walk(p));
-    // Backslash must be doubled; the single quote must be backslash-escaped.
-    // Expected rendering of the description inside single quotes:
-    //   'Pattern e.g. \'\\\\d+\' matches digits'
-    expect(out2).toContain('\\\\d+');
-    // And the raw, unescaped sequence must NOT appear.
-    expect(out2).not.toContain("'\\d+'");
+  test('registers only Skillsmith', () => {
+    expect(script).toContain('complete -c skillsmith');
+    expect(script).not.toContain('powershell');
   });
 });

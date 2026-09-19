@@ -1,5 +1,7 @@
 # agents
 
+> P17 disposition: shipped command evidence, not future target authority; target: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#82-agents
+
 `skillsmith agents` lists every supported tool SkillSmith can detect on the system — including multiple installs of the same tool at different locations. Purely informational: no health judgments, no drift checks. Think `brew list` or `mise ls`, not `brew doctor`.
 
 ## Command

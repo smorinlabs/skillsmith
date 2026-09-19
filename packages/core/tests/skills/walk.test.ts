@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import type { ScanEnv } from '../../src/env/types.ts';
+import { INVENTORY_CANCELLED } from '../../src/inventory/cancellation.ts';
+import { inventoryRootOrdinalOf } from '../../src/inventory/types.ts';
+import type { InventoryReadPorts } from '../../src/ports/types.ts';
 import { walkSkillDir } from '../../src/skills/walk.ts';
 
 interface Fake {
@@ -8,31 +10,20 @@ interface Fake {
   realpaths: Record<string, string>;
 }
 
-const fakeEnv = (fake: Fake): ScanEnv => ({
+const fakeEnv = (fake: Fake): InventoryReadPorts => ({
   homeDir: '/h',
-  path: [],
+  executableSearchPath: [],
   platform: 'linux',
   xdg: { config: '/h/.config', data: '/h/.local/share', cache: '/h/.cache' },
   fileExists: async (p) => p in fake.files || p in fake.dirs,
   realpath: async (p) => fake.realpaths[p] ?? p,
   listDir: async (p) => fake.dirs[p] ?? [],
   readText: async (p) => fake.files[p] ?? '',
-  runVersion: async () => 'unknown',
-  exec: async () => ({ code: 0, stdout: '', stderr: '', timedOut: false }),
   pathKind: async () => 'absent' as const,
   isExecutable: async () => false,
   readBytes: async () => new Uint8Array(),
   readLink: async () => '',
-  makeSymlink: async () => {},
-  rename: async () => {},
-  copyTree: async () => {},
-  removeTree: async () => {},
-  makeDir: async () => {},
-  writeTextFile: async () => {},
-  fsyncFile: async () => {},
-  fsyncDir: async () => {},
   modifiedAt: async () => null,
-  withFileLock: (_p, fn) => fn(),
 });
 
 describe('walkSkillDir', () => {
@@ -123,5 +114,121 @@ describe('walkSkillDir', () => {
       enabled: 'on',
     });
     expect(r[0]?.realpath).toBe('/elsewhere/real');
+  });
+
+  test('propagates a selected SKILL.md read failure without partial output', async () => {
+    const failure = new Error('selected skill read failed');
+    const base = fakeEnv({
+      dirs: { '/r': ['one', 'two'] },
+      files: {
+        '/r/one/SKILL.md': '---\n---\n',
+        '/r/two/SKILL.md': '---\n---\n',
+      },
+      realpaths: {},
+    });
+    const env: InventoryReadPorts = {
+      ...base,
+      readText: async (path) => {
+        if (path === '/r/two/SKILL.md') throw failure;
+        return base.readText(path);
+      },
+    };
+
+    await expect(
+      walkSkillDir(env, {
+        tool: 'claude-code',
+        scope: 'user',
+        root: '/r',
+        origin: { kind: 'standalone' },
+        enabled: 'on',
+      }),
+    ).rejects.toBe(failure);
+  });
+
+  test('classifies a selected skill realpath EPERM as permission denied', async () => {
+    const base = fakeEnv({
+      dirs: { '/r': ['one'] },
+      files: { '/r/one/SKILL.md': '---\n---\n' },
+      realpaths: {},
+    });
+    const env: InventoryReadPorts = {
+      ...base,
+      realpath: async () => {
+        throw Object.assign(new Error('denied'), { code: 'EPERM' });
+      },
+    };
+
+    await expect(
+      walkSkillDir(env, {
+        tool: 'claude-code',
+        scope: 'user',
+        root: '/r',
+        origin: { kind: 'standalone' },
+        enabled: 'on',
+      }),
+    ).rejects.toEqual({
+      code: 'permission-denied',
+      message: 'denied',
+      path: '/r/one',
+    });
+  });
+
+  test('stops after an abort during the first entry read', async () => {
+    const controller = new AbortController();
+    let reads = 0;
+    let realpaths = 0;
+    const base = fakeEnv({
+      dirs: { '/r': ['one', 'two'] },
+      files: {
+        '/r/one/SKILL.md': '---\n---\n',
+        '/r/two/SKILL.md': '---\n---\n',
+      },
+      realpaths: {},
+    });
+    const env: InventoryReadPorts = {
+      ...base,
+      readText: async (path) => {
+        reads += 1;
+        controller.abort(new Error('private reason'));
+        return base.readText(path);
+      },
+      realpath: async (path) => {
+        realpaths += 1;
+        return base.realpath(path);
+      },
+    };
+
+    await expect(
+      walkSkillDir(env, {
+        tool: 'claude-code',
+        scope: 'user',
+        root: '/r',
+        origin: { kind: 'standalone' },
+        enabled: 'on',
+        signal: controller.signal,
+      }),
+    ).rejects.toEqual(INVENTORY_CANCELLED);
+    expect({ reads, realpaths }).toEqual({ reads: 1, realpaths: 0 });
+  });
+
+  test('retains a non-enumerable internal root ordinal', async () => {
+    const r = await walkSkillDir(
+      fakeEnv({
+        dirs: { '/r': ['one'] },
+        files: { '/r/one/SKILL.md': '---\n---\n' },
+        realpaths: {},
+      }),
+      {
+        tool: 'codex',
+        scope: 'user',
+        root: '/r',
+        origin: { kind: 'standalone' },
+        enabled: 'on',
+        rootOrdinal: 7,
+      },
+    );
+
+    expect(inventoryRootOrdinalOf(r[0] ?? {})).toBe(7);
+    expect(Object.keys(r[0] ?? {})).not.toContain('rootOrdinal');
   });
 });

@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "kind": "skillsmith.undo",
+  "command": "undo",
+  "mode": "dry-run",
+  "state": "ready",
+  "project": {
+    "effectiveCwd": "/fixture/project",
+    "root": "/fixture/project",
+    "identity": "fixture-project"
+  },
+  "selection": {
+    "source": "explicit-all",
+    "outcome": "filter-zero",
+    "targets": [],
+    "all": true,
+    "tools": [
+      "codex"
+    ],
+    "scopes": [
+      "project"
+    ],
+    "groupIds": [],
+    "batchPolicy": "fail-fast"
+  },
+  "approval": {
+    "required": false,
+    "outcome": "not-required"
+  },
+  "groups": [],
+  "operations": [],
+  "checks": [],
+  "results": [],
+  "effects": [],
+  "diagnostics": [],
+  "summary": {
+    "selected": 0,
+    "actionable": 0,
+    "alreadyReversed": 0,
+    "planned": 0,
+    "succeeded": 0,
+    "failed": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "notRun": 0,
+    "effects": 0,
+    "refusals": 0
+  }
+}

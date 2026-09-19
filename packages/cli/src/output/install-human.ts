@@ -1,11 +1,16 @@
 import type {
+  CurrentInstallReport,
+  CurrentUninstallReport,
   InstallAction,
   InstallReport,
   InstallResult,
-  UninstallAction,
   UninstallReport,
   UninstallResult,
 } from '@skillsmith/core';
+
+export type InstallStaticNoticeResolver = (tool: string, skill: string) => string | null;
+
+const noInstallStaticNotice: InstallStaticNoticeResolver = () => null;
 
 // Column conventions measured against the mockups in `research/commands/install.md` /
 // `uninstall.md`: a 2-space indent, a 9-wide label field ('verify   ', 'store    ',
@@ -34,7 +39,10 @@ const placementLabel = (placement: 'symlink' | 'copy' | null): string =>
 // install
 // ---------------------------------------------------------------------------------------------
 
-const renderInstallToolBlock = (r: InstallResult): string[] => {
+const renderInstallToolBlock = (
+  r: InstallResult,
+  staticNoticeFor: InstallStaticNoticeResolver,
+): string[] => {
   const lines: string[] = [];
   const tool = r.tool ?? 'unknown';
   lines.push(`${tool.padEnd(12)} ${r.placementPath ?? '(no placement resolved)'}`);
@@ -51,10 +59,10 @@ const renderInstallToolBlock = (r: InstallResult): string[] => {
   if (r.verify) {
     const modeLabel = r.verify.mode ?? 'static';
     lines.push(`  ${padLabel('verify')}${modeLabel}: ${r.verify.verdict ?? r.verify.gate}`);
-    if (tool === 'codex' && r.verify.mode === 'static') {
-      lines.push(
-        `${NOTE_INDENT}note: codex static checks the manifest only — run 'skillsmith verify ${r.skill} --deep' for a full load check`,
-      );
+    const staticNotice =
+      r.verify.mode === 'static' && r.skill !== null ? staticNoticeFor(tool, r.skill) : null;
+    if (staticNotice !== null) {
+      lines.push(`${NOTE_INDENT}note: ${staticNotice}`);
     }
   }
 
@@ -85,16 +93,23 @@ const INSTALL_BUCKET_LABEL: Record<InstallAction, string> = {
  *  `research/commands/install.md`). Refusal/error detail blocks (ambiguity candidate lists,
  *  shadowing, legacy-root, local-path guidance) are written to stderr by the command action,
  *  not here — this renderer covers the per-source/per-tool report and the summary line. */
-export const renderInstallHuman = (report: InstallReport, exitCode: number): string => {
+export const renderInstallHuman = (
+  report: InstallReport | CurrentInstallReport,
+  exitCode: number,
+  staticNoticeFor: InstallStaticNoticeResolver = noInstallStaticNotice,
+): string => {
   const lines: string[] = [];
-  const bySource = new Map<string, InstallResult[]>();
+  const groups = new Map<string, { readonly source: string; readonly results: InstallResult[] }>();
   for (const r of report.results) {
-    const list = bySource.get(r.source) ?? [];
-    list.push(r);
-    bySource.set(r.source, list);
+    const indexed =
+      r.requestIndex !== undefined && Number.isSafeInteger(r.requestIndex) && r.requestIndex >= 0;
+    const key = indexed ? `request:${r.requestIndex}` : `legacy-source:${r.source}`;
+    const group = groups.get(key) ?? { source: r.source, results: [] };
+    group.results.push(r);
+    groups.set(key, group);
   }
 
-  for (const [source, results] of bySource) {
+  for (const { source, results } of groups.values()) {
     const resolved = results.find((r) => r.skill !== null);
     const allNoop = results.length > 0 && results.every((r) => r.action === 'noop');
     const originResult = results.find((r) => r.origin !== null);
@@ -121,7 +136,7 @@ export const renderInstallHuman = (report: InstallReport, exitCode: number): str
       lines.push(header);
       lines.push('');
       for (const r of results) {
-        lines.push(...renderInstallToolBlock(r));
+        lines.push(...renderInstallToolBlock(r, staticNoticeFor));
         lines.push('');
       }
       continue;
@@ -146,6 +161,7 @@ export const renderInstallHuman = (report: InstallReport, exitCode: number): str
     .filter((b) => report.summary[b] > 0)
     .map((b) => `${report.summary[b]} ${INSTALL_BUCKET_LABEL[b]}`);
   const summaryLine = `${parts.length > 0 ? parts.join(', ') : 'nothing to do'}.  Exit code: ${exitCode}`;
+  if (report.reportVersion === 2) lines.push(...renderDesiredState(report));
   lines.push(summaryLine);
 
   return `${lines.join('\n')}\n`;
@@ -155,7 +171,10 @@ export const renderInstallHuman = (report: InstallReport, exitCode: number): str
 // uninstall
 // ---------------------------------------------------------------------------------------------
 
-const renderUninstallToolBlock = (r: UninstallResult): string[] => {
+type RenderableUninstallResult = UninstallResult | CurrentUninstallReport['results'][number];
+type RenderableUninstallAction = CurrentUninstallReport['results'][number]['action'];
+
+const renderUninstallToolBlock = (r: RenderableUninstallResult): string[] => {
   const lines: string[] = [];
   const tool = r.tool ?? 'unknown';
   lines.push(`${tool.padEnd(12)} ${r.placementPath ?? '(no placement resolved)'}`);
@@ -168,6 +187,10 @@ const renderUninstallToolBlock = (r: UninstallResult): string[] => {
     lines.push(`  ${r.reason ?? 'placement was already gone'}`);
     return lines;
   }
+  if (r.action === 'skipped') {
+    lines.push(`  skipped  ${r.reason ?? 'after an earlier group failed'}`);
+    return lines;
+  }
 
   const removeLine = `  ${padLabel('remove')}${placementLabel(r.before?.placement ?? null)}`;
   lines.push(`${padToCol(removeLine, PLACE_COL)}removed`);
@@ -178,18 +201,64 @@ const renderUninstallToolBlock = (r: UninstallResult): string[] => {
   return lines;
 };
 
-const UNINSTALL_BUCKET_LABEL: Record<UninstallAction, string> = {
+const UNINSTALL_BUCKET_LABEL: Record<RenderableUninstallAction, string> = {
   removed: 'removed',
   noop: 'not installed',
+  skipped: 'skipped',
   refused: 'refused',
   failed: 'failed',
 };
 
+const renderDesiredState = (report: CurrentInstallReport | CurrentUninstallReport): string[] => {
+  if (report.saveMode === 'live-only') {
+    return [
+      'Portable desired state: not inspected or changed (--no-save)',
+      '  A later apply follows whichever manifest is selected then.',
+    ];
+  }
+  if (report.artifactPair === null || report.artifactSelection.outcome !== 'selected') return [];
+  const hasWritableEffect = report.artifactEffects.some(
+    ({ manifestAction, lockAction }) =>
+      manifestAction !== 'not-write' || lockAction !== 'not-write',
+  );
+  const writeFailed = report.artifactEffects.some(
+    ({ outcome }) => outcome !== 'planned' && outcome !== 'succeeded' && outcome !== 'not-run',
+  );
+  const writeCompleted =
+    hasWritableEffect &&
+    report.artifactEffects.length > 0 &&
+    report.artifactEffects.every(({ outcome }) =>
+      report.dryRun ? outcome === 'planned' : outcome === 'succeeded',
+    );
+  const heading = writeCompleted
+    ? report.dryRun
+      ? 'Would save desired state:'
+      : 'Saved desired state:'
+    : writeFailed
+      ? 'Desired state write did not complete:'
+      : 'Desired state was not written:';
+  const lines = [
+    heading,
+    `  ${report.artifactPair.manifestPath}`,
+    `  ${report.artifactPair.lockPath}`,
+  ];
+  for (const effect of report.artifactEffects) {
+    const subject = effect.skill ?? effect.groupId ?? 'selected group';
+    lines.push(
+      `  ${subject}: manifest ${effect.manifestAction}, lock ${effect.lockAction}, ${effect.outcome}${effect.reason === null ? '' : ` — ${effect.reason}`}`,
+    );
+  }
+  return lines;
+};
+
 /** Human-readable render of a `skillsmith.uninstall` report (mockups in
  *  `research/commands/uninstall.md`). Same stderr/stdout split as `renderInstallHuman`. */
-export const renderUninstallHuman = (report: UninstallReport, exitCode: number): string => {
+export const renderUninstallHuman = (
+  report: UninstallReport | CurrentUninstallReport,
+  exitCode: number,
+): string => {
   const lines: string[] = [];
-  const bySkill = new Map<string, UninstallResult[]>();
+  const bySkill = new Map<string, RenderableUninstallResult[]>();
   for (const r of report.results) {
     const list = bySkill.get(r.skill) ?? [];
     list.push(r);
@@ -214,11 +283,19 @@ export const renderUninstallHuman = (report: UninstallReport, exitCode: number):
     lines.push('');
   }
 
-  const buckets: UninstallAction[] = ['removed', 'noop', 'refused', 'failed'];
+  const buckets: RenderableUninstallAction[] = ['removed', 'noop', 'skipped', 'refused', 'failed'];
   const parts = buckets
-    .filter((b) => report.summary[b] > 0)
-    .map((b) => `${report.summary[b]} ${UNINSTALL_BUCKET_LABEL[b]}`);
+    .map((bucket) => ({
+      bucket,
+      count:
+        bucket === 'skipped'
+          ? report.results.filter(({ action }) => action === 'skipped').length
+          : report.summary[bucket],
+    }))
+    .filter(({ count }) => count > 0)
+    .map(({ bucket, count }) => `${count} ${UNINSTALL_BUCKET_LABEL[bucket]}`);
   const summaryLine = `${parts.length > 0 ? parts.join(', ') : 'nothing to do'}.  Exit code: ${exitCode}`;
+  if (report.reportVersion === 2) lines.push(...renderDesiredState(report));
   lines.push(summaryLine);
 
   return `${lines.join('\n')}\n`;

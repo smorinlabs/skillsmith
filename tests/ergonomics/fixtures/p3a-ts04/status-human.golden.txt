@@ -1,0 +1,118 @@
+Status — targets: bounded-default; tools: unbounded-default; scopes: unbounded-default; outcome: selected
+Context — cwd: /repo; project: /repo (shared-project)
+Artifacts — project-default; manifest: current v1; lock: current v1; relationship: current
+Ledger — current v2; migration pending: no
+
+clean-dev — converged
+  desired: github.com/skillsmith/status-fixtures/clean-dev@main
+  locked: revision-clean-dev
+  kilo-code/project /repo/.kilo/skills/clean-dev — dev; verification: skipped; shadow: none
+    verify-skipped (info): expected recorded; actual skipped
+
+clean-pinned-copy — converged
+  desired: github.com/skillsmith/status-fixtures/clean-pinned-copy@main
+  locked: revision-clean-pinned-copy
+  claude-code/user /home/test/.claude/skills/clean-pinned-copy — pinned; verification: passed; shadow: none
+    verify-passed (info): expected recorded; actual passed
+
+clean-store-link — drift
+  desired: absent
+  locked: revision-clean-store-link
+  codex/system /etc/codex/skills/clean-store-link — store-linked; verification: warned; shadow: none
+    live-undeclared (drift): expected declared; actual undeclared
+    verify-warned (info): expected recorded; actual warned
+
+content-drift — drift
+  desired: absent
+  locked: revision-content-drift
+  opencode/managed /managed/opencode/skills/content-drift — pinned; verification: unrecorded; shadow: none
+    live-undeclared (drift): expected declared; actual undeclared
+    content-drift (drift): expected sha256:content-content-drift; actual sha256:observed-content
+    verify-unrecorded (info): expected recorded; actual unrecorded
+
+declared-locked-absent — drift
+  desired: github.com/skillsmith/status-fixtures/declared-locked-absent@main
+  locked: revision-declared-locked-absent
+  claude-code/project (default path) — absent; verification: unrecorded; shadow: none
+    live-missing (drift): expected present; actual absent
+    ledger-missing (drift): expected present; actual absent
+    verify-unrecorded (info): expected recorded; actual unrecorded
+
+ledger-only — drift
+  desired: absent
+  locked: absent
+  kilo-code/user /home/test/.kilo/skills/ledger-only — broken (ledger-recorded-absence); verification: warned; shadow: none
+    ledger-only (drift): expected absent; actual present
+    broken-live (drift): expected valid; actual ledger-recorded-absence
+    verify-warned (info): expected recorded; actual warned
+
+ledger-recorded-broken-link — drift
+  desired: github.com/skillsmith/status-fixtures/ledger-recorded-broken-link@main
+  locked: revision-ledger-recorded-broken-link
+  codex/user /home/test/.agents/skills/ledger-recorded-broken-link — broken (dangling-link); verification: skipped; shadow: none
+    broken-live (drift): expected valid; actual dangling-link
+    verify-skipped (info): expected recorded; actual skipped
+
+live-only-unmanaged — drift
+  desired: absent
+  locked: absent
+  opencode/project /repo/.opencode/skills/live-only-unmanaged — unmanaged; verification: unrecorded; shadow: none
+    live-only (drift): expected absent; actual present
+    verify-unrecorded (info): expected recorded; actual unrecorded
+
+lock-only — drift
+  desired: absent
+  locked: revision-lock-only
+  lock-only (drift): expected absent; actual present
+
+manifest-only — drift
+  desired: github.com/skillsmith/status-fixtures/manifest-only@main
+  locked: absent
+  manifest-only (drift): expected absent; actual present
+  codex/project (default path) — absent; verification: unrecorded; shadow: none
+    live-missing (drift): expected present; actual absent
+    ledger-missing (drift): expected present; actual absent
+    verify-unrecorded (info): expected recorded; actual unrecorded
+
+placement-drift — drift
+  desired: github.com/skillsmith/status-fixtures/placement-drift@main
+  locked: revision-placement-drift
+  kilo-code/project /repo/.kilo/skills/placement-drift — dev; verification: passed; shadow: none
+    placement-drift (drift): expected ["copy","pinned","/repo/.kilo/skills/placement-drift"]; actual ["symlink","dev","/repo/.kilo/skills/placement-drift"]
+    verify-passed (info): expected recorded; actual passed
+  kilo-code/project /repo/.agents/skills/placement-drift — unmanaged; verification: unrecorded; shadow: none
+    live-only (drift): expected absent; actual present
+    verify-unrecorded (info): expected recorded; actual unrecorded
+
+revision-drift — drift
+  desired: github.com/skillsmith/status-fixtures/revision-drift@main
+  locked: revision-revision-drift
+  opencode/user /home/test/.config/opencode/skills/revision-drift — pinned; verification: warned; shadow: none
+    revision-drift (drift): expected revision-revision-drift; actual revision-observed
+    verify-warned (info): expected recorded; actual warned
+
+shadowed-fleet — drift
+  desired: github.com/skillsmith/status-fixtures/shadowed-fleet@main
+  locked: revision-shadowed-fleet
+  codex/user /home/test/.agents/skills/shadowed-fleet — pinned; verification: passed; shadowed by /repo/.agents/skills/shadowed-fleet
+    live-undeclared (drift): expected declared; actual undeclared
+    shadowed (drift): expected /repo/.agents/skills/shadowed-fleet; actual /home/test/.agents/skills/shadowed-fleet
+    verify-passed (info): expected recorded; actual passed
+  codex/project /repo/.agents/skills/shadowed-fleet — pinned; verification: passed; shadows /home/test/.agents/skills/shadowed-fleet
+    journal-pending (drift): expected committed; actual backed-up
+    verify-passed (info): expected recorded; actual passed
+    journal logical/update tx-shadowed-fleet — pending backed-up; before: pinned; abort: eligible
+      retained-live backup/live /data/skillsmith/backups/shadowed-fleet — satisfied; retain until: 2026-08-01T00:00:00.000Z
+        repository revision: satisfied; expected resource:sha256:retained-revision; observed resource:sha256:retained-revision
+        content hash: satisfied; domain source-content; expected sha256:retained-content; observed sha256:retained-content
+      resume: rerun the same operation
+      abort: 'skillsmith' 'undo' '/repo/.agents/skills/shadowed-fleet' '--tool' 'codex' '--scope' 'project'
+
+source-drift — drift
+  desired: github.com/skillsmith/status-fixtures/source-drift@main
+  locked: revision-source-drift
+  claude-code/user /home/test/.claude/skills/source-drift — store-linked; verification: skipped; shadow: none
+    source-drift (drift): expected ["github.com","skillsmith/status-fixtures","source-drift"]; actual ["git.example.test","other/repository","source-drift"]
+    verify-skipped (info): expected recorded; actual skipped
+
+Summary — 14 skills: 2 converged, 12 drifting; migration pending: no

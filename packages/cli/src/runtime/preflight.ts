@@ -1,0 +1,79 @@
+import type { Command } from 'commander';
+import {
+  cliErrorFormatFromArgv,
+  cliErrorInvocationForCommand,
+  failCliError,
+} from '../output/error-boundary.ts';
+import { CURRENT_COMMAND_SPECS, validateOptionInvocation } from '../spec/index.ts';
+import { type CliRuntimeIo, processRuntimeIo } from './io.ts';
+
+/** Validate root-global relations for action hooks and the zero-discovery eager-version path. */
+export const assertRootRuntimePreflight = (
+  invocation: readonly string[],
+  io: CliRuntimeIo = processRuntimeIo,
+): void => {
+  const relation = validateOptionInvocation('skillsmith', invocation);
+  if (!relation.ok)
+    failCliError(
+      relation.error,
+      cliErrorFormatFromArgv(invocation),
+      {
+        exitCode: 2,
+      },
+      invocation,
+      io,
+    );
+};
+
+const commandPath = (command: Command): string => {
+  const names: string[] = [];
+  for (let current: Command | null = command; current !== null; current = current.parent) {
+    names.unshift(current.name());
+  }
+  return names.join(' ');
+};
+
+const commandArguments = (command: Command, rawArgs: readonly string[]): readonly string[] => {
+  const segments = commandPath(command).split(' ').slice(1);
+  if (segments.length === 0) return rawArgs;
+  const optionShapes = new Map<string, 'boolean' | 'required' | 'optional'>();
+  for (const spec of CURRENT_COMMAND_SPECS) {
+    for (const option of spec.options) {
+      for (const spelling of option.flags.match(/--[\w-]+|-[A-Za-z]/g) ?? []) {
+        optionShapes.set(spelling, option.valueShape);
+      }
+    }
+  }
+  let segmentIndex = 0;
+  for (let index = 0; index < rawArgs.length; index++) {
+    const token = rawArgs[index];
+    if (token === undefined) continue;
+    const spelling = token.startsWith('--') ? token.split('=', 1)[0] : token;
+    const shape = spelling === undefined ? undefined : optionShapes.get(spelling);
+    if (shape !== undefined) {
+      if (shape !== 'boolean' && !token.includes('=')) index++;
+      continue;
+    }
+    const expectedPath = `skillsmith ${segments.slice(0, segmentIndex + 1).join(' ')}`;
+    const aliases = CURRENT_COMMAND_SPECS.find((spec) => spec.path === expectedPath)?.aliases ?? [];
+    if (token !== segments[segmentIndex] && !aliases.includes(token)) continue;
+    segmentIndex++;
+    if (segmentIndex === segments.length) return rawArgs.slice(index + 1);
+  }
+  return rawArgs;
+};
+
+export const installRuntimePreflight = (
+  program: Command,
+  io: CliRuntimeIo = processRuntimeIo,
+): void => {
+  program.hook('preAction', (_thisCommand, actionCommand) => {
+    const invocation = cliErrorInvocationForCommand(program);
+    const format = cliErrorFormatFromArgv(invocation);
+    assertRootRuntimePreflight(invocation, io);
+
+    const path = commandPath(actionCommand);
+    const relation = validateOptionInvocation(path, commandArguments(actionCommand, invocation));
+    if (!relation.ok) return failCliError(relation.error, format, { exitCode: 2 }, invocation, io);
+  });
+};

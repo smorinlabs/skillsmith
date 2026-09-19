@@ -1,18 +1,17 @@
-import { cp, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
-import type { ScanEnv } from '../../env/types.ts';
 import { ok } from '../../result.ts';
+import { DEEP_TIMEOUT_MS, STATIC_TIMEOUT_MS } from '../../verify/constants.ts';
 import { extractVersionToken, modeVerdictFor, toolVerdictFor } from '../../verify/normalize.ts';
-import { DEEP_TIMEOUT_MS, STATIC_TIMEOUT_MS, VERIFIED_AGAINST } from '../../verify/types.ts';
 import type {
   ModeResult,
   ToolVerifier,
   ToolVerifyOptions,
   VerifyFinding,
   VerifyMode,
+  VerifyPorts,
 } from '../../verify/types.ts';
 import { analyzeCodexSkills, sanitizeDeepDiagnostic } from './deep-result.ts';
+import { CODEX_VERIFIED_AGAINST } from './descriptor.ts';
 import { detect } from './detect.ts';
 
 const MARKETPLACE_NAME = 'skillsmith-mkt';
@@ -116,7 +115,7 @@ export const parseCodexExecStderr = (
 };
 
 /** Manifest plugin name, or null on any read/parse failure. */
-const readManifestName = async (env: ScanEnv, manifestPath: string): Promise<string | null> => {
+const readManifestName = async (env: VerifyPorts, manifestPath: string): Promise<string | null> => {
   try {
     const parsed: unknown = JSON.parse(await env.readText(manifestPath));
     const name = (parsed as { name?: unknown }).name;
@@ -141,7 +140,7 @@ const errorResult = (
 });
 
 const runStaticMode = async (
-  env: ScanEnv,
+  env: VerifyPorts,
   binary: string,
   opts: ToolVerifyOptions,
 ): Promise<ModeResult> => {
@@ -172,11 +171,12 @@ const runStaticMode = async (
   const coverage = { manifest: true, skills: false };
   const command = `codex plugin marketplace add <root> && codex plugin add ${name}@<mkt>`;
 
-  const root = await mkdtemp(join(tmpdir(), 'skillsmith-codex-root-'));
-  const home = await mkdtemp(join(tmpdir(), 'skillsmith-codex-home-'));
+  const root = join(env.xdg.cache, 'skillsmith', 'verify', env.nextId('codex-root'));
+  const home = join(env.xdg.cache, 'skillsmith', 'verify', env.nextId('codex-home'));
   try {
-    await mkdir(join(root, '.agents', 'plugins'), { recursive: true });
-    await writeFile(
+    await env.makeDir(join(root, '.agents', 'plugins'));
+    await env.makeDir(home);
+    await env.writeTextFile(
       join(root, '.agents', 'plugins', 'marketplace.json'),
       `${JSON.stringify(
         {
@@ -187,7 +187,7 @@ const runStaticMode = async (
         2,
       )}\n`,
     );
-    await cp(opts.path, join(root, 'plugins', name), { recursive: true });
+    await env.copyTree(opts.path, join(root, 'plugins', name));
 
     const execOpts = {
       env: { CODEX_HOME: home },
@@ -260,8 +260,8 @@ const runStaticMode = async (
       findings,
     };
   } finally {
-    await rm(root, { recursive: true, force: true });
-    await rm(home, { recursive: true, force: true });
+    await env.removeTree(root);
+    await env.removeTree(home);
   }
 };
 
@@ -292,29 +292,30 @@ const deepErrorResult = (
 });
 
 /** Copy only target skills, and retain every expected entry for exact-path loading proof. */
-const stageSkills = async (env: ScanEnv, path: string, proj: string): Promise<string[]> => {
+const stageSkills = async (env: VerifyPorts, path: string, proj: string): Promise<string[]> => {
   const skillsDir = join(path, 'skills');
   if (!(await env.fileExists(skillsDir))) return [];
-  await mkdir(join(proj, '.agents', 'skills'), { recursive: true });
+  await env.makeDir(join(proj, '.agents', 'skills'));
   const names: string[] = [];
   for (const name of await env.listDir(skillsDir)) {
     const src = join(skillsDir, name);
     if (!(await env.fileExists(join(src, 'SKILL.md')))) continue;
-    await cp(src, join(proj, '.agents', 'skills', name), { recursive: true });
+    await env.copyTree(src, join(proj, '.agents', 'skills', name));
     names.push(name);
   }
   return names;
 };
 
 const runDeepMode = async (
-  env: ScanEnv,
+  env: VerifyPorts,
   binary: string,
   opts: ToolVerifyOptions,
 ): Promise<ModeResult> => {
-  const proj = await mkdtemp(join(tmpdir(), 'skillsmith-codex-proj-'));
-  let home = '';
+  const proj = join(env.xdg.cache, 'skillsmith', 'verify', env.nextId('codex-project'));
+  const home = join(env.xdg.cache, 'skillsmith', 'verify', env.nextId('codex-home'));
   try {
-    home = await mkdtemp(join(tmpdir(), 'skillsmith-codex-home-'));
+    await env.makeDir(proj);
+    await env.makeDir(home);
     const names = await stageSkills(env, opts.path, proj);
     const realProj = await env.realpath(proj);
     const expected = await Promise.all(
@@ -352,6 +353,7 @@ const runDeepMode = async (
       ],
       ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
     });
+    opts.signal?.throwIfAborted();
     const analyzed = analyzeCodexSkills(result.stdout, realProj, expected);
     const executionFailed = result.timedOut || result.code !== 0 || result.protocolError;
     if (executionFailed) {
@@ -398,25 +400,27 @@ const runDeepMode = async (
       command: DEEP_COMMAND,
       findings: analyzed.findings,
     };
-  } catch {
-    return deepErrorResult(
-      'exec-error',
-      opts.signal?.aborted ? 'local loader cancelled' : 'local loader staging or execution failed',
-    );
+  } catch (error) {
+    if (opts.signal?.aborted) throw error;
+    return deepErrorResult('exec-error', 'local loader staging or execution failed');
   } finally {
-    await rm(proj, { recursive: true, force: true });
-    if (home) await rm(home, { recursive: true, force: true });
+    await env.removeTree(proj);
+    await env.removeTree(home);
   }
 };
 
-type ModeRunner = (env: ScanEnv, binary: string, opts: ToolVerifyOptions) => Promise<ModeResult>;
+type ModeRunner = (
+  env: VerifyPorts,
+  binary: string,
+  opts: ToolVerifyOptions,
+) => Promise<ModeResult>;
 
 const MODE_RUNNERS: Partial<Record<VerifyMode, ModeRunner>> = {
   static: runStaticMode,
   deep: runDeepMode,
 };
 
-export const verifyCodex: ToolVerifier = async (env, opts) => {
+export const verifyCodex: ToolVerifier<'codex'> = async (env, opts) => {
   const detected = await detect(env, opts.signal);
   if (!detected.ok) return detected;
 
@@ -435,7 +439,7 @@ export const verifyCodex: ToolVerifier = async (env, opts) => {
 
   const binary = record.path;
   const toolVersion = extractVersionToken(record.version);
-  const versionDrift = toolVersion !== null && toolVersion !== VERIFIED_AGAINST.codex;
+  const versionDrift = toolVersion !== null && toolVersion !== CODEX_VERIFIED_AGAINST;
 
   const modes: ModeResult[] = [];
   for (const mode of opts.modes) {
@@ -451,7 +455,7 @@ export const verifyCodex: ToolVerifier = async (env, opts) => {
         checkId: 'codex.version-drift',
         toolSeverity: null,
         normalizedSeverity: 'info',
-        message: `codex ${toolVersion} differs from verified ${VERIFIED_AGAINST.codex}; parsing may be less reliable`,
+        message: `codex ${toolVersion} differs from verified ${CODEX_VERIFIED_AGAINST}; parsing may be less reliable`,
         file: null,
         subject: 'plugin',
       });

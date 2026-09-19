@@ -1,6 +1,5 @@
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { dirname, join, relative, resolve } from 'node:path';
-import type { ScanEnv } from '../../src/env/types.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
 import { getPair, readLedger } from '../../src/place/ledger.ts';
 import { ledgerPathOf } from '../../src/place/paths.ts';
@@ -8,6 +7,7 @@ import { LEGACY_ROOT_NOTICE } from '../../src/place/plan.ts';
 import { runDev, runPromote } from '../../src/place/run.ts';
 import { contentHashOf } from '../../src/place/store.ts';
 import type { FlipDeps, FlipOptions } from '../../src/place/types.ts';
+import type { RuntimePorts } from '../../src/ports/types.ts';
 import type { Result } from '../../src/result.ts';
 import { ok } from '../../src/result.ts';
 import type { VerifyOptions } from '../../src/verify/run.ts';
@@ -107,7 +107,7 @@ const nextTxId = (): string => (++txCounter).toString(16).padStart(8, '0');
 const makeGate = (verdict: SummaryVerdict, calls: GateCall[] = []): FlipDeps => ({
   now: () => '2026-07-07T00:00:00Z',
   newTxId: nextTxId,
-  verify: async (_env: ScanEnv, o: VerifyOptions) => {
+  verify: async (_env, o: VerifyOptions) => {
     calls.push({ path: o.path, tools: o.tools, deep: o.deep });
     const tool = o.tools?.[0] ?? 'claude-code';
     return ok(minimalVerifyReport(tool, verdict)) as Result<VerifyReport, SkillSmithError>;
@@ -122,7 +122,7 @@ const gateInconclusive = (calls: GateCall[] = []): FlipDeps => makeGate('inconcl
 const opts = (f: FixtureFleet, o: Partial<FlipOptions> = {}): FlipOptions => ({
   targets: [],
   cwd: f.home,
-  envVars: f.envVars,
+  configuration: f.configuration,
   ...o,
 });
 
@@ -490,7 +490,7 @@ describe('re-pin double-swap boundary', () => {
       // gating the first `copyTree` call lands the crash exactly in that gap — after swap 1
       // has committed and before swap 2 starts.
       let copyTreeCalls = 0;
-      const crashEnv: ScanEnv = {
+      const crashEnv: RuntimePorts = {
         ...f.env,
         copyTree: async (from, to) => {
           copyTreeCalls += 1;

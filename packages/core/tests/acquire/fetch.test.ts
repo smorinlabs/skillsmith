@@ -1,17 +1,30 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
-import { lstat, mkdir, mkdtemp, readdir, readlink, rm, utimes, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  readlink,
+  rm,
+  symlink,
+  utimes,
+  writeFile,
+} from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { basename, join } from 'node:path';
+import {
+  exportRootPayload,
   fetchRepo,
   lsTreeSkills,
   resolveRefViaLsRemote,
   sparseCheckoutSkill,
   sweepFetchOrphans,
 } from '../../src/acquire/fetch.ts';
-import { defaultScanEnv } from '../../src/env/default.ts';
-import type { ScanEnv } from '../../src/env/types.ts';
+import { defaultRuntimePorts } from '../../src/ports/default.ts';
+import { portError } from '../../src/ports/errors.ts';
+import type { RuntimePorts } from '../../src/ports/types.ts';
 import {
   type RemoteFixture,
   buildRemoteFixture,
@@ -20,7 +33,7 @@ import {
 import { runGit } from '../fixtures/git-env.ts';
 
 let fixture: RemoteFixture;
-let env: ScanEnv;
+let env: RuntimePorts;
 let scratch: string; // parent for per-test fetch dirs (git init creates each leaf)
 let counter = 0;
 
@@ -28,7 +41,7 @@ const freshFetchDir = (): string => join(scratch, `ft-${counter++}`);
 
 beforeAll(async () => {
   fixture = await buildRemoteFixture();
-  env = await defaultScanEnv();
+  env = await defaultRuntimePorts();
   scratch = await mkdtemp(join(tmpdir(), 'skillsmith-fetch-'));
 });
 
@@ -153,10 +166,50 @@ describe('fetchRepo', () => {
     const e = res.error;
     expect(e.code).toBe('source-unresolvable');
     if (e.code !== 'source-unresolvable') return;
+    expect(e.message).toStartWith(`cannot fetch ${fixture.multiUrl}: `);
     expect(e.message).toContain('v9.9.9'); // git echoes the missing ref
     // git init created only the fetch dir; no store/ledger siblings appeared.
     expect(await readdir(parent)).toEqual(['ft']);
     await rm(parent, { recursive: true, force: true });
+  });
+
+  test('structured Git failures retain the legacy last-five-stderr wording exactly', async () => {
+    const cloneUrl = 'https://example.invalid/acme/repo.git';
+    const res = await fetchRepo(
+      {
+        git: {
+          ...env.git,
+          initializeFetch: async () => {},
+          fetchRef: async () => {
+            throw portError({
+              capability: 'git',
+              operation: 'fetchRef',
+              code: 'unavailable',
+              message: [
+                'line 1',
+                '',
+                'line 2',
+                'line 3',
+                'line 4',
+                'line 5',
+                'line 6',
+                'line 7',
+              ].join('\n'),
+              context: { repositoryRoot: '/fetch', ref: 'missing' },
+            });
+          },
+        },
+      },
+      { cloneUrl, ref: 'missing', fetchDir: '/fetch' },
+    );
+
+    expect(res).toEqual({
+      ok: false,
+      error: {
+        code: 'source-unresolvable',
+        message: `cannot fetch ${cloneUrl}: line 3\nline 4\nline 5\nline 6\nline 7`,
+      },
+    });
   });
 
   test('an unreachable URL fails source-unresolvable and identically on repeat (offline-deterministic)', async () => {
@@ -208,6 +261,44 @@ describe('lsTreeSkills', () => {
 });
 
 describe('sparseCheckoutSkill', () => {
+  test('preserves permission taxonomy and redacts private Git failure material', async () => {
+    const privateMaterial = 'synthetic-private-material::fetch-permission::do-not-emit';
+    const permission = await sparseCheckoutSkill(
+      {
+        git: {
+          ...env.git,
+          materializeTree: async () => {
+            throw Object.assign(new Error(privateMaterial), { code: 'EACCES' });
+          },
+        },
+      },
+      freshFetchDir(),
+      'plugins/fh/skills/factor-scan',
+    );
+    expect(permission).toMatchObject({ ok: false, error: { code: 'permission-denied' } });
+    expect(JSON.stringify(permission)).not.toContain(privateMaterial);
+
+    const ordinary = await sparseCheckoutSkill(
+      {
+        git: {
+          ...env.git,
+          materializeTree: async () => {
+            throw Object.assign(new Error('ordinary checkout failure'), { code: 'EIO' });
+          },
+        },
+      },
+      freshFetchDir(),
+      'plugins/fh/skills/factor-scan',
+    );
+    expect(ordinary).toMatchObject({
+      ok: false,
+      error: {
+        code: 'source-unresolvable',
+        message: expect.stringContaining('ordinary checkout failure'),
+      },
+    });
+  });
+
   test('sparse checkout materializes exactly the chosen subtree', async () => {
     const fetchDir = freshFetchDir();
     await fetchRepo(env, { cloneUrl: fixture.multiUrl, ref: null, fetchDir });
@@ -239,10 +330,123 @@ describe('sparseCheckoutSkill', () => {
   });
 });
 
+describe('exportRootPayload', () => {
+  test('exports every top-level entry except exact `.git`, preserving dotfiles/symlinks/modes', async () => {
+    const fetchDir = await mkdtemp(join(scratch, 'export-payload-'));
+    await mkdir(join(fetchDir, '.git', 'objects'), { recursive: true });
+    await writeFile(join(fetchDir, '.git', 'config'), '[core]\n');
+    await writeFile(join(fetchDir, '.gitattributes'), '*.md text\n');
+    await writeFile(join(fetchDir, '.gitignore'), 'build/\n');
+    await mkdir(join(fetchDir, '.github'), { recursive: true });
+    await writeFile(join(fetchDir, '.github', 'workflow.yml'), 'on: push\n');
+    await mkdir(join(fetchDir, '.config'), { recursive: true });
+    await writeFile(join(fetchDir, '.config', 'example.json'), '{"example":true}\n');
+    await writeFile(join(fetchDir, 'SKILL.md'), '# root\n');
+    await mkdir(join(fetchDir, 'bin'), { recursive: true });
+    await writeFile(join(fetchDir, 'bin', 'run.sh'), '#!/bin/sh\necho hi\n', { mode: 0o755 });
+    await symlink('SKILL.md', join(fetchDir, 'link.md'));
+    // Deeper `.git` forms are out of scope: they keep existing (copied) semantics.
+    await mkdir(join(fetchDir, 'sub', '.git'), { recursive: true });
+    await writeFile(join(fetchDir, 'sub', '.git', 'marker'), 'nested git dir copies verbatim\n');
+
+    const res = await exportRootPayload(env, { fetchDir, materializedDir: fetchDir });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const exported = res.value;
+    // Scratch lives inside the fetch dir; the repository and `.git` stay in place (copy-not-move).
+    expect(exported.startsWith(`${fetchDir}/`)).toBe(true);
+    expect(existsSync(join(fetchDir, '.git', 'config'))).toBe(true);
+    const top = [...(await readdir(exported))].sort();
+    expect(top).toEqual(
+      [
+        '.config',
+        '.gitattributes',
+        '.github',
+        '.gitignore',
+        'SKILL.md',
+        'bin',
+        'link.md',
+        'sub',
+      ].sort(),
+    );
+    // No self-nesting: the scratch entry itself is never copied into the export.
+    expect(top).not.toContain(basename(exported));
+    // Symlink target stays literal, the exec bit survives, deeper `.git` copies verbatim.
+    expect(await readlink(join(exported, 'link.md'))).toBe('SKILL.md');
+    const runStat = await lstat(join(exported, 'bin', 'run.sh'));
+    expect((runStat.mode & 0o100) !== 0).toBe(true);
+    expect(await readFile(join(exported, 'sub', '.git', 'marker'), 'utf8')).toBe(
+      'nested git dir copies verbatim\n',
+    );
+    expect(await readFile(join(exported, '.gitattributes'), 'utf8')).toBe('*.md text\n');
+  });
+
+  test('a payload entry sharing the reserved scratch name fails closed without deleting payload', async () => {
+    // Learn the reserved name via a probe export (public API only).
+    const probe = await mkdtemp(join(scratch, 'export-probe-'));
+    await writeFile(join(probe, 'SKILL.md'), '# probe\n');
+    const probed = await exportRootPayload(env, { fetchDir: probe, materializedDir: probe });
+    expect(probed.ok).toBe(true);
+    if (!probed.ok) return;
+    const reserved = basename(probed.value);
+
+    const fetchDir = await mkdtemp(join(scratch, 'export-collision-'));
+    await writeFile(join(fetchDir, 'SKILL.md'), '# payload\n');
+    await writeFile(join(fetchDir, reserved), 'tracked payload sharing the reserved name\n');
+    const before = [...(await readdir(fetchDir))].sort();
+
+    const res = await exportRootPayload(env, { fetchDir, materializedDir: fetchDir });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error).toMatchObject({
+      code: 'source-unresolvable',
+      message: expect.stringContaining('reserved entry'),
+    });
+    // Nothing removed or added: the colliding payload entry and its bytes survive.
+    expect([...(await readdir(fetchDir))].sort()).toEqual(before);
+    expect(await readFile(join(fetchDir, reserved), 'utf8')).toBe(
+      'tracked payload sharing the reserved name\n',
+    );
+    expect(await readFile(join(fetchDir, 'SKILL.md'), 'utf8')).toBe('# payload\n');
+  });
+
+  test('export failures map permission stays permission, else source-unresolvable', async () => {
+    const denied = await exportRootPayload(
+      {
+        ...env,
+        listDir: async () => {
+          throw Object.assign(new Error('list denied'), { code: 'EACCES' });
+        },
+      },
+      { fetchDir: '/fetch/denied', materializedDir: '/fetch/denied' },
+    );
+    expect(denied).toMatchObject({ ok: false, error: { code: 'permission-denied' } });
+
+    const fetchDir = await mkdtemp(join(scratch, 'export-copyfail-'));
+    await writeFile(join(fetchDir, 'SKILL.md'), '# payload\n');
+    const failed = await exportRootPayload(
+      {
+        ...env,
+        copyTree: async () => {
+          throw Object.assign(new Error('copy exploded'), { code: 'EIO' });
+        },
+      },
+      { fetchDir, materializedDir: fetchDir },
+    );
+    expect(failed).toMatchObject({
+      ok: false,
+      error: {
+        code: 'source-unresolvable',
+        message: expect.stringContaining('copy exploded'),
+      },
+    });
+  });
+});
+
 describe('resolveRefViaLsRemote', () => {
   test('a full 40-hex ref is returned verbatim with zero exec calls', async () => {
     let execCount = 0;
-    const countingEnv: ScanEnv = {
+    const countingEnv: RuntimePorts = {
       ...env,
       exec: async (cmd, args, opts) => {
         execCount++;
@@ -291,6 +495,51 @@ describe('resolveRefViaLsRemote', () => {
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(res.value).toBe(null);
+  });
+});
+
+describe('GitPort.inspectRemoteRef', () => {
+  test('classifies exact refs against a hermetic production Git remote and peels tags', async () => {
+    const inspect = env.git.inspectRemoteRef;
+    expect(inspect).toBeDefined();
+    if (inspect === undefined) return;
+
+    await expect(inspect({ remoteUrl: fixture.multiUrl, ref: null })).resolves.toEqual({
+      kind: 'default',
+      requestedRef: null,
+      resolvedSha: fixture.multiHead,
+    });
+    await expect(inspect({ remoteUrl: fixture.multiUrl, ref: 'main' })).resolves.toEqual({
+      kind: 'branch',
+      requestedRef: 'main',
+      resolvedSha: fixture.multiHead,
+    });
+    await expect(inspect({ remoteUrl: fixture.multiUrl, ref: 'v1.0.0' })).resolves.toEqual({
+      kind: 'tag',
+      requestedRef: 'v1.0.0',
+      resolvedSha: fixture.multiTagSha,
+    });
+    await expect(
+      inspect({ remoteUrl: fixture.multiUrl, ref: fixture.multiAnnotatedTag }),
+    ).resolves.toEqual({
+      kind: 'tag',
+      requestedRef: fixture.multiAnnotatedTag,
+      resolvedSha: fixture.multiAnnotatedCommit,
+    });
+  });
+
+  test('returns a structured ref miss instead of degrading to a null SHA', async () => {
+    const inspect = env.git.inspectRemoteRef;
+    expect(inspect).toBeDefined();
+    if (inspect === undefined) return;
+
+    await expect(
+      inspect({ remoteUrl: fixture.multiUrl, ref: 'missing-exact-ref' }),
+    ).rejects.toMatchObject({
+      capability: 'git',
+      operation: 'inspectRemoteRef',
+      code: 'not-found',
+    });
   });
 });
 

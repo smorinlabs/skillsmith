@@ -1,0 +1,362 @@
+{
+  "schemaVersion": 1,
+  "kind": "skillsmith.p17.architecture-reconciliation",
+  "groupId": "P17-G0-03",
+  "artifacts": [
+    {
+      "id": "manifest",
+      "file": "skillsmith.toml",
+      "responsibility": "portable-desired-state-and-project-defaults",
+      "portable": true,
+      "commitPolicy": "commit-for-projects",
+      "writerAuthority": "lossless-manifest-writer",
+      "owns": ["desired-state", "project-defaults"],
+      "forbids": [
+        "portable-resolution",
+        "reviewed-operations",
+        "local-placement-state",
+        "machine-local-config-defaults"
+      ]
+    },
+    {
+      "id": "lock",
+      "file": "skillsmith.lock",
+      "responsibility": "portable-exact-resolution-and-content-identity",
+      "portable": true,
+      "commitPolicy": "commit-for-projects",
+      "writerAuthority": "canonical-lock-writer",
+      "owns": ["portable-resolution", "source-paths", "content-hashes"],
+      "forbids": [
+        "desired-state",
+        "project-defaults",
+        "reviewed-operations",
+        "local-placement-state"
+      ]
+    },
+    {
+      "id": "plan",
+      "file": "skillsmith.plan",
+      "responsibility": "reviewed-operations-and-state-preconditions",
+      "portable": "conditional",
+      "commitPolicy": "never",
+      "writerAuthority": "saved-plan-writer",
+      "owns": ["reviewed-operations", "state-preconditions"],
+      "forbids": [
+        "desired-state",
+        "project-defaults",
+        "portable-resolution",
+        "local-placement-state"
+      ]
+    },
+    {
+      "id": "ledger",
+      "file": "placements.json",
+      "responsibility": "machine-local-placement-and-recovery-state",
+      "portable": false,
+      "commitPolicy": "never",
+      "writerAuthority": "transaction-ledger-writer",
+      "owns": ["local-placement-state", "store-paths", "dev-paths", "recovery-journals"],
+      "forbids": ["desired-state", "project-defaults", "portable-resolution", "reviewed-operations"]
+    }
+  ],
+  "dependencyOrder": [
+    { "id": "phase-2", "name": "portable-artifact-foundation", "dependsOn": [] },
+    { "id": "phase-3a", "name": "correlated-inspection", "dependsOn": ["phase-2"] },
+    {
+      "id": "phase-3b",
+      "name": "shared-planning-and-transaction-primitives",
+      "dependsOn": ["phase-3a"]
+    },
+    { "id": "phase-4a", "name": "desired-state-lifecycle-integration", "dependsOn": ["phase-3b"] },
+    { "id": "phase-4b", "name": "declarative-plan-and-apply", "dependsOn": ["phase-4a"] }
+  ],
+  "factorReview": [
+    {
+      "bucket": "good-precedent",
+      "disposition": "closed",
+      "action": "retain",
+      "facts": ["pure-planning", "preview-before-mutation"],
+      "evidencePointers": [
+        {
+          "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+          "anchor": "9-shared-application-and-planning-architecture"
+        }
+      ]
+    },
+    {
+      "bucket": "following-bad-precedent",
+      "disposition": "closed",
+      "action": "replace-before-extension",
+      "facts": ["command-specific-planning", "command-specific-transactions"],
+      "evidencePointers": [
+        {
+          "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+          "anchor": "ewp-cf-001-correct-phase-dependencies-before-extending-command-specific-orchestration"
+        }
+      ]
+    },
+    {
+      "bucket": "broken-precedent",
+      "disposition": "closed",
+      "action": "repair-single-migration-authority",
+      "facts": ["legacy-config-manifest-name-collision", "single-phase-2-migration"],
+      "evidencePointers": [
+        {
+          "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+          "anchor": "ewp-cf-029-define-the-legacy-project-config-to-manifest-transition"
+        }
+      ]
+    },
+    {
+      "bucket": "new-pattern-introduced",
+      "disposition": "closed",
+      "action": "introduce-separated-portability-boundary",
+      "facts": ["portable-manifest-lock", "conditionally-portable-plan", "local-ledger"],
+      "evidencePointers": [
+        {
+          "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+          "anchor": "2-canonical-state-and-artifact-model"
+        }
+      ]
+    }
+  ],
+  "qualityScan": [
+    {
+      "id": "P17-G0-03-Q01",
+      "axis": "contradictions",
+      "disposition": "closed",
+      "result": "artifact-and-phase-authorities-consistent",
+      "facts": ["four-exclusive-artifact-roles", "ordered-phase-prerequisites"],
+      "evidencePointers": [
+        {
+          "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+          "anchor": "2-canonical-state-and-artifact-model"
+        }
+      ]
+    },
+    {
+      "id": "P17-G0-03-Q02",
+      "axis": "duplicate-semantics",
+      "disposition": "closed",
+      "result": "state-concepts-have-distinct-owners",
+      "facts": ["config-not-manifest", "manifest-not-lock", "plan-not-ledger"],
+      "evidencePointers": [
+        {
+          "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+          "anchor": "133-artifact-consistency"
+        }
+      ]
+    },
+    {
+      "id": "P17-G0-03-Q03",
+      "axis": "unreachable-states",
+      "disposition": "closed",
+      "result": "every-phase-consumes-completed-prerequisites",
+      "facts": [
+        "phase-2-before-phase-3a",
+        "phase-3a-before-phase-3b",
+        "phase-3b-before-phase-4a",
+        "phase-4a-before-phase-4b"
+      ],
+      "evidencePointers": [
+        {
+          "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+          "anchor": "10-named-implementation-phases-and-slices"
+        }
+      ]
+    },
+    {
+      "id": "P17-G0-03-Q04",
+      "axis": "unclear-defaults",
+      "disposition": "closed",
+      "result": "artifact-policy-is-explicit",
+      "facts": [
+        "portability-explicit",
+        "commit-policy-explicit",
+        "writer-authority-explicit",
+        "forbidden-content-explicit"
+      ],
+      "evidencePointers": [
+        {
+          "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+          "anchor": "2-canonical-state-and-artifact-model"
+        }
+      ]
+    },
+    {
+      "id": "P17-G0-03-Q05",
+      "axis": "command-count-excess",
+      "disposition": "closed",
+      "result": "no-command-introduced",
+      "facts": ["existing-command-boundary-retained", "independent-discoverability-required"],
+      "evidencePointers": [
+        {
+          "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+          "anchor": "132-cross-command-consistency"
+        }
+      ]
+    }
+  ],
+  "architectureDrift": [
+    {
+      "id": "P17-G0-03-D01",
+      "classification": "broken-precedent",
+      "disposition": "classified-downstream",
+      "subject": "core-no-io-side-effects-wording",
+      "target": "core-domain-logic-uses-injected-capability-ports-with-no-direct-cli-output-or-process-policy",
+      "downstreamOwner": "P17-G0-04",
+      "evidencePointers": [
+        { "path": "CLAUDE.md", "line": 7, "contains": "No CLI deps, no I/O side effects." }
+      ]
+    },
+    {
+      "id": "P17-G0-03-D02",
+      "classification": "broken-precedent",
+      "disposition": "classified-downstream",
+      "subject": "architecture-no-io-side-effects-wording",
+      "target": "core-domain-logic-uses-injected-capability-ports-with-no-direct-cli-output-or-process-policy",
+      "downstreamOwner": "P17-G0-04",
+      "evidencePointers": [
+        { "path": "docs/architecture.md", "line": 47, "contains": "no I/O side effects" }
+      ]
+    },
+    {
+      "id": "EWP-CF-033",
+      "classification": "following-bad-precedent",
+      "disposition": "accepted-architecture-contract",
+      "subject": "command-local-application-runtime",
+      "target": "application-service-boundary",
+      "downstreamOwner": "P17-G1-03",
+      "evidencePointers": [
+        {
+          "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+          "anchor": "ewp-cf-033-add-an-application-service-boundary-behind-every-cli-command"
+        }
+      ]
+    },
+    {
+      "id": "EWP-CF-034",
+      "classification": "following-bad-precedent",
+      "disposition": "accepted-architecture-contract",
+      "subject": "overbroad-scan-environment",
+      "target": "capability-scoped-ports",
+      "downstreamOwner": "P17-G1-04",
+      "evidencePointers": [
+        {
+          "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+          "anchor": "ewp-cf-034-replace-the-growing-scanenv-interface-with-capability-scoped-ports"
+        }
+      ]
+    },
+    {
+      "id": "EWP-CF-035",
+      "classification": "following-bad-precedent",
+      "disposition": "accepted-architecture-contract",
+      "subject": "mutable-state-and-monolithic-runners",
+      "target": "immutable-snapshots-pure-planners-and-domain-repositories",
+      "downstreamOwner": "P17-G3B-04",
+      "evidencePointers": [
+        {
+          "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+          "anchor": "ewp-cf-035-separate-immutable-state-snapshots-pure-planning-and-repository-writes"
+        }
+      ]
+    },
+    {
+      "id": "EWP-CF-036",
+      "classification": "broken-precedent",
+      "disposition": "accepted-architecture-contract",
+      "subject": "duplicated-tool-capability-policy",
+      "target": "adapter-registry-capability-authority",
+      "downstreamOwner": "P17-G1-05",
+      "evidencePointers": [
+        {
+          "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+          "anchor": "ewp-cf-036-make-the-tool-adapter-registry-the-executable-capability-authority"
+        }
+      ]
+    },
+    {
+      "id": "EWP-CF-037",
+      "classification": "following-bad-precedent",
+      "disposition": "accepted-architecture-contract",
+      "subject": "duplicated-wire-shapes",
+      "target": "versioned-codec-authority",
+      "downstreamOwner": "P17-G1-06",
+      "evidencePointers": [
+        {
+          "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+          "anchor": "ewp-cf-037-make-codecs-the-canonical-wire-contract-authority"
+        }
+      ]
+    },
+    {
+      "id": "EWP-CF-038",
+      "classification": "following-bad-precedent",
+      "disposition": "accepted-architecture-contract",
+      "subject": "uncorrelated-free-form-observation",
+      "target": "typed-operation-scoped-observability",
+      "downstreamOwner": "P17-G1-07",
+      "evidencePointers": [
+        {
+          "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+          "anchor": "ewp-cf-038-add-operation-scoped-structured-observability"
+        }
+      ]
+    },
+    {
+      "id": "EWP-CF-039",
+      "classification": "broken-precedent",
+      "disposition": "accepted-architecture-contract",
+      "subject": "prose-only-validation-ownership",
+      "target": "executable-release-blocking-validation-catalog",
+      "downstreamOwner": "P17-G0-05",
+      "evidencePointers": [
+        {
+          "path": "docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md",
+          "anchor": "ewp-cf-039-make-every-planned-validation-executable-and-release-blocking"
+        }
+      ]
+    }
+  ],
+  "cf001": {
+    "findingId": "EWP-CF-001",
+    "contractLinks": [
+      "Section 10 Phase 2 -> 3A -> 3B -> 4A -> 4B",
+      "EWP-P2-TS01..05",
+      "EWP-P3B-TS01..03",
+      "EWP-P4A-TS01..03",
+      "EWP-P4B-TS01..06",
+      "EWP-WF03",
+      "EWP-WF13"
+    ],
+    "downstreamValidations": [
+      "EWP-OPT-TS01",
+      "EWP-P0A-TS02",
+      "EWP-P0A-TS03",
+      "EWP-P0A-TS04",
+      "EWP-P0A-TS05",
+      "EWP-P0A-TS08",
+      "EWP-P0A-TS09",
+      "EWP-P2-TS01",
+      "EWP-P2-TS02",
+      "EWP-P2-TS03",
+      "EWP-P2-TS04",
+      "EWP-P2-TS05",
+      "EWP-P3B-TS01",
+      "EWP-P3B-TS02",
+      "EWP-P3B-TS03",
+      "EWP-P4A-TS01",
+      "EWP-P4A-TS02",
+      "EWP-P4A-TS03",
+      "EWP-P4B-TS01",
+      "EWP-P4B-TS02",
+      "EWP-P4B-TS03",
+      "EWP-P4B-TS04",
+      "EWP-P4B-TS05",
+      "EWP-P4B-TS06",
+      "EWP-WF03",
+      "EWP-WF13"
+    ]
+  }
+}

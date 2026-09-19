@@ -1,0 +1,22 @@
+Installed slash commands
+| Tool | Scope | Name | State | Logical path | Real path | Root | Origin | Version | Frontmatter | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| claude-code | user | alpha |  | /home/alice/.claude/commands/alpha.md | /home/alice/.claude/commands/alpha.md | /home/alice/.claude/commands | standalone | 1.0.0 | {description=Run alpha checks;version=1.0.0} | Run alpha checks |
+| claude-code | user | beta-tools:beta | disabled | /plugins/beta/commands/beta.md | /store/beta/commands/beta.md | /plugins/beta/commands | plugin:beta-tools@marketplace@2.1.0:user | 2.1.0 | {description=Run beta checks;version=2.1.0} | Run beta checks |
+| claude-code | project | deploy |  | /repo/.claude/commands/deploy.md | /repo/.claude/commands/deploy.md | /repo/.claude/commands | standalone | 3.0.0 | {description=Deploy the service;version=3.0.0} | Deploy the service |
+| claude-code | project | release-kit:release | unconfigured | /plugins/release/commands/release.md | /store/release/commands/release.md | /plugins/release/commands | plugin:release-kit@marketplace@3.1.0:project | 3.1.0 | {description=Prepare a release;version=3.1.0} | Prepare a release |
+
+| codex | user | audit |  | /home/alice/.codex/prompts/audit.md | /home/alice/.codex/prompts/audit.md | /home/alice/.codex/prompts | standalone | 1.0.0 | {description=Audit the workspace;version=1.0.0} | Audit the workspace |
+| codex | user | lint |  | /home/alice/.codex/prompts/lint.md | /home/alice/.codex/prompts/lint.md | /home/alice/.codex/prompts | standalone |  | null |  |
+| codex | project | audit |  | /repo/.codex/prompts/audit.md | /repo/.codex/prompts/audit.md | /repo/.codex/prompts | standalone | 1.1.0 | {description=Audit project changes;version=1.1.0} | Audit project changes |
+| codex | project | test |  | /repo/.codex/prompts/test.md | /repo/.codex/prompts/test.md | /repo/.codex/prompts | standalone | 1.2.0 | {description=Run the test suite;version=1.2.0} | Run the test suite |
+
+| kilo-code | user | build |  | /home/alice/.kilo/commands/build.md | /home/alice/.kilo/commands/build.md | /home/alice/.kilo/commands | standalone | 1.0.0 | {description=Build user workspace;version=1.0.0} | Build user workspace |
+| kilo-code | user | format | disabled | /plugins/formatter/commands/format.md | /store/formatter/commands/format.md | /plugins/formatter/commands | plugin:formatter@marketplace@2.0.0:user | 2.0.0 | {description=Format source files;version=2.0.0} | Format source files |
+| kilo-code | project | build |  | /repo/.kilo/commands/build.md | /repo/.kilo/commands/build.md | /repo/.kilo/commands | standalone | 1.3.0 | {description=Build the project;version=1.3.0} | Build the project |
+| kilo-code | project | verify |  | /repo/.kilo/commands/verify.md | /repo/.kilo/commands/verify.md | /repo/.kilo/commands | standalone | 1.4.0 | {description=Verify the package;version=1.4.0} | Verify the package |
+
+| opencode | user | audit |  | /home/alice/.config/opencode/commands/audit.md | /home/alice/.config/opencode/commands/audit.md | /home/alice/.config/opencode/commands | standalone | 4.2.0 | {description=Audit OpenCode state;version=4.2.0} | Audit OpenCode state |
+| opencode | user | lint | unconfigured | /plugins/quality/commands/lint.md | /store/quality/commands/lint.md | /plugins/quality/commands | plugin:quality@marketplace@5.2.0:user | 5.2.0 | {description=Lint with quality rules;version=5.2.0} | Lint with quality rules |
+| opencode | project | format |  | /repo/.opencode/commands/format.md | /repo/.opencode/commands/format.md | /repo/.opencode/commands | standalone | 4.1.0 | {description=Format the project;version=4.1.0} | Format the project |
+| opencode | project | ship |  | /repo/.opencode/commands/ship.md | /repo/.opencode/commands/ship.md | /repo/.opencode/commands | standalone | 4.0.0 | {name=ship;description=Ship the release;version=4.0.0} | Ship the release |

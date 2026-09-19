@@ -47,51 +47,46 @@ pending; its historical catalog gates are not changed to passing by this deferra
 - [ ] [P19-TS03] Required ordinary static/tests/build checks pass at exact reviewed commits; deferred release checks are separately identified.
 - [x] [P19-TS04] Remote PR/issue/workflow state is freshly verified; no publication or visibility change occurred; P17 remains pending.
 
-## Implementation checkpoint — 2026-09-15
+## Approved closeout direction — 2026-09-15
 
-Initial product fixes, compatible security dependency updates and P17 fixture repairs are
-implemented. Independent review found remaining defects in #61/#64/#67; this is not a completed
-bug closeout. Main-based [PR #66](https://github.com/smorinlabs/skillsmith/pull/66) passes
-1,047 tests and Linux/macOS CI at `7c8d865`. The saved
-[P17 maintenance branch](https://github.com/smorinlabs/skillsmith/tree/d786739eb2db462540a761d56c5eaa3473402e8b)
-passes the canonical 370-file gate at `d786739`: 3,394 test cases including 28 existing live
-skips, 111,520 assertions, no failures. Both lines pass their ordinary security checks.
-Exact receipts and earlier failures are preserved in [EVIDENCE.md](p19/EVIDENCE.md).
+- [Q1.A](https://github.com/smorinlabs/skillsmith/issues/41#issuecomment-5689778855): keep
+  per-tool duplicate conflicts and deliver informational cross-tool name reporting in a
+  separate follow-up PR. #41 stays open; PR #66 need not wait for the report.
+- [Q2.A](https://github.com/smorinlabs/skillsmith/issues/51#issuecomment-5689864463):
+  separate release qualification from automatic PR CI; preserve canonical ordinary checks,
+  title validation and all native build/smoke lanes. After bug corrections and validation,
+  open `agent/p19-p17-fixes` against `agent/p17-execution`, not main. Keep PR #44 draft.
+- All Codex and Claude Code reviewers have standing user approval.
 
-Unchecked product tasks include remaining defect corrections, the #41 reporting follow-up,
-review, acceptance and integration. Before closing them:
+### Q4 and cleanup decisions — 2026-09-16
 
-1. Correct the independent Codex findings recorded in [REVIEW.md](p19/REVIEW.md), then obtain
-   fresh sign-off. Codex and Claude Code reviewers have standing user approval; no additional
-   reviewer permission is required.
-2. Follow the [separate reporting PR decision, Q1.A](https://github.com/smorinlabs/skillsmith/issues/41#issuecomment-5689778855):
-   preserve per-tool conflict semantics and retain informational cross-tool name reporting in
-   a separate follow-up PR. Keep #41 open until delivered; PR #66 need not wait for that addition.
-3. Follow the [approved product-only P17 path, Q2.A](https://github.com/smorinlabs/skillsmith/issues/51#issuecomment-5689864463):
-   separate release qualification from automatic PR CI, retain ordinary checks and native
-   build/smoke, and open `agent/p19-p17-fixes` against `agent/p17-execution` after validation.
-   PR #44 remains draft. Release qualification remains required before a future release.
-4. Correct any new review findings, validate exact integration heads, integrate accepted fixes
-   into both affected lines, then close only the issues whose acceptance is fully met.
+- [Q4.A](https://github.com/smorinlabs/skillsmith/issues/52#issuecomment-5691946055):
+  approve only the four existing ShellCheck findings in `release.yml`, a harmless
+  fake-command regression, matching local ShellCheck validation, and PR #68's normal
+  review/green-CI/merge flow into `agent/p17-execution`. This is a narrow exception to
+  #52's deferral, not approval of the remaining release integration or qualification.
+- C1 retains the main-maintenance worktree and branch. C2 permits guarded fast-forward
+  local-main synchronization only after #68 is settled. Neither authorizes deletion.
+- Main PR #66 merged at `837d41cc79cb6d7c499d7ec87ddba2efe9d171d9`.
+  P17 PR #68 remains subject to its final gates and integration; source issue #51 owns
+  subsequent exact-head receipts. #41's cross-tool interface (Q3) remains undecided.
+- The question of integrating P17 into main is separate: #44 remains draft and unapproved
+  for merge. Preserve the publication hold, deferred gates and original phase IDs.
 
-Follow-ups #57 (unreproduced Bun failure), #60 (historical P09 review receipt), and #63
-(P13 owner/wiring proof) remain open with explicit dispositions. No publishing task is resumed,
-no bug issue is closed, and neither P19 nor the original P17 release objective is complete.
+CI-only commit `ffd1cba` has independent approval. Its manual release-qualification workflow
+was not dispatched, and no deferred qualification is counted passed. Runtime review corrections
+at `b33c224` cover bounded descendant cleanup, preserved artifact-failure evidence, cancellation
+propagation and global-directory fixture isolation; the affected five owners passed 144 tests.
+Independent review approved those corrections. Main review then found a startup race in the
+shared new descendant test, requiring explicit readiness before cancellation. Its final correction
+at `01d09a9` is independently approved against main's corresponding `27c67e9` (41-test replay).
+Exact-head ordinary gates, current CI and affected-line integration still precede issue closure.
 
-### Q2 implementation and review correction checkpoint
-
-CI separation is committed on P17 at `ffd1cba` and independently approved. Only the
-Homebrew candidate install/upgrade qualification and its dedicated setup moved to a guarded
-manual release-only workflow; no qualification was executed or counted passed.
-Runtime review corrections are committed on main at `5adb299` and P17 at `b33c224`.
-Main's two affected owners passed 41 tests; P17's five affected owners passed 144 tests,
-including the global-tool isolation controls. Type-checking and affected-source lint passed.
-Review then exposed a startup race in the new descendant fixture. The final correction at main
-`27c67e9` / P17 `01d09a9` is independently approved: main replay 41 pass, 0 fail, 721 assertions;
-P17's equivalent fixture differs only in its existing execution/cancellation contract.
-Exact-head full gates and remote integration remain required. These focused
-results do not replace the older full-gate receipts above. Latest integration receipts belong
-to [P19 #51](https://github.com/smorinlabs/skillsmith/issues/51).
+The previous clean P17 checkpoint `d786739` passed all 370 tracked files: 3,394 test cases,
+28 existing live skips, 111,520 assertions and no failures. This is historical evidence, not
+a full-gate receipt for the new code. Main-based P19 records and
+[P19 #51](https://github.com/smorinlabs/skillsmith/issues/51) retain canonical cross-line receipts.
+No bug issue, P19 objective or P17 release objective is closed by this checkpoint.
 
 ## Deferred task inventory
 

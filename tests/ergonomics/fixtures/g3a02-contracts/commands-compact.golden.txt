@@ -1,0 +1,22 @@
+Installed slash commands
+| Tool | Scope | Name | State |
+| --- | --- | --- | --- |
+| claude-code | user | alpha |  |
+| claude-code | user | beta-tools:beta | disabled |
+| claude-code | project | deploy |  |
+| claude-code | project | release-kit:release | unconfigured |
+
+| codex | user | audit |  |
+| codex | user | lint |  |
+| codex | project | audit |  |
+| codex | project | test |  |
+
+| kilo-code | user | build |  |
+| kilo-code | user | format | disabled |
+| kilo-code | project | build |  |
+| kilo-code | project | verify |  |
+
+| opencode | user | audit |  |
+| opencode | user | lint | unconfigured |
+| opencode | project | format |  |
+| opencode | project | ship |  |

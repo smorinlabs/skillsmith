@@ -1,9 +1,10 @@
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { dirname, join, resolve } from 'node:path';
 import type { FlipDeps, FlipOptions, FlipReport, SkillSmithError } from '@skillsmith/core';
-import { runDev, runPromote } from '@skillsmith/core';
+import { resolveRuntimeConfiguration, runDev, runPromote } from '@skillsmith/core';
 import { emptyLedger, setPair, writeLedger } from '../../../core/src/place/ledger.ts';
 import { ledgerPathOf, resolveDataDir } from '../../../core/src/place/paths.ts';
+import { canonicalFixtureLedger } from '../../../core/tests/fixtures/place/canonical-ledger.ts';
 import {
   type FixtureFleet,
   buildFixtureFleet,
@@ -99,7 +100,7 @@ const gateFailDeps = (): FlipDeps => ({
 const opts = (f: FixtureFleet, o: Partial<FlipOptions> = {}): FlipOptions => ({
   targets: [],
   cwd: f.home,
-  envVars: f.envVars,
+  configuration: resolveRuntimeConfiguration(f.envVars),
   ...o,
 });
 
@@ -107,7 +108,7 @@ const opts = (f: FixtureFleet, o: Partial<FlipOptions> = {}): FlipOptions => ({
 // DIFFERENT op ('dev') than the one we're about to run ('promote') — run.ts refuses rather than
 // resumes on an op mismatch, without touching the filesystem (no real staging/backup dirs needed).
 const plantMismatchedJournal = async (f: FixtureFleet): Promise<void> => {
-  const dataDir = resolveDataDir(f.env, f.envVars);
+  const dataDir = resolveDataDir(f.env, resolveRuntimeConfiguration(f.envVars));
   const ledgerPath = ledgerPathOf(dataDir);
   const skillsRoot = join(f.home, '.claude', 'skills');
   const placementPath = join(skillsRoot, 'alpha');
@@ -135,12 +136,12 @@ const plantMismatchedJournal = async (f: FixtureFleet): Promise<void> => {
       backupPath: join(skillsRoot, '.skillsmith-backup-alpha-aaaa1111'),
     },
   });
-  const w = await writeLedger(f.env, ledgerPath, ledger);
+  const w = await writeLedger(f.env, ledgerPath, canonicalFixtureLedger(ledger));
   if (!w.ok) throw new Error(`failed to plant journal: ${msg(w.error)}`);
 };
 
 const corruptLedger = async (f: FixtureFleet): Promise<void> => {
-  const dataDir = resolveDataDir(f.env, f.envVars);
+  const dataDir = resolveDataDir(f.env, resolveRuntimeConfiguration(f.envVars));
   const ledgerPath = ledgerPathOf(dataDir);
   await f.env.makeDir(dirname(ledgerPath));
   await f.env.writeTextFile(ledgerPath, '{"schemaVersion":');

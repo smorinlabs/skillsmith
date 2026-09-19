@@ -1,8 +1,10 @@
 import { join } from 'node:path';
-import type { ScanEnv } from '../env/types.ts';
+import type { PlatformPaths, ResolvedRuntimeConfiguration } from '../ports/types.ts';
 
-export const resolveDataDir = (env: ScanEnv, envVars: Record<string, string | undefined>): string =>
-  envVars.SKILLSMITH_HOME ?? join(env.xdg.data, 'skillsmith');
+export const resolveDataDir = (
+  paths: Pick<PlatformPaths, 'xdg'>,
+  configuration: Pick<ResolvedRuntimeConfiguration, 'skillsmithHome'>,
+): string => configuration.skillsmithHome ?? join(paths.xdg.data, 'skillsmith');
 
 export const storeRootOf = (dataDir: string): string => join(dataDir, 'store');
 

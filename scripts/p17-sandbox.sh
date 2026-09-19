@@ -13,7 +13,7 @@ VM_TEMPLATE="${P17_VM_TEMPLATE:-template:ubuntu-24.04}"
 OAUTH_PORT="${P17_OAUTH_PORT:-1455}"
 DRY_RUN="${P17_DRY_RUN:-0}"
 
-GOAL_PROMPT='/goal Execute P17 completely by reading and following projects/P17-GOAL.md as the canonical objective and completion contract, pausing for every human approval it requires and marking complete only after all referenced gates and final sign-off pass.'
+GOAL_PROMPT='/goal Execute P17 completely by reading and following projects/P17-GOAL.md as the canonical objective and completion contract, applying the recorded standing human approval without additional review pauses and marking complete only after all referenced gates and final sign-off pass.'
 REMOTE_TEST_PROMPT='Remote connectivity test only. Do not modify files. Use read-only shell commands to report the current directory, Git branch, Codex version, and Skillsmith version, then wait for my follow-up.'
 
 usage() {

@@ -1,5 +1,7 @@
 # SkillSmith P09 design — `install` / `uninstall` — the acquisition verbs
 
+> P17 disposition: shipped P09 evidence, not future target authority; target: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#86-install
+
 **Status:** Draft (2026-07-07). This is the P09-BR deliverable.
 **Design gate:** Adjudicated 2026-07-07 by the project owner. All decisions ratified; D10 amended
 to add an opt-in `--deep` flag (O3's alternative, chosen over ship-static-only-and-revisit); O1

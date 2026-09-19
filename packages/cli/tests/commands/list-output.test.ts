@@ -96,9 +96,9 @@ describe('large list JSON (#46)', () => {
           expect(stderr).toBe('');
           expect(Buffer.byteLength(text)).toBeGreaterThan(128 * 1024);
           const parsed = JSON.parse(text);
-          expect(parsed.skills).toHaveLength(COUNT);
+          expect(parsed.entries).toHaveLength(COUNT);
           expect(
-            parsed.skills.every(
+            parsed.entries.every(
               (skill: { frontmatter: { description: string } }) =>
                 skill.frontmatter.description === DESCRIPTION,
             ),

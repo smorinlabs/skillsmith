@@ -171,8 +171,41 @@ describe('renderVerifyHuman', () => {
         ],
       }),
       0,
+      (selectedTool) => (selectedTool === 'claude-code' ? ' (presence)' : null),
     );
     expect(out).toContain('skills ✓ (presence)');
+  });
+
+  test('the pure renderer default contains no selected adapter suffix', () => {
+    const out = renderVerifyHuman(
+      report({
+        tools: [
+          tool({
+            tool: 'claude-code',
+            modes: [mode({ mode: 'deep', coverage: { manifest: false, skills: true } })],
+          }),
+        ],
+      }),
+      0,
+    );
+    expect(out).toContain('skills ✓');
+    expect(out).not.toContain('skills ✓ (presence)');
+  });
+
+  test('uses an injected selected deep-coverage suffix', () => {
+    const out = renderVerifyHuman(
+      report({
+        tools: [
+          tool({
+            tool: 'codex',
+            modes: [mode({ mode: 'deep', coverage: { manifest: true, skills: true } })],
+          }),
+        ],
+      }),
+      0,
+      (selectedTool) => (selectedTool === 'codex' ? ' (fixture coverage)' : null),
+    );
+    expect(out).toContain('skills ✓ (fixture coverage)');
   });
 
   test('a ran mode with zero findings renders "(no findings)"', () => {

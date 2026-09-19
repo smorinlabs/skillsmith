@@ -4,7 +4,27 @@
   "license": "Apache-2.0",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./contracts": {
+      "types": "./src/contracts/index.d.ts",
+      "default": "./src/contracts/index.ts"
+    },
+    "./contracts/v1": {
+      "types": "./src/contracts/v1/index.d.ts",
+      "default": "./src/contracts/v1/index.ts"
+    },
+    "./contracts/v2": {
+      "types": "./src/contracts/v2/index.d.ts",
+      "default": "./src/contracts/v2/index.ts"
+    },
+    "./contracts/v3": {
+      "types": "./src/contracts/v3/index.d.ts",
+      "default": "./src/contracts/v3/index.ts"
+    },
+    "./contracts/v4": {
+      "types": "./src/contracts/v4/index.d.ts",
+      "default": "./src/contracts/v4/index.ts"
+    }
   },
   "files": [
     "src",

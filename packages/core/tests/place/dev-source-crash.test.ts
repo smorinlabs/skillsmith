@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { readdir, symlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import type { LedgerModel } from '../../src/artifacts/ledger-types.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
-import { getPair, readLedger } from '../../src/place/ledger.ts';
+import { getLedgerPairAt, readLedgerState } from '../../src/place/ledger.ts';
 import { ledgerPathOf } from '../../src/place/paths.ts';
 import { runDev } from '../../src/place/run.ts';
 import type { FlipDeps } from '../../src/place/types.ts';
@@ -16,11 +17,12 @@ import { crashingEnv } from './crash-env.ts';
 
 // P12 crash-injection precedent, applied to the P13 create path: `crash-sweep.test.ts` wraps
 // `runSwap` (promote/dev flip) in `crashingEnv` and sweeps every mutating call. This file does the
-// same for `createDevPlacement` (S1 create, run.ts). Unlike the swap machinery, create/adopt keeps
-// NO journal (PRD D3 — "no new journal op"), so there is no `SKILLSMITH_TEST_PAUSE_AT` real-SIGKILL
-// seam for it either (that seam only understands `JournalPhase` values, none of which apply here) —
-// this file's coverage is entirely the `crashingEnv` fs-hook technique plus, where that technique
-// structurally cannot reach a scenario (see the last describe block), a state-construction test.
+// same for `createDevPlacement` (S1 create, run.ts). Unlike the swap machinery, create/adopt has no
+// recoverable filesystem journal phase, so there is no `SKILLSMITH_TEST_PAUSE_AT` real-SIGKILL seam
+// for it either. G3B records the completed record-only operation in logical history while leaving
+// no pending transaction or physical shadow. This file's coverage is therefore entirely the
+// `crashingEnv` fs-hook technique plus, where that technique structurally cannot reach a scenario
+// (see the last describe block), a state-construction test.
 //
 // T2 already covers one hand-constructed crash state (dev-source.test.ts:192, "S2 (codex): simulated
 // crash state"). This file does not duplicate that case; it covers the *mechanism* (every mutating
@@ -33,10 +35,11 @@ const claudeRootOf = (f: FixtureFleet): string => join(f.home, '.claude', 'skill
 const stagingResidue = async (dir: string): Promise<string[]> =>
   (await readdir(dir)).filter((n) => n.startsWith('.skillsmith-'));
 
-const readLedgerOf = async (f: FixtureFleet) => {
-  const r = await readLedger(f.env, ledgerPathOf(f.data));
+const readLedgerOf = async (f: FixtureFleet): Promise<LedgerModel> => {
+  const r = await readLedgerState(f.env, ledgerPathOf(f.data));
   if (!r.ok) throw new Error(msg(r.error));
-  return r.value;
+  if (r.value.state !== 'present') throw new Error('expected a present canonical ledger');
+  return r.value.model;
 };
 
 describe('dev --source create — crash sweep (crashingEnv, P12 technique)', () => {
@@ -63,7 +66,7 @@ describe('dev --source create — crash sweep (crashingEnv, P12 technique)', () 
           tools: ['claude-code'],
           source: resolve(warmupSource),
           cwd: f.home,
-          envVars: f.envVars,
+          configuration: f.configuration,
         },
         passFlipDeps(),
       );
@@ -81,7 +84,7 @@ describe('dev --source create — crash sweep (crashingEnv, P12 technique)', () 
           tools: ['claude-code'],
           source: resolve(drySource),
           cwd: f.home,
-          envVars: f.envVars,
+          configuration: f.configuration,
         },
         passFlipDeps(),
       );
@@ -106,7 +109,7 @@ describe('dev --source create — crash sweep (crashingEnv, P12 technique)', () 
           tools: ['claude-code' as const],
           source: resolvedSource,
           cwd: f.home,
-          envVars: f.envVars,
+          configuration: f.configuration,
         };
 
         const r = await runDev(crash.env, opts, passFlipDeps());
@@ -134,7 +137,7 @@ describe('dev --source create — crash sweep (crashingEnv, P12 technique)', () 
         expect(await stagingResidue(claudeRoot)).toEqual([]);
 
         // No ledger record yet in either window (S2 is defined as "not in the ledger").
-        expect(getPair(await readLedgerOf(f), skill, 'claude-code')).toBeNull();
+        expect(getLedgerPairAt(await readLedgerOf(f), null, skill, 'claude-code')).toBeNull();
 
         // A plain, uncrashed re-run always converges to `created` (whether it starts from
         // absent — full S1 — or from the S2 window — record-only adopt, disk untouched).
@@ -146,11 +149,22 @@ describe('dev --source create — crash sweep (crashingEnv, P12 technique)', () 
 
         expect(await f.env.pathKind(join(claudeRoot, skill))).toBe('symlink');
         expect(await f.env.readLink(join(claudeRoot, skill))).toBe(resolvedSource);
-        const pair = getPair(await readLedgerOf(f), skill, 'claude-code');
+        const settledLedger = await readLedgerOf(f);
+        const pair = getLedgerPairAt(settledLedger, null, skill, 'claude-code');
         expect(pair?.mode).toBe('dev');
         expect(pair?.dev?.sourcePath).toBe(resolvedSource);
         expect(pair?.pinned ?? null).toBeNull();
-        expect(pair?.journal ?? null).toBeNull();
+        expect(pair?.journal).toBeNull();
+        expect(Object.keys(settledLedger.transactions)).toEqual([]);
+        const committed = settledLedger.history.filter(
+          (journal) => journal.intent.skill === skill && journal.intent.tool === 'claude-code',
+        );
+        expect(committed).toHaveLength(1);
+        expect(committed[0]).toMatchObject({
+          disposition: 'forward',
+          phase: 'committed',
+          intent: { kind: 'link-dev', skill, tool: 'claude-code' },
+        });
         expect(await stagingResidue(claudeRoot)).toEqual([]);
       }
 
@@ -196,7 +210,7 @@ describe('dev --source create — staging-name collision on retry', () => {
           tools: ['claude-code'],
           source: resolvedSource,
           cwd: f.home,
-          envVars: f.envVars,
+          configuration: f.configuration,
         },
         deps,
       );
@@ -210,7 +224,7 @@ describe('dev --source create — staging-name collision on retry', () => {
       expect(await f.env.pathKind(join(claudeRoot, skill))).toBe('symlink');
       expect(await f.env.readLink(join(claudeRoot, skill))).toBe(resolvedSource);
 
-      const pair = getPair(await readLedgerOf(f), skill, 'claude-code');
+      const pair = getLedgerPairAt(await readLedgerOf(f), null, skill, 'claude-code');
       expect(pair?.dev?.sourcePath).toBe(resolvedSource);
     } finally {
       await destroyFixtureFleet(f);
@@ -250,7 +264,7 @@ describe('dev --source create — true process death leaves a staging orphan (no
           tools: ['claude-code'],
           source: resolvedSource,
           cwd: f.home,
-          envVars: f.envVars,
+          configuration: f.configuration,
         },
         passFlipDeps(),
       );
@@ -260,7 +274,7 @@ describe('dev --source create — true process death leaves a staging orphan (no
       expect(r.value.results[0]?.action).toBe('created');
       expect(await f.env.pathKind(join(claudeRoot, skill))).toBe('symlink');
       expect(await f.env.readLink(join(claudeRoot, skill))).toBe(resolvedSource);
-      const pair = getPair(await readLedgerOf(f), skill, 'claude-code');
+      const pair = getLedgerPairAt(await readLedgerOf(f), null, skill, 'claude-code');
       expect(pair?.dev?.sourcePath).toBe(resolvedSource);
 
       // ... AND the dead attempt's staging orphan was swept before the publish (BF-5 / T5).

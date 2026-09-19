@@ -1,9 +1,34 @@
 import { describe, expect, test } from 'bun:test';
 import type { FlipReport } from '@skillsmith/core';
 import { renderFlipHuman } from '../../src/output/flip-human.ts';
+import { renderFlipLifecycleStderr } from '../../src/runtime/current-renderers.ts';
 
 const STORE_PATH =
   '/Users/alice/.local/share/skillsmith/store/smorinlabs/smorinlabs-harness@3f2a1b9c0d4e/factor-scan';
+
+const planningFields = (
+  command: 'dev' | 'promote',
+): Required<Pick<FlipReport, 'plan' | 'executionResults'>> => ({
+  plan: {
+    domain: 'skillsmith.operation-plan',
+    schemaVersion: 1,
+    command,
+    selection: {
+      source: 'explicit-targets',
+      outcome: 'selected',
+      targets: [],
+      all: false,
+      tools: [],
+      scopes: [],
+      groupIds: [],
+    },
+    batchPolicy: 'fail-fast',
+    operations: [],
+    checks: [],
+    diagnostics: [],
+  },
+  executionResults: [],
+});
 
 describe('renderFlipHuman', () => {
   test('promote success: header, verify/snapshot/swap lines, summary', () => {
@@ -16,6 +41,7 @@ describe('renderFlipHuman', () => {
         tools: ['claude-code', 'codex'],
         explicitTools: false,
       },
+      ...planningFields('promote'),
       results: [
         {
           skill: 'factor-scan',
@@ -84,6 +110,7 @@ describe('renderFlipHuman', () => {
         tools: ['claude-code'],
         explicitTools: false,
       },
+      ...planningFields('dev'),
       results: [
         {
           skill: 'factor-scan',
@@ -133,6 +160,7 @@ describe('renderFlipHuman', () => {
         tools: ['claude-code'],
         explicitTools: false,
       },
+      ...planningFields('dev'),
       results: [
         {
           skill: 'factor-scan',
@@ -176,6 +204,7 @@ describe('renderFlipHuman', () => {
       op: 'dev',
       dryRun: false,
       requested: { targets: ['x'], all: false, tools: ['codex'], explicitTools: true },
+      ...planningFields('dev'),
       results: [
         {
           skill: 'x',
@@ -210,11 +239,141 @@ describe('renderFlipHuman', () => {
     expect(out).toContain('1 created.  Exit code: 0');
   });
 
+  test('uses an injected recorded verification mode instead of tool policy', () => {
+    const report: FlipReport = {
+      op: 'promote',
+      dryRun: false,
+      requested: { targets: ['x'], all: false, tools: ['codex'], explicitTools: true },
+      ...planningFields('promote'),
+      results: [
+        {
+          skill: 'x',
+          tool: 'codex',
+          placementPath: '/Users/alice/.agents/skills/x',
+          action: 'flipped',
+          reason: null,
+          before: { mode: 'dev', symlinkTarget: '/Users/alice/c/x' },
+          after: { mode: 'pinned', storePath: STORE_PATH },
+          store: null,
+          verify: { gate: 'passed', verdict: 'pass' },
+        },
+      ],
+      summary: {
+        flipped: 1,
+        updated: 0,
+        noop: 0,
+        skipped: 0,
+        refused: 0,
+        failed: 0,
+        rolledBack: 0,
+        created: 0,
+        adopted: 0,
+      },
+    };
+
+    const out = renderFlipHuman(report, 0, () => 'static');
+    expect(out).toContain('verify   static: pass');
+    expect(out).not.toContain('verify   deep: pass');
+  });
+
+  test('the pure renderer legacy fallback is tool-neutral', () => {
+    const report: FlipReport = {
+      op: 'promote',
+      dryRun: false,
+      requested: { targets: ['x'], all: false, tools: ['codex'], explicitTools: true },
+      ...planningFields('promote'),
+      results: [
+        {
+          skill: 'x',
+          tool: 'codex',
+          placementPath: '/Users/alice/.agents/skills/x',
+          action: 'flipped',
+          reason: null,
+          before: { mode: 'dev', symlinkTarget: '/Users/alice/c/x' },
+          after: { mode: 'pinned', storePath: STORE_PATH },
+          store: null,
+          verify: { gate: 'passed', verdict: 'pass' },
+        },
+      ],
+      summary: {
+        flipped: 1,
+        updated: 0,
+        noop: 0,
+        skipped: 0,
+        refused: 0,
+        failed: 0,
+        rolledBack: 0,
+        created: 0,
+        adopted: 0,
+      },
+    };
+
+    expect(renderFlipHuman(report, 0)).toContain('verify   static: pass');
+  });
+
+  test('selects the recorded verification check from the operation plan', () => {
+    const base: FlipReport = {
+      op: 'promote',
+      dryRun: false,
+      requested: { targets: ['x'], all: false, tools: ['codex'], explicitTools: true },
+      ...planningFields('promote'),
+      results: [
+        {
+          skill: 'x',
+          tool: 'codex',
+          placementPath: '/Users/alice/.agents/skills/x',
+          action: 'flipped',
+          reason: null,
+          before: { mode: 'dev', symlinkTarget: '/Users/alice/c/x' },
+          after: { mode: 'pinned', storePath: STORE_PATH },
+          store: null,
+          verify: { gate: 'passed', verdict: 'pass' },
+        },
+      ],
+      summary: {
+        flipped: 1,
+        updated: 0,
+        noop: 0,
+        skipped: 0,
+        refused: 0,
+        failed: 0,
+        rolledBack: 0,
+        created: 0,
+        adopted: 0,
+      },
+    };
+    const report = {
+      ...base,
+      plan: {
+        ...base.plan,
+        operations: [
+          {
+            skill: 'x',
+            tool: 'codex',
+            requiredCheckIds: ['check:verify:x'],
+          },
+        ],
+        checks: [
+          {
+            checkId: 'check:verify:x',
+            kind: 'verification',
+            mode: 'static',
+          },
+        ],
+      },
+    } as unknown as FlipReport;
+
+    const out = renderFlipHuman(report, 0);
+    expect(out).toContain('verify   static: pass');
+    expect(out).not.toContain('verify   deep: pass');
+  });
+
   test('a refused result renders a refusal line and the summary counts it', () => {
     const report: FlipReport = {
       op: 'promote',
       dryRun: false,
       requested: { targets: ['bad'], all: false, tools: ['claude-code'], explicitTools: false },
+      ...planningFields('promote'),
       results: [
         {
           skill: 'bad',
@@ -244,5 +403,48 @@ describe('renderFlipHuman', () => {
     const out = renderFlipHuman(report, 2);
     expect(out).toContain('the source tree is dirty');
     expect(out).toContain('1 refused.  Exit code: 2');
+  });
+
+  test('lifecycle stderr suppresses scheduling skips but retains historical skip warnings', () => {
+    const base: FlipReport = {
+      op: 'dev',
+      dryRun: false,
+      requested: { targets: ['x'], all: false, tools: ['claude-code'], explicitTools: false },
+      ...planningFields('dev'),
+      results: [],
+      summary: {
+        flipped: 0,
+        updated: 0,
+        noop: 0,
+        skipped: 1,
+        refused: 0,
+        failed: 0,
+        rolledBack: 0,
+        created: 0,
+        adopted: 0,
+      },
+    };
+    const skipped = (reason: string): FlipReport => ({
+      ...base,
+      results: [
+        {
+          skill: 'x',
+          tool: 'claude-code',
+          placementPath: '/Users/alice/.claude/skills/x',
+          action: 'skipped',
+          reason,
+          before: null,
+          after: null,
+          store: null,
+          verify: null,
+        },
+      ],
+    });
+
+    expect(renderFlipLifecycleStderr(skipped('fail-fast'))).toBe('');
+    expect(renderFlipLifecycleStderr(skipped('interrupted'))).toBe('');
+    expect(renderFlipLifecycleStderr(skipped('no recorded dev source'))).toBe(
+      'warning: x (claude-code): no recorded dev source\n',
+    );
   });
 });

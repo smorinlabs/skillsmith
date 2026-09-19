@@ -1,4 +1,4 @@
-import { type Result, type Scope, err, ok } from '@skillsmith/core';
+import { type Result, SCOPES, type Scope, err, ok } from '@skillsmith/core';
 
 export interface ScopeFlagOpts {
   scope?: string;
@@ -10,7 +10,7 @@ export interface ScopeFlagOpts {
 
 export const resolveScopeFlags = (
   opts: ScopeFlagOpts,
-): Result<Scope | null, { code: 'scope-conflict'; message: string }> => {
+): Result<Scope | null, { code: 'scope-conflict' | 'scope-invalid'; message: string }> => {
   const shorthands: Scope[] = [];
   if (opts.user) shorthands.push('user');
   if (opts.system) shorthands.push('system');
@@ -25,7 +25,13 @@ export const resolveScopeFlags = (
   }
 
   const shorthand = shorthands[0];
-  const explicit = opts.scope as Scope | undefined;
+  const explicit =
+    opts.scope === undefined
+      ? undefined
+      : SCOPES.find((candidate): candidate is Scope => candidate === opts.scope);
+  if (opts.scope !== undefined && explicit === undefined) {
+    return err({ code: 'scope-invalid', message: `unknown scope '${opts.scope}'` });
+  }
 
   if (shorthand && explicit && shorthand !== explicit) {
     return err({

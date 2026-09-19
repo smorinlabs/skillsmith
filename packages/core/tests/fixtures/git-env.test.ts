@@ -48,6 +48,20 @@ describe('hermeticGitEnv', () => {
     expect(env.GIT_CONFIG_GLOBAL).toBe('/dev/null');
   });
 
+  test('an explicit isolated global config does not restore repository-local redirects', () => {
+    const env = hermeticGitEnv(
+      {
+        GIT_CONFIG_COUNT: '1',
+        GIT_CONFIG_KEY_0: 'url.file:///tmp/repository.insteadOf',
+        GIT_CONFIG_VALUE_0: 'https://fixture.invalid/repository',
+      },
+      { globalConfigPath: '/tmp/isolated-gitconfig' },
+    );
+    expect(env.GIT_CONFIG_GLOBAL).toBe('/tmp/isolated-gitconfig');
+    expect(env.GIT_CONFIG_COUNT).toBeUndefined();
+    expect(env.GIT_CONFIG_KEY_0).toBe('url.file:///tmp/repository.insteadOf');
+  });
+
   test('non-git overrides pass through and unrelated vars are preserved', () => {
     const env = hermeticGitEnv({ HOME: '/tmp/fixture-home', SKILLSMITH_E2E: '1' });
     expect(env.HOME).toBe('/tmp/fixture-home');

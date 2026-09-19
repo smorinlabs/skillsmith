@@ -1,17 +1,17 @@
 import { join } from 'node:path';
 import type { Scope } from '../../config/types.ts';
-import type { ScanEnv } from '../../env/types.ts';
+import type { PlatformPaths } from '../../ports/types.ts';
 import type { SkillRootsCtx } from '../claude-code/skill-roots.ts';
 
 export const getSkillRoots = (
-  env: ScanEnv,
+  env: PlatformPaths,
   scope: Scope,
   ctx: SkillRootsCtx,
 ): readonly string[] => {
-  const dropClaude = ctx.envVars.OPENCODE_DISABLE_CLAUDE_CODE_SKILLS === 'true';
+  const dropClaude = ctx.configuration.opencodeClaudeSkillsDisabled;
   switch (scope) {
     case 'user': {
-      const nativeBase = ctx.envVars.OPENCODE_CONFIG_DIR ?? join(env.xdg.config, 'opencode');
+      const nativeBase = ctx.configuration.opencodeConfigDir ?? join(env.xdg.config, 'opencode');
       const roots: string[] = [join(nativeBase, 'skills')];
       if (!dropClaude) roots.push(join(env.homeDir, '.claude', 'skills'));
       roots.push(join(env.homeDir, '.agents', 'skills'));

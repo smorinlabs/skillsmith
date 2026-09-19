@@ -1,8 +1,19 @@
 # Codex deep verifier diagnosis
 
-Recorded on September 7, 2026. **Status: reproduced; alternative loader protocol
-prototyped; production fix not implemented.** This document records the failure,
-evidence, and possible follow-up work. It does not change verification behavior.
+## Current disposition — September 16, 2026
+
+The bounded local app-server verifier and incomplete-coverage aggregation fix are
+implemented: [PR #66](https://github.com/smorinlabs/skillsmith/pull/66) merged them into
+main; [PR #68](https://github.com/smorinlabs/skillsmith/pull/68) carries them to P17 and
+tracks that integration. See the [current verifier documentation](../packages/core/src/agents/codex/README.md)
+for the implementation and its limits. This is not a claim of compatibility with
+every Codex version or completion of deferred release qualification.
+
+## Historical diagnosis — September 7, 2026
+
+**Status at the time: reproduced; alternative loader protocol prototyped; production
+fix not implemented.** Everything below preserves that dated failure, evidence and
+proposed follow-up work; it is not the current implementation status or instructions.
 
 ## Finding and scope
 

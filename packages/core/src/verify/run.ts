@@ -1,10 +1,12 @@
-import { cp, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
-import { verifyClaudeCode } from '../agents/claude-code/verify.ts';
-import { verifyCodex } from '../agents/codex/verify.ts';
-import type { ScanEnv } from '../env/types.ts';
-import { type SkillSmithError, errorMessage, genericError } from '../errors.ts';
+import { basename, dirname, join } from 'node:path';
+import { type BuiltInToolId, type ToolRegistry, toolRegistry } from '../agents/registry.ts';
+import {
+  type SkillSmithError,
+  errorMessage,
+  genericError,
+  invalidArgumentError,
+} from '../errors.ts';
+import type { ObservationBundle } from '../observation/index.ts';
 import { type Result, err, ok } from '../result.ts';
 import { summarize } from './normalize.ts';
 import {
@@ -13,16 +15,18 @@ import {
   VERIFIED_AGAINST,
   VERIFY_TOOLS,
   type VerifyMode,
+  type VerifyPorts,
   type VerifyReport,
   type VerifyTool,
 } from './types.ts';
 
-export interface VerifyOptions {
+export interface VerifyOptions<ToolId extends string = VerifyTool> {
   path: string; // target directory (CLI passes an absolute path)
-  tools?: readonly VerifyTool[]; // explicit --tool list; undefined = all of VERIFY_TOOLS (best-effort)
+  tools?: readonly ToolId[]; // explicit --tool list; undefined = all registered verifiers (best-effort)
   deep?: boolean; // --deep => modes {static, deep}; otherwise {static}
   strict?: boolean;
   signal?: AbortSignal;
+  observation?: ObservationBundle;
 }
 
 export interface ResolvedTarget {
@@ -31,13 +35,89 @@ export interface ResolvedTarget {
   cleanup: () => Promise<void>; // removes the wrapper temp dir; no-op for plugins
 }
 
+type VerifyRegistry<ToolId extends string = string, VerificationId extends ToolId = ToolId> = Pick<
+  ToolRegistry<ToolId, VerificationId>,
+  'adapters' | 'ids' | 'get' | 'toolsFor'
+>;
+type VerifyDispatch<ToolId extends string, VerificationId extends ToolId = ToolId> =
+  | VerifyRegistry<ToolId, VerificationId>
+  | Readonly<Record<VerificationId, ToolVerifier<VerificationId>>>;
+
+const isVerifyRegistry = <ToolId extends string, VerificationId extends ToolId>(
+  dispatch: VerifyDispatch<ToolId, VerificationId>,
+): dispatch is VerifyRegistry<ToolId, VerificationId> =>
+  'adapters' in dispatch &&
+  Array.isArray(dispatch.adapters) &&
+  typeof dispatch.get === 'function' &&
+  typeof dispatch.toolsFor === 'function';
+
+type TargetRegistry = Pick<ToolRegistry, 'adapters'>;
+
+type VerificationCompletion = {
+  readonly verdict: 'pass' | 'warn' | 'fail' | 'inconclusive' | 'unavailable';
+  readonly errorCode: string | null;
+};
+
+const verificationCompletion = (verdict: ToolVerdict<string>): VerificationCompletion => {
+  if (
+    !verdict.available ||
+    (verdict.modes.length === 0 && verdict.skipReason === 'not-installed')
+  ) {
+    return { verdict: 'unavailable', errorCode: 'not-installed' };
+  }
+  if (verdict.modes.some((mode) => mode.status === 'error' && mode.skipReason === 'timeout')) {
+    return { verdict: 'inconclusive', errorCode: 'timeout' };
+  }
+  if (verdict.modes.some((mode) => mode.status === 'error' && mode.skipReason === 'exec-error')) {
+    return { verdict: 'inconclusive', errorCode: 'exec-error' };
+  }
+  if (
+    verdict.modes.some((mode) => mode.status === 'skipped' && mode.skipReason === 'not-installed')
+  ) {
+    return { verdict: 'unavailable', errorCode: 'not-installed' };
+  }
+  if (verdict.modes.some((mode) => mode.status === 'skipped' && mode.skipReason === 'timeout')) {
+    return { verdict: 'inconclusive', errorCode: 'timeout' };
+  }
+  if (verdict.modes.some((mode) => mode.status === 'skipped' && mode.skipReason === 'exec-error')) {
+    return { verdict: 'inconclusive', errorCode: 'exec-error' };
+  }
+  if (verdict.verdict === 'fail') {
+    return { verdict: 'fail', errorCode: 'verification-failed' };
+  }
+  if (verdict.verdict === 'warn') return { verdict: 'warn', errorCode: null };
+  if (verdict.verdict === 'pass') return { verdict: 'pass', errorCode: null };
+  return { verdict: 'inconclusive', errorCode: 'verification-inconclusive' };
+};
+
+const targetManifestsFor = (registry: TargetRegistry): readonly string[] => [
+  ...new Set(registry.adapters.flatMap((adapter) => adapter.verification?.targetManifests ?? [])),
+];
+
+const verifiedAgainstFor = <ToolId extends string, VerificationId extends ToolId>(
+  registry: VerifyRegistry<ToolId, VerificationId>,
+): Record<VerificationId, string> =>
+  Object.fromEntries(
+    registry.adapters.flatMap((adapter) =>
+      adapter.verification
+        ? [[adapter.descriptor.id, adapter.verification.verifiedAgainst] as const]
+        : [],
+    ),
+  ) as Record<VerificationId, string>;
+
 export const resolveTarget = async (
-  env: ScanEnv,
+  env: VerifyPorts,
   path: string,
+  registry: TargetRegistry = toolRegistry,
 ): Promise<Result<ResolvedTarget, SkillSmithError>> => {
-  const isPlugin =
-    (await env.fileExists(join(path, '.claude-plugin', 'plugin.json'))) ||
-    (await env.fileExists(join(path, '.codex-plugin', 'plugin.json')));
+  const targetManifests = targetManifestsFor(registry);
+  let isPlugin = false;
+  for (const targetManifest of targetManifests) {
+    if (await env.fileExists(join(path, targetManifest))) {
+      isPlugin = true;
+      break;
+    }
+  }
   if (isPlugin) {
     return ok({ path, kind: 'plugin', cleanup: async () => {} });
   }
@@ -45,88 +125,135 @@ export const resolveTarget = async (
   const isBareSkill = await env.fileExists(join(path, 'SKILL.md'));
   if (isBareSkill) {
     const name = basename(path);
+    let tmp: string | undefined;
     try {
-      const tmp = await mkdtemp(join(tmpdir(), 'skillsmith-verify-'));
+      tmp = join(env.xdg.cache, 'skillsmith', 'verify', env.nextId('verify-wrapper'));
+      const wrapperPath = tmp;
       const manifest = JSON.stringify({
         name,
         description: 'skillsmith verify ephemeral wrapper',
         version: '0.0.0',
         author: { name: 'skillsmith' },
       });
-      await mkdir(join(tmp, '.claude-plugin'), { recursive: true });
-      await mkdir(join(tmp, '.codex-plugin'), { recursive: true });
-      await writeFile(join(tmp, '.claude-plugin', 'plugin.json'), manifest);
-      await writeFile(join(tmp, '.codex-plugin', 'plugin.json'), manifest);
-      await cp(path, join(tmp, 'skills', name), { recursive: true });
+      for (const targetManifest of targetManifests) {
+        await env.makeDir(join(wrapperPath, dirname(targetManifest)));
+        await env.writeTextFile(join(wrapperPath, targetManifest), manifest);
+      }
+      await env.copyTree(path, join(wrapperPath, 'skills', name));
       return ok({
-        path: tmp,
+        path: wrapperPath,
         kind: 'skill',
         cleanup: async () => {
-          await rm(tmp, { recursive: true, force: true });
+          await env.removeTree(wrapperPath);
         },
       });
     } catch (e) {
-      return err(genericError(`failed to wrap bare skill '${path}': ${errorMessage(e)}`));
+      const wrapError = genericError(`failed to wrap bare skill '${path}': ${errorMessage(e)}`);
+      if (tmp !== undefined) await env.removeTree(tmp).catch(() => {});
+      return err(wrapError);
     }
   }
 
   return err(
-    genericError(
-      `'${path}' is not a plugin or skill directory (expected .claude-plugin/plugin.json, .codex-plugin/plugin.json, or SKILL.md)`,
+    invalidArgumentError(
+      `'${path}' is not a plugin or skill directory (expected ${targetManifests.join(', ')}, or SKILL.md)`,
     ),
   );
 };
 
-export const runVerify = async (
-  env: ScanEnv,
-  opts: VerifyOptions,
-  checkers: Record<VerifyTool, ToolVerifier>,
-): Promise<Result<VerifyReport, SkillSmithError>> => {
+export function runVerify(
+  env: VerifyPorts,
+  opts: VerifyOptions<VerifyTool>,
+  dispatch?: VerifyDispatch<BuiltInToolId, VerifyTool>,
+): Promise<Result<VerifyReport<VerifyTool>, SkillSmithError>>;
+export function runVerify<ToolId extends string, VerificationId extends ToolId = ToolId>(
+  env: VerifyPorts,
+  opts: VerifyOptions<NoInfer<VerificationId>>,
+  registry: VerifyRegistry<ToolId, VerificationId>,
+): Promise<Result<VerifyReport<VerificationId>, SkillSmithError>>;
+export async function runVerify(
+  env: VerifyPorts,
+  opts: VerifyOptions<string>,
+  dispatch: VerifyDispatch<string> = toolRegistry,
+): Promise<Result<VerifyReport<string>, SkillSmithError>> {
   if (opts.signal?.aborted) return err(genericError('runVerify aborted'));
 
-  const resolved = await resolveTarget(env, opts.path);
+  const registry = isVerifyRegistry(dispatch) ? dispatch : null;
+  const targetRegistry = registry ?? toolRegistry;
+  const resolved = await resolveTarget(env, opts.path, targetRegistry);
   if (!resolved.ok) return resolved;
 
   try {
-    const toolSet = opts.tools ?? VERIFY_TOOLS;
+    const toolSet = opts.tools ?? registry?.toolsFor('verify-static') ?? VERIFY_TOOLS;
     const explicitTools = opts.tools !== undefined && opts.tools.length > 0;
     const modes: VerifyMode[] = opts.deep ? ['static', 'deep'] : ['static'];
     const strict = opts.strict ?? false;
 
-    const toolVerdicts: ToolVerdict[] = [];
+    const toolVerdicts: ToolVerdict<string>[] = [];
     for (const tool of toolSet) {
-      const result = await checkers[tool](env, {
-        path: resolved.value.path,
-        modes,
-        strict,
-        kind: resolved.value.kind,
-        ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
-      });
-      if (!result.ok) return result;
+      const span =
+        opts.observation?.emitter.begin(opts.observation.context, {
+          kind: 'tool.verification.started',
+          toolId: tool,
+          modes,
+        }) ?? null;
+      const checker = isVerifyRegistry(dispatch)
+        ? dispatch.get(tool)?.verification?.verify
+        : dispatch[tool];
+      if (checker === undefined) {
+        const missingChecker = genericError(`no registered verifier for '${tool}'`);
+        opts.observation?.emitter.complete(span, {
+          verdict: 'fail',
+          errorCode: missingChecker.code,
+        });
+        return err(missingChecker);
+      }
+      let result: Awaited<ReturnType<typeof checker>>;
+      try {
+        result = await checker(env, {
+          path: resolved.value.path,
+          modes,
+          strict,
+          kind: resolved.value.kind,
+          ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+        });
+      } catch (error) {
+        opts.observation?.emitter.complete(span, {
+          verdict: 'fail',
+          errorCode: 'generic',
+        });
+        throw error;
+      }
+      if (!result.ok) {
+        opts.observation?.emitter.complete(span, {
+          verdict: 'fail',
+          errorCode: result.error.code,
+        });
+        return result;
+      }
+      opts.observation?.emitter.complete(span, verificationCompletion(result.value));
       toolVerdicts.push(result.value);
     }
 
-    const report: VerifyReport = {
+    const report: VerifyReport<string> = {
       schemaVersion: 1,
       target: { path: opts.path, kind: resolved.value.kind },
       requested: { tools: [...toolSet], modes, strict, explicitTools },
-      verifiedAgainst: VERIFIED_AGAINST,
+      verifiedAgainst: registry ? verifiedAgainstFor(registry) : VERIFIED_AGAINST,
       summary: summarize(toolVerdicts, { explicitTools }),
       tools: toolVerdicts,
     };
     return ok(report);
+  } catch (error) {
+    if (opts.signal?.aborted) return err(genericError('runVerify aborted'));
+    throw error;
   } finally {
     await resolved.value.cleanup();
   }
-};
-
-const defaultCheckers: Record<VerifyTool, ToolVerifier> = {
-  'claude-code': verifyClaudeCode,
-  codex: verifyCodex,
-};
+}
 
 /** `runVerify` wired to the built-in per-agent checkers. */
 export const verifyPlugin = (
-  env: ScanEnv,
+  env: VerifyPorts,
   opts: VerifyOptions,
-): Promise<Result<VerifyReport, SkillSmithError>> => runVerify(env, opts, defaultCheckers);
+): Promise<Result<VerifyReport, SkillSmithError>> => runVerify(env, opts);

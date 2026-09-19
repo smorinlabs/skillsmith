@@ -1,14 +1,16 @@
-import type { ScanEnv } from '../env/types.ts';
+import type { VerificationToolId } from '../agents/registry.ts';
 import type { SkillSmithError } from '../errors.ts';
+import type { DetectionPorts, FileWritePort, IdPort, ProcessPort } from '../ports/types.ts';
 import type { Result } from '../result.ts';
+export { VERIFIED_AGAINST, VERIFY_TOOLS } from '../agents/registry.ts';
+export { DEEP_TIMEOUT_MS, STATIC_TIMEOUT_MS } from './constants.ts';
 
-export const VERIFY_TOOLS = ['claude-code', 'codex'] as const;
-export type VerifyTool = (typeof VERIFY_TOOLS)[number];
+export type VerifyTool = VerificationToolId;
 
 export type VerifyMode = 'static' | 'deep';
 export type NormalizedSeverity = 'error' | 'warning' | 'info';
 export type VerifyOutcome = 'pass' | 'warn' | 'fail'; // a produced verdict
-export type SummaryVerdict = VerifyOutcome | 'inconclusive'; // missing required coverage, unless a failure is proven
+export type SummaryVerdict = VerifyOutcome | 'inconclusive'; // required verification incomplete
 export type ModeStatus = 'ran' | 'skipped' | 'error'; // did the checker run?
 export type SkipReason = 'not-installed' | 'timeout' | 'exec-error';
 
@@ -32,34 +34,36 @@ export interface ModeResult {
   findings: VerifyFinding[];
 }
 
-export interface ToolVerdict {
-  tool: VerifyTool;
+export interface ToolVerdict<ToolId extends string = VerifyTool> {
+  tool: ToolId;
   available: boolean; // detected on PATH
   toolVersion: string | null; // observed CLI version, or null when unavailable
   versionDrift: boolean; // observed !== VERIFIED_AGAINST[tool]
   skipReason: SkipReason | null; // 'not-installed' when !available
-  verdict: SummaryVerdict; // failures win; otherwise incomplete modes are inconclusive
+  verdict: SummaryVerdict; // proven failure wins; otherwise incomplete required modes are inconclusive
   modes: ModeResult[]; // empty when !available
 }
 
-export interface VerifyReport {
+export interface VerifySummary<ToolId extends string = VerifyTool> {
+  verdict: SummaryVerdict;
+  verified: ToolId[]; // tools with a produced pass/warn verdict
+  failed: ToolId[]; // tools with a fail verdict
+  skipped: ToolId[]; // tools that could not run
+  counts: { error: number; warning: number; info: number }; // normalized totals, all findings
+}
+
+export interface VerifyReport<ToolId extends string = VerifyTool> {
   schemaVersion: 1;
   target: { path: string; kind: 'plugin' | 'skill' }; // 'skill' = bare skill dir, wrapped
   requested: {
-    tools: VerifyTool[];
+    tools: ToolId[];
     modes: VerifyMode[];
     strict: boolean;
     explicitTools: boolean;
   };
-  verifiedAgainst: Record<VerifyTool, string>;
-  summary: {
-    verdict: SummaryVerdict;
-    verified: VerifyTool[]; // tools with a produced pass/warn verdict
-    failed: VerifyTool[]; // tools with a fail verdict
-    skipped: VerifyTool[]; // tools that could not run
-    counts: { error: number; warning: number; info: number }; // normalized totals, all findings
-  };
-  tools: ToolVerdict[];
+  verifiedAgainst: Record<ToolId, string>;
+  summary: VerifySummary<ToolId>;
+  tools: ToolVerdict<ToolId>[];
 }
 
 export interface ToolVerifyOptions {
@@ -74,16 +78,12 @@ export interface ToolVerifyOptions {
   kind?: 'plugin' | 'skill';
 }
 
-export type ToolVerifier = (
-  env: ScanEnv,
+export type VerifyPorts = DetectionPorts &
+  FileWritePort &
+  Pick<ProcessPort, 'exec'> &
+  Pick<IdPort, 'nextId'>;
+
+export type ToolVerifier<ToolId extends string = VerifyTool> = (
+  env: VerifyPorts,
   opts: ToolVerifyOptions,
-) => Promise<Result<ToolVerdict, SkillSmithError>>;
-
-/** The version matrix this build's parsers were proven against (research 2026-07-06/07). */
-export const VERIFIED_AGAINST: Record<VerifyTool, string> = {
-  'claude-code': '2.1.202',
-  codex: '0.142.5',
-};
-
-export const STATIC_TIMEOUT_MS = 30_000;
-export const DEEP_TIMEOUT_MS = 60_000;
+) => Promise<Result<ToolVerdict<ToolId>, SkillSmithError>>;

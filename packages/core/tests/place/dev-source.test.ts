@@ -6,6 +6,7 @@ import { emptyLedger, getPair, readLedger, setPair, writeLedger } from '../../sr
 import { ledgerPathOf } from '../../src/place/paths.ts';
 import { runDev } from '../../src/place/run.ts';
 import type { DevRecord, LedgerFile } from '../../src/place/types.ts';
+import { canonicalFixtureLedger } from '../fixtures/place/canonical-ledger.ts';
 import {
   DEV_SOURCE_NOW,
   type DevSourceFlipOptions,
@@ -49,7 +50,7 @@ describe('dev --source — state machine S1-S6 (P13 PRD)', () => {
   const opts = (o: Partial<DevSourceFlipOptions> = {}): DevSourceFlipOptions => ({
     targets: [],
     cwd: f.home,
-    envVars: f.envVars,
+    configuration: f.configuration,
     ...o,
   });
 
@@ -86,9 +87,10 @@ describe('dev --source — state machine S1-S6 (P13 PRD)', () => {
     expect(pair?.mode).toBe('dev');
     expect(pair?.dev?.sourcePath).toBe(source);
     expect(pair?.dev?.resolvedPath).toBe(source);
-    // Dev-only record: no pin, no journal, no origin (PRD ledger-record shape).
+    // Dev-only canonical record: no pin or origin. The legacy read view projects committed
+    // logical history as a compatibility journal without leaving a pending physical shadow.
     expect(pair?.pinned ?? null).toBeNull();
-    expect(pair?.journal ?? null).toBeNull();
+    expect(pair?.journal).toMatchObject({ op: 'dev', phase: 'committed' });
     expect(pair?.origin).toBeUndefined();
   });
 
@@ -186,7 +188,7 @@ describe('dev --source — state machine S1-S6 (P13 PRD)', () => {
     expect(pair?.mode).toBe('dev');
     expect(pair?.dev?.sourcePath).toBe(source);
     expect(pair?.pinned ?? null).toBeNull();
-    expect(pair?.journal ?? null).toBeNull();
+    expect(pair?.journal).toMatchObject({ op: 'dev', phase: 'committed' });
   });
 
   test('S2 (codex): simulated crash state (symlink present, no record) -> re-run adopts and converges', async () => {
@@ -224,7 +226,7 @@ describe('dev --source — state machine S1-S6 (P13 PRD)', () => {
       pinned: null,
       journal: null,
     });
-    const w = await writeLedger(f.env, ledgerPathOf(f.data), ledger);
+    const w = await writeLedger(f.env, ledgerPathOf(f.data), canonicalFixtureLedger(ledger));
     if (!w.ok) throw new Error(msg(w.error));
 
     const r = await runDev(
@@ -307,7 +309,7 @@ describe('dev --source — state machine S1-S6 (P13 PRD)', () => {
       pinned: null,
       journal: null,
     });
-    const w = await writeLedger(f.env, ledgerPathOf(f.data), ledger);
+    const w = await writeLedger(f.env, ledgerPathOf(f.data), canonicalFixtureLedger(ledger));
     if (!w.ok) throw new Error(msg(w.error));
 
     const r = await runDev(
@@ -354,7 +356,7 @@ describe('dev --source — resolution, --dest, dual-location, warnings (P13 PRD)
   const opts = (o: Partial<DevSourceFlipOptions> = {}): DevSourceFlipOptions => ({
     targets: [],
     cwd: f.home,
-    envVars: f.envVars,
+    configuration: f.configuration,
     ...o,
   });
 
@@ -478,7 +480,7 @@ describe('dev --source — idempotency, dry-run, ledger-shape legality (P13 PRD)
   const opts = (o: Partial<DevSourceFlipOptions> = {}): DevSourceFlipOptions => ({
     targets: [],
     cwd: f.home,
-    envVars: f.envVars,
+    configuration: f.configuration,
     ...o,
   });
 

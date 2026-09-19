@@ -3,6 +3,7 @@ import { mkdir, symlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { listClaudeCodePlacements } from '../../../src/agents/claude-code/placement.ts';
 import { classifyPlacement } from '../../../src/agents/placement-shared.ts';
+import { resolveRuntimeConfiguration } from '../../../src/config/runtime.ts';
 import {
   type FixtureFleet,
   buildFixtureFleet,
@@ -19,13 +20,21 @@ describe('claude-code placement detection', () => {
     }
   });
 
-  const ctxOf = (f: FixtureFleet) => ({ cwd: f.base, envVars: {} });
+  const ctxOf = (f: FixtureFleet) => ({
+    cwd: f.base,
+    configuration: resolveRuntimeConfiguration({}),
+  });
+  const portsOf = (f: FixtureFleet) => f.env;
   const storeRootOf = (f: FixtureFleet) => join(f.data, 'store');
   const rootOf = (f: FixtureFleet) => join(f.home, '.claude', 'skills');
 
   test('alpha -> dev, symlinkTarget = alphaSrc, dangling false', async () => {
     fleet = await buildFixtureFleet();
-    const placements = await listClaudeCodePlacements(fleet.env, ctxOf(fleet), storeRootOf(fleet));
+    const placements = await listClaudeCodePlacements(
+      portsOf(fleet),
+      ctxOf(fleet),
+      storeRootOf(fleet),
+    );
     const alpha = placements.find((p) => p.skill === 'alpha');
     expect(alpha?.class).toBe('dev');
     expect(alpha?.symlinkTarget).toBe(fleet.alphaSrc);
@@ -34,7 +43,11 @@ describe('claude-code placement detection', () => {
 
   test('copied -> pinned, symlinkTarget null', async () => {
     fleet = await buildFixtureFleet();
-    const placements = await listClaudeCodePlacements(fleet.env, ctxOf(fleet), storeRootOf(fleet));
+    const placements = await listClaudeCodePlacements(
+      portsOf(fleet),
+      ctxOf(fleet),
+      storeRootOf(fleet),
+    );
     const copied = placements.find((p) => p.skill === 'copied');
     expect(copied?.class).toBe('pinned');
     expect(copied?.symlinkTarget).toBeNull();
@@ -42,7 +55,11 @@ describe('claude-code placement detection', () => {
 
   test('dangler -> dev, dangling true', async () => {
     fleet = await buildFixtureFleet();
-    const placements = await listClaudeCodePlacements(fleet.env, ctxOf(fleet), storeRootOf(fleet));
+    const placements = await listClaudeCodePlacements(
+      portsOf(fleet),
+      ctxOf(fleet),
+      storeRootOf(fleet),
+    );
     const dangler = placements.find((p) => p.skill === 'dangler');
     expect(dangler?.class).toBe('dev');
     expect(dangler?.dangling).toBe(true);
@@ -51,7 +68,7 @@ describe('claude-code placement detection', () => {
   test('a name with no entry -> absent', async () => {
     fleet = await buildFixtureFleet();
     const placement = await classifyPlacement(
-      fleet.env,
+      portsOf(fleet),
       rootOf(fleet),
       'nonexistent',
       storeRootOf(fleet),
@@ -61,7 +78,11 @@ describe('claude-code placement detection', () => {
 
   test('listClaudeCodePlacements returns exactly {alpha, copied, dangler} — no .system', async () => {
     fleet = await buildFixtureFleet();
-    const placements = await listClaudeCodePlacements(fleet.env, ctxOf(fleet), storeRootOf(fleet));
+    const placements = await listClaudeCodePlacements(
+      portsOf(fleet),
+      ctxOf(fleet),
+      storeRootOf(fleet),
+    );
     expect(placements.map((p) => p.skill).sort()).toEqual(['alpha', 'copied', 'dangler']);
   });
 
@@ -73,7 +94,7 @@ describe('claude-code placement detection', () => {
     const linkPath = join(rootOf(fleet), 'slink');
     await symlink(realDir, linkPath);
 
-    const placement = await classifyPlacement(fleet.env, rootOf(fleet), 'slink', storeRoot);
+    const placement = await classifyPlacement(portsOf(fleet), rootOf(fleet), 'slink', storeRoot);
     expect(placement.class).toBe('store-linked');
   });
 
@@ -83,7 +104,11 @@ describe('claude-code placement detection', () => {
     await mkdir(join(root, '.skillsmith-staging-alpha-deadbeef'), { recursive: true });
     await mkdir(join(root, '.skillsmith-backup-alpha-deadbeef'), { recursive: true });
 
-    const placements = await listClaudeCodePlacements(fleet.env, ctxOf(fleet), storeRootOf(fleet));
+    const placements = await listClaudeCodePlacements(
+      portsOf(fleet),
+      ctxOf(fleet),
+      storeRootOf(fleet),
+    );
     expect(placements.map((p) => p.skill).sort()).toEqual(['alpha', 'copied', 'dangler']);
   });
 });

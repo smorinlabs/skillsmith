@@ -2,6 +2,7 @@
   "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
   "organizeImports": { "enabled": true },
   "files": {
+    "maxSize": 2000000,
     "ignore": ["dist/**", "node_modules/**", "*.tsbuildinfo", "packages/*/tests/fixtures/**"]
   },
   "formatter": {
@@ -34,6 +35,19 @@
         "packages/core/package.json",
         ".release-please-manifest.json"
       ],
+      "formatter": { "enabled": false }
+    },
+    {
+      "include": [
+        "tests/ergonomics/fixtures/p2-ts08/*.golden.json",
+        "tests/ergonomics/fixtures/p3a-ts04/*.golden.json",
+        "tests/ergonomics/fixtures/g3a02-contracts/*.golden.json",
+        "tests/ergonomics/fixtures/p3a-ts01/*.golden.json"
+      ],
+      "formatter": { "enabled": false }
+    },
+    {
+      "include": ["packaging/npm/bin/skillsmith.cjs"],
       "formatter": { "enabled": false }
     }
   ]

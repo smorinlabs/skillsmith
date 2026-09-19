@@ -1,0 +1,30 @@
+Installed skills
+| Tool | Scope | Mode | Name | State |
+| --- | --- | --- | --- | --- |
+| claude-code | user | dev | c02 |  |
+| claude-code | user | pinned | c04 | unconfigured |
+| claude-code | project | unmanaged | c03 | disabled |
+| claude-code | project | pinned | c05 |  |
+| claude-code | managed | unmanaged | c01 |  |
+| claude-code | managed | unmanaged | c06 |  |
+
+| codex | system | unmanaged | x01 |  |
+| codex | user | dev | x02 | disabled |
+| codex | user | pinned | x04 |  |
+| codex | user | unmanaged | x06 |  |
+| codex | project | unmanaged | x03 | unconfigured |
+| codex | project | pinned | x05 | disabled |
+
+| kilo-code | user | pinned | k01 |  |
+| kilo-code | user | unmanaged | k03 | disabled |
+| kilo-code | user | unmanaged | k06 |  |
+| kilo-code | project | dev | k02 | unconfigured |
+| kilo-code | project | pinned | k04 |  |
+| kilo-code | project | pinned | k05 | unconfigured |
+
+| opencode | user | pinned | o01 |  |
+| opencode | user | unmanaged | o03 | unconfigured |
+| opencode | user | pinned | o05 | disabled |
+| opencode | project | dev | o02 | disabled |
+| opencode | project | pinned | o04 |  |
+| opencode | project | unmanaged | o06 |  |

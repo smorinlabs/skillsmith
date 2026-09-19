@@ -1,13 +1,16 @@
 import { describe, expect, test } from 'bun:test';
 import type { FlipReport } from '@skillsmith/core';
-import type { FlipReportV2 } from '../../../core/tests/fixtures/place/dev-source.ts';
+import { flipV2Codec } from '@skillsmith/core/contracts/v2';
 import { renderFlipHuman } from '../../src/output/flip-human.ts';
-import { FlipJsonSchema, renderFlipJson } from '../../src/output/flip-json.ts';
+import { renderFlipJson } from '../../src/output/flip-json.ts';
+import { wireSchema } from '../../src/output/wire-codec.ts';
+
+const FlipV2JsonSchema = wireSchema(flipV2Codec);
 
 // PRD D4: FlipReport contract schemaVersion 1 -> 2. New `action` values `created` / `adopted`;
 // new `summary.created` / `summary.adopted` counters alongside flipped/refused/failed. The report
 // below is what a `dev --source` batch (one create + one adopt) emits under the v2 contract.
-const v2Report: FlipReportV2 = {
+const v2Report = {
   op: 'dev',
   dryRun: false,
   requested: {
@@ -67,11 +70,11 @@ const v2Report: FlipReportV2 = {
 
 // The widened v2 shape narrows back to the P12 FlipReport for the renderers until T3 lands the
 // real v2 core types (FlipAction ⊂ FlipActionV2, so the downcast is well-formed).
-const asReport = (r: FlipReportV2): FlipReport => r as FlipReport;
+const asReport = (value: unknown): FlipReport => value as FlipReport;
 
 describe('flip report contract v2 (P13 D4) — renderFlipJson', () => {
   test('renders a created/adopted report with schemaVersion 2', () => {
-    const rendered = JSON.parse(renderFlipJson(asReport(v2Report))) as {
+    const rendered = JSON.parse(renderFlipJson(asReport(v2Report), flipV2Codec)) as {
       schemaVersion: number;
       kind: string;
       results: { action: string }[];
@@ -82,7 +85,7 @@ describe('flip report contract v2 (P13 D4) — renderFlipJson', () => {
   });
 
   test('summary carries created/adopted counters alongside the P12 buckets', () => {
-    const rendered = JSON.parse(renderFlipJson(asReport(v2Report))) as {
+    const rendered = JSON.parse(renderFlipJson(asReport(v2Report), flipV2Codec)) as {
       summary: Record<string, number>;
     };
     expect(rendered.summary.created).toBe(1);
@@ -92,14 +95,14 @@ describe('flip report contract v2 (P13 D4) — renderFlipJson', () => {
   });
 
   test('the schema accepts v2 payloads but stays closed (unknown actions still rejected)', () => {
-    const rendered = renderFlipJson(asReport(v2Report));
-    expect(() => FlipJsonSchema.parse(JSON.parse(rendered))).not.toThrow();
+    const rendered = renderFlipJson(asReport(v2Report), flipV2Codec);
+    expect(() => FlipV2JsonSchema.parse(JSON.parse(rendered))).not.toThrow();
 
     const bad = {
       ...v2Report,
       results: [{ ...v2Report.results[0], action: 'installed' }],
     };
-    expect(() => renderFlipJson(bad as unknown as FlipReport)).toThrow();
+    expect(() => renderFlipJson(bad as unknown as FlipReport, flipV2Codec)).toThrow();
   });
 });
 

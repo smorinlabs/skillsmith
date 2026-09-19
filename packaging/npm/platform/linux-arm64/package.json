@@ -1,0 +1,17 @@
+{
+  "name": "@smorinlabs/skillsmith-linux-arm64",
+  "version": "0.0.0",
+  "description": "Skillsmith native payload for glibc Linux arm64",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/smorinlabs/skillsmith.git"
+  },
+  "os": ["linux"],
+  "cpu": ["arm64"],
+  "libc": ["glibc"],
+  "files": ["bin/skillsmith", "README.md", "LICENSE"],
+  "publishConfig": {
+    "access": "public"
+  }
+}

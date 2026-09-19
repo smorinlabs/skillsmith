@@ -1,0 +1,102 @@
+import type { FlipReport, ListReport } from '@skillsmith/core';
+import type { WireCodec } from '@skillsmith/core/contracts';
+
+export interface FlipV3Dto {
+  schemaVersion: 3;
+  kind: 'skillsmith.flip';
+  op: 'promote' | 'dev' | 'rollback';
+  dryRun: boolean;
+  summary: FlipReport['summary'];
+  selection: {
+    source: 'explicit-targets' | 'explicit-all' | 'bounded-default';
+    outcome: 'selected' | 'filter-noop';
+    targets: string[];
+    all: boolean;
+    tools: string[];
+    scopes: Array<'user' | 'project'>;
+    groupIds: string[];
+    batchPolicy: 'fail-fast' | 'continue-on-error';
+  };
+  operations: Array<NonNullable<FlipReport['plan']>['operations'][number]>;
+  checks: Array<NonNullable<FlipReport['plan']>['checks'][number]>;
+  diagnostics: Array<NonNullable<FlipReport['plan']>['diagnostics'][number]>;
+  results: Array<
+    Omit<NonNullable<FlipReport['executionResults']>[number], 'outcome'> & {
+      outcome: 'succeeded' | 'failed' | 'cancelled' | 'rolled-back';
+    }
+  >;
+}
+
+export declare const flipV3Codec: WireCodec<'flip', 3, FlipV3Dto>;
+export declare const toFlipV3Dto: (report: FlipReport) => FlipV3Dto;
+
+type Scope = 'system' | 'user' | 'project' | 'managed';
+type EntryOrigin =
+  | { kind: 'standalone' }
+  | {
+      kind: 'plugin';
+      pluginId: string;
+      pluginVersion: string;
+      pluginScope: 'user' | 'project' | 'managed' | 'local';
+    }
+  | { kind: 'policy' };
+type EntryFrontmatter = {
+  name?: string | undefined;
+  description?: string | undefined;
+  version?: string | undefined;
+} | null;
+type InventoryMember = { scope: Scope; path: string };
+
+export interface ListV3Dto {
+  schemaVersion: 3;
+  kind: 'skillsmith.list';
+  selection: {
+    source: 'bounded-default';
+    tools: string[];
+    scopes: Scope[];
+    filters: {
+      names: string[];
+      mode: 'dev' | 'pinned' | 'unmanaged' | null;
+      source: string | null;
+      revision: string | null;
+      description: string | null;
+      verification: 'verified' | 'unverified' | null;
+      enabled: 'enabled-only' | 'disabled-only' | 'unconfigured-only' | null;
+      duplicates: boolean;
+    };
+    outcome: 'selected' | 'filter-noop';
+  };
+  summary: { total: number; collisionGroups: number };
+  entries: Array<{
+    name: string;
+    tool: string;
+    scope: Scope;
+    mode: 'dev' | 'pinned' | 'unmanaged';
+    placement: 'symlink' | 'copy' | 'unknown';
+    path: string;
+    realpath: string;
+    root: string;
+    frontmatter: EntryFrontmatter;
+    origin: EntryOrigin;
+    enabled: 'on' | 'off' | 'unset';
+    source: string | null;
+    revision: string | null;
+    store: string | null;
+    verification: 'passed' | 'warned' | 'skipped' | 'unrecorded';
+    description: string | null;
+    visibility: {
+      state: 'unique' | 'winner' | 'shadowed' | 'duplicate';
+      winner: string | null;
+      members: InventoryMember[];
+    };
+  }>;
+  collisionGroups: Array<{
+    tool: string;
+    name: string;
+    winner: string | null;
+    members: InventoryMember[];
+  }>;
+}
+
+export declare const listV3Codec: WireCodec<'list', 3, ListV3Dto>;
+export declare const toListV3Dto: (report: ListReport) => ListV3Dto;

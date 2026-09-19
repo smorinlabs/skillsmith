@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  errorMessage,
   flipFailedError,
   flipRefusedError,
   genericError,
+  invalidArgumentError,
   ledgerError,
   permissionDeniedError,
   placementNotFoundError,
@@ -12,6 +14,9 @@ import {
 } from '../src/errors.ts';
 
 describe('SkillSmithError', () => {
+  test('errorMessage reads safe structural adapter messages', () => {
+    expect(errorMessage({ message: 'safe adapter failure' })).toBe('safe adapter failure');
+  });
   test('genericError carries message and optional cause', () => {
     const e = genericError('boom', new Error('root'));
     expect(e.code).toBe('generic');
@@ -19,6 +24,10 @@ describe('SkillSmithError', () => {
       expect(e.message).toBe('boom');
       expect((e.cause as Error).message).toBe('root');
     }
+  });
+  test('invalidArgumentError carries a usage-safe message', () => {
+    const e = invalidArgumentError('not a plugin');
+    expect(e).toEqual({ code: 'invalid-argument', message: 'not a plugin' });
   });
   test('unknownToolError carries tool name', () => {
     const e = unknownToolError('foobar');

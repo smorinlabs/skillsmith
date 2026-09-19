@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "kind": "skillsmith.verify",
+  "target": {
+    "path": "/fixture/project/skills/fixture-skill",
+    "kind": "skill"
+  },
+  "requested": {
+    "tools": [
+      "codex"
+    ],
+    "modes": [
+      "static",
+      "deep"
+    ],
+    "strict": true,
+    "explicitTools": true
+  },
+  "verifiedAgainst": {
+    "claude-code": "1.0.0",
+    "codex": "1.0.0"
+  },
+  "summary": {
+    "verdict": "warn",
+    "verified": [
+      "codex"
+    ],
+    "failed": [],
+    "skipped": [],
+    "counts": {
+      "error": 0,
+      "warning": 1,
+      "info": 0
+    }
+  },
+  "tools": [
+    {
+      "tool": "codex",
+      "available": true,
+      "toolVersion": "1.0.1",
+      "versionDrift": true,
+      "skipReason": null,
+      "verdict": "warn",
+      "modes": [
+        {
+          "mode": "static",
+          "status": "ran",
+          "skipReason": null,
+          "coverage": {
+            "manifest": true,
+            "skills": true
+          },
+          "verdict": "warn",
+          "command": "codex fixture verify",
+          "findings": [
+            {
+              "checkId": "fixture.frontmatter",
+              "toolSeverity": "warning",
+              "normalizedSeverity": "warning",
+              "message": "Fixture warning",
+              "file": "SKILL.md",
+              "subject": "skill",
+              "raw": "fixture raw detail"
+            }
+          ]
+        },
+        {
+          "mode": "deep",
+          "status": "ran",
+          "skipReason": null,
+          "coverage": {
+            "manifest": true,
+            "skills": true
+          },
+          "verdict": "pass",
+          "command": "codex fixture verify --deep",
+          "findings": []
+        }
+      ]
+    }
+  ]
+}

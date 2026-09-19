@@ -32,6 +32,8 @@ Non-goals and their phase assignments live in [`skillsmith-phases.md`](./skillsm
 Summary of what the CLI delivers. Each bullet points to the section(s) where the behavior is specified in detail.
 
 #### 0.5.1 Tool-aware install with scope selection
+> P17 disposition: current behavior is shipped but this target is superseded; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#86-install
+
 Given a source reference, a target tool, and a scope, place the skill at the correct path in the correct format.
 
 - Explicit flags `--tool {claude-code|codex|kilo-code|opencode}`, `--scope {system|user|project}`, `--path <dir>` (§1.2, §1.3, §3.2).
@@ -40,6 +42,8 @@ Given a source reference, a target tool, and a scope, place the skill at the cor
 - Scope auto-defaults to `project` in a Git repo, else `user` (§1.3); `SKILLSMITH_SCOPE` overrides.
 
 #### 0.5.2 Content-addressed store with symlinked entry points
+> P17 disposition: current store behavior retained as history, target superseded; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#24-placementsjson-local-operational-state
+
 Skills live in a single isolated store; each tool/scope path holds a symlink into the store. Enables conflict-free coexistence and clean uninstall.
 
 - Store layout: `$XDG_DATA_HOME/skillsmith/store/<owner>/<repo>@<sha>/<skill>/` (§1.11).
@@ -82,6 +86,8 @@ Symmetric with install. Removes entry-point symlinks and GCs the store entry whe
 - `--direct` installs fall back to a manifest-tracked file list (§1.11).
 
 #### 0.5.8 Manifest-driven `apply` with drift detection
+> P17 disposition: superseded apply schema and flags; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#814-apply
+
 A project-level `skillsmith.toml` pins what the repo depends on.
 
 - `apply` reads the manifest, installs missing skills, reports `created` / `updated` / `unchanged` / `skipped` per entry with aggregate counts (§1.5, §4 apply mockup).
@@ -184,6 +190,8 @@ All of the following invocation forms are accepted: `skillsmith`, `skillsmith he
 
 ### 1.11 Installation model: content-addressed store + symlinks
 
+> P17 disposition: current store behavior retained as history, GC target superseded; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#p2-03-gc
+
 SkillSmith installs into an **isolated, content-addressed store** (pipx/mise precedent), then symlinks entry points into the target tool's skill directory. This enables conflict-free coexistence of multiple versions and guaranteed-clean uninstall — directly addressing the "disabled doesn't mean uninstalled" class of complaints.
 
 **Store layout** (XDG-compliant, honors the §5 rule):
@@ -277,6 +285,8 @@ Long-term: host a primary registry, keep direct Git URLs as first-class, and all
 ---
 
 ## 2. Command tree
+
+> P17 disposition: superseded command tree; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#820-normative-command-and-option-registry
 
 ```
 skillsmith                           # prints help (no default action)
@@ -507,6 +517,8 @@ Exit code: 6
 
 ### 6.1 Exit codes
 
+> P17 disposition: superseded exit-code target; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#811-global-exit-code-taxonomy-and-precedence
+
 Document these in `skillsmith help exit-codes`:
 
 | Code | Meaning |
@@ -575,6 +587,8 @@ Precedence (high to low): CLI flag > env var > project `skillsmith.toml` > user 
 
 ### 6.4 Config file locations (XDG-compliant)
 
+> P17 disposition: superseded config and manifest identity; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#ewp-cf-029-define-the-legacy-project-config-to-manifest-transition
+
 - User config: `$XDG_CONFIG_HOME/skillsmith/config.toml`, fallback `~/.config/skillsmith/config.toml`
 - User values overrides: `$XDG_CONFIG_HOME/skillsmith/values/<skill>.toml` (§1.12)
 - Skill store (content-addressed): `$XDG_DATA_HOME/skillsmith/store/<owner>/<repo>@<sha>/<skill>/`, fallback `~/.local/share/skillsmith/store/…` (§1.11)
@@ -613,6 +627,8 @@ Every `--help` page ends with `Read the manual at https://skillsmith.dev/docs`. 
 ---
 
 ## 8. Architecture sketch
+
+> P17 disposition: superseded architecture target; authority: docs/superpowers/plans/2026-07-10-skillsmith-ergonomics-workflow-plan.md#9-shared-application-and-planning-architecture
 
 Internal structure for implementers. Not normative for external consumers, but load-bearing for how the features in §1 compose.
 

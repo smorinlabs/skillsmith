@@ -1,0 +1,202 @@
+{
+  "schemaVersion": 4,
+  "kind": "skillsmith.flip",
+  "op": "promote",
+  "dryRun": false,
+  "summary": {
+    "flipped": 1,
+    "updated": 0,
+    "noop": 0,
+    "skipped": 0,
+    "refused": 0,
+    "failed": 0,
+    "rolledBack": 0,
+    "created": 0,
+    "adopted": 0
+  },
+  "selection": {
+    "source": "explicit-targets",
+    "outcome": "selected",
+    "targets": [
+      "factor-scan"
+    ],
+    "all": false,
+    "tools": [
+      "claude-code"
+    ],
+    "scopes": [
+      "user"
+    ],
+    "groupIds": [
+      "group:v1:18f3dc0929b74178923d1a1b8657ac9446db5bd74b626a733dcf749ff3dbbb68"
+    ],
+    "batchPolicy": "fail-fast"
+  },
+  "operations": [
+    {
+      "operationId": "operation:v1:91646b781973ac3654a12c7e3cbf22e8599e8ff2d7753ea628b4bc49f0a5592d",
+      "groupId": "group:v1:18f3dc0929b74178923d1a1b8657ac9446db5bd74b626a733dcf749ff3dbbb68",
+      "pairId": "pair:v1:cee6e7e9d853396804c4cf4fe4a48affc723354b8776c1d92a407930c507c946",
+      "kind": "promote",
+      "dependencyMetadata": {
+        "domain": "skillsmith.operation-dependency",
+        "schemaVersion": 1,
+        "operationIds": []
+      },
+      "skill": "factor-scan",
+      "source": {
+        "kind": "local-dev",
+        "path": "/Users/alice/c/agent-tools/skills/factor-scan",
+        "contentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "tool": "claude-code",
+      "scope": "user",
+      "before": {
+        "kind": "placement",
+        "resource": {
+          "kind": "live",
+          "skill": "factor-scan",
+          "tool": "claude-code",
+          "scope": "user",
+          "projectRoot": null,
+          "location": {
+            "kind": "machine-bound",
+            "path": "/Users/alice/.claude/skills/factor-scan"
+          }
+        },
+        "classification": "dev",
+        "representation": "symlink",
+        "linkTarget": {
+          "kind": "machine-bound",
+          "path": "/Users/alice/c/agent-tools/skills/factor-scan"
+        },
+        "dangling": false,
+        "source": {
+          "kind": "local-dev",
+          "path": "/Users/alice/c/agent-tools/skills/factor-scan",
+          "contentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "contentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "after": {
+        "kind": "placement",
+        "resource": {
+          "kind": "live",
+          "skill": "factor-scan",
+          "tool": "claude-code",
+          "scope": "user",
+          "projectRoot": null,
+          "location": {
+            "kind": "machine-bound",
+            "path": "/Users/alice/.claude/skills/factor-scan"
+          }
+        },
+        "classification": "pinned",
+        "representation": "copy",
+        "linkTarget": null,
+        "dangling": false,
+        "source": {
+          "kind": "local-dev",
+          "path": "/Users/alice/c/agent-tools/skills/factor-scan",
+          "contentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "contentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "reason": {
+        "code": "promote",
+        "message": "promote factor-scan"
+      },
+      "selectionSource": "explicit-targets",
+      "preconditionIds": [],
+      "requiredCheckIds": [
+        "check:v1:3122d046535d12f6fbf7d2092364a127610ec71a526dfd8d2ac838561f2550a4"
+      ],
+      "reversibility": {
+        "kind": "conditional",
+        "retentionResourceIds": [
+          "retention:v1:operation:v1:91646b781973ac3654a12c7e3cbf22e8599e8ff2d7753ea628b4bc49f0a5592d"
+        ]
+      },
+      "mutates": {
+        "live": true,
+        "manifest": false,
+        "lock": false,
+        "ledger": true
+      },
+      "conflict": null
+    }
+  ],
+  "checks": [
+    {
+      "checkId": "check:v1:3122d046535d12f6fbf7d2092364a127610ec71a526dfd8d2ac838561f2550a4",
+      "blocking": true,
+      "operationIds": [
+        "operation:v1:91646b781973ac3654a12c7e3cbf22e8599e8ff2d7753ea628b4bc49f0a5592d"
+      ],
+      "kind": "verification",
+      "tool": "claude-code",
+      "mode": "static",
+      "expectedContentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "diagnostics": [],
+  "results": [
+    {
+      "operationId": "operation:v1:91646b781973ac3654a12c7e3cbf22e8599e8ff2d7753ea628b4bc49f0a5592d",
+      "outcome": "succeeded",
+      "actualBefore": {
+        "kind": "placement",
+        "resource": {
+          "kind": "live",
+          "skill": "factor-scan",
+          "tool": "claude-code",
+          "scope": "user",
+          "projectRoot": null,
+          "location": {
+            "kind": "machine-bound",
+            "path": "/Users/alice/.claude/skills/factor-scan"
+          }
+        },
+        "classification": "dev",
+        "representation": "symlink",
+        "linkTarget": {
+          "kind": "machine-bound",
+          "path": "/Users/alice/c/agent-tools/skills/factor-scan"
+        },
+        "dangling": false,
+        "source": {
+          "kind": "local-dev",
+          "path": "/Users/alice/c/agent-tools/skills/factor-scan",
+          "contentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "contentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "actualAfter": {
+        "kind": "placement",
+        "resource": {
+          "kind": "live",
+          "skill": "factor-scan",
+          "tool": "claude-code",
+          "scope": "user",
+          "projectRoot": null,
+          "location": {
+            "kind": "machine-bound",
+            "path": "/Users/alice/.claude/skills/factor-scan"
+          }
+        },
+        "classification": "pinned",
+        "representation": "copy",
+        "linkTarget": null,
+        "dangling": false,
+        "source": {
+          "kind": "local-dev",
+          "path": "/Users/alice/c/agent-tools/skills/factor-scan",
+          "contentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "contentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "force": null,
+      "error": null
+    }
+  ]
+}

@@ -1,5 +1,8 @@
+import { redactSensitiveValue } from './safety/redaction.ts';
+
 export type SkillSmithError =
   | { code: 'generic'; message: string; cause?: unknown }
+  | { code: 'invalid-argument'; message: string }
   | { code: 'unknown-tool'; tool: string }
   | { code: 'config-error'; message: string; file?: string; line?: number }
   | { code: 'skill-parse-error'; message: string; file: string }
@@ -9,7 +12,8 @@ export type SkillSmithError =
   | { code: 'permission-denied'; message: string; path?: string }
   | { code: 'flip-refused'; message: string }
   | { code: 'flip-failed'; message: string }
-  | { code: 'tool-unavailable'; message: string };
+  | { code: 'tool-unavailable'; message: string }
+  | { code: 'cancelled'; message: string };
 
 export const genericError = (message: string, cause?: unknown): SkillSmithError => ({
   code: 'generic',
@@ -17,12 +21,37 @@ export const genericError = (message: string, cause?: unknown): SkillSmithError 
   ...(cause !== undefined ? { cause } : {}),
 });
 
+export const invalidArgumentError = (message: string): SkillSmithError => ({
+  code: 'invalid-argument',
+  message,
+});
+
 export const unknownToolError = (tool: string): SkillSmithError => ({
   code: 'unknown-tool',
   tool,
 });
 
-export const errorMessage = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+export const safeErrorCode = (error: unknown): string | null => {
+  const safe = redactSensitiveValue(error);
+  if (safe === null || typeof safe !== 'object') return null;
+  const descriptor = Object.getOwnPropertyDescriptor(safe, 'code');
+  return descriptor && 'value' in descriptor && typeof descriptor.value === 'string'
+    ? descriptor.value
+    : null;
+};
+
+export const errorMessage = (error: unknown): string => {
+  const safe = redactSensitiveValue(error);
+  if (typeof safe === 'string') return safe;
+  if (safe !== null && typeof safe === 'object') {
+    const descriptor = Object.getOwnPropertyDescriptor(safe, 'message');
+    if (descriptor && 'value' in descriptor && typeof descriptor.value === 'string') {
+      return descriptor.value;
+    }
+  }
+  if (typeof safe === 'number' || typeof safe === 'boolean') return String(safe);
+  return 'operation failed';
+};
 
 export const configError = (
   message: string,
@@ -74,5 +103,10 @@ export const flipFailedError = (message: string): SkillSmithError => ({
 
 export const toolUnavailableError = (message: string): SkillSmithError => ({
   code: 'tool-unavailable',
+  message,
+});
+
+export const cancelledError = (message: string): SkillSmithError => ({
+  code: 'cancelled',
   message,
 });
