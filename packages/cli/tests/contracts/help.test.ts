@@ -182,8 +182,8 @@ describe('EWP-CMD-HELP-TS04', () => {
 });
 
 describe('EWP-CMD-HELP-TS05', () => {
-  test('all 23 commands declare bounded minimal invocations and runnable workflows', async () => {
-    expect(publicSpecs()).toHaveLength(23);
+  test('all 24 commands declare bounded minimal invocations and runnable workflows', async () => {
+    expect(publicSpecs()).toHaveLength(24);
     const fixtureRoot = await mkdtemp(join(tmpdir(), 'skillsmith-help-workflows-'));
     await writeFile(join(fixtureRoot, 'sentinel.txt'), 'unchanged\n');
     const before = await snapshotFixture(fixtureRoot);

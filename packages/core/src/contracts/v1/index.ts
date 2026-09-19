@@ -23,6 +23,8 @@ export {
   toConfigSetV1Dto,
   toConfigUnsetV1Dto,
 } from './config.ts';
+export type { CrossToolNamesV1Dto } from './cross-tool-names.ts';
+export { crossToolNamesV1Codec, toCrossToolNamesV1Dto } from './cross-tool-names.ts';
 export type { ErrorV1Dto } from './error.ts';
 export { errorV1Codec, toErrorV1Dto } from './error.ts';
 export type { HealthV1Dto } from './health.ts';

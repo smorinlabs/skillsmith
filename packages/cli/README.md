@@ -18,7 +18,7 @@ src/
   util/            color resolver, exit-code mapping, SIGINT handler
 ```
 
-The 23 current public commands are `agents`, `list`, `config`, `check`, `apply`, `commands`, `completion`, `dev`, `doctor`, `export`, `gc`, `help`, `init`, `install`, `plan`, `promote`, `status`, `sync`, `undo`, `uninstall`, `update`, `verify`, and `version`. Their aliases, options, examples, and exit meanings are generated in the root [command reference](../../docs/commands.md).
+The 24 current public commands are `agents`, `list`, `config`, `check`, `apply`, `commands`, `cross-tool-names`, `completion`, `dev`, `doctor`, `export`, `gc`, `help`, `init`, `install`, `plan`, `promote`, `status`, `sync`, `undo`, `uninstall`, `update`, `verify`, and `version`. Their aliases, options, examples, and exit meanings are generated in the root [command reference](../../docs/commands.md).
 
 `status [skill...]` is a read-only correlation view over desired manifest state, the lockfile,
 placement ledger records, and live tool installations. Use `--json` for the versioned `status@1`

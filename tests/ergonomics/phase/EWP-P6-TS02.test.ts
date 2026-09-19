@@ -48,10 +48,10 @@ describe('P17 Phase 6 completion aggregate', () => {
     const publicPaths = canonicalizeCommanderTree(buildProgram())
       .map(({ path }) => path)
       .filter((path) => path.split(' ').length === 2);
-    expect(publicPaths).toHaveLength(23);
+    expect(publicPaths).toHaveLength(24);
     expect(publicPaths).not.toContain('skillsmith complete');
     expect(CURRENT_COMMAND_SPECS.filter((spec) => spec.path.split(' ').length === 2)).toHaveLength(
-      23,
+      24,
     );
     expect((await runCli(['complete'])).exitCode).toBe(2);
 

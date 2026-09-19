@@ -7,6 +7,7 @@ import type {
   ConfigListReport,
   ConfigSetReport,
   ConfigUnsetReport,
+  CrossToolNamesReport,
   Deprecation,
   ExportReport,
   InitReport,
@@ -1597,3 +1598,15 @@ export interface UndoReportV1Dto {
 
 export declare const undoV1Codec: WireCodec<'undo', 1, UndoReportV1Dto>;
 export declare const toUndoV1Dto: (report: UndoReport) => UndoReportV1Dto;
+
+export interface CrossToolNamesV1Dto {
+  schemaVersion: 1;
+  kind: 'skillsmith.cross-tool-names';
+  groups: {
+    name: string;
+    members: { tool: string; scope: 'system' | 'user' | 'project' | 'managed'; path: string }[];
+  }[];
+}
+
+export declare const crossToolNamesV1Codec: WireCodec<'cross-tool-names', 1, CrossToolNamesV1Dto>;
+export declare const toCrossToolNamesV1Dto: (report: CrossToolNamesReport) => CrossToolNamesV1Dto;

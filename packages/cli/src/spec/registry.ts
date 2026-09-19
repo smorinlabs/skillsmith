@@ -96,6 +96,12 @@ const PROFILE: Readonly<
     capability: 'read',
     application: 'commands',
   },
+  'skillsmith cross-tool-names': {
+    group: 'discover',
+    question: 'Which skill names repeat across tools?',
+    capability: 'read',
+    application: 'crossToolNames',
+  },
   'skillsmith status': {
     group: 'discover',
     question: 'How do desired, locked, ledger, and live states relate?',
@@ -222,6 +228,7 @@ const DESCRIPTION: Readonly<Record<string, string>> = {
   'skillsmith config unset': 'Remove a config value (default scope: user)',
   'skillsmith list': 'List installed skills across tools and scopes',
   'skillsmith commands': 'List installed slash commands across tools and scopes',
+  'skillsmith cross-tool-names': 'Report skill names installed under two or more tools',
   'skillsmith status': 'Correlate desired, locked, ledger, and live skill state',
   'skillsmith doctor': 'Diagnose SkillSmith and target-tool readiness',
   'skillsmith export': 'Capture portable live skill state in a manifest and lockfile',
@@ -252,6 +259,7 @@ const ARGUMENT_DESCRIPTIONS: Readonly<Record<string, string>> = {
   'skillsmith config set:key': 'Configuration key to write',
   'skillsmith config set:value': 'Configuration value to save',
   'skillsmith config unset:key': 'Configuration key to remove',
+  'skillsmith cross-tool-names:glob': 'Glob filters for reused skill names',
   'skillsmith dev:skill': 'Skill names or placement paths',
   'skillsmith help:topic': 'Command name or cross-cutting help topic',
   'skillsmith install:source':
@@ -288,6 +296,10 @@ const EXAMPLES: Readonly<Record<string, readonly string[]>> = {
   ],
   'skillsmith list': ['skillsmith list', 'skillsmith list "review-*" --tool codex --long'],
   'skillsmith commands': ['skillsmith commands', 'skillsmith commands "git-*" --project --long'],
+  'skillsmith cross-tool-names': [
+    'skillsmith cross-tool-names',
+    'skillsmith cross-tool-names "review-*" --json',
+  ],
   'skillsmith doctor': ['skillsmith doctor', 'skillsmith doctor --all-tools --strict'],
   'skillsmith check': ['skillsmith check', 'skillsmith check --all-tools --json'],
   'skillsmith status': ['skillsmith status', 'skillsmith status review --tool codex --check'],
@@ -391,6 +403,10 @@ const WORKFLOW_DESCRIPTIONS: Readonly<Record<string, readonly string[]>> = {
     'List installed slash commands using the default bounds.',
     'Find detailed project commands whose names begin with git-.',
   ],
+  'skillsmith cross-tool-names': [
+    'Report skill names reused across tools using the default bounds.',
+    'Emit review- name reuse across tools as JSON.',
+  ],
   'skillsmith doctor': [
     'Diagnose the current SkillSmith environment.',
     'Run strict readiness diagnostics for every supported tool.',
@@ -482,6 +498,7 @@ const PUBLIC_COMMAND_ORDER = [
   'skillsmith agents',
   'skillsmith list',
   'skillsmith commands',
+  'skillsmith cross-tool-names',
   'skillsmith status',
   'skillsmith install',
   'skillsmith uninstall',
@@ -508,6 +525,7 @@ const MINIMAL_INVOCATIONS: Readonly<Record<(typeof PUBLIC_COMMAND_ORDER)[number]
   'skillsmith agents': 'skillsmith agents',
   'skillsmith list': 'skillsmith list',
   'skillsmith commands': 'skillsmith commands',
+  'skillsmith cross-tool-names': 'skillsmith cross-tool-names',
   'skillsmith status': 'skillsmith status',
   'skillsmith install': 'skillsmith install <source>',
   'skillsmith uninstall': 'skillsmith uninstall <skill>',
@@ -681,6 +699,7 @@ const EXIT_CODES: Readonly<Record<string, readonly CommandExitCodeSpec[]>> = {
     [6, 'configuration is not writable'],
   ),
   'skillsmith list': STANDARD_READ_EXIT_CODES,
+  'skillsmith cross-tool-names': STANDARD_READ_EXIT_CODES,
   'skillsmith commands': STANDARD_READ_EXIT_CODES,
   'skillsmith doctor': exitCodes(
     [0, 'diagnostics completed without blocking findings'],
@@ -910,6 +929,8 @@ const requiredCurrentOptionRelations = (): readonly OptionRelationSpec[] => [
   exclusive('skillsmith list', ['--enabled', '--disabled', '--unconfigured']),
   exclusive('skillsmith list', ['--verified', '--unverified']),
   ...scopeRelations('skillsmith list', ['user', 'project', 'system', 'managed']),
+  exclusive('skillsmith cross-tool-names', ['--enabled', '--disabled', '--unconfigured']),
+  ...scopeRelations('skillsmith cross-tool-names', ['user', 'project', 'system', 'managed']),
   exclusive('skillsmith commands', ['--enabled', '--disabled', '--unconfigured']),
   ...scopeRelations('skillsmith commands', ['user', 'project']),
   exclusive('skillsmith status', ['--system', '--user', '--project', '--managed']),

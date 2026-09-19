@@ -12,6 +12,7 @@ const KNOWN_COLORS = ['auto', 'always', 'never'] as const;
 
 const ALLOWED_SCOPES: Readonly<Record<string, readonly string[]>> = {
   'skillsmith list': KNOWN_SCOPES,
+  'skillsmith cross-tool-names': KNOWN_SCOPES,
   'skillsmith commands': ['user', 'project'],
   'skillsmith status': KNOWN_SCOPES,
   'skillsmith doctor': ['user', 'project', 'system'],
@@ -76,6 +77,11 @@ const OPTION_DESCRIPTIONS: Readonly<Record<string, string>> = {
   'skillsmith list:--enabled': 'Show only enabled entries',
   'skillsmith list:--disabled': 'Show only disabled entries',
   'skillsmith list:--unconfigured': 'Show only entries that have never been toggled',
+  'skillsmith cross-tool-names:--tool': 'Narrow to a tool; repeatable',
+  'skillsmith cross-tool-names:--scope': 'Narrow to an installation scope',
+  'skillsmith cross-tool-names:--enabled': 'Show only enabled entries',
+  'skillsmith cross-tool-names:--disabled': 'Show only disabled entries',
+  'skillsmith cross-tool-names:--unconfigured': 'Show only entries that have never been toggled',
   'skillsmith commands:--tool': 'Narrow to a tool; repeatable',
   'skillsmith commands:--scope': 'Narrow to user or project scope',
   'skillsmith commands:--long': 'Show paths and details',

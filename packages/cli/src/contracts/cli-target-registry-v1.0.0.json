@@ -1118,6 +1118,185 @@
     }
   },
   {
+    "key": "command:skillsmith cross-tool-names",
+    "disposition": "N",
+    "phase": "P17-G3A-02",
+    "validationOwner": "EWP-CMD-CROSS-TOOL-NAMES-TS01"
+  },
+  {
+    "key": "argument:skillsmith cross-tool-names:[glob...]",
+    "disposition": "N",
+    "phase": "P17-G3A-02",
+    "validationOwner": "EWP-CMD-CROSS-TOOL-NAMES-TS01",
+    "argument": {
+      "required": false,
+      "variadic": true,
+      "choices": [],
+      "defaultValue": "unset",
+      "defaultSource": "none"
+    }
+  },
+  {
+    "key": "option:skillsmith cross-tool-names:-t, --tool <name>",
+    "disposition": "N",
+    "phase": "P17-G3A-02",
+    "validationOwner": "EWP-CMD-CROSS-TOOL-NAMES-TS01",
+    "option": {
+      "short": "-t",
+      "long": "--tool",
+      "valueShape": "required",
+      "choices": ["claude-code", "codex", "kilo-code", "opencode"],
+      "defaultValue": "resolved-by-command-contract",
+      "defaultSource": "contextual",
+      "repeatable": true,
+      "negated": false
+    }
+  },
+  {
+    "key": "option:skillsmith cross-tool-names:-s, --scope <scope>",
+    "disposition": "N",
+    "phase": "P17-G3A-02",
+    "validationOwner": "EWP-CMD-CROSS-TOOL-NAMES-TS01",
+    "option": {
+      "short": "-s",
+      "long": "--scope",
+      "valueShape": "required",
+      "choices": ["user", "project", "system", "managed"],
+      "defaultValue": "resolved-by-command-contract",
+      "defaultSource": "contextual",
+      "repeatable": false,
+      "negated": false
+    }
+  },
+  {
+    "key": "option:skillsmith cross-tool-names:--user",
+    "disposition": "N",
+    "phase": "P17-G3A-02",
+    "validationOwner": "EWP-CMD-CROSS-TOOL-NAMES-TS01",
+    "option": {
+      "short": null,
+      "long": "--user",
+      "valueShape": "boolean",
+      "choices": [],
+      "defaultValue": "false",
+      "defaultSource": "literal",
+      "repeatable": false,
+      "negated": false
+    }
+  },
+  {
+    "key": "option:skillsmith cross-tool-names:--project",
+    "disposition": "N",
+    "phase": "P17-G3A-02",
+    "validationOwner": "EWP-CMD-CROSS-TOOL-NAMES-TS01",
+    "option": {
+      "short": null,
+      "long": "--project",
+      "valueShape": "boolean",
+      "choices": [],
+      "defaultValue": "false",
+      "defaultSource": "literal",
+      "repeatable": false,
+      "negated": false
+    }
+  },
+  {
+    "key": "option:skillsmith cross-tool-names:--system",
+    "disposition": "N",
+    "phase": "P17-G3A-02",
+    "validationOwner": "EWP-CMD-CROSS-TOOL-NAMES-TS01",
+    "option": {
+      "short": null,
+      "long": "--system",
+      "valueShape": "boolean",
+      "choices": [],
+      "defaultValue": "false",
+      "defaultSource": "literal",
+      "repeatable": false,
+      "negated": false
+    }
+  },
+  {
+    "key": "option:skillsmith cross-tool-names:--managed",
+    "disposition": "N",
+    "phase": "P17-G3A-02",
+    "validationOwner": "EWP-CMD-CROSS-TOOL-NAMES-TS01",
+    "option": {
+      "short": null,
+      "long": "--managed",
+      "valueShape": "boolean",
+      "choices": [],
+      "defaultValue": "false",
+      "defaultSource": "literal",
+      "repeatable": false,
+      "negated": false
+    }
+  },
+  {
+    "key": "option:skillsmith cross-tool-names:--json",
+    "disposition": "N",
+    "phase": "P17-G3A-02",
+    "validationOwner": "EWP-CMD-CROSS-TOOL-NAMES-TS01",
+    "option": {
+      "short": null,
+      "long": "--json",
+      "valueShape": "boolean",
+      "choices": [],
+      "defaultValue": "false",
+      "defaultSource": "literal",
+      "repeatable": false,
+      "negated": false
+    }
+  },
+  {
+    "key": "option:skillsmith cross-tool-names:--enabled",
+    "disposition": "N",
+    "phase": "P17-G3A-02",
+    "validationOwner": "EWP-CMD-CROSS-TOOL-NAMES-TS01",
+    "option": {
+      "short": null,
+      "long": "--enabled",
+      "valueShape": "boolean",
+      "choices": [],
+      "defaultValue": "false",
+      "defaultSource": "literal",
+      "repeatable": false,
+      "negated": false
+    }
+  },
+  {
+    "key": "option:skillsmith cross-tool-names:--disabled",
+    "disposition": "N",
+    "phase": "P17-G3A-02",
+    "validationOwner": "EWP-CMD-CROSS-TOOL-NAMES-TS01",
+    "option": {
+      "short": null,
+      "long": "--disabled",
+      "valueShape": "boolean",
+      "choices": [],
+      "defaultValue": "false",
+      "defaultSource": "literal",
+      "repeatable": false,
+      "negated": false
+    }
+  },
+  {
+    "key": "option:skillsmith cross-tool-names:--unconfigured",
+    "disposition": "N",
+    "phase": "P17-G3A-02",
+    "validationOwner": "EWP-CMD-CROSS-TOOL-NAMES-TS01",
+    "option": {
+      "short": null,
+      "long": "--unconfigured",
+      "valueShape": "boolean",
+      "choices": [],
+      "defaultValue": "false",
+      "defaultSource": "literal",
+      "repeatable": false,
+      "negated": false
+    }
+  },
+  {
     "key": "command:skillsmith status",
     "disposition": "N",
     "phase": "P17-G3A-01",

@@ -19,6 +19,7 @@ Choose a command by the question you need answered. This table and the full [com
 | DISCOVER | `agents` | Which coding tools are detected and what can Skillsmith do with them? |
 |  | `list` | Which skills are installed? |
 |  | `commands` | Which slash commands are installed? |
+|  | `cross-tool-names` | Which skill names repeat across tools? |
 |  | `status` | How do desired, locked, ledger, and live states relate? |
 | MANAGE | `install` | How do I acquire and persist a remote skill? |
 |  | `uninstall` | How do I remove a skill and its desired-state declaration? |

@@ -323,8 +323,8 @@ describe('P17-G6-02B completion contracts', () => {
       spec.path.split(' ').at(-1) ?? spec.path,
       ...spec.aliases,
     ]);
-    expect(topLevelSpecs).toHaveLength(23);
-    expect(expected).toHaveLength(28);
+    expect(topLevelSpecs).toHaveLength(24);
+    expect(expected).toHaveLength(29);
     expect(parsed.candidates.map(({ value }) => value)).toEqual(expected);
     expect(parsed.candidates.map(({ value }) => value)).not.toContain('complete');
 
