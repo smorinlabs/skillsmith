@@ -60,7 +60,14 @@ import {
   snapshotToStore,
   sweepStaging,
 } from '../place/store.ts';
-import type { FlipTool, LedgerFile, PairRecord, Provenance, SwapPlan } from '../place/types.ts';
+import type {
+  FlipTool,
+  LedgerFile,
+  PairRecord,
+  Provenance,
+  SwapOutcome,
+  SwapPlan,
+} from '../place/types.ts';
 import {
   createBoundedForceEffect,
   createOperationExecutionResult,
@@ -407,7 +414,7 @@ const replaceSwap = async (
   snap: SnapshotResult,
   sha: string,
   gate: Gate,
-): Promise<Result<void, SkillSmithError>> => {
+): Promise<Result<readonly SwapOutcome[], SkillSmithError>> => {
   const intermediatePinned =
     build === 'copy' && live.class === 'pinned'
       ? createAcquisitionPinnedRecord(snap, sha, 'symlink', gate.gate, nowOf(p.env, p.deps))
@@ -420,7 +427,7 @@ const replaceSwap = async (
   );
   p.ledger = executed.state.ledger;
   if (!executed.ok) return err(executed.error);
-  return ok(undefined);
+  return ok(executed.value);
 };
 const placePair = async (
   p: PlaceCtx,
@@ -721,6 +728,16 @@ const placePair = async (
     return fail(
       swapRes.error.code === 'ledger-error' ? flipFailedError(msg(swapRes.error)) : swapRes.error,
     );
+  }
+  // A replacement that preserved an edited copy reports the kept backup through the existing
+  // reason channel. Stage order is preserved (a later clean stage contributes nothing), and an
+  // unrelated shadow notice is kept ahead of the swap warning, never replaced by it.
+  const swapWarnings = swapRes.value.flatMap((outcome) =>
+    outcome.warning === null ? [] : [outcome.warning],
+  );
+  if (swapWarnings.length > 0) {
+    const joined = swapWarnings.join('; ');
+    shadowWarning = shadowWarning === null ? joined : `${shadowWarning}; ${joined}`;
   }
   return { ...finalize('updated'), store: { ...storeOut, reused: storeReused } };
 };
