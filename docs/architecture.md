@@ -289,7 +289,8 @@ boundary through explicit named mappers; renderer code does not spread domain ob
 or define a second public schema.
 
 The current registry contains `agents@1`, `agents@2`, `health@1`, `health@2`, `commands@1`,
-`commands@2`, `config-get@1`, `config-list@1`, `config-set@1`, `config-unset@1`, `flip@2`,
+`commands@2`, `config-get@1`, `config-list@1`, `config-set@1`, `config-unset@1`,
+`cross-tool-names@1`, `flip@2`,
 `flip@3`, `flip@4`, `install@1`, `install@2`, `list@2`, `list@3`, `status@1`, `uninstall@1`,
 `init@1`, `plan-report@1`, `apply-report@1`, `sync@1`, `update@1`, `undo@1`, `gc@1`, `uninstall@2`, `verify@1`, `error@1`, and
 `capability-snapshot@1`. Each descriptor fixes recursive

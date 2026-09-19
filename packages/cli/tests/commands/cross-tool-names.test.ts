@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { hermeticGitEnv } from '../../../core/tests/fixtures/git-env.ts';
@@ -240,5 +240,20 @@ describe('cross-tool-names (#41)', () => {
     expect(code).toBe(2);
     expect(stdout).toBe('');
     expect(stderr).toContain('unmatched');
+  });
+
+  test('TS04 inventory errors fail loudly, never as empty success', async () => {
+    await skill(home, '.agents', 'solo');
+    const denied = join(home, '.agents', 'skills', 'solo');
+    await chmod(denied, 0o000);
+    try {
+      const { code, stdout } = await ctn(...TOOLS, '--json');
+      expect(code).toBe(1);
+      const parsed = JSON.parse(stdout);
+      expect(parsed.kind).toBe('error');
+      expect('groups' in parsed).toBeFalse();
+    } finally {
+      await chmod(denied, 0o755);
+    }
   });
 });

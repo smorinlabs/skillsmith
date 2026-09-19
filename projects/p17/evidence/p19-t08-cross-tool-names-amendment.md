@@ -143,8 +143,10 @@ retain their invocation for filter provenance.
   absence; TS03 filters (tool/scope/enabled families), multi-axis ordering
   (name/tool/scope/path), redaction-collision fixture (two raw names, one
   label, two groups); TS04 invalid options and relation violations
-  (exit 2), inventory errors never empty success, signal interruption
-  (exit 130 per convention). Core grouping unit tests. Codec
+  (exit 2), inventory errors never empty success (unreadable placement
+  yields error kind, exit 1, no groups key), signal interruption rides the
+  shared list-family runtime path with no new code, so exit 130 has no
+  dedicated fixture. Core grouping unit tests. Codec
   round-trip/unknown-field/migration-absence tests. No-regression:
   existing `list --duplicates`, list JSON, and doctor suites stay green,
   plus one explicit pair asserting a cross-tool name yields `[]` from
