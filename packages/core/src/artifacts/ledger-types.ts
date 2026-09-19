@@ -56,6 +56,25 @@ export interface LegacyPairJournalV1Dto {
   readonly backupPath: string;
 }
 
+/**
+ * Durable intent for an interrupted two-stage copy replacement (SC-I60-MO2).
+ * A copy-over-copy update runs as two kind changes (dir→symlink, symlink→dir);
+ * the marker records the requested build plus the last stage reached so an
+ * identical retry completes stage 2 instead of nooping on the intermediate
+ * symlink. Absent on every pair the replacement never touched; cleared when
+ * the pair converges to the recorded build or is superseded. Additive and
+ * optional: readers must be nullish-safe.
+ */
+export interface LedgerPendingReplacementV1Dto {
+  readonly build: 'symlink' | 'copy';
+  readonly stage: 1 | 2;
+  readonly refResolved: string;
+  readonly storePath: string;
+  readonly contentHash: string;
+  readonly backupPath: string | null;
+  readonly recordedAt: string;
+}
+
 export interface LedgerPairV1Dto {
   readonly placementPath: string;
   readonly mode: 'dev' | 'pinned';
@@ -63,6 +82,7 @@ export interface LedgerPairV1Dto {
   readonly pinned?: LedgerPinnedV1Dto | null;
   readonly origin?: LedgerOriginV1Dto;
   readonly journal?: LegacyPairJournalV1Dto | null;
+  readonly pendingReplacement?: LedgerPendingReplacementV1Dto | null;
 }
 
 export interface LedgerToolsV1Dto {

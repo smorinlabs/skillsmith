@@ -861,7 +861,11 @@ export const executeAcquireReplacement = async (
       ? { ok: true, value: [executed.value], state: executed.state }
       : { ok: false, error: executed.error, state: executed.state };
   }
-  const executed = await executePlacementPlans(input, [
+  // SC-I60-MO2: the two kind changes carry the durable replacement intent so a
+  // crash between the swaps leaves a self-describing marker. Stage 1 stages
+  // the intermediate symlink, stage 2 converges to the requested build.
+  const replacementBuild = install.build;
+  const staged: readonly SwapPlan[] = [
     {
       ...plan,
       install: {
@@ -869,10 +873,15 @@ export const executeAcquireReplacement = async (
         build: 'symlink',
         pinned: intermediatePinned,
         adoptedDev: null,
+        replacement: { build: replacementBuild, stage: 1 },
       },
     },
-    plan,
-  ]);
+    {
+      ...plan,
+      install: { ...install, replacement: { build: replacementBuild, stage: 2 } },
+    },
+  ];
+  const executed = await executePlacementPlans(input, staged);
   return executed.ok
     ? { ok: true, value: executed.value, state: executed.state }
     : { ok: false, error: executed.error, state: executed.state };
@@ -898,22 +907,25 @@ export const executeAcquireReplacementObserved = async (
       ? { ok: true, value: [executed.value], state: executed.state }
       : { ok: false, error: executed.error, state: executed.state };
   }
-  const executed = await executePlacementPlansObserved(
-    input,
-    [
-      {
-        ...plan,
-        install: {
-          ...install,
-          build: 'symlink',
-          pinned: intermediatePinned,
-          adoptedDev: null,
-        },
+  // SC-I60-MO2: same staged intent as the unobserved variant above.
+  const replacementBuild = install.build;
+  const staged: readonly SwapPlan[] = [
+    {
+      ...plan,
+      install: {
+        ...install,
+        build: 'symlink',
+        pinned: intermediatePinned,
+        adoptedDev: null,
+        replacement: { build: replacementBuild, stage: 1 },
       },
-      plan,
-    ],
-    observation,
-  );
+    },
+    {
+      ...plan,
+      install: { ...install, replacement: { build: replacementBuild, stage: 2 } },
+    },
+  ];
+  const executed = await executePlacementPlansObserved(input, staged, observation);
   return executed.ok
     ? { ok: true, value: executed.value, state: executed.state }
     : { ok: false, error: executed.error, state: executed.state };

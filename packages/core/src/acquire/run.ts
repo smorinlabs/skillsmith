@@ -604,12 +604,24 @@ const placePair = async (
     action,
     reason: shadowWarning ?? gate.notice,
   });
-  // Idempotence / repair (F7 / D14) — only when not forcing.
-  if (liveKind !== null && !opts.force) {
-    const recordMatches =
-      existing?.origin?.refResolved === sha &&
-      existing.pinned?.storePath === snap.storePath &&
-      (existing.pinned?.placement ?? 'copy') === liveKind;
+  // SC-I60-MO2: an identical retry landing on the between-swaps gap (live on
+  // the intermediate kind, staged intent for this exact build+content)
+  // completes the remaining stage instead of nooping. Healthy placements (no
+  // staged intent) keep the legacy idempotence policy below.
+  const staged = existing?.pendingReplacement ?? null;
+  const stagedMatchesRequest =
+    staged !== null &&
+    staged.build === build &&
+    staged.storePath === snap.storePath &&
+    staged.contentHash === snap.contentHash;
+  const recordMatches =
+    existing?.origin?.refResolved === sha &&
+    existing.pinned?.storePath === snap.storePath &&
+    (existing.pinned?.placement ?? 'copy') === liveKind;
+  const stagedContinuation = stagedMatchesRequest && liveKind !== null && liveKind !== build;
+  // Idempotence / repair (F7 / D14) — only when not forcing, and never when a
+  // staged replacement for this request still has a stage to run.
+  if (liveKind !== null && !opts.force && !(stagedContinuation && recordMatches)) {
     if (recordMatches) {
       return { ...finalize('noop'), reason: `already installed at ${sha.slice(0, 12)}` };
     }
@@ -636,6 +648,9 @@ const placePair = async (
       pinned,
       origin,
       journal: null,
+      // SC-I60-MO2: a record-only repair must not drop a staged replacement
+      // the live placement has not converged to yet.
+      pendingReplacement: existing?.pendingReplacement ?? null,
     };
     if (p.logicalOperation === null) {
       return fail(
@@ -687,6 +702,9 @@ const placePair = async (
       pinned,
       origin,
       adoptedDev,
+      // SC-I60-MO2: completing a staged replacement runs as the second stage,
+      // converging to the requested build and clearing the staged intent.
+      ...(stagedContinuation ? { replacement: { build, stage: 2 as const } } : {}),
     },
   };
   // Fresh install: the slot is empty. Clear any stale records so the engine lands on an empty slot.
@@ -738,6 +756,20 @@ const placePair = async (
   if (swapWarnings.length > 0) {
     const joined = swapWarnings.join('; ');
     shadowWarning = shadowWarning === null ? joined : `${shadowWarning}; ${joined}`;
+  }
+  // SC-I60-MO2: completing a staged replacement inherits the first stage's
+  // kept backup (R3 family) — surface it instead of silently retaining it.
+  if (stagedContinuation && staged?.backupPath) {
+    let backupSurvives = false;
+    try {
+      backupSurvives = (await env.pathKind(staged.backupPath)) !== 'absent';
+    } catch {
+      backupSurvives = false;
+    }
+    if (backupSurvives) {
+      const kept = `kept backup ${staged.backupPath}: completing the interrupted replacement preserved the first-stage backup`;
+      shadowWarning = shadowWarning === null ? kept : `${shadowWarning}; ${kept}`;
+    }
   }
   return { ...finalize('updated'), store: { ...storeOut, reused: storeReused } };
 };

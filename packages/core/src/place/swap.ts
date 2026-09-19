@@ -67,6 +67,7 @@ import type {
   JournalOp,
   JournalPhase,
   PairRecord,
+  PendingReplacementRecord,
   SwapCtx,
   SwapEffects,
   SwapExecutionResult,
@@ -1825,6 +1826,8 @@ const commitLogicalRollback = async (
     const restored = withLedgerPairAt(terminalBase, scopeKey, skill, tool, {
       ...currentPair,
       mode: restoredMode,
+      // SC-I60-MO2: a rollback abandons the staged replacement intent.
+      pendingReplacement: null,
     });
     if (!restored.ok) return restored;
     terminalBase = restored.value;
@@ -2242,6 +2245,7 @@ const commit = async (
         return ok({ committed: true, backupKept: null, warning: null });
       }
       pair.journal = null;
+      clearConvergedReplacement(pair);
       const persisted = await persistPair(
         ctx,
         ledger,
@@ -2289,6 +2293,7 @@ const commit = async (
       ? await persistCommittedCleanupFinalizer(ledger, j.txId)
       : await (async () => {
           pair.journal = null;
+          clearConvergedReplacement(pair);
           return persistPair(ctx, ledger, effects, scopeKey, plan.skill, plan.tool, pair);
         })();
     if (!terminal.ok) return terminal;
@@ -2594,6 +2599,39 @@ const computeBefore = async (
   });
 };
 
+// SC-I60-MO2: stage the durable two-stage-replacement intent at P1. Stage 1
+// records the requested build plus this swap's backup path (the kept-backup
+// location an identical retry must surface); stage 2 preserves the stage-1
+// marker and advances it. Plans without `replacement` (fresh installs,
+// single-swap replaces, reversals) stage no marker, superseding staged intent.
+const pendingReplacementForStage = (
+  plan: SwapPlan,
+  existing: PairRecord | null,
+  journal: Journal,
+): PendingReplacementRecord | null => {
+  const replacement = plan.op === 'install' ? plan.install?.replacement : undefined;
+  if (replacement === undefined || plan.install === undefined) return null;
+  if (replacement.stage === 2) {
+    const prior = existing?.pendingReplacement ?? null;
+    if (prior !== null) return { ...prior, stage: 2 };
+  }
+  return {
+    build: replacement.build,
+    stage: replacement.stage,
+    refResolved: plan.install.origin?.refResolved ?? plan.install.pinned.gitSha ?? '',
+    storePath: plan.install.storePath,
+    contentHash: plan.install.contentHash,
+    backupPath: journal.backupPath,
+    recordedAt: journal.startedAt,
+  };
+};
+// A terminal install whose recorded placement reached the staged build
+// converges the replacement; anything else (stage 1, divergence) keeps it.
+const clearConvergedReplacement = (pair: PairRecord): void => {
+  if (pair.pendingReplacement != null && pair.pinned?.placement === pair.pendingReplacement.build) {
+    pair.pendingReplacement = null;
+  }
+};
 // Build the pair record to stage behind the uncommitted journal at P1.
 const stagePair = (
   plan: SwapPlan,
@@ -2603,6 +2641,7 @@ const stagePair = (
 ): Result<PairRecord, SkillSmithError> => {
   if (plan.op === 'install') {
     if (!plan.install) return err(genericError('install plan missing install payload'));
+    const pendingReplacement = pendingReplacementForStage(plan, existing, journal);
     return ok({
       placementPath: plan.placementPath,
       mode: 'pinned',
@@ -2610,11 +2649,12 @@ const stagePair = (
       pinned: plan.install.pinned,
       ...(plan.install.origin === null ? {} : { origin: plan.install.origin }),
       journal,
+      ...(pendingReplacement === null ? {} : { pendingReplacement }),
     });
   }
   if (plan.op === 'uninstall') {
     if (!existing) return err(genericError(`cannot uninstall ${plan.skill}: no pair record`));
-    return ok({ ...existing, journal });
+    return ok({ ...existing, journal, pendingReplacement: null });
   }
   // promote / dev — mode stays the before-mode until P5 (P12 shape, unchanged).
   const mode = before.mode === 'dev' ? 'dev' : 'pinned';
@@ -3393,7 +3433,10 @@ const rollbackSwapInternal = async (
   // uncommitted replace-install rollback that means the NEW pinned/origin/placement records survive
   // (mirrors P12 promote-rollback — the engine never retains the old PinnedRecord/origin, so it
   // cannot restore them). The run layer (Task 7) MUST reconcile the ledger record after such a rollback.
+  // A rollback abandons the staged two-stage-replacement intent (SC-I60-MO2):
+  // the next replace re-stages it from its own plan.
   pair.mode = before.mode;
+  pair.pendingReplacement = null;
   if (logicalRollback.value === null) pair.journal = null;
   const persisted = await (logicalRollback.value === null
     ? persistPair(ctx, ledger, effects, scopeKey, skill, tool, pair)
