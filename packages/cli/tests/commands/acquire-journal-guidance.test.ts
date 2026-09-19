@@ -177,12 +177,14 @@ const requireExit = (
 };
 
 /**
- * Decisive MF1 assertion: the emitted guidance must name a parser-accepted command. RED if the
+ * Decisive MF1 assertion: the emitted guidance must not name an unsupported command. RED if the
  * output suggests `skillsmith install --rollback` or `skillsmith uninstall --rollback` (both
- * rejected by the real parser with `error: unknown option '--rollback'`). Throws with the full
- * transcript on RED so the verdict evidence is self-contained.
+ * rejected by the real parser with `error: unknown option '--rollback'`). Absence-only by design:
+ * the verified refusal names no recovery command at all, so presence cannot be asserted here
+ * (advice enrichment would be a product change, out of scope). Throws with the full transcript
+ * on RED so the verdict evidence is self-contained.
  */
-const expectSupportedGuidance = (
+const expectNoUnsupportedGuidance = (
   r: { stdout: string; stderr: string; code: number },
   label: string,
 ): void => {
@@ -213,7 +215,7 @@ const expectInterruptedRefusal = (
   expect(text).toContain('interrupted');
   expect(text).toContain(op);
   expect(text).toContain(SKILL);
-  expectSupportedGuidance(r, label);
+  expectNoUnsupportedGuidance(r, label);
 };
 
 interface CrashedAcquire {
