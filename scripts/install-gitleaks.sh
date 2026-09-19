@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Exact release-tool installer for supported macOS/Linux x64/arm64 runners.
 
-GITLEAKS_VERSION="8.21.2"
+GITLEAKS_VERSION="8.30.1"
 
 if command -v gitleaks >/dev/null 2>&1; then
     actual_version="$(gitleaks version 2>/dev/null || true)"
@@ -36,10 +36,10 @@ case "$(uname -m)" in
 esac
 
 case "${tool_os}-${tool_arch}" in
-    darwin-x64) expected_sha256=5b42c6e4b1fd693eaeb2b5b7faa5f17a1434299d4deb2de63d4b2efd7c753128 ;;
-    darwin-arm64) expected_sha256=cad3de5dc9a4d5447d967a70a4d49499c557f04db028274cc324f9ff983f6502 ;;
-    linux-x64) expected_sha256=5bc41815076e6ed6ef8fbecc9d9b75bcae31f39029ceb55da08086315316e3ba ;;
-    linux-arm64) expected_sha256=654c935542c89f565aabe7bf7c6c500830f116c114f0aeb509d2460c1ac2e6da ;;
+    darwin-x64) expected_sha256=dfe101a4db2255fc85120ac7f3d25e4342c3c20cf749f2c20a18081af1952709 ;;
+    darwin-arm64) expected_sha256=b40ab0ae55c505963e365f271a8d3846efbc170aa17f2607f13df610a9aeb6a5 ;;
+    linux-x64) expected_sha256=551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb ;;
+    linux-arm64) expected_sha256=e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080 ;;
     *) echo "Unsupported gitleaks platform" >&2; exit 1 ;;
 esac
 
@@ -69,7 +69,7 @@ test -f "$tool_tmp/gitleaks"
 dest="${SKILLSMITH_TOOL_BIN_DIR:-${HOME}/.local/bin}"
 mkdir -p "$dest"
 install -m 0755 "$tool_tmp/gitleaks" "$dest/gitleaks"
-installed_version="$($dest/gitleaks version 2>/dev/null || true)"
+installed_version="$("$dest/gitleaks" version 2>/dev/null || true)"
 if [ "$installed_version" != "$GITLEAKS_VERSION" ]; then
     echo "installed gitleaks version mismatch: ${installed_version:-unknown}" >&2
     exit 1
