@@ -38,6 +38,59 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: '24'
+      - name: Prepare ordinary agent-tool reports
+        id: ordinary_agent_reports
+        run: |
+          report_root=$(mktemp -d "$RUNNER_TEMP/skillsmith-ordinary-agent-reports.XXXXXX")
+          report_children="$report_root/children"
+          mkdir "$report_children"
+          echo "ORDINARY_AGENT_REPORT_ROOT=$report_root" >> "$GITHUB_ENV"
+          echo "ORDINARY_AGENT_REPORT_CHILDREN=$report_children" >> "$GITHUB_ENV"
+          {
+            git rev-parse HEAD 'HEAD^{tree}'
+            node --version
+            npm --version
+            bun --version
+            git --version
+          } > "$report_root/source-and-runtimes.txt"
+      - name: Install exact ordinary agent tools
+        id: ordinary_agent_tools
+        run: |
+          agent_root="$RUNNER_TEMP/skillsmith-ordinary-agent-tools"
+          set +e
+          bun scripts/install-ci-agent-tools.ts --root "$agent_root" > "$ORDINARY_AGENT_REPORT_ROOT/installer.stdout" 2> "$ORDINARY_AGENT_REPORT_ROOT/installer.stderr"
+          result=$?
+          set -e
+          cat "$ORDINARY_AGENT_REPORT_ROOT/installer.stdout"
+          cat "$ORDINARY_AGENT_REPORT_ROOT/installer.stderr" >&2
+          if [ "$result" -ne 0 ]; then exit "$result"; fi
+          echo "ORDINARY_AGENT_PREFIX=$agent_root/prefix" >> "$GITHUB_ENV"
+          echo "$agent_root/prefix/bin" >> "$GITHUB_PATH"
+      - name: Check ordinary agent command bindings
+        run: |
+          for name in claude codex kilo opencode; do
+            expected="$ORDINARY_AGENT_PREFIX/bin/$name"
+            actual=$(command -v "$name" || true)
+            printf '%s\t%s\n' "$name" "$actual" >> "$ORDINARY_AGENT_REPORT_ROOT/command-bindings.txt"
+            if [ "$actual" != "$expected" ]; then
+              echo "expected $name at $expected, found $actual" >&2
+              exit 1
+            fi
+            timeout --signal=TERM --kill-after=5s 30s "$actual" --version > "$ORDINARY_AGENT_REPORT_ROOT/$name.version.stdout" 2> "$ORDINARY_AGENT_REPORT_ROOT/$name.version.stderr"
+          done
+      - name: Check ordinary agent discovery and install prerequisites
+        env:
+          SKILLSMITH_CI_AGENT_MODE: present
+          SKILLSMITH_CI_AGENT_PREFIX: ${{ env.ORDINARY_AGENT_PREFIX }}
+          SKILLSMITH_CI_AGENT_REPORT_DIR: ${{ env.ORDINARY_AGENT_REPORT_CHILDREN }}
+        run: |
+          set +e
+          bun test ./packages/cli/tests/commands/agent-environments.test.ts --timeout=60000 --max-concurrency=1 --no-orphans --retry=0 --reporter=junit --reporter-outfile="$ORDINARY_AGENT_REPORT_ROOT/agent-environments.xml" > "$ORDINARY_AGENT_REPORT_ROOT/agent-environments.stdout" 2> "$ORDINARY_AGENT_REPORT_ROOT/agent-environments.stderr"
+          result=$?
+          set -e
+          cat "$ORDINARY_AGENT_REPORT_ROOT/agent-environments.stdout"
+          cat "$ORDINARY_AGENT_REPORT_ROOT/agent-environments.stderr" >&2
+          exit "$result"
       - name: Install pinned release-test npm in owned prefix
         run: |
           npm_prefix="$RUNNER_TEMP/skillsmith-ordinary-npm-12.0.1"
@@ -86,6 +139,26 @@ jobs:
           assertReleaseToolVersions(versions);
           console.log(JSON.stringify({ status: "EXACT_RELEASE_TEST_TOOL_VERSIONS_CONFIRMED", versions }));
           '
+      - name: Retain ordinary agent-tool evidence
+        if: ${{ always() && !cancelled() && steps.ordinary_agent_reports.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4
+        with:
+          name: ordinary-agent-tools-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          include-hidden-files: true
+          path: |
+            ${{ env.ORDINARY_AGENT_REPORT_ROOT }}/*.txt
+            ${{ env.ORDINARY_AGENT_REPORT_ROOT }}/*.xml
+            ${{ env.ORDINARY_AGENT_REPORT_ROOT }}/*.stdout
+            ${{ env.ORDINARY_AGENT_REPORT_ROOT }}/*.stderr
+            ${{ env.ORDINARY_AGENT_REPORT_ROOT }}/children/*/*.json
+            ${{ env.ORDINARY_AGENT_REPORT_ROOT }}/children/*/*.stdout
+            ${{ env.ORDINARY_AGENT_REPORT_ROOT }}/children/*/*.stderr
+            ${{ env.ORDINARY_AGENT_REPORT_ROOT }}/children/*/.detection-*/preload.ts
+            ${{ env.ORDINARY_AGENT_REPORT_ROOT }}/children/*/.detection-*/trace.txt
+            ${{ env.ORDINARY_AGENT_REPORT_ROOT }}/children/*/.detection-*/receipt.json
+            ${{ runner.temp }}/skillsmith-ordinary-agent-tools/receipt.json
+            ${{ runner.temp }}/skillsmith-ordinary-agent-tools/logs
       - name: Canonical repository gate
         run: just check
 

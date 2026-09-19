@@ -17,6 +17,24 @@ The baseline in `.github/ci-agent-tools.json` is:
 These versions are a reproducible baseline. Kilo Code and OpenCode remain read-only Skillsmith
 adapters. The tests compare the manifest IDs and capability facts with the actual registry.
 
+## CI environments
+
+The ordinary CI job prepares these four tools in a new owned directory below `RUNNER_TEMP` before
+its canonical repository gate. It appends only that directory's `prefix/bin` to `GITHUB_PATH`,
+records each `command -v` binding and runs each `--version` probe with a 30-second bound, then
+runs this same three-case owner with `SKILLSMITH_CI_AGENT_MODE=present`, its owned prefix, and a
+fresh empty report-child directory scoped to that preflight step. The installer receipt and logs,
+command receipts,
+preflight output, and child reports are retained in a separate ordinary artifact. The artifact
+does not include installed packages, npm caches, or configuration directories.
+
+That ordinary prefix supplies dependencies such as the inherited-`PATH` WF02 and WF14 workflows;
+it does not set `SKILLSMITH_CI_AGENT_MODE` or report selectors for the canonical gate. The separate
+`agent-environments` matrix remains the deliberate two-lane check: its present lane installs and
+verifies the four tools, while its absent lane keeps the fixture-owned empty PATH and fixed-path
+discovery controls. The present owner verifies each symlink target, package receipt, hash, and
+version; the ordinary shell gate compares the `command -v` binding itself with `prefix/bin`.
+
 ## Run locally
 
 From the repository, deliberate absence requires Bun, Node, and Git:
