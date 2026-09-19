@@ -309,7 +309,7 @@ The full explainer lives in [`docs/architecture.md`](docs/architecture.md). The 
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the dev loop, commit format, and boundary rules. Release process is documented in [`docs/releases.md`](docs/releases.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the dev loop, commit format, and boundary rules. Credential checks and exception policy are documented in [`docs/credential-scanning.md`](docs/credential-scanning.md). Release process is documented in [`docs/releases.md`](docs/releases.md).
 
 ## Project tracker
 

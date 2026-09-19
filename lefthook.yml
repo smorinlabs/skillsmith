@@ -20,7 +20,9 @@ pre-push:
     test:
       run: bun scripts/run-test-files-serial.ts
     gitleaks:
-      run: ./scripts/check-gitleaks.sh full
+      run: ./scripts/check-gitleaks.sh pre-push
+      use_stdin: true
+      priority: 1
     audit:
       run: bun audit --audit-level=high
     eslint-security:

@@ -63,12 +63,21 @@ export const RELEASE_TOOL_ARCHIVE_SHA256 = {
     },
   },
   gitleaks: {
-    version: '8.21.2',
+    version: '8.30.1',
     archives: {
-      'darwin-x64': '5b42c6e4b1fd693eaeb2b5b7faa5f17a1434299d4deb2de63d4b2efd7c753128',
-      'darwin-arm64': 'cad3de5dc9a4d5447d967a70a4d49499c557f04db028274cc324f9ff983f6502',
-      'linux-x64': '5bc41815076e6ed6ef8fbecc9d9b75bcae31f39029ceb55da08086315316e3ba',
-      'linux-arm64': '654c935542c89f565aabe7bf7c6c500830f116c114f0aeb509d2460c1ac2e6da',
+      'darwin-x64': 'dfe101a4db2255fc85120ac7f3d25e4342c3c20cf749f2c20a18081af1952709',
+      'darwin-arm64': 'b40ab0ae55c505963e365f271a8d3846efbc170aa17f2607f13df610a9aeb6a5',
+      'linux-x64': '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb',
+      'linux-arm64': 'e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080',
+    },
+  },
+  trufflehog: {
+    version: '3.97.5',
+    archives: {
+      'darwin-x64': 'cc8b12f8120fe47d7de929928e9183285b7a39eba60b3ac01f085f522ec19e50',
+      'darwin-arm64': 'b4e5fd54aaea368342b226cbea228e7a33898b177598d1d8cd66edb14f87444e',
+      'linux-x64': 'e3d97199c565c37ca6152750197f667e08ae6a1edf5911fbdec168622b28620c',
+      'linux-arm64': 'e5c8b2418b0a7c78cf4c47ac783c52c63f989e4e536cfe328b5271e819b6d52d',
     },
   },
 } as const;

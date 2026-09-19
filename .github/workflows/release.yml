@@ -371,6 +371,8 @@ jobs:
           bun install --frozen-lockfile --ignore-scripts
           tool_bin="$RUNNER_TEMP/release-tools"
           SKILLSMITH_TOOL_BIN_DIR="$tool_bin" ./scripts/install-actionlint.sh
+          SKILLSMITH_TOOL_BIN_DIR="$tool_bin" ./scripts/install-gitleaks.sh
+          SKILLSMITH_TOOL_BIN_DIR="$tool_bin" ./scripts/install-trufflehog.sh
           echo "$tool_bin" >> "$GITHUB_PATH"
       - name: Run canonical and real Claude/Codex release-candidate compatibility gates
         env:
