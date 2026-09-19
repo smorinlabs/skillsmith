@@ -669,7 +669,7 @@ describe('EWP-P6-TS06', () => {
     expect(adr).toContain('Accepted');
     expect(adr).toContain('candidate');
     expect(docs).toContain('v1.0.0');
-    expect(gitleaks).toContain('5bc41815076e6ed6ef8fbecc9d9b75bcae31f39029ceb55da08086315316e3ba');
+    expect(gitleaks).toContain('551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb');
     expect(actionlint).toContain(
       '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8',
     );
