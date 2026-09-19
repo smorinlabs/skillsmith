@@ -612,6 +612,7 @@ const placePair = async (
   const stagedMatchesRequest =
     staged !== null &&
     staged.build === build &&
+    staged.refResolved === sha &&
     staged.storePath === snap.storePath &&
     staged.contentHash === snap.contentHash;
   const recordMatches =

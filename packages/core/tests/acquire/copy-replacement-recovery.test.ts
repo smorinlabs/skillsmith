@@ -8,7 +8,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
-import { lstat, readFile, readdir } from 'node:fs/promises';
+import { lstat, mkdir, readFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runInstall } from '../../src/acquire/run.ts';
@@ -17,7 +17,12 @@ import type { InstallRecord } from '../../src/agents/types.ts';
 import type { ArtifactCoordinatorPorts } from '../../src/artifacts/coordinator-types.ts';
 import { createTestNodeArtifactCoordinatorPorts } from '../../src/artifacts/node-coordinator.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
-import { readLedgerState } from '../../src/place/ledger.ts';
+import {
+  getLedgerPairAt,
+  readLedgerState,
+  withLedgerPairAt,
+  writeLedger,
+} from '../../src/place/ledger.ts';
 import { ledgerPathOf } from '../../src/place/paths.ts';
 import { ok } from '../../src/result.ts';
 import { VERIFIED_AGAINST, type VerifyReport } from '../../src/verify/types.ts';
@@ -275,6 +280,77 @@ describe('MO2 in-process controls (no crash)', () => {
       // desired state makes the noop itself the success outcome.
       expect(result?.executionOutcome).toBe('succeeded');
       expect(result?.drift.status).toBe('in-sync');
+    } finally {
+      await destroyFixtureFleet(f);
+      await destroyRemoteFixture(fixture);
+    }
+  }, 120_000);
+
+  test('staged marker from another revision with identical content does not continue', async () => {
+    const fixture = await buildRemoteFixture();
+    const f = await buildFixtureFleet();
+    try {
+      const coordinator: ArtifactCoordinatorPorts = await createTestNodeArtifactCoordinatorPorts(
+        join(f.base, 'artifact-coordination'),
+      );
+      let n = 0;
+      const deps: InstallDeps = {
+        verify: passVerify,
+        detect: detectBoth,
+        transport: fixture.transport,
+        artifactCoordinator: coordinator,
+        now: () => NOW,
+        newTxId: () => (0x30000000 + n++).toString(16).slice(-8),
+      };
+      const fsSource = `${fixture.multiSource}//plugins/fh/skills/factor-scan`;
+      const livePath = join(f.home, '.claude', 'skills', SKILL);
+      const base: InstallOptions = {
+        sources: [fsSource],
+        tools: [TOOL],
+        scope: 'user',
+        ref: fixture.multiHead,
+        cwd: f.base,
+        configuration: f.configuration,
+      };
+      const r1 = await runInstall(f.env, base, deps);
+      if (!r1.ok) throw new Error(`symlink install: ${msg(r1.error)}`);
+      expect(await kindOf(livePath)).toBe('symlink');
+      // Forge a stage-1 marker for the same content but a different
+      // revision: store paths and content hashes are content-based, so
+      // only the marker's resolved revision distinguishes it from this
+      // request's own staged intent.
+      const staleBackup = join(f.base, 'stale-backup');
+      await mkdir(staleBackup, { recursive: true });
+      const led = await readLedgerState(f.env, ledgerPathOf(f.data));
+      if (!led.ok || led.value.state !== 'present') throw new Error('ledger missing');
+      const pair = getLedgerPairAt(led.value.model, null, SKILL, TOOL);
+      if (!pair?.pinned) throw new Error('expected seeded pinned pair');
+      const otherSha = 'f'.repeat(40);
+      expect(otherSha).not.toBe(fixture.multiHead);
+      const next = withLedgerPairAt(led.value.model, null, SKILL, TOOL, {
+        ...pair,
+        pendingReplacement: {
+          build: 'copy',
+          stage: 1,
+          refResolved: otherSha,
+          storePath: pair.pinned.storePath,
+          contentHash: pair.pinned.contentHash,
+          backupPath: staleBackup,
+          recordedAt: NOW,
+        },
+      });
+      if (!next.ok) throw new Error(msg(next.error));
+      const w = await writeLedger(f.env, ledgerPathOf(f.data), next.value);
+      if (!w.ok) throw new Error(msg(w.error));
+      const r2 = await runInstall(f.env, { ...base, direct: true }, deps);
+      if (!r2.ok) throw new Error(`direct re-request: ${msg(r2.error)}`);
+      const result = r2.value.results[0];
+      // The foreign marker must not continue: the healthy symlink stays
+      // a truthful noop and its unrelated backup is never surfaced.
+      expect(result?.action).toBe('noop');
+      expect(result?.placement).toBe('symlink');
+      expect(result?.reason ?? '').not.toContain('kept backup');
+      expect(await kindOf(livePath)).toBe('symlink');
     } finally {
       await destroyFixtureFleet(f);
       await destroyRemoteFixture(fixture);
