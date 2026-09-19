@@ -15,6 +15,10 @@ const main = async (): Promise<number> => {
       return 0;
     }
     await program.parseAsync(process.argv);
+    // A command-assigned numeric status wins (acquisition actions defer their
+    // exit so piped reports drain, preserving action-level 130 over the
+    // handler mapping); otherwise fall back to the signal handler status.
+    if (typeof process.exitCode === 'number') return process.exitCode;
     return signals.exitCode() ?? 0;
   } finally {
     signals.uninstall();

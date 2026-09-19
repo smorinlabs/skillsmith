@@ -157,7 +157,8 @@ export const uninstallCommand = (signal?: AbortSignal): Command =>
       const r = await runUninstall(env, uninstallOpts, { ...defaultUninstallDeps });
       if (!r.ok) {
         process.stderr.write(`error: ${'message' in r.error ? r.error.message : r.error.code}\n`);
-        process.exit(signal?.aborted ? 130 : exitCodeForError(r.error));
+        process.exitCode = signal?.aborted ? 130 : exitCodeForError(r.error);
+        return;
       }
 
       for (const res of r.value.results) {
@@ -173,5 +174,6 @@ export const uninstallCommand = (signal?: AbortSignal): Command =>
       process.stdout.write(
         opts.json ? renderUninstallJson(r.value) : renderUninstallHuman(r.value, code),
       );
-      process.exit(signal?.aborted ? 130 : code);
+      process.exitCode = signal?.aborted ? 130 : code;
+      return;
     });
