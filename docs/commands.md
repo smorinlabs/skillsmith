@@ -160,6 +160,52 @@ Minimal invocation: `skillsmith commands`
 - `130` — cancelled by SIGINT
 
 
+### `cross-tool-names`
+
+Report skill names installed under two or more tools
+
+Primary question: Which skill names repeat across tools?
+
+Minimal invocation: `skillsmith cross-tool-names`
+
+#### Common workflows
+
+- **Start here** (read-only): Report skill names reused across tools using the default bounds. — `skillsmith cross-tool-names`
+- **Focused workflow** (read-only): Emit review- name reuse across tools as JSON. — `skillsmith cross-tool-names "review-*" --json`
+
+#### Arguments
+
+- `[glob...]` — Glob filters for reused skill names
+
+#### TARGETS AND SCOPE
+
+- `--managed` — Shorthand for --scope=managed
+- `--project` — Shorthand for --scope=project
+- `--system` — Shorthand for --scope=system
+- `--user` — Shorthand for --scope=user
+- `-s, --scope <scope>` — Narrow to an installation scope
+- `-t, --tool <name>` — Narrow to a tool; repeatable
+
+#### BEHAVIOR AND VERIFICATION
+
+- `--disabled` — Show only disabled entries
+- `--enabled` — Show only enabled entries
+- `--unconfigured` _(advanced)_ — Show only entries that have never been toggled
+
+#### AUTOMATION AND OUTPUT
+
+- `--json` — Emit a versioned JSON report on stdout
+- `-h, --help` — Show help for this command
+
+#### Exit codes
+
+- `0` — request completed successfully
+- `1` — command failed
+- `2` — invalid command usage
+- `3` — configuration is unreadable
+- `130` — cancelled by SIGINT
+
+
 ### `status`
 
 Correlate desired, locked, ledger, and live skill state

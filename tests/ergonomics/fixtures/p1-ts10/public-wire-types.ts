@@ -177,6 +177,8 @@ type _V1RuntimeClosure = Assert<
     | 'toConfigSetV1Dto'
     | 'configUnsetV1Codec'
     | 'toConfigUnsetV1Dto'
+    | 'crossToolNamesV1Codec'
+    | 'toCrossToolNamesV1Dto'
     | 'installV1Codec'
     | 'toInstallV1Dto'
     | 'planV1Codec'

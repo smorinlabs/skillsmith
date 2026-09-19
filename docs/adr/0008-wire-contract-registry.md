@@ -71,6 +71,14 @@ This is an evolution of the accepted registry decision, not a replacement: older
 remain available for exact compatibility, and every current renderer still resolves its named
 codec through the CLI-owned command mapping.
 
+P19-T08 (2026-09-19, Decision Q3.A) adds one version-1 codec for the new read-only
+`skillsmith cross-tool-names` report, reusing the same coexistence rules: the registry
+inventory gains `cross-tool-names@1` (declared after `config-unset@1`), mapped from the
+new command path. The DTO is intentionally minimal — `schemaVersion`, `kind`, and
+`groups`, with no `selection` or `summary` — following the agents@2 precedent for a new
+report family rather than extending the strict list@3 filter schema. No existing codec,
+mapping, or accepted byte changes.
+
 Persisted artifacts use a second, deliberately distinct abstraction. `ArtifactCodec` operates on
 owned bytes and maps versioned DTOs to immutable semantic models; it is not a `WireCodec`, and
 `artifactContractRegistry` is not the CLI's `WireContractRegistry`. The single production artifact

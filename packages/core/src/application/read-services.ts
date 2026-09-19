@@ -48,6 +48,7 @@ import { type SkillSmithError, errorMessage, safeErrorCode } from '../errors.ts'
 import { emitOperationPlanCreated } from '../execution/observation.ts';
 import { readCommandInventory, readSkillInventory } from '../inventory/read.ts';
 import { redactSensitiveValue } from '../safety/redaction.ts';
+import { type CrossToolNameGroup, groupCrossToolNames } from '../scan/cross-tool-names.ts';
 import { validateSelectionRequest } from '../selection/resolve.ts';
 import type {
   SelectionPolicy,
@@ -183,6 +184,11 @@ export interface CommandsReport {
   readonly long: boolean;
 }
 
+export interface CrossToolNamesReport {
+  readonly groups: readonly CrossToolNameGroup[];
+  readonly matchedEntries: number;
+}
+
 export interface HealthReport {
   readonly mode: CheckRunMode;
   readonly result: CheckRunResult | DoctorRunResult | null;
@@ -204,6 +210,7 @@ export interface CurrentReadApplicationReports {
   readonly configUnset: ConfigUnsetReport;
   readonly list: ListReport;
   readonly commands: CommandsReport;
+  readonly crossToolNames: CrossToolNamesReport;
   readonly doctor: HealthReport;
   readonly check: HealthReport;
   readonly verify: VerifyApplicationReport;
@@ -1269,6 +1276,66 @@ export const runCommandsApplication: ApplicationService<
   );
 };
 
+export const runCrossToolNamesApplication: ApplicationService<
+  CurrentCommandRequest,
+  CrossToolNamesReport
+> = async (request, context) => {
+  const empty: CrossToolNamesReport = { groups: [], matchedEntries: 0 };
+  const scope = resolveScope(request, ['user', 'system', 'project', 'managed']);
+  if (!scope.ok) return failed(empty, scope.error);
+  const selection = validateReadSelection(
+    request,
+    READ_POLICY,
+    scope.value === null ? [] : [scope.value],
+  );
+  if (!selection.ok) return failed(empty, selection.error);
+  const filter = enabledFilter(request);
+  if (filter && typeof filter === 'object') return failed(empty, filter);
+  const names = argumentStrings(request, 0);
+  const invalidGlob = validateGlobs(names.map((value) => ({ label: 'name', value })));
+  if (invalidGlob !== null) return failed(empty, invalidGlob);
+  const project = await projectFor(context);
+  if (!project.ok) return failed(empty, project.error);
+  const config = await configFor(context, project.value);
+  if (!config.ok) return failed(empty, config.error);
+  const requestedTools =
+    selection.value.tools.length > 0
+      ? selection.value.tools
+      : effectiveTools(config.value).length > 0
+        ? effectiveTools(config.value)
+        : SUPPORTED_TOOLS;
+  const tools = registryOrderedTools(requestedTools);
+  const scopes = selectedListScopes(scope.value, project.value);
+  let listed: Awaited<ReturnType<typeof readSkillInventory>>;
+  try {
+    listed = await readSkillInventory(context.ports, {
+      tools,
+      scopes,
+      ...(names.length > 0 ? { globs: names } : {}),
+      ...(typeof filter === 'string' ? { enabledFilter: filter } : {}),
+      cwd: project.value.projectRoot ?? project.value.effectiveCwd,
+      configuration: context.configuration,
+      ...(context.signal === undefined ? {} : { signal: context.signal }),
+      observation: context.observation,
+    });
+  } catch (cause) {
+    return failedMany(empty, readCauses(cause, context.signal), context.signal);
+  }
+  if (!listed.ok) {
+    if (context.signal?.aborted) {
+      return failed(empty, cancelled('inventory read was cancelled'));
+    }
+    return failed(empty, listed.error);
+  }
+  return success(
+    Object.freeze({
+      groups: groupCrossToolNames(listed.value.entries),
+      matchedEntries: listed.value.entries.length,
+    }),
+    { diagnostics: configNoticeDiagnostics(config.value) },
+  );
+};
+
 const runHealthApplication = async (
   mode: CheckRunMode,
   request: Readonly<CurrentCommandRequest>,
@@ -1877,6 +1944,7 @@ export const CURRENT_READ_APPLICATIONS: CurrentReadApplicationRegistry = Object.
   configUnset: runConfigUnsetApplication,
   list: runListApplication,
   commands: runCommandsApplication,
+  crossToolNames: runCrossToolNamesApplication,
   doctor: runDoctorApplication,
   check: runCheckApplication,
   verify: runVerifyApplication,

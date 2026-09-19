@@ -68,6 +68,7 @@ describe('EWP-P0A-TS02', () => {
       'config list': ['user', 'project', 'system'],
       'config unset': ['user', 'project', 'system'],
       list: ['user', 'project', 'system', 'managed'],
+      'cross-tool-names': ['user', 'project', 'system', 'managed'],
       commands: ['user', 'project'],
       status: ['user', 'project', 'system', 'managed'],
       doctor: ['user', 'project', 'system'],

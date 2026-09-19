@@ -67,6 +67,7 @@ const commandGroup: Readonly<Record<string, string>> = {
   config: 'P17-G2-01',
   list: 'P17-G3A-02',
   commands: 'P17-G3A-02',
+  'cross-tool-names': 'P17-G3A-02',
   status: 'P17-G3A-01',
   doctor: 'P17-G3B-03',
   check: 'P17-G1-02B',
@@ -91,6 +92,7 @@ const commandGroup: Readonly<Record<string, string>> = {
 const toolChoices = SUPPORTED_TOOLS;
 const scopeChoices: Readonly<Record<string, readonly string[]>> = {
   list: ['user', 'project', 'system', 'managed'],
+  'cross-tool-names': ['user', 'project', 'system', 'managed'],
   commands: ['user', 'project'],
   status: ['user', 'project', 'system', 'managed'],
   doctor: ['user', 'project', 'system'],
@@ -227,6 +229,19 @@ const targetRows: Readonly<Record<string, readonly string[]>> = {
     '--user',
     '--project',
     '-l, --long',
+    '--json',
+    '--enabled',
+    '--disabled',
+    '--unconfigured',
+  ],
+  'cross-tool-names': [
+    '[glob...]',
+    '-t, --tool <name>',
+    '-s, --scope <scope>',
+    '--user',
+    '--project',
+    '--system',
+    '--managed',
     '--json',
     '--enabled',
     '--disabled',
@@ -467,6 +482,7 @@ const newTargetSurfaces: Readonly<Record<string, readonly string[]>> = {
     '--description <glob>',
   ],
   status: targetRows.status ?? [],
+  'cross-tool-names': targetRows['cross-tool-names'] ?? [],
   doctor: ['--file <path>', '--lockfile <path>', '--all-tools', '--fix', '--dry-run', '-y, --yes'],
   check: ['--file <path>', '--lockfile <path>', '--all-tools', '--report-only'],
   install: ['--file <path>', '--lockfile <path>', '--no-save', '-p, --path <dir>'],
@@ -483,6 +499,7 @@ const newTargetSurfaces: Readonly<Record<string, readonly string[]>> = {
   gc: targetRows.gc ?? [],
 };
 const newCommands = new Set([
+  'cross-tool-names',
   'status',
   'init',
   'export',
@@ -594,6 +611,7 @@ const validationCounts: Readonly<Record<string, number>> = {
   config: 5,
   list: 7,
   commands: 4,
+  'cross-tool-names': 4,
   status: 6,
   doctor: 6,
   check: 5,
@@ -876,8 +894,8 @@ export const assertTargetOwnership = (ledger: MigrationLedger): void => {
     ledger.targetCommands.map((entry) => entry.command),
     'command owners',
   );
-  if (ledger.targetCommands.length !== 23)
-    throw new Error('target command count is not exactly 23');
+  if (ledger.targetCommands.length !== 24)
+    throw new Error('target command count is not exactly 24');
   if (
     JSON.stringify([...targetCommands].sort()) !==
     JSON.stringify(ledger.targetCommands.map((entry) => entry.command).sort())

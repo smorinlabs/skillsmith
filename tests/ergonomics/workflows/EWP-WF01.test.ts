@@ -6,6 +6,7 @@ const ALL_COMMANDS = [
   'agents',
   'list',
   'commands',
+  'cross-tool-names',
   'status',
   'install',
   'uninstall',
@@ -149,7 +150,7 @@ describe('EWP-WF01', () => {
     ).toThrow();
   });
 
-  test('proves all 23 commands, capability orientation, aliases, and clean no-source lifecycle', async () => {
+  test('proves all 24 commands, capability orientation, aliases, and clean no-source lifecycle', async () => {
     const validate = await requirePublicValidator();
     expect(validate({ receipts: validReceipts() })).toMatchObject({ version: '1.0.0' });
     expect(() =>

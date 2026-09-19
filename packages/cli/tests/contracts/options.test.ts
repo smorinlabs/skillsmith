@@ -1204,7 +1204,7 @@ describe('EWP-OPT-TS04', () => {
     );
     expect(delta).toEqual(expected.map(({ path, flags }) => `${path}:${flags}`));
     expect(api.CURRENT_COMMAND_SPECS.reduce((count, spec) => count + spec.options.length, 0)).toBe(
-      270,
+      281,
     );
   });
 
@@ -1215,7 +1215,7 @@ describe('EWP-OPT-TS04', () => {
       (count, spec) => count + spec.options.length,
       0,
     );
-    if (inventory !== 270) findings.push(`option inventory is ${inventory}, expected 270`);
+    if (inventory !== 281) findings.push(`option inventory is ${inventory}, expected 281`);
 
     const program = buildProgram();
     for (const commandName of ['dev', 'promote'] as const) {
@@ -2062,7 +2062,7 @@ describe('EWP-OPT-TS05', () => {
       readonly commonWorkflows?: readonly { readonly invocation: string }[];
     })[];
     const publicSpecs = specs.filter((spec) => spec.path.split(' ').length === 2);
-    expect(publicSpecs).toHaveLength(23);
+    expect(publicSpecs).toHaveLength(24);
     for (const spec of publicSpecs) {
       expect(spec.primaryQuestion?.length ?? 0, spec.path).toBeGreaterThan(10);
       expect(spec.minimalInvocations?.length ?? 0, spec.path).toBeGreaterThanOrEqual(1);

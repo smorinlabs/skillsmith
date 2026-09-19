@@ -29,6 +29,7 @@ export const PUBLIC_COMMAND_ORDER = [
   'agents',
   'list',
   'commands',
+  'cross-tool-names',
   'status',
   'install',
   'uninstall',
@@ -557,7 +558,7 @@ function publicReceipt(value: unknown, label: string): PublicReceipt {
   }
   const commands = strings(receipt.commands, `${label} command order`);
   if (commands.join('\0') !== PUBLIC_COMMAND_ORDER.join('\0')) {
-    fail(`${label} does not contain all 23 commands in group order`);
+    fail(`${label} does not contain all 24 commands in group order`);
   }
   const channels = strings(receipt.channels, `${label} channels`);
   const channelDigests = record(receipt.channelBinarySha256, `${label} channel binary digests`);

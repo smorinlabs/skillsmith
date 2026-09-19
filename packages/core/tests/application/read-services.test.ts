@@ -13,6 +13,7 @@ import {
   runConfigListApplication,
   runConfigSetApplication,
   runConfigUnsetApplication,
+  runCrossToolNamesApplication,
   runDoctorApplication,
   runListApplication,
   runStatusApplication,
@@ -158,6 +159,7 @@ describe('current read application registry', () => {
       'configUnset',
       'list',
       'commands',
+      'crossToolNames',
       'doctor',
       'check',
       'verify',
@@ -171,6 +173,7 @@ describe('current read application registry', () => {
     expect(registry.configUnset).toBe(runConfigUnsetApplication);
     expect(registry.list).toBe(runListApplication);
     expect(registry.commands).toBe(runCommandsApplication);
+    expect(registry.crossToolNames).toBe(runCrossToolNamesApplication);
     expect(registry.check).toBe(runCheckApplication);
     expect(registry.verify).toBe(runVerifyApplication);
     expect(registry.status).toBe(runStatusApplication);

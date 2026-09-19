@@ -61,6 +61,7 @@ const EXPECTED_PATHS = [
   'skillsmith config list',
   'skillsmith config set',
   'skillsmith config unset',
+  'skillsmith cross-tool-names',
   'skillsmith dev',
   'skillsmith doctor',
   'skillsmith export',
@@ -87,6 +88,7 @@ const EXPECTED_MAPPINGS = [
   ['skillsmith config list', 'config-list', 1],
   ['skillsmith config set', 'config-set', 1],
   ['skillsmith config unset', 'config-unset', 1],
+  ['skillsmith cross-tool-names', 'cross-tool-names', 1],
   ['skillsmith dev', 'flip', 4],
   ['skillsmith doctor', 'health', 2],
   ['skillsmith export', 'export', 1],
@@ -116,6 +118,7 @@ const EXPECTED_CODECS = [
   ['config-list', 1],
   ['config-set', 1],
   ['config-unset', 1],
+  ['cross-tool-names', 1],
   ['flip', 2],
   ['flip', 3],
   ['flip', 4],
@@ -180,6 +183,12 @@ const EXPECTED_DESCRIPTOR_POLICY: Readonly<
   'config-list@1': { wireKind: null, embeddedVersion: null, indent: 2, terminalLf: false },
   'config-set@1': { wireKind: null, embeddedVersion: null, indent: 0, terminalLf: true },
   'config-unset@1': { wireKind: null, embeddedVersion: null, indent: 0, terminalLf: true },
+  'cross-tool-names@1': {
+    wireKind: 'skillsmith.cross-tool-names',
+    embeddedVersion: 'schemaVersion',
+    indent: 2,
+    terminalLf: true,
+  },
   'flip@2': {
     wireKind: 'skillsmith.flip',
     embeddedVersion: 'schemaVersion',
@@ -342,6 +351,7 @@ const V1_RUNTIME_EXPORTS = [
   'configSetV1Codec',
   'configUnsetV1Codec',
   'createVerifyV1Codec',
+  'crossToolNamesV1Codec',
   'errorV1Codec',
   'exportV1Codec',
   'gcV1Codec',
@@ -358,6 +368,7 @@ const V1_RUNTIME_EXPORTS = [
   'toConfigListV1Dto',
   'toConfigSetV1Dto',
   'toConfigUnsetV1Dto',
+  'toCrossToolNamesV1Dto',
   'toErrorV1Dto',
   'toExportV1Dto',
   'toHealthV1Dto',
@@ -671,7 +682,7 @@ const typescriptFiles = async (root: string): Promise<readonly string[]> => {
 };
 
 describe('EWP-P1-TS10', () => {
-  test('family 1: characterizes exactly the twenty-three live JSON-selectable command paths', () => {
+  test('family 1: characterizes exactly the twenty-four live JSON-selectable command paths', () => {
     const paths = CURRENT_COMMAND_SPECS.filter((spec) =>
       spec.options.some(
         (option) =>
@@ -680,7 +691,7 @@ describe('EWP-P1-TS10', () => {
       ),
     ).map((spec) => spec.path);
     expect(paths).toEqual([...EXPECTED_PATHS]);
-    expect(new Set(paths).size).toBe(23);
+    expect(new Set(paths).size).toBe(24);
     for (const excluded of ['skillsmith version', 'skillsmith completion', 'skillsmith help'])
       expect(paths).not.toContain(excluded);
   });
@@ -711,6 +722,7 @@ describe('EWP-P1-TS10', () => {
       ['configList', 'skillsmith config list'],
       ['configSet', 'skillsmith config set'],
       ['configUnset', 'skillsmith config unset'],
+      ['crossToolNames', 'skillsmith cross-tool-names'],
       ['dev', 'skillsmith dev'],
       ['doctor', 'skillsmith doctor'],
       ['export', 'skillsmith export'],

@@ -8,6 +8,7 @@ import {
   type ConfigListReport,
   type ConfigSetReport,
   type ConfigUnsetReport,
+  type CrossToolNamesReport,
   type CurrentInstallReport,
   type CurrentUninstallReport,
   type DevApplicationReport,
@@ -46,6 +47,8 @@ import { renderApplyHuman } from '../output/apply-human.ts';
 import { renderApplyJson } from '../output/apply-json.ts';
 import { renderCommandsHuman } from '../output/commands-human.ts';
 import { renderCommandsJson } from '../output/commands-json.ts';
+import { renderCrossToolNamesHuman } from '../output/cross-tool-names-human.ts';
+import { renderCrossToolNamesJson } from '../output/cross-tool-names-json.ts';
 import { renderDoctorHuman } from '../output/doctor-human.ts';
 import { renderDoctorJson } from '../output/doctor-json.ts';
 import { renderCliError } from '../output/error-boundary.ts';
@@ -454,6 +457,10 @@ export const createCurrentRendererRegistry = (root: Command): RendererRegistry =
           }),
         ),
       (value) => renderCommandsJson(value),
+    ),
+    crossToolNames: guarded<CrossToolNamesReport>(
+      (value, outcome) => withDiagnostics(outcome, renderCrossToolNamesHuman(value)),
+      (value) => renderCrossToolNamesJson(value),
     ),
     doctor: {
       human: (outcome) => doctorHumanOutput(report<HealthReport>(outcome), outcome),
