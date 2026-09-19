@@ -320,3 +320,23 @@ Product tasks remain in progress until affected-line carry-forward, review and i
   authorized pushes. Preserve old complete-gate receipts as history. Live integration
   and issue-closure receipts are recorded on [P19 #51](https://github.com/smorinlabs/skillsmith/issues/51).
   No issue is auto-closed; PUB-00..08 and original P17 release completion remain pending.
+## 2026-09-19 — SC-I60/P09-RV disposition via standalone #60-slice records (SC-D05 Option A)
+
+- Owner disposition Option A (2026-09-18) accepts the fresh 2026-09-17
+  three-reviewer retrospective plus the finding-ledger dispositions as
+  satisfying P09-RV in place of the unrecoverable original Fable receipt.
+  New review only; the original standalone Fable receipt was never
+  recovered and no finding is claimed fixed.
+- Verdicts (all 2026-09-17, on the sealed 88-file PR #7 packet): Codex/Astra
+  BLOCK; Muse PASS then r2 BLOCK; Claude BLOCK then r2 BLOCK.
+- Ledger: R1-R6, MF1, MF2a/b, MO1-MO3, CM2, CL1/2 stay under their own
+  bounded plans with reproduction pending; K1 stays with #17 / SC-I17.
+- Marker updates in this records PR: PROJECTS.md P09-RV flipped to checked
+  with truthful in-place citation; tasks.json FOLLOW-P09 state pending to
+  completed with disposition appended; P19 umbrella tracking line updated.
+- Reconciliation record: this standalone #60-slice records PR,
+  https://github.com/smorinlabs/skillsmith/pull/74 (SC-I60). No SC-W04 portable file rides this slice;
+  the future SC-W04 inventory reconciles this PR as an accepted prior
+  record. Records merge SHA: recorded in the #60 closure receipt after
+  merge. #60 closes only after the records merge, current required
+  checks, and a factual issue receipt.
