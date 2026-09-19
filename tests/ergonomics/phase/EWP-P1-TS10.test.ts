@@ -1786,7 +1786,7 @@ describe('EWP-P1-TS10', () => {
       ['value'],
     );
 
-    const currentConfigTools = ['claude-code', 'codex', 'kilo-code', 'opencode'] as const;
+    const currentConfigTools = ['claude-code', 'codex', 'kilo-code', 'opencode', 'muse'] as const;
     const currentLifecycleTools = ['claude-code', 'codex'] as const;
     expect(toolRegistry.ids).toEqual([...currentConfigTools]);
     expect(toolRegistry.toolsFor('install')).toEqual([...currentLifecycleTools]);

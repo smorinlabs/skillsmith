@@ -246,6 +246,19 @@ describe('defaultRuntimePorts', () => {
     }
   });
 
+  test('runVersion forwards a child-only env override without touching the parent', async () => {
+    if (process.platform === 'win32') return;
+    const ports = await defaultRuntimePorts();
+    const probe = 'SKILLSMITH_P17_VERSION_ENV_PROBE';
+    expect(
+      await ports.runVersion('/bin/sh', ['-c', `echo $${probe}`], undefined, {
+        [probe]: 'pinned-probe-value',
+      }),
+    ).toBe('pinned-probe-value');
+    expect(await ports.runVersion('/bin/sh', ['-c', `echo $${probe}`])).toBe('unknown');
+    expect(probe in process.env).toBeFalse();
+  });
+
   test('classifies FIFOs, sockets, and devices as other metadata rather than regular files', async () => {
     if (process.platform === 'win32') return;
     const ports = await defaultRuntimePorts();

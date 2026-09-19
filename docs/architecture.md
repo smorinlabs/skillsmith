@@ -13,7 +13,7 @@ packages/
     src/
       acquire/       install/uninstall orchestration
       application/   public CommandOutcome and application-service boundary
-      agents/        per-tool adapters (claude-code, codex, kilo-code, opencode) + registry
+      agents/        per-tool adapters (claude-code, codex, kilo-code, opencode, muse) + registry
       commands/      installed slash-command domain types
       config/        config discovery, parsing, precedence, and persistence
       context/       project-context resolution

@@ -1582,7 +1582,7 @@ describe('EWP-P3B-TS06 — registered adapter lifecycle authority', () => {
 
   describe('family 10 — public and operation compatibility', () => {
     test('EWP-P3B-TS06 characterization: current bytes, wire bindings, and operation IDs remain compatible', () => {
-      expect(SUPPORTED_TOOLS).toEqual(['claude-code', 'codex', 'kilo-code', 'opencode']);
+      expect(SUPPORTED_TOOLS).toEqual(['claude-code', 'codex', 'kilo-code', 'opencode', 'muse']);
       expect(FLIP_TOOLS).toEqual(['claude-code', 'codex']);
       expect(VERIFY_TOOLS).toEqual(['claude-code', 'codex']);
       expect(Object.keys(VERIFIED_AGAINST)).toEqual(['claude-code', 'codex']);

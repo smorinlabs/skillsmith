@@ -35,11 +35,18 @@ const executable = async (path: string) => {
   await access(target, constants.X_OK);
   return { path, realPath: target, sha256: sha256(await readFile(target)) };
 };
+interface NativeArtifact {
+  url: string;
+  sha256: string;
+  bytes: number;
+}
 interface Tool {
   id: string;
   binary: string;
   package: string;
   version: string;
+  provider?: 'npm' | 'native';
+  artifacts?: Record<string, NativeArtifact>;
 }
 interface ProcessReceipt {
   label: string;
@@ -62,9 +69,7 @@ interface ProcessReceipt {
   error: string | null;
   errorCode: string | null;
 }
-interface PackageReceipt extends Tool {
-  packageJsonPath: string;
-  packageJsonSha256: string;
+interface PackageReceiptBase extends Tool {
   bindingPath: string;
   realPath: string;
   sha256: string;
@@ -72,6 +77,17 @@ interface PackageReceipt extends Tool {
   versionStderr: string;
   versionFirstLine: string;
 }
+interface NpmPackageReceipt extends PackageReceiptBase {
+  packageJsonPath: string;
+  packageJsonSha256: string;
+}
+interface NativePackageReceipt extends PackageReceiptBase {
+  artifactUrl: string;
+  artifactSha256: string;
+  artifactBytes: number;
+  artifactPlatform: string;
+}
+type PackageReceipt = NpmPackageReceipt | NativePackageReceipt;
 
 export const install = async (args: string[]): Promise<void> => {
   if (args.length !== 2 || args[0] !== '--root' || !args[1]) {
@@ -101,29 +117,80 @@ export const install = async (args: string[]): Promise<void> => {
   }
   const manifestBytes = await readFile(join(checkout, '.github/ci-agent-tools.json'));
   const manifest = JSON.parse(manifestBytes.toString()) as { schemaVersion: number; tools: Tool[] };
-  const expected: Record<string, { binary: string; package: string }> = {
-    'claude-code': { binary: 'claude', package: '@anthropic-ai/claude-code' },
-    codex: { binary: 'codex', package: '@openai/codex' },
-    'kilo-code': { binary: 'kilo', package: '@kilocode/cli' },
-    opencode: { binary: 'opencode', package: 'opencode-ai' },
+  const expected: Record<
+    string,
+    { binary: string; package: string; provider: 'npm' | 'native'; version: RegExp }
+  > = {
+    'claude-code': {
+      binary: 'claude',
+      package: '@anthropic-ai/claude-code',
+      provider: 'npm',
+      version: /^\d+\.\d+\.\d+$/,
+    },
+    codex: {
+      binary: 'codex',
+      package: '@openai/codex',
+      provider: 'npm',
+      version: /^\d+\.\d+\.\d+$/,
+    },
+    'kilo-code': {
+      binary: 'kilo',
+      package: '@kilocode/cli',
+      provider: 'npm',
+      version: /^\d+\.\d+\.\d+$/,
+    },
+    opencode: {
+      binary: 'opencode',
+      package: 'opencode-ai',
+      provider: 'npm',
+      version: /^\d+\.\d+\.\d+$/,
+    },
+    muse: {
+      binary: 'muse',
+      package: 'muse',
+      provider: 'native',
+      version: /^\d+\.\d+\.\d+-R\d+\.\d+$/,
+    },
+  };
+  const nativePlatforms = ['linux-x64', 'linux-arm64', 'darwin-x64', 'darwin-arm64'];
+  const validNative = (tool: Tool): boolean => {
+    if (tool.provider !== 'native' || !tool.artifacts) return false;
+    if (
+      JSON.stringify(Object.keys(tool.artifacts).sort()) !==
+      JSON.stringify([...nativePlatforms].sort())
+    )
+      return false;
+    return nativePlatforms.every((platform) => {
+      const artifact = tool.artifacts?.[platform];
+      return (
+        !!artifact &&
+        artifact.url.startsWith('https://lookaside.facebook.com/lookaside/muse/download/') &&
+        artifact.url.includes(`version=${tool.version}`) &&
+        /^[0-9a-f]{64}$/.test(artifact.sha256) &&
+        Number.isInteger(artifact.bytes) &&
+        artifact.bytes > 0
+      );
+    });
   };
   if (
-    manifest.schemaVersion !== 1 ||
+    manifest.schemaVersion !== 2 ||
     !Array.isArray(manifest.tools) ||
     JSON.stringify(manifest.tools.map((tool) => tool.id).sort()) !==
       JSON.stringify([...toolRegistry.ids].sort()) ||
     new Set(manifest.tools.map((tool) => tool.binary)).size !== manifest.tools.length ||
-    manifest.tools.some(
-      (tool) =>
-        expected[tool.id]?.binary !== tool.binary ||
-        expected[tool.id]?.package !== tool.package ||
-        !/^\d+\.\d+\.\d+$/.test(tool.version),
-    )
+    manifest.tools.some((tool) => {
+      const want = expected[tool.id];
+      if (!want || want.binary !== tool.binary || want.package !== tool.package) return true;
+      if (!want.version.test(tool.version)) return true;
+      if ((tool.provider ?? 'npm') !== want.provider) return true;
+      return want.provider === 'npm' ? tool.artifacts !== undefined : !validNative(tool);
+    })
   ) {
     throw new Error(
-      'agent manifest must match the four registry IDs and exact supported packages/versions',
+      'agent manifest must match the five registry IDs and exact supported packages/versions',
     );
   }
+  const hostPlatform = `${process.platform}-${process.arch}`;
   const nodeFound = Bun.which('node');
   const npmFound = Bun.which('npm');
   const gitFound = Bun.which('git');
@@ -395,11 +462,29 @@ export const install = async (args: string[]): Promise<void> => {
         '--include=optional',
         '--ignore-scripts=false',
         '--allow-scripts=@anthropic-ai/claude-code,@kilocode/cli,opencode-ai',
-        ...manifest.tools.map((tool) => `${tool.package}@${tool.version}`),
+        ...manifest.tools
+          .filter((tool) => (tool.provider ?? 'npm') === 'npm')
+          .map((tool) => `${tool.package}@${tool.version}`),
       ],
       env,
       900_000,
     );
+    await mkdir(join(prefix, 'bin'), { recursive: true });
+    for (const tool of manifest.tools.filter((candidate) => candidate.provider === 'native')) {
+      const artifact = tool.artifacts?.[hostPlatform];
+      if (!artifact) throw new Error(`no native ${tool.id} artifact for ${hostPlatform}`);
+      const response = await fetch(artifact.url, { signal: AbortSignal.timeout(900_000) });
+      if (!response.ok)
+        throw new Error(`native ${tool.id} download failed: HTTP ${response.status}`);
+      const payload = new Uint8Array(await response.arrayBuffer());
+      if (payload.byteLength !== artifact.bytes)
+        throw new Error(
+          `native ${tool.id} size mismatch: observed ${payload.byteLength}, pinned ${artifact.bytes}`,
+        );
+      if (sha256(payload) !== artifact.sha256)
+        throw new Error(`native ${tool.id} checksum mismatch`);
+      await writeFile(join(prefix, 'bin', tool.binary), payload, { flag: 'wx', mode: 0o755 });
+    }
     await unlink(join(root, 'bin/npm'));
     await symlink(git.realPath, join(root, 'bin/git'));
     await writeFile(join(root, 'config/gitconfig'), '', { flag: 'wx' });
@@ -424,6 +509,43 @@ export const install = async (args: string[]): Promise<void> => {
     for (const tool of manifest.tools)
       await symlink(join(prefix, 'bin', tool.binary), join(root, 'bin', tool.binary));
     for (const tool of manifest.tools) {
+      if (tool.provider === 'native') {
+        const artifact = tool.artifacts?.[hostPlatform];
+        if (!artifact) throw new Error(`no native ${tool.id} artifact for ${hostPlatform}`);
+        const binding = await executable(join(prefix, 'bin', tool.binary));
+        if (!within(prefix, binding.realPath))
+          throw new Error(`executable escapes prefix: ${tool.id}`);
+        if (binding.sha256 !== artifact.sha256)
+          throw new Error(`native executable checksum mismatch: ${tool.id}`);
+        const version = await run(
+          `${tool.binary}-version`,
+          [join(root, 'bin', tool.binary), '--version'],
+          { ...versionEnv, MUSE_NO_AUTO_UPDATE: '1' },
+          30_000,
+        );
+        if (
+          !new RegExp(
+            `(?:^|[^0-9A-Za-z.])${tool.version.replaceAll('.', '\\.')}($|[^0-9A-Za-z.])`,
+          ).test(version.stdout)
+        )
+          throw new Error(`wrong direct version: ${tool.id}`);
+        const firstLine = version.stdout.trim().split(/\r?\n/)[0];
+        if (!firstLine) throw new Error(`empty direct version: ${tool.id}`);
+        packages.push({
+          ...tool,
+          bindingPath: binding.path,
+          realPath: binding.realPath,
+          sha256: binding.sha256,
+          artifactUrl: artifact.url,
+          artifactSha256: artifact.sha256,
+          artifactBytes: artifact.bytes,
+          artifactPlatform: hostPlatform,
+          versionStdout: version.stdout,
+          versionStderr: version.stderr,
+          versionFirstLine: firstLine,
+        });
+        continue;
+      }
       const packageJsonPath = join(prefix, 'lib/node_modules', tool.package, 'package.json');
       if (!within(prefix, await realpath(packageJsonPath)))
         throw new Error(`package metadata escapes prefix: ${tool.id}`);
@@ -471,7 +593,7 @@ export const install = async (args: string[]): Promise<void> => {
     failure ??= error;
   }
   const receipt = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     status: failure ? 'preparation-failed' : 'success',
     startedAt,
     endedAt: new Date().toISOString(),

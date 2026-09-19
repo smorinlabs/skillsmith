@@ -185,13 +185,21 @@ const run = async (workspace: Workspace, label: string, argv: string[]): Promise
   return result;
 };
 
-interface PackageReceipt {
+interface ManifestTool {
   id: string;
   binary: string;
   package: string;
   version: string;
-  packageJsonPath: string;
-  packageJsonSha256: string;
+  provider?: 'npm' | 'native';
+  artifacts?: Record<string, { url: string; sha256: string; bytes: number }>;
+}
+
+interface PackageReceiptBase {
+  id: string;
+  binary: string;
+  package: string;
+  version: string;
+  provider?: 'npm' | 'native';
   bindingPath: string;
   realPath: string;
   sha256: string;
@@ -199,6 +207,17 @@ interface PackageReceipt {
   versionStderr: string;
   versionFirstLine: string;
 }
+interface NpmPackageReceipt extends PackageReceiptBase {
+  packageJsonPath: string;
+  packageJsonSha256: string;
+}
+interface NativePackageReceipt extends PackageReceiptBase {
+  artifactUrl: string;
+  artifactSha256: string;
+  artifactBytes: number;
+  artifactPlatform: string;
+}
+type PackageReceipt = NpmPackageReceipt | NativePackageReceipt;
 
 const validatePrefix = async (): Promise<PackageReceipt[]> => {
   const missing = [];
@@ -231,13 +250,13 @@ const validatePrefix = async (): Promise<PackageReceipt[]> => {
     manifestSha256: string;
     packages: PackageReceipt[];
   };
-  expect(receipt.schemaVersion).toBe(1);
+  expect(receipt.schemaVersion).toBe(2);
   expect(receipt.status).toBe('success');
   expect(receipt.root).toBe(root);
   expect(receipt.prefix).toBe(prefix);
   expect(receipt.manifestSha256).toBe(hash(await readFile(manifestPath)));
   expect(receipt.packages.map((item) => item.id).sort()).toEqual([...toolRegistry.ids].sort());
-  for (const tool of manifest.tools) {
+  for (const tool of manifest.tools as ManifestTool[]) {
     const item = receipt.packages.find((candidate) => candidate.id === tool.id);
     if (!item) throw new Error(`missing installer receipt row: ${tool.id}`);
     expect({
@@ -245,21 +264,41 @@ const validatePrefix = async (): Promise<PackageReceipt[]> => {
       binary: item.binary,
       package: item.package,
       version: item.version,
-    }).toEqual(tool);
+      provider: item.provider ?? 'npm',
+    }).toEqual({
+      id: tool.id,
+      binary: tool.binary,
+      package: tool.package,
+      version: tool.version,
+      provider: tool.provider ?? 'npm',
+    });
     const binding = await executable(join(prefix, 'bin', tool.binary));
     expect(inside(prefix, binding.realPath)).toBe(true);
     expect(item.bindingPath).toBe(binding.path);
     expect(item.realPath).toBe(binding.realPath);
     expect(item.sha256).toBe(binding.sha256);
-    const packageJson = join(prefix, 'lib/node_modules', tool.package, 'package.json');
-    expect(item.packageJsonPath).toBe(packageJson);
-    expect(inside(prefix, await realpath(packageJson))).toBe(true);
-    const bytes = await readFile(packageJson);
-    expect(item.packageJsonSha256).toBe(hash(bytes));
-    expect(JSON.parse(bytes.toString())).toMatchObject({
-      name: tool.package,
-      version: tool.version,
-    });
+    if ((tool.provider ?? 'npm') === 'native') {
+      const native = item as NativePackageReceipt;
+      const hostPlatform = `${process.platform}-${process.arch}`;
+      const pinned = tool.artifacts?.[hostPlatform];
+      if (!pinned) throw new Error(`missing native ${tool.id} pin for ${hostPlatform}`);
+      expect(native.artifactUrl).toBe(pinned.url);
+      expect(native.artifactSha256).toBe(pinned.sha256);
+      expect(native.artifactBytes).toBe(pinned.bytes);
+      expect(native.artifactPlatform).toBe(hostPlatform);
+      expect(item.sha256).toBe(pinned.sha256);
+    } else {
+      const npm = item as NpmPackageReceipt;
+      const packageJson = join(prefix, 'lib/node_modules', tool.package, 'package.json');
+      expect(npm.packageJsonPath).toBe(packageJson);
+      expect(inside(prefix, await realpath(packageJson))).toBe(true);
+      const bytes = await readFile(packageJson);
+      expect(npm.packageJsonSha256).toBe(hash(bytes));
+      expect(JSON.parse(bytes.toString())).toMatchObject({
+        name: tool.package,
+        version: tool.version,
+      });
+    }
     expect(versionMatches(item.versionStdout, tool.version)).toBe(true);
     expect(item.versionFirstLine).toBe(item.versionStdout.trim().split(/\r?\n/)[0] ?? '');
   }
@@ -269,9 +308,9 @@ const validatePrefix = async (): Promise<PackageReceipt[]> => {
 beforeAll(async () => {
   if (mode !== 'absent' && mode !== 'present')
     throw new Error(`invalid agent environment mode: ${mode}`);
-  expect(manifest.schemaVersion).toBe(1);
+  expect(manifest.schemaVersion).toBe(2);
   expect(manifest.tools.map((tool) => tool.id).sort()).toEqual([...toolRegistry.ids].sort());
-  expect(new Set(manifest.tools.map((tool) => tool.binary)).size).toBe(4);
+  expect(new Set(manifest.tools.map((tool) => tool.binary)).size).toBe(5);
   if (reportPath !== undefined) {
     if (
       !isAbsolute(reportPath) ||
@@ -436,7 +475,7 @@ const assertDiscovery = (value: Workspace, report: Agents, missing?: string): vo
   }
 };
 
-test('CI-T01: four supported agents obey the owned executable environment', async () => {
+test('CI-T01: five supported agents obey the owned executable environment', async () => {
   const value = await workspace('discovery');
   const discover = async (label: string): Promise<Agents> => {
     const result = await product(value, label, ['agents', '--json'], true);

@@ -1162,6 +1162,7 @@ jobs:
                 codex) make_stub codex 'codex-cli 0.142.5' ;;
                 kilo) make_stub kilo '7.4.5' ;;
                 opencode) make_stub opencode '1.17.18' ;;
+                muse) make_stub muse 'Muse Code 1.3.0 (1.3.0-R3401.1)' ;;
                 *) exit 1 ;;
               esac
             done
@@ -1204,6 +1205,7 @@ jobs:
           verify_fleet both 2 claude codex
           verify_fleet kilo 1 kilo
           verify_fleet opencode 1 opencode
+          verify_fleet muse 1 muse
           verify_fleet mixed 2 claude kilo
           set +e
           env HOME="$root/fleet-home" \
@@ -1217,6 +1219,21 @@ jobs:
             TMPDIR="$root/fleet-home/tmp" \
             PATH="$root/fleet" \
             "$root/direct/skillsmith" install owner/repo --tool kilo-code --user --no-verify --no-prompt --json > "$root/read-only-mutation.json"
+          mutation_exit="$?"
+          set -e
+          test "$mutation_exit" = '4'
+          set +e
+          env HOME="$root/fleet-home" \
+            XDG_CONFIG_HOME="$root/fleet-home/config" \
+            XDG_CACHE_HOME="$root/fleet-home/cache" \
+            XDG_DATA_HOME="$root/fleet-home/data" \
+            SKILLSMITH_HOME="$root/fleet-home/skillsmith" \
+            CLAUDE_CONFIG_DIR="$root/fleet-home/claude" \
+            CODEX_HOME="$root/fleet-home/codex" \
+            OPENCODE_CONFIG_DIR="$root/fleet-home/opencode" \
+            TMPDIR="$root/fleet-home/tmp" \
+            PATH="$root/fleet" \
+            "$root/direct/skillsmith" install owner/repo --tool muse --user --no-verify --no-prompt --json > "$root/read-only-mutation-muse.json"
           mutation_exit="$?"
           set -e
           test "$mutation_exit" = '4'

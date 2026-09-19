@@ -70,7 +70,7 @@ jobs:
           echo "$agent_root/prefix/bin" >> "$GITHUB_PATH"
       - name: Check ordinary agent command bindings
         run: |
-          for name in claude codex kilo opencode; do
+          for name in claude codex kilo opencode muse; do
             expected="$ORDINARY_AGENT_PREFIX/bin/$name"
             actual=$(command -v "$name" || true)
             printf '%s\t%s\n' "$name" "$actual" >> "$ORDINARY_AGENT_REPORT_ROOT/command-bindings.txt"

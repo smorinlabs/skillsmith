@@ -781,11 +781,12 @@ const createProcessPorts = (): {
   };
   const processPort: ProcessPort = {
     exec,
-    runVersion: async (binaryPath, args, signal) => {
+    runVersion: async (binaryPath, args, signal, env) => {
       try {
         const result = await exec(binaryPath, args, {
           timeoutMs: DEFAULT_VERSION_TIMEOUT_MS,
           ...(signal ? { signal } : {}),
+          ...(env ? { env } : {}),
         });
         if (result.code !== 0 || result.timedOut) return 'unknown';
         return result.stdout.trim().split('\n')[0]?.trim() || 'unknown';

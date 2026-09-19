@@ -402,8 +402,8 @@ describe('EWP-OPT-TS02', () => {
       parsedDefault: true,
     });
     expect(option('skillsmith list', '--tool')).toMatchObject({
-      knownValues: ['claude-code', 'codex', 'kilo-code', 'opencode'],
-      allowedValues: ['claude-code', 'codex', 'kilo-code', 'opencode'],
+      knownValues: ['claude-code', 'codex', 'kilo-code', 'opencode', 'muse'],
+      allowedValues: ['claude-code', 'codex', 'kilo-code', 'opencode', 'muse'],
       repeatable: true,
     });
     expect(option('skillsmith commands', '--scope')).toMatchObject({
@@ -412,8 +412,8 @@ describe('EWP-OPT-TS02', () => {
       repeatable: false,
     });
     expect(option('skillsmith status', '--tool')).toMatchObject({
-      knownValues: ['claude-code', 'codex', 'kilo-code', 'opencode'],
-      allowedValues: ['claude-code', 'codex', 'kilo-code', 'opencode'],
+      knownValues: ['claude-code', 'codex', 'kilo-code', 'opencode', 'muse'],
+      allowedValues: ['claude-code', 'codex', 'kilo-code', 'opencode', 'muse'],
       repeatable: true,
     });
     expect(option('skillsmith status', '--scope')).toMatchObject({

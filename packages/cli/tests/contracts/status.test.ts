@@ -342,7 +342,7 @@ describe('EWP-CMD-STATUS-TS01', () => {
     expect(options.find((option) => option.long === '--tool')).toMatchObject({
       short: '-t',
       repeatable: true,
-      allowedValues: ['claude-code', 'codex', 'kilo-code', 'opencode'],
+      allowedValues: ['claude-code', 'codex', 'kilo-code', 'opencode', 'muse'],
     });
     expect(options.find((option) => option.long === '--scope')).toMatchObject({
       short: '-s',

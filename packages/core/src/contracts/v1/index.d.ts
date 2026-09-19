@@ -32,7 +32,7 @@ import type {
 import type { ArtifactCodec, ArtifactCodecError, WireCodec } from '@skillsmith/core/contracts';
 
 type ToolId = 'claude-code' | 'codex';
-type ConfigToolId = ToolId | 'kilo-code' | 'opencode';
+type ConfigToolId = ToolId | 'kilo-code' | 'opencode' | 'muse';
 type Scope = 'user' | 'project';
 type ConfigScope = 'system' | Scope | 'managed';
 type ConfigLayer = 'defaults' | 'system' | 'user' | 'project' | 'explicit-file' | 'env' | 'cli';

@@ -132,7 +132,7 @@ describe('planning domain types', () => {
     > = true;
     const publicArtifactParity: Equal<
       OperationManifestSnapshot['skills'][number]['tools'][number],
-      'claude-code' | 'codex' | 'kilo-code' | 'opencode'
+      'claude-code' | 'codex' | 'kilo-code' | 'opencode' | 'muse'
     > = true;
 
     expect(privateToolParity).toBeTrue();

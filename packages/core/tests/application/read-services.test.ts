@@ -459,6 +459,7 @@ describe('read and config outcomes', () => {
       'codex',
       'kilo-code',
       'opencode',
+      'muse',
     ]);
     expect(skills.report).toEqual({
       entries: [],

@@ -15,7 +15,7 @@ import { hermeticGitEnv } from '../../../packages/core/tests/fixtures/git-env.ts
 import { readOnlyFixtureAdapter } from '../fixtures/p1-ts09/read-only-adapter.ts';
 import { writeFixtureAdapter } from '../fixtures/p1-ts09/write-adapter.ts';
 
-const BUILT_INS = ['claude-code', 'codex', 'kilo-code', 'opencode'] as const;
+const BUILT_INS = ['claude-code', 'codex', 'kilo-code', 'opencode', 'muse'] as const;
 const FULL = ['claude-code', 'codex'] as const;
 const READ_SCOPES = ['user', 'project', 'system', 'managed'] as const;
 const WRITE_SCOPES = ['user', 'project', 'custom'] as const;
@@ -108,7 +108,7 @@ const expectedScopes = (tool: string, operation: string): readonly string[] => {
 };
 
 describe('EWP-P1-TS09', () => {
-  test('publishes the exact immutable four-tool operation, scope, and version matrix', async () => {
+  test('publishes the exact immutable five-tool operation, scope, and version matrix', async () => {
     const registry = await requireRegistry();
     expect(registry.ids).toEqual(BUILT_INS);
     expect(
@@ -437,7 +437,7 @@ describe('EWP-P1-TS09', () => {
 
   test('distinguishes known unsupported capability exit 4 from unknown usage exit 2', async () => {
     const registry = await requireRegistry();
-    for (const tool of ['kilo-code', 'opencode']) {
+    for (const tool of ['kilo-code', 'opencode', 'muse']) {
       expect(registry.capability(tool, 'install')).toMatchObject({
         code: 'capability',
         exitCode: 4,
@@ -489,20 +489,22 @@ describe('EWP-P1-TS09', () => {
     for await (const path of glob.scan({ cwd: join(import.meta.dir, '..', '..', '..') })) {
       if (path.includes('/agents/claude-code/') || path.includes('/agents/codex/')) continue;
       if (path.includes('/agents/kilo-code/') || path.includes('/agents/opencode/')) continue;
+      if (path.includes('/agents/muse/')) continue;
       files.push(path);
     }
     const root = join(import.meta.dir, '..', '..', '..');
     const comparison =
-      /(?:(?:===|!==)\s*['"](?:claude-code|codex|kilo-code|opencode)['"]|['"](?:claude-code|codex|kilo-code|opencode)['"]\s*(?:===|!==))/g;
+      /(?:(?:===|!==)\s*['"](?:claude-code|codex|kilo-code|opencode|muse)['"]|['"](?:claude-code|codex|kilo-code|opencode|muse)['"]\s*(?:===|!==))/g;
     const independentTuple =
-      /\[\s*['"]claude-code['"]\s*,\s*['"]codex['"](?:\s*,\s*['"]kilo-code['"]\s*,\s*['"]opencode['"])?\s*\]/g;
+      /\[\s*['"]claude-code['"]\s*,\s*['"]codex['"](?:\s*,\s*['"]kilo-code['"]\s*,\s*['"]opencode['"](?:\s*,\s*['"]muse['"])?)?\s*\]/g;
     const independentVersionMap =
       /VERIFIED_AGAINST\s*[^=]*=\s*\{[\s\S]*?['"]?claude-code['"]?\s*:[\s\S]*?codex\s*:/g;
     const knownIdPolicy =
-      /(?:\.includes\(\s*['"](?:claude-code|codex|kilo-code|opencode)['"]|\bcase\s+['"](?:claude-code|codex|kilo-code|opencode)['"]|\btool\s*[:=]\s*['"](?:claude-code|codex|kilo-code|opencode)['"])/g;
+      /(?:\.includes\(\s*['"](?:claude-code|codex|kilo-code|opencode|muse)['"]|\bcase\s+['"](?:claude-code|codex|kilo-code|opencode|muse)['"]|\btool\s*[:=]\s*['"](?:claude-code|codex|kilo-code|opencode|muse)['"])/g;
     const directAdapterImport =
-      /from\s+['"]\.\.\/agents\/(?:claude-code|codex|kilo-code|opencode)\//g;
-    const genericKnownKey = /(?:^|[{,])\s*['"]?(?:claude-code|codex|kilo-code|opencode)['"]?\s*:/gm;
+      /from\s+['"]\.\.\/agents\/(?:claude-code|codex|kilo-code|opencode|muse)\//g;
+    const genericKnownKey =
+      /(?:^|[{,])\s*['"]?(?:claude-code|codex|kilo-code|opencode|muse)['"]?\s*:/gm;
     const violations: string[] = [];
     for (const path of files) {
       const source = await Bun.file(join(root, path)).text();
