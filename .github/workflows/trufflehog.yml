@@ -38,10 +38,14 @@ jobs:
         with:
           extra_args: --only-verified
           # Pin the scanner image too: the default `latest` would float.
-          version: v3.97.5
+          # NOTE: container tags drop the `v` prefix (3.97.5, not v3.97.5).
+          version: 3.97.5
       # Re-run the same scan range with JSON output so failures (and weekly
       # runs) keep a machine-readable report. No --fail here: the scan step
-      # above already recorded the verdict.
+      # above already recorded the verdict. Raw secret fields are stripped
+      # before upload: the JSON printer emits Raw/RawV2/SecretParts verbatim
+      # and offers no redaction flag, so jq removes exactly the fields that
+      # upstream Result.ClearSecrets clears.
       - name: Regenerate JSON report
         id: report
         if: ${{ !cancelled() && (failure() || github.event_name == 'schedule') }}
@@ -49,12 +53,14 @@ jobs:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          image='ghcr.io/trufflesecurity/trufflehog:v3.97.5'
+          image='ghcr.io/trufflesecurity/trufflehog:3.97.5'
+          set -o pipefail
           set -- git 'file:///scan' --no-update --only-verified --json
           if [ "$GITHUB_EVENT_NAME" = 'pull_request' ]; then
             set -- "$@" --since-commit "$PR_BASE_SHA" --branch "$PR_HEAD_SHA"
           fi
-          docker run --rm -v "$PWD:/scan" -w /scan "$image" "$@" > "$RUNNER_TEMP/trufflehog-report.json"
+          docker run --rm -v "$PWD:/scan" -w /scan "$image" "$@" \
+            | jq -c 'del(.Raw, .RawV2, .SecretParts)' > "$RUNNER_TEMP/trufflehog-report.json"
       - name: Retain TruffleHog JSON report
         if: ${{ !cancelled() && steps.report.outcome == 'success' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4
