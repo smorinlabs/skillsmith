@@ -1,42 +1,38 @@
 title = "skillsmith gitleaks config"
 
-# Extend the upstream default rules; add allowlists below for documented false positives.
 [extend]
 useDefault = true
 
+# All directories are scanned. Exceptions require an exact file AND an exact
+# extracted value and affect only the detector responsible for the false positive.
 [[allowlists]]
-description = "Global allowlist for documentation, research, and known placeholders"
-
-paths = [
-  '''(^|/)docs/''',
-  '''(^|/)research/''',
-  '''(^|/)packages/[^/]+/tests/fixtures/''',
-  '''\.gitleaks\.toml$''',
-]
-
-regexes = [
-  '''YOUR_[A-Z0-9_]+_KEY''',
-  '''YOUR_API_KEY''',
-  '''xxxxxxxx+''',
-  '''sk-[xX]{8,}''',
-  '''AIza[xX]{8,}''',
-  '''ci-test-key''',
-]
-
-# Fixture-unique substrings only. Generic tokens like "mock" / "example" /
-# "placeholder" were too broad globally — they now live in the tests/-scoped
-# allowlist below, anchored to realistic shapes.
-stopwords = [
-  "abcdef",
-  "invalid-key",
-  "secret-key-12345",
-]
+description = "Invalid value used by manifest sensitive-content rejection tests"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^packages/core/tests/artifacts/manifest(-edit)?\.test\.ts$''']
+regexes = ['''^ghp_P17SECRET1$''']
 
 [[allowlists]]
-description = "Test-file placeholder/mock/example tokens (narrowed from global stopwords)"
+description = "Named output-redaction canary, not an authentication value"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^tests/ergonomics/fixtures/p4b-apply/cases\.ts$''']
+regexes = ['''^P17_SECRET_CANARY_APPLY_ENV$''']
 
-paths = ['''(^|/)packages/[^/]+/tests/''']
+[[allowlists]]
+description = "Prose about excluded portable paths, retained in Git history"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^projects/p17/evidence/P17-G4A-01\.md$''']
+regexes = ['''^absolute/escaping$''']
 
-regexes = [
-  '''(?i)(mock|example|placeholder|test)[-_]?(api[-_]?)?(key|token|secret)''',
-]
+[[allowlists]]
+description = "Prose about configuration leak checks, retained in Git history"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^projects/p17/evidence/P17-G6-01\.md$''']
+regexes = ['''^dotenv/bunfig$''']
