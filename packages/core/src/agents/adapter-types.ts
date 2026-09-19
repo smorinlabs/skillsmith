@@ -144,6 +144,8 @@ export interface PlacementBundle {
     scope: Scope,
   ): Promise<PlacementResolution>;
   noticeForRoot(root: string, inventory: PlacementInventory): string | null;
+  /** Tool-owned metadata/system entries must not be reported as legacy user skills. */
+  isManagedLegacyEntry?(env: InventoryReadPorts, root: string, entry: string): Promise<boolean>;
 }
 
 export interface RegisteredPlacementBundle extends PlacementBundle {

@@ -4,6 +4,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseCodexExecStderr, verifyCodex } from '../../../src/agents/codex/verify.ts';
 import type { ExecResult, ScanEnv } from '../../../src/env/types.ts';
+import { runVerify } from '../../../src/verify/run.ts';
 import type { VerifyPorts } from '../../../src/verify/types.ts';
 import { runtimePorts } from '../../fixtures/runtime-ports.ts';
 
@@ -116,176 +117,278 @@ describe('parseCodexExecStderr', () => {
   });
 });
 
+const NAMES = ['bad-nodesc', 'bad-noframe', 'bad-yaml', 'good-skill'];
+const loaded = (proj: string) =>
+  NAMES.map((name) => ({
+    path: join(proj, '.agents', 'skills', name, 'SKILL.md'),
+    enabled: true,
+  }));
+const reply = (proj: string, skills: unknown = loaded(proj), errors: unknown = []) =>
+  `${JSON.stringify({ id: 1, result: {} })}\n${JSON.stringify({ id: 2, result: { data: [{ cwd: proj, skills, errors }] } })}\n`;
+
 describe('verifyCodex deep mode', () => {
-  test('static+deep: deep ran despite exit 1, 3 skill-load findings, tool verdict fail', async () => {
-    let deepArgs: readonly string[] | undefined;
-    let deepEnv: Record<string, string> | undefined;
-    let proj: string | undefined;
-    let home: string | undefined;
-    let goodSkillStaged = false;
-
-    const scanEnv = fakeInstalled({
-      exec: async (_cmd, args, opts): Promise<ExecResult> => {
-        const staticResult = staticHappyPath(_cmd, args);
+  test('in-flight Codex cancellation reaches the runVerify cancellation boundary', async () => {
+    const controller = new AbortController();
+    let stagedProject = '';
+    let isolatedHome = '';
+    const ports = fakeInstalled({
+      exec: async (binary, args, opts) => {
+        const staticResult = staticHappyPath(binary, args);
         if (staticResult) return staticResult;
-        // deep exec: args[0] === 'exec'
-        deepArgs = args;
-        deepEnv = opts?.env;
-        proj = args[2]; // the value after '-C'
-        home = opts?.env?.CODEX_HOME;
-        goodSkillStaged = existsSync(
-          join(proj as string, '.agents', 'skills', 'good-skill', 'SKILL.md'),
-        );
-        // Real codex reports the actual temp project path, not a fixed literal — substitute
-        // it in so the prefix-stripping in parseCodexExecStderr exercises for real here.
-        return {
-          code: 1,
-          stdout: '',
-          stderr: CANNED_DEEP_STDERR.replaceAll('/proj', proj as string),
-          timedOut: false,
-        };
+        expect(args[0]).toBe('app-server');
+        stagedProject = opts?.cwd ?? '';
+        isolatedHome = opts?.env?.CODEX_HOME ?? '';
+        controller.abort();
+        throw new Error('fixture process operation cancelled');
       },
     });
-
-    const r = await verifyCodex(scanEnv, {
+    const result = await runVerify(ports, {
       path: DUMMY,
-      modes: ['static', 'deep'],
+      tools: ['codex'],
+      deep: true,
+      signal: controller.signal,
+    });
+    expect(stagedProject).not.toBe('');
+    expect(isolatedHome).not.toBe('');
+    expect(existsSync(stagedProject)).toBe(false);
+    expect(existsSync(isolatedHome)).toBe(false);
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: 'generic', message: 'runVerify aborted' },
+    });
+  });
+
+  const probe = async (
+    respond: (proj: string) => Partial<ExecResult> = (proj) => ({ stdout: reply(proj) }),
+    options: { kind?: 'plugin' | 'skill'; canonical?: boolean; combined?: boolean } = {},
+  ) => {
+    let stagedProject = '';
+    let isolatedHome = '';
+    let childEnvironment: Record<string, string> | undefined;
+    const scanEnv = fakeInstalled({
+      realpath: async (path) => (options.canonical ? `/canonical${path}` : path),
+      exec: async (binary, args, opts): Promise<ExecResult> => {
+        const staticResult = staticHappyPath(binary, args);
+        if (staticResult) return staticResult;
+        expect(args).toEqual(['app-server', '--listen', 'stdio://']);
+        expect(opts?.jsonRpc?.map((message) => message.method)).toEqual([
+          'initialize',
+          'initialized',
+          'skills/list',
+        ]);
+        const params = opts?.jsonRpc?.[2]?.params as { cwds: string[]; forceReload: boolean };
+        expect(params.forceReload).toBe(true);
+        expect(opts?.input).toBeUndefined();
+        expect(opts?.unsetEnv).toContain('OPENAI_API_KEY');
+        expect(opts?.env?.CODEX_HOME).toBeTruthy();
+        expect(opts?.env?.HOME).toBe(opts?.env?.CODEX_HOME);
+        childEnvironment = opts?.env;
+        stagedProject = opts?.cwd ?? '';
+        isolatedHome = opts?.env?.CODEX_HOME ?? '';
+        expect(existsSync(join(stagedProject, '.agents', 'skills', 'good-skill', 'SKILL.md'))).toBe(
+          true,
+        );
+        return {
+          code: 0,
+          stdout: '',
+          stderr: '',
+          timedOut: false,
+          ...respond(params.cwds[0] ?? ''),
+        };
+      },
+    });
+    const result = await verifyCodex(scanEnv, {
+      path: DUMMY,
+      modes: options.combined ? ['static', 'deep'] : ['deep'],
       strict: false,
+      ...(options.kind ? { kind: options.kind } : {}),
     });
-    expect(r.ok).toBe(true);
-    if (!r.ok) return;
-
-    expect(r.value.modes).toHaveLength(2);
-    expect(r.value.modes[0]?.mode).toBe('static');
-    expect(r.value.modes[1]?.mode).toBe('deep');
-
-    const deep = r.value.modes[1];
-    expect(deep?.status).toBe('ran');
-    expect(deep?.skipReason).toBeNull();
-    expect(deep?.coverage).toEqual({ manifest: false, skills: true });
-    expect(deep?.verdict).toBe('fail');
-    expect(deep?.findings).toHaveLength(3);
-    for (const f of deep?.findings ?? []) {
-      expect(f.checkId).toBe('codex.skill-load');
-      expect(f.normalizedSeverity).toBe('error');
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('verifier failed outside mode reporting');
+    expect(childEnvironment?.CODEX_HOME).toBeTruthy();
+    for (const key of [
+      'HOME',
+      'XDG_CONFIG_HOME',
+      'XDG_DATA_HOME',
+      'XDG_CACHE_HOME',
+      'XDG_STATE_HOME',
+      'XDG_RUNTIME_DIR',
+      'XDG_CONFIG_DIRS',
+      'XDG_DATA_DIRS',
+    ]) {
+      expect(childEnvironment?.[key]).toBe(childEnvironment?.CODEX_HOME);
     }
-    // Findings report target-relative paths (the target's real `skills/<n>/` layout),
-    // not the throwaway `.agents/skills/<n>/` staging path used for the deep exec.
-    expect((deep?.findings ?? []).map((f) => f.file)).toEqual([
-      'skills/bad-yaml/SKILL.md',
-      'skills/bad-noframe/SKILL.md',
-      'skills/bad-nodesc/SKILL.md',
-    ]);
+    expect(existsSync(stagedProject)).toBe(false);
+    expect(existsSync(isolatedHome)).toBe(false);
+    const deep = result.value.modes.find((mode) => mode.mode === 'deep');
+    if (!deep) throw new Error('missing deep result');
+    expect(deep.command).not.toContain('exec -C');
+    expect(deep.command).not.toContain(stagedProject);
+    return { deep, tool: result.value };
+  };
 
-    // Tool verdict is the worst of static pass / deep fail.
-    expect(r.value.verdict).toBe('fail');
-
-    // The deep call ran under an isolated, non-empty CODEX_HOME with the frozen args.
-    expect(deepEnv?.CODEX_HOME).toBeTruthy();
-    expect(deepArgs).toEqual([
-      'exec',
-      '-C',
-      proj as string,
-      '--skip-git-repo-check',
-      '--dangerously-bypass-approvals-and-sandbox',
-      'ok',
-    ]);
-    expect(deep?.command).toBe(
-      'codex exec -C <proj> --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox "ok"',
-    );
-
-    // The real fixture skill was staged into the throwaway project before the exec.
-    expect(goodSkillStaged).toBe(true);
-
-    // Both temp dirs were removed in finally.
-    expect(existsSync(proj as string)).toBe(false);
-    expect(existsSync(home as string)).toBe(false);
+  test('all expected skills enabled -> pass without a model turn', async () => {
+    const { deep, tool } = await probe(undefined, { combined: true });
+    expect(deep.status).toBe('ran');
+    expect(deep.verdict).toBe('pass');
+    expect(deep.coverage).toEqual({ manifest: false, skills: true });
+    expect(deep.findings).toEqual([]);
+    expect(tool.verdict).toBe('pass');
   });
 
-  test('clean skills + only the 401 tail (exit 1) -> ran, pass, no findings', async () => {
-    const scanEnv = fakeInstalled({
-      exec: async (_cmd, args): Promise<ExecResult> => {
-        if (args[0] !== 'exec') throw new Error(`unexpected exec call: ${args.join(' ')}`);
-        return {
-          code: 1,
-          stdout: '',
-          stderr: 'ERROR codex_api: 401 Unauthorized',
-          timedOut: false,
-        };
-      },
-    });
-
-    const r = await verifyCodex(scanEnv, { path: DUMMY, modes: ['deep'], strict: false });
-    expect(r.ok).toBe(true);
-    if (!r.ok) return;
-
-    const mode = r.value.modes[0];
-    expect(mode?.status).toBe('ran');
-    expect(mode?.skipReason).toBeNull();
-    expect(mode?.verdict).toBe('pass');
-    expect(mode?.findings).toEqual([]);
-    expect(mode?.coverage).toEqual({ manifest: false, skills: true });
+  test('canonical staged paths are used (macOS /private aliases)', async () => {
+    expect((await probe(undefined, { canonical: true })).deep.verdict).toBe('pass');
   });
 
-  test('unrecognized non-zero (no load evidence, no 401) -> error, exec-error, verdict null', async () => {
-    const scanEnv = fakeInstalled({
-      exec: async (_cmd, args): Promise<ExecResult> => {
-        if (args[0] !== 'exec') throw new Error(`unexpected exec call: ${args.join(' ')}`);
-        return { code: 1, stdout: '', stderr: 'panic: something', timedOut: false };
-      },
-    });
+  test.each(['plugin', 'skill'] as const)(
+    'structured target errors map to original %s paths',
+    async (kind) => {
+      const { deep, tool } = await probe(
+        (proj) => ({
+          stdout: reply(
+            proj,
+            [loaded(proj)[3]],
+            NAMES.slice(0, 3).map((name) => ({
+              path: join(proj, '.agents', 'skills', name, 'SKILL.md'),
+              message: 'invalid skill',
+            })),
+          ),
+        }),
+        { kind, combined: true },
+      );
+      expect(deep.status).toBe('ran');
+      expect(deep.verdict).toBe('fail');
+      expect(tool.verdict).toBe('fail');
+      expect(deep.findings.map((finding) => finding.file).sort()).toEqual(
+        kind === 'skill'
+          ? ['SKILL.md', 'SKILL.md', 'SKILL.md']
+          : NAMES.slice(0, 3).map((name) => `skills/${name}/SKILL.md`),
+      );
+    },
+  );
 
-    const r = await verifyCodex(scanEnv, { path: DUMMY, modes: ['deep'], strict: false });
-    expect(r.ok).toBe(true);
-    if (!r.ok) return;
+  test.each(['missing', 'disabled'] as const)(
+    '%s target is incomplete, not a pass or invented invalid-artifact failure',
+    async (condition) => {
+      const { deep, tool } = await probe((proj) => ({
+        stdout: reply(
+          proj,
+          loaded(proj).flatMap((skill, index) =>
+            index === 0 ? (condition === 'missing' ? [] : [{ ...skill, enabled: false }]) : [skill],
+          ),
+        ),
+      }));
+      expect(deep.status).toBe('error');
+      expect(deep.verdict).toBeNull();
+      expect(deep.coverage.skills).toBe(false);
+      expect(tool.verdict).toBe('inconclusive');
+      expect(deep.findings.some((finding) => finding.file === 'skills/bad-nodesc/SKILL.md')).toBe(
+        true,
+      );
+    },
+  );
 
-    const mode = r.value.modes[0];
-    expect(mode?.status).toBe('error');
-    expect(mode?.skipReason).toBe('exec-error');
-    expect(mode?.verdict).toBeNull();
-    expect(mode?.findings).toEqual([]);
+  test('unrelated discovery cannot satisfy missing targets', async () => {
+    const { deep } = await probe((proj) => ({
+      stdout: reply(proj, loaded('/unrelated/project')),
+    }));
+    expect(deep.status).toBe('error');
   });
 
-  test('timedOut on the deep call -> error, skipReason timeout, verdict null', async () => {
-    const scanEnv = fakeInstalled({
-      exec: async (_cmd, args): Promise<ExecResult> => {
-        if (args[0] !== 'exec') throw new Error(`unexpected exec call: ${args.join(' ')}`);
-        return { code: 124, stdout: '', stderr: '', timedOut: true };
-      },
-    });
-
-    const r = await verifyCodex(scanEnv, { path: DUMMY, modes: ['deep'], strict: false });
-    expect(r.ok).toBe(true);
-    if (!r.ok) return;
-
-    const mode = r.value.modes[0];
-    expect(mode?.status).toBe('error');
-    expect(mode?.skipReason).toBe('timeout');
-    expect(mode?.verdict).toBeNull();
+  test('unrelated errors do not invalidate correctly loaded targets', async () => {
+    const { deep } = await probe((proj) => ({
+      stdout: reply(proj, loaded(proj), [{ path: '/unrelated/SKILL.md', message: 'invalid' }]),
+    }));
+    expect(deep.verdict).toBe('pass');
   });
 
-  test('temp proj/home dirs are removed after the deep run', async () => {
-    let proj: string | undefined;
-    let home: string | undefined;
-    const scanEnv = fakeInstalled({
-      exec: async (_cmd, args, opts): Promise<ExecResult> => {
-        if (args[0] !== 'exec') throw new Error(`unexpected exec call: ${args.join(' ')}`);
-        proj = args[2];
-        home = opts?.env?.CODEX_HOME;
-        return {
-          code: 1,
-          stdout: '',
-          stderr: 'ERROR codex_api: 401 Unauthorized',
-          timedOut: false,
-        };
-      },
-    });
-
-    const r = await verifyCodex(scanEnv, { path: DUMMY, modes: ['deep'], strict: false });
-    expect(r.ok).toBe(true);
-    expect(typeof proj).toBe('string');
-    expect(typeof home).toBe('string');
-    expect(existsSync(proj as string)).toBe(false);
-    expect(existsSync(home as string)).toBe(false);
+  test('a proven invalid target outranks another missing target', async () => {
+    const { deep } = await probe((proj) => ({
+      stdout: reply(proj, [], [{ path: loaded(proj)[0]?.path, message: 'invalid' }]),
+    }));
+    expect(deep.verdict).toBe('fail');
   });
+
+  test.each([{ code: 1 }, { timedOut: true }, { protocolError: 'process stream failed' }])(
+    'validated artifact failure survives abnormal shutdown: %j',
+    async (failure) => {
+      const { deep, tool } = await probe(
+        (proj) => ({
+          ...failure,
+          stdout: reply(proj, loaded(proj).slice(1), [
+            { path: loaded(proj)[0]?.path, message: 'invalid skill' },
+          ]),
+          stderr: 'loader shutdown token=private-value',
+        }),
+        { combined: true },
+      );
+      expect(deep.status).toBe('ran');
+      expect(deep.verdict).toBe('fail');
+      expect(tool.verdict).toBe('fail');
+      expect(deep.coverage.skills).toBe(true);
+      expect(deep.findings.some((finding) => finding.checkId === 'codex.skill-load')).toBe(true);
+      expect(deep.findings.some((finding) => finding.checkId === 'codex.deep-probe')).toBe(true);
+      expect(JSON.stringify(deep)).not.toContain('private-value');
+    },
+  );
+
+  test.each([{ code: 1 }, { timedOut: true }, { protocolError: 'process stream failed' }])(
+    'successful-looking output cannot pass after abnormal shutdown: %j',
+    async (failure) => {
+      const { deep, tool } = await probe((proj) => ({ ...failure, stdout: reply(proj) }));
+      expect(deep.status).toBe('error');
+      expect(deep.verdict).toBeNull();
+      expect(tool.verdict).toBe('inconclusive');
+    },
+  );
+
+  test.each(['missing-init', 'reordered', 'method-on-response', 'unknown-id', 'error-field'])(
+    'unvalidated transcript cannot establish artifact failure after shutdown: %s',
+    async (corruption) => {
+      const { deep, tool } = await probe((proj) => {
+        const lines = reply(proj, [], [{ path: loaded(proj)[0]?.path, message: 'invalid skill' }])
+          .trim()
+          .split('\n');
+        if (corruption === 'missing-init') lines.shift();
+        if (corruption === 'reordered') lines.reverse();
+        if (corruption === 'method-on-response') {
+          lines[1] = JSON.stringify({ ...JSON.parse(lines[1] ?? '{}'), method: 'untrusted' });
+        }
+        if (corruption === 'unknown-id') lines.unshift('{"id":99,"result":{}}');
+        if (corruption === 'error-field') {
+          lines[0] = JSON.stringify({ ...JSON.parse(lines[0] ?? '{}'), error: null });
+        }
+        return { code: 1, protocolError: 'unexpected response', stdout: `${lines.join('\n')}\n` };
+      });
+      expect(deep.status).toBe('error');
+      expect(tool.verdict).toBe('inconclusive');
+      expect(deep.findings.some((finding) => finding.checkId === 'codex.skill-load')).toBe(false);
+    },
+  );
+
+  test.each([
+    'garbage',
+    '{"id":2,"result":{"data":[]}}',
+    '{"id":1,"result":{}}\n{"id":2,"result":{"data":[{"cwd":"wrong","skills":[],"errors":[]}]}}',
+  ])('malformed/missing response is incomplete: %s', async (stdout) => {
+    expect((await probe(() => ({ stdout }))).deep.status).toBe('error');
+  });
+
+  test.each([{ code: 1 }, { timedOut: true }, { protocolError: 'RPC error -32601' }])(
+    'process/protocol errors preserve bounded sanitized diagnostics: %j',
+    async (failure) => {
+      const { deep, tool } = await probe(() => ({
+        ...failure,
+        stderr: `failure token=private-value Authorization: Bearer secret-value ${'x'.repeat(5000)}`,
+      }));
+      expect(deep.status).toBe('error');
+      expect(deep.skipReason).toBe(failure.timedOut ? 'timeout' : 'exec-error');
+      expect(tool.verdict).toBe('inconclusive');
+      expect(deep.findings.length).toBeGreaterThan(0);
+      const diagnostic = deep.findings.map((finding) => finding.message).join('\n');
+      expect(diagnostic).not.toContain('private-value');
+      expect(diagnostic).not.toContain('secret-value');
+      expect(diagnostic.length).toBeLessThan(2500);
+    },
+  );
 });

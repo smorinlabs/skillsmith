@@ -1,5 +1,15 @@
 # P17 persistent Codex goal
 
+## Execution pause — 2026-09-15
+
+The user deferred all publishing and pre-publishing execution and authorized
+[P19 product-bug closeout](P19-product-bug-closeout-and-publication-deferral.md).
+Resume publication through [PUB-00 #53](https://github.com/smorinlabs/skillsmith/issues/53)
+only on explicit future direction. The executed P17 checkpoint is
+`5a7418593ecf6a8be4b10d8a5f657bb9e4f0e402` on draft PR #44; maintenance main contains older
+preparation records. The original objective and terminal conditions below remain unfulfilled.
+This pause supersedes automatic continuation into G6-04 publication, not its technical gates.
+
 ## Objective
 
 Execute P17 completely: implement and validate every required Phase 0-6 contract in the approved

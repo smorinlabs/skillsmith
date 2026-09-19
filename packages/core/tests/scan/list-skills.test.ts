@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { resolveRuntimeConfiguration } from '../../src/config/runtime.ts';
+import { crossScopeDuplicate } from '../../src/doctor/checks/cross-scope-duplicate.ts';
+import { noopLogger } from '../../src/env/logger.ts';
 import { INVENTORY_CANCELLED } from '../../src/inventory/cancellation.ts';
 import { inventoryRootOrdinalOf } from '../../src/inventory/types.ts';
 import type { InventoryReadPorts } from '../../src/ports/types.ts';
@@ -27,6 +29,82 @@ const fakeEnv = (
 });
 
 describe('listSkills', () => {
+  test('doctor uses canonical conflicts, including two roots within one scope', async () => {
+    const env = fakeEnv(
+      { '/h/.agents/skills': ['shared'], '/h/.codex/skills': ['shared'] },
+      {
+        '/h/.agents/skills/shared/SKILL.md': '---\nname: shared\n---\n',
+        '/h/.codex/skills/shared/SKILL.md': '---\nname: shared\n---\n',
+      },
+    );
+    const findings = await crossScopeDuplicate.run({
+      env: {
+        ...env,
+        assertWritableDirectory: async () => {},
+        http: { request: async () => ({ status: 200, ok: true }) },
+      },
+      mode: 'doctor',
+      tools: ['codex'],
+      scopes: ['user'],
+      cwd: '/proj',
+      configuration,
+      offline: true,
+      logger: noopLogger,
+    });
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.tool).toBe('codex');
+    expect(findings[0]?.message).toContain('/h/.agents/skills/shared');
+    expect(findings[0]?.message).toContain('/h/.codex/skills/shared');
+  });
+  test('cross-tool name reuse is not a same-tool cross-scope duplicate', async () => {
+    const env = fakeEnv(
+      {
+        '/h/.claude/skills': ['shared'],
+        '/proj/.agents/skills': ['shared'],
+      },
+      {
+        '/h/.claude/skills/shared/SKILL.md': '---\nname: shared\n---\n',
+        '/proj/.agents/skills/shared/SKILL.md': '---\nname: shared\n---\n',
+      },
+    );
+    const opts = { tools: ['claude-code', 'codex'] as const, cwd: '/proj', configuration };
+    const inventory = await listSkills(env, opts);
+    const duplicates = await listSkills(env, { ...opts, duplicatesOnly: true });
+    expect(inventory.ok && inventory.value.length).toBe(2);
+    expect(duplicates.ok && duplicates.value).toEqual([]);
+  });
+
+  test('doctor keeps independent tools duplicate groups separate', async () => {
+    const roots = [
+      '/h/.claude/skills',
+      '/proj/.claude/skills',
+      '/h/.agents/skills',
+      '/proj/.agents/skills',
+    ];
+    const env = fakeEnv(
+      Object.fromEntries(roots.map((root) => [root, ['shared']])),
+      Object.fromEntries(
+        roots.map((root) => [`${root}/shared/SKILL.md`, '---\nname: shared\n---\n']),
+      ),
+    );
+    const findings = await crossScopeDuplicate.run({
+      env: {
+        ...env,
+        assertWritableDirectory: async () => {},
+        http: { request: async () => ({ status: 200, ok: true }) },
+      },
+      mode: 'doctor',
+      tools: ['claude-code', 'codex'],
+      scopes: ['user', 'project'],
+      cwd: '/proj',
+      configuration,
+      offline: true,
+      logger: noopLogger,
+    });
+    expect(findings).toHaveLength(2);
+    expect(findings.map((finding) => finding.tool).sort()).toEqual(['claude-code', 'codex']);
+  });
+
   test('empty system → []', async () => {
     const r = await listSkills(fakeEnv({}), { cwd: '/proj', configuration });
     expect(r.ok).toBe(true);

@@ -73,6 +73,28 @@ describe('modeVerdictFor', () => {
 });
 
 describe('toolVerdictFor', () => {
+  test.each(['error', 'skipped'] as const)('a static pass cannot hide a deep %s', (status) => {
+    expect(
+      toolVerdictFor([
+        mode({ mode: 'static' }),
+        mode({ mode: 'deep', status, verdict: null, skipReason: 'exec-error' }),
+      ]),
+    ).toBe('inconclusive');
+  });
+
+  test('a ran mode with no verdict is not successful verification', () => {
+    expect(toolVerdictFor([mode({ mode: 'static', verdict: null })])).toBe('inconclusive');
+  });
+
+  test('a genuine failure outranks an incomplete mode', () => {
+    expect(
+      toolVerdictFor([
+        mode({ mode: 'static', verdict: 'fail' }),
+        mode({ mode: 'deep', status: 'error', verdict: null, skipReason: 'timeout' }),
+      ]),
+    ).toBe('fail');
+  });
+
   test('worst of ran mode verdicts', () => {
     const modes: ModeResult[] = [
       mode({ mode: 'static', verdict: 'warn' }),
@@ -91,6 +113,36 @@ describe('toolVerdictFor', () => {
 });
 
 describe('summarize', () => {
+  test('a passing tool cannot hide another available inconclusive tool', () => {
+    const summary = summarize([
+      toolVerdict({ tool: 'claude-code' }),
+      toolVerdict({ tool: 'codex', verdict: 'inconclusive' }),
+    ]);
+    expect(summary.verdict).toBe('inconclusive');
+    expect(summary.verified).toEqual(['claude-code']);
+    expect(summary.skipped).toEqual(['codex']);
+  });
+
+  test.each([false, true])('absent tool required only with explicitTools=%s', (explicitTools) => {
+    const summary = summarize(
+      [
+        toolVerdict({ tool: 'claude-code' }),
+        toolVerdict({ tool: 'codex', available: false, verdict: 'inconclusive' }),
+      ],
+      { explicitTools },
+    );
+    expect(summary.verdict).toBe(explicitTools ? 'inconclusive' : 'pass');
+  });
+
+  test('a genuine tool failure outranks incomplete verification', () => {
+    expect(
+      summarize([
+        toolVerdict({ tool: 'claude-code', verdict: 'fail' }),
+        toolVerdict({ tool: 'codex', verdict: 'inconclusive' }),
+      ]).verdict,
+    ).toBe('fail');
+  });
+
   test('partitions verified/failed/skipped and totals counts', () => {
     const passTool = toolVerdict({
       tool: 'claude-code',

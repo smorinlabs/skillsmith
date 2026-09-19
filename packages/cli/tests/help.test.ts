@@ -141,7 +141,7 @@ describe('skillsmith help routing', () => {
     expect(list.stdout).toContain('[glob...]');
     expect(list.stdout).toContain('Glob filters for installed skill names');
     expect(list.stdout).toContain('--duplicates');
-    expect(list.stdout).toContain('Show only cross-scope duplicates');
+    expect(list.stdout).toMatch(/Show only same-tool placement\s+conflicts/);
     expect(list.stdout).toContain('$ skillsmith list "review-*" --tool codex --long');
 
     expect(check.stdout).toContain('--report-only');

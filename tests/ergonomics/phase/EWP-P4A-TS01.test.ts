@@ -1,8 +1,18 @@
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CLI_ENTRYPOINT } from '../../../packages/cli/tests/fixtures/cli.ts';
+import { createDetectionIsolation } from '../../../packages/cli/tests/fixtures/detection.ts';
 import {
   type RemoteFixture,
   buildRemoteFixture,
@@ -20,6 +30,8 @@ interface CliProduct {
 
 interface Workspace {
   readonly root: string;
+  readonly bin: string;
+  readonly claude: string;
   readonly repository: string;
   readonly cwd: string;
   readonly projectManifest: string;
@@ -27,6 +39,7 @@ interface Workspace {
   readonly userManifest: string;
   readonly userLock: string;
   readonly env: Record<string, string | undefined>;
+  readonly detectionIsolation: Awaited<ReturnType<typeof createDetectionIsolation>>;
 }
 
 let remote: RemoteFixture;
@@ -48,15 +61,22 @@ const records = (value: unknown): readonly UnknownRecord[] =>
   Array.isArray(value) ? value.filter(isRecord) : [];
 
 const runCli = async (workspace: Workspace, args: readonly string[]): Promise<CliProduct> => {
-  const env = hermeticGitEnv({ ...workspace.env, CI: '1', NO_COLOR: '1' });
-  env.GIT_CONFIG_GLOBAL = workspace.env.GIT_CONFIG_GLOBAL;
-  const proc = Bun.spawn(['bun', CLI_ENTRYPOINT, ...args], {
-    cwd: workspace.cwd,
-    env,
-    stdin: 'ignore',
-    stdout: 'pipe',
-    stderr: 'pipe',
-  });
+  const gitConfig = workspace.env.GIT_CONFIG_GLOBAL;
+  if (gitConfig === undefined) throw new Error('workspace is missing its isolated Git config');
+  const env = hermeticGitEnv(
+    { ...workspace.env, CI: '1', NO_COLOR: '1' },
+    { globalConfigPath: gitConfig },
+  );
+  const proc = Bun.spawn(
+    [process.execPath, '--preload', workspace.detectionIsolation.preload, CLI_ENTRYPOINT, ...args],
+    {
+      cwd: workspace.cwd,
+      env,
+      stdin: 'ignore',
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+  );
   const exitCode = await proc.exited;
   return {
     exitCode,
@@ -88,13 +108,29 @@ const requireExit = (product: CliProduct, expected: number, label: string): void
 
 const createWorkspace = async (label: string): Promise<Workspace> => {
   const root = await mkdtemp(join(tmpdir(), `skillsmith-p4a-ts01-${label}-`));
+  const bin = join(root, 'fixture-bin');
+  const claude = join(bin, 'claude');
+  const fixtureGit = join(bin, 'git');
   const repository = join(root, 'repository');
   const cwd = join(repository, 'packages', 'app');
   const home = join(root, 'home');
   const config = join(root, 'config');
   const data = join(root, 'data');
   const gitConfig = join(root, 'gitconfig');
+  const git = Bun.which('git');
+  if (git === null) throw new Error('P4A TS01 fixture requires Git');
+  const env = {
+    HOME: home,
+    XDG_CONFIG_HOME: config,
+    XDG_DATA_HOME: join(root, 'xdg-data'),
+    XDG_CACHE_HOME: join(root, 'cache'),
+    SKILLSMITH_HOME: data,
+    PATH: bin,
+    GIT_CONFIG_GLOBAL: gitConfig,
+    GIT_ALLOW_PROTOCOL: 'file:https',
+  };
   await Promise.all([
+    mkdir(bin, { recursive: true }),
     mkdir(cwd, { recursive: true }),
     mkdir(home, { recursive: true }),
     mkdir(join(config, 'skillsmith'), { recursive: true }),
@@ -104,24 +140,32 @@ const createWorkspace = async (label: string): Promise<Workspace> => {
       `[url "${remote.multiUrl}"]\n\tinsteadOf = ${remote.multiSource}\n[protocol "file"]\n\tallow = always\n`,
     ),
   ]);
+  await writeFile(
+    claude,
+    '#!/bin/sh\nif [ "$#" -eq 1 ] && [ "$1" = "--version" ]; then\n  echo "2.1.202"\n  exit 0\nfi\nexit 64\n',
+  );
+  await Promise.all([chmod(claude, 0o755), symlink(await realpath(git), fixtureGit)]);
+  const detectionIsolation = await createDetectionIsolation(root, env, ['claude']);
+  const requiredExternalPaths = ['/opt/homebrew/bin/claude', '/usr/local/bin/claude'];
+  if (!requiredExternalPaths.every((path) => detectionIsolation.blockedPaths.includes(path))) {
+    throw new Error('P4A TS01 fixture did not isolate both fixed Claude discovery paths');
+  }
+  if (detectionIsolation.blockedPaths.includes(claude)) {
+    throw new Error('P4A TS01 fixture incorrectly blocked its owned Claude executable');
+  }
   runGit(repository, ['init', '--quiet']);
   return {
     root,
+    bin,
+    claude,
     repository,
     cwd,
     projectManifest: join(repository, 'skillsmith.toml'),
     projectLock: join(repository, 'skillsmith.lock'),
     userManifest: join(config, 'skillsmith', 'skillsmith.toml'),
     userLock: join(config, 'skillsmith', 'skillsmith.lock'),
-    env: {
-      HOME: home,
-      XDG_CONFIG_HOME: config,
-      XDG_DATA_HOME: join(root, 'xdg-data'),
-      XDG_CACHE_HOME: join(root, 'cache'),
-      SKILLSMITH_HOME: data,
-      GIT_CONFIG_GLOBAL: gitConfig,
-      GIT_ALLOW_PROTOCOL: 'file:https',
-    },
+    env,
+    detectionIsolation,
   };
 };
 
@@ -170,6 +214,15 @@ const expectPathBytes = async (
   for (const [path, bytes] of expected) {
     expect(await readMaybe(path), `${label}: ${path}`).toBe(bytes);
   }
+};
+
+const expectBlockedHostDetection = async (workspace: Workspace, label: string): Promise<void> => {
+  const trace = await readMaybe(workspace.detectionIsolation.trace);
+  expect(trace, `${label}: detection preload trace`).not.toBeNull();
+  const probes = trace?.split('\n').filter(Boolean) ?? [];
+  expect(probes, `${label}: both fixed Claude discovery paths`).toEqual(
+    expect.arrayContaining(['/opt/homebrew/bin/claude', '/usr/local/bin/claude']),
+  );
 };
 
 const installArgs = (extra: readonly string[] = []): readonly string[] => [
@@ -246,6 +299,7 @@ const previewAndExecute = async (
   requireExit(executionProduct, expectedExit, 'install execution');
   const execution = requireJson(executionProduct, 'install execution');
   expectPlanParity(preview, execution, extra.join(' ') || 'default install');
+  await expectBlockedHostDetection(workspace, extra.join(' ') || 'default install');
   return { preview, execution };
 };
 
@@ -562,6 +616,43 @@ describe('EWP-P4A-TS01', () => {
         }
       }
       await expectUnchanged(before, 'no-save');
+    } finally {
+      await rm(workspace.root, { recursive: true, force: true });
+    }
+  });
+
+  test('removing the owned Claude fixture refuses without selected artifacts or writes', async () => {
+    const workspace = await createWorkspace('fixture-absence');
+    const livePath = join(workspace.env.HOME as string, '.claude', 'skills', 'factor-scan');
+    const projectLivePath = join(workspace.repository, '.claude', 'skills', 'factor-scan');
+    const before = await snapshot([
+      workspace.projectManifest,
+      workspace.projectLock,
+      workspace.userManifest,
+      workspace.userLock,
+      livePath,
+      projectLivePath,
+    ]);
+    try {
+      await rm(workspace.claude);
+      const product = await runCli(workspace, installArgs());
+      requireExit(product, 4, 'owned Claude fixture absence');
+      const report = requireJson(product, 'owned Claude fixture absence');
+      expect(report).toMatchObject({
+        schemaVersion: 2,
+        kind: 'skillsmith.install',
+        artifactPair: null,
+        artifactSelection: { outcome: 'none', reason: 'pre-resolution-failure' },
+      });
+      expect(records(report.results)).toEqual([
+        expect.objectContaining({
+          tool: 'claude-code',
+          action: 'refused',
+          reason: expect.stringContaining('not detected'),
+        }),
+      ]);
+      await expectUnchanged(before, 'owned Claude fixture absence');
+      await expectBlockedHostDetection(workspace, 'owned Claude fixture absence');
     } finally {
       await rm(workspace.root, { recursive: true, force: true });
     }

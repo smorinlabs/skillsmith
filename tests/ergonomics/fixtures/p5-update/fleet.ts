@@ -22,6 +22,7 @@ import {
   destroyRemoteFixture,
 } from '../../../../packages/core/tests/fixtures/acquire/remote.ts';
 import { hermeticGitEnv, runGit } from '../../../../packages/core/tests/fixtures/git-env.ts';
+import { codexAppServerFixtureDispatch } from '../codex-app-server.ts';
 
 export const UPDATE_SECRET_CANARIES = Object.freeze([
   'P17_SECRET_CANARY_UPDATE_ENV',
@@ -164,10 +165,10 @@ export const createUpdateFleet = async (
         '  echo "codex-cli 0.142.5"',
         '  exit 0',
         'fi',
-        'if [ "$1" = "exec" ]; then',
-        '  echo "ERROR codex_api: 401 Unauthorized" >&2',
-        '  exit 1',
-        'fi',
+        'if [ "$#" -eq 4 ] && [ "$1" = "plugin" ] && [ "$2" = "marketplace" ] && [ "$3" = "add" ]; then exit 0; fi',
+        'if [ "$#" -eq 3 ] && [ "$1" = "plugin" ] && [ "$2" = "add" ] && { [ "$3" = "factor-scan@skillsmith-mkt" ] || [ "$3" = "review@skillsmith-mkt" ]; }; then echo "Added plugin $3"; exit 0; fi',
+        'if [ "$#" -eq 3 ] && [ "$1" = "plugin" ] && [ "$2" = "list" ] && [ "$3" = "--json" ]; then echo \'{"installed":[{"name":"factor-scan"},{"name":"review"}]}\'; exit 0; fi',
+        codexAppServerFixtureDispatch(),
         'echo "unsupported hermetic codex fixture command" >&2',
         'exit 2',
         '',

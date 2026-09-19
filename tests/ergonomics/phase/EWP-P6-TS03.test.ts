@@ -713,24 +713,90 @@ describe('EWP-P6-TS03', () => {
       code: 'fixture',
       message: `${ESCAPE}[31mbad${ESCAPE}[0m\u0000\u0007 failure`,
     };
-    const human = memoryIo(false, true);
-    const humanError = emitFinalError(hostile, ['--color', 'always'], human.io);
-    expect(humanError).toMatchObject({ code: 'fixture', message: 'bad failure', exitCode: 1 });
-    expect(human.stdout).toEqual([]);
-    expect(human.stderr.join('').replace(ANSI_SEQUENCE, '')).toBe('error: bad failure\n');
-    expect(hasUnsafeHumanControl(human.stderr.join(''))).toBeFalse();
+    const colorEnvironmentKeys = [
+      'NO_COLOR',
+      'CLICOLOR',
+      'TERM',
+      'FORCE_COLOR',
+      'CLICOLOR_FORCE',
+    ] as const;
+    const originalColorEnvironment = Object.fromEntries(
+      colorEnvironmentKeys.map((key) => [key, process.env[key]]),
+    );
+    const canonicalHuman = 'error: bad failure\n';
+    const stylingSequence = new RegExp(`${ESCAPE}\\[[0-9;]*m`, 'gu');
+    const normalizeHumanDiagnostic = (value: string): string => value.replace(stylingSequence, '');
+    const exactHumanDiagnostic = (value: string): boolean =>
+      normalizeHumanDiagnostic(value) === canonicalHuman;
 
-    const json = memoryIo(true, true);
-    const jsonError = emitFinalError(hostile, ['--json', '--color', 'always'], json.io);
-    expect(jsonError).toEqual(humanError);
-    expect(json.stderr).toEqual([]);
-    expect(json.stdout).toHaveLength(1);
-    expect(json.stdout.join('')).not.toContain(ESCAPE);
-    expect(JSON.parse(json.stdout.join(''))).toMatchObject({
-      code: 'fixture',
-      message: 'bad failure',
-      exitCode: 1,
-    });
+    try {
+      for (const profile of [
+        { name: 'eligible TTY', noColor: undefined, expectsStyle: true },
+        { name: 'NO_COLOR disabled TTY', noColor: '1', expectsStyle: false },
+      ]) {
+        for (const key of colorEnvironmentKeys) Reflect.deleteProperty(process.env, key);
+        process.env.TERM = 'xterm-256color';
+        if (profile.noColor !== undefined) process.env.NO_COLOR = profile.noColor;
+
+        const human = memoryIo(false, true);
+        const humanError = emitFinalError(hostile, ['--color', 'always'], human.io);
+        const humanOutput = human.stderr.join('');
+        const normalizedHuman = normalizeHumanDiagnostic(humanOutput);
+        expect(humanError, profile.name).toEqual({
+          code: 'fixture',
+          message: 'bad failure',
+          exitCode: 1,
+        });
+        expect(human.stdout, profile.name).toEqual([]);
+        expect(exactHumanDiagnostic(humanOutput), profile.name).toBeTrue();
+        expect(normalizedHuman, profile.name).toBe(canonicalHuman);
+        expect(hasUnsafeHumanControl(normalizedHuman), profile.name).toBeFalse();
+        expect(hasUnsafeHumanControl(`${normalizedHuman}\u0000\u0007`), profile.name).toBeTrue();
+        expect(
+          [humanOutput, 'error: bad failure (wrong)\n', 'error: bad failure\nextra\n'].map(
+            exactHumanDiagnostic,
+          ),
+          profile.name,
+        ).toEqual([true, false, false]);
+        const unsafeHumanDiagnostics = [
+          `${ESCAPE}[2J${canonicalHuman}`,
+          `${ESCAPE}[2H${canonicalHuman}`,
+          `${ESCAPE}[?25l${canonicalHuman}`,
+        ];
+        expect(
+          unsafeHumanDiagnostics.map((value) => [
+            exactHumanDiagnostic(value),
+            hasUnsafeHumanControl(normalizeHumanDiagnostic(value)),
+          ]),
+          profile.name,
+        ).toEqual([
+          [false, true],
+          [false, true],
+          [false, true],
+        ]);
+        expect(humanOutput.includes(ESCAPE), profile.name).toBe(profile.expectsStyle);
+
+        const json = memoryIo(true, true);
+        const jsonError = emitFinalError(hostile, ['--json', '--color', 'always'], json.io);
+        expect(jsonError, profile.name).toEqual(humanError);
+        expect(json.stderr, profile.name).toEqual([]);
+        expect(json.stdout, profile.name).toHaveLength(1);
+        expect(json.stdout.join(''), profile.name).not.toContain(ESCAPE);
+        expect(JSON.parse(json.stdout.join('')), profile.name).toEqual({
+          schemaVersion: 1,
+          kind: 'error',
+          code: 'fixture',
+          message: 'bad failure',
+          exitCode: 1,
+        });
+      }
+    } finally {
+      for (const key of colorEnvironmentKeys) {
+        const value = originalColorEnvironment[key];
+        if (value === undefined) Reflect.deleteProperty(process.env, key);
+        else process.env[key] = value;
+      }
+    }
   });
 
   test('family 11: omitted argv uses the exact process invocation for JSON and no-color errors', async () => {
@@ -854,20 +920,100 @@ describe('EWP-P6-TS03', () => {
   });
 
   test('family 13: repeated mixed user and node parses replace invocation state on one program', async () => {
-    const memory = memoryIo(true, true);
-    const program = buildProgram(undefined, { runtimePorts: memory.io });
-    await program.parseAsync(['--json', '--definitely-unknown'], { from: 'user' });
-    await program.parseAsync(['bun', '--json', '--definitely-unknown'], { from: 'node' });
-    await program.parseAsync(['--format=json', '--definitely-unknown'], { from: 'user' });
-    await program.parseAsync(['bun', '--format=json', '--definitely-unknown'], { from: 'node' });
+    const colorEnvironmentKeys = [
+      'NO_COLOR',
+      'CLICOLOR',
+      'TERM',
+      'FORCE_COLOR',
+      'CLICOLOR_FORCE',
+    ] as const;
+    const originalColorEnvironment = Object.fromEntries(
+      colorEnvironmentKeys.map((key) => [key, process.env[key]]),
+    );
+    const canonicalHuman = "error: unknown option '--definitely-unknown'\n";
+    const stylingSequence = new RegExp(`${ESCAPE}\\[[0-9;]*m`, 'gu');
+    const normalizeHumanDiagnostic = (value: string): string => value.replace(stylingSequence, '');
+    const exactHumanDiagnostic = (value: string): boolean =>
+      normalizeHumanDiagnostic(value) === canonicalHuman;
+    const canonicalJson = {
+      schemaVersion: 1,
+      kind: 'error',
+      code: 'commander.unknownOption',
+      message: "unknown option '--definitely-unknown'",
+      exitCode: 2,
+    };
 
-    expect(memory.exits).toEqual([2, 2, 2, 2]);
-    expect(memory.stdout).toHaveLength(2);
-    expect(memory.stderr).toHaveLength(2);
-    for (const document of memory.stdout) {
-      expect(JSON.parse(document)).toMatchObject({ code: 'commander.unknownOption', exitCode: 2 });
+    try {
+      for (const profile of [
+        { name: 'eligible TTY', noColor: undefined, expectsStyle: true },
+        { name: 'NO_COLOR disabled TTY', noColor: '1', expectsStyle: false },
+      ]) {
+        for (const key of colorEnvironmentKeys) Reflect.deleteProperty(process.env, key);
+        process.env.TERM = 'xterm-256color';
+        if (profile.noColor !== undefined) process.env.NO_COLOR = profile.noColor;
+
+        const memory = memoryIo(true, true);
+        const program = buildProgram(undefined, { runtimePorts: memory.io });
+        await program.parseAsync(['--json', '--definitely-unknown'], { from: 'user' });
+        await program.parseAsync(['bun', '--json', '--definitely-unknown'], { from: 'node' });
+        await program.parseAsync(['--format=json', '--definitely-unknown'], { from: 'user' });
+        await program.parseAsync(['bun', '--format=json', '--definitely-unknown'], {
+          from: 'node',
+        });
+
+        expect(memory.exits, profile.name).toEqual([2, 2, 2, 2]);
+        expect(memory.stdout, profile.name).toHaveLength(2);
+        expect(memory.stderr, profile.name).toHaveLength(2);
+        expect(
+          memory.stdout.map((document) => JSON.parse(document)),
+          profile.name,
+        ).toEqual([
+          { ...canonicalJson, message: "unknown option '--json'" },
+          { ...canonicalJson, message: "unknown option '--format=json'" },
+        ]);
+        for (const document of memory.stdout) expect(document, profile.name).not.toContain(ESCAPE);
+
+        const normalizedErrors = memory.stderr.map(normalizeHumanDiagnostic);
+        expect(normalizedErrors, profile.name).toEqual([canonicalHuman, canonicalHuman]);
+        for (const error of normalizedErrors) {
+          expect(hasUnsafeHumanControl(error), profile.name).toBeFalse();
+          expect(hasUnsafeHumanControl(`${error}\u0000\u0007`), profile.name).toBeTrue();
+        }
+        expect(
+          [
+            memory.stderr[0] ?? '',
+            "error: unknown option '--wrong'\n",
+            "error: unknown option '--definitely-unknown'\nextra\n",
+          ].map(exactHumanDiagnostic),
+          profile.name,
+        ).toEqual([true, false, false]);
+        const unsafeHumanDiagnostics = [
+          `${ESCAPE}[2J${canonicalHuman}`,
+          `${ESCAPE}[2H${canonicalHuman}`,
+          `${ESCAPE}[?25l${canonicalHuman}`,
+        ];
+        expect(
+          unsafeHumanDiagnostics.map((value) => [
+            exactHumanDiagnostic(value),
+            hasUnsafeHumanControl(normalizeHumanDiagnostic(value)),
+          ]),
+          profile.name,
+        ).toEqual([
+          [false, true],
+          [false, true],
+          [false, true],
+        ]);
+        for (const error of memory.stderr) {
+          expect(error.includes(ESCAPE), profile.name).toBe(profile.expectsStyle);
+        }
+      }
+    } finally {
+      for (const key of colorEnvironmentKeys) {
+        const value = originalColorEnvironment[key];
+        if (value === undefined) Reflect.deleteProperty(process.env, key);
+        else process.env[key] = value;
+      }
     }
-    for (const error of memory.stderr) expect(error).toStartWith('error: unknown option');
   });
 
   test('family 14: error-format detection stops at the Commander option terminator', async () => {

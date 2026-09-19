@@ -283,7 +283,12 @@ const validateBundles = (adapter: ToolAdapter): void => {
     for (const method of ['roots', 'standardRoots', 'list', 'resolve', 'noticeForRoot'] as const) {
       requireFunction(adapter.placement[method], `${id} placement.${method}`);
     }
-    for (const method of ['rootFacts', 'listScoped', 'resolveScoped'] as const) {
+    for (const method of [
+      'rootFacts',
+      'listScoped',
+      'resolveScoped',
+      'isManagedLegacyEntry',
+    ] as const) {
       if (adapter.placement[method] !== undefined) {
         requireFunction(adapter.placement[method], `${id} placement.${method}`);
       }

@@ -49,7 +49,24 @@ function text(path: string): string {
 }
 
 function run(command: string[]): string {
-  const result = Bun.spawnSync(command, { cwd: root, stdout: 'pipe', stderr: 'pipe' });
+  // Porcelain diff can refresh index stat data even with optional locks disabled.
+  const isGit = command[0] === 'git';
+  const argv = isGit
+    ? [
+        'git',
+        '-c',
+        'core.fsmonitor=false',
+        '-c',
+        'diff.autoRefreshIndex=false',
+        ...command.slice(1),
+      ]
+    : command;
+  const result = Bun.spawnSync(argv, {
+    cwd: root,
+    stdout: 'pipe',
+    stderr: 'pipe',
+    ...(isGit ? { env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' } } : {}),
+  });
   const stdout = result.stdout.toString();
   const stderr = result.stderr.toString();
   if (result.exitCode !== 0) fail(`${command.join(' ')} failed\n${stdout}${stderr}`);

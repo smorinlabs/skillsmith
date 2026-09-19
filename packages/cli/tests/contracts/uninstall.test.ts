@@ -8,7 +8,7 @@ import {
   setDefaultTimeout,
   test,
 } from 'bun:test';
-import { lstat, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import {
   type ArtifactCoordinatorPorts,
@@ -38,6 +38,7 @@ import {
   destroyFixtureFleet,
 } from '../../../core/tests/fixtures/place/fleet.ts';
 import { CLI_ENTRYPOINT } from '../fixtures/cli.ts';
+import { createDetectionIsolation } from '../fixtures/detection.ts';
 
 setDefaultTimeout(60_000);
 
@@ -51,6 +52,7 @@ interface CliResult {
 let remote: RemoteFixture;
 let fleet: FixtureFleet;
 let installSupportsNoSave = false;
+let detectionIsolation: Awaited<ReturnType<typeof createDetectionIsolation>> | undefined;
 
 const fixtureEnv = (
   selected: FixtureFleet | undefined,
@@ -65,6 +67,7 @@ const fixtureEnv = (
         XDG_DATA_HOME: join(selected.home, '.local', 'share'),
         XDG_CACHE_HOME: join(selected.home, '.cache'),
         SKILLSMITH_HOME: selected.data,
+        PATH: join(selected.base, 'bin'),
       }),
   CI: '1',
   NO_COLOR: '1',
@@ -81,13 +84,22 @@ const spawnCli = (
 ) => {
   const gitConfig =
     options.selected === undefined ? undefined : join(options.selected.base, 'gitconfig');
-  const command =
-    gitConfig === undefined
-      ? ['bun', CLI_ENTRYPOINT, ...args]
-      : ['env', `GIT_CONFIG_GLOBAL=${gitConfig}`, 'bun', CLI_ENTRYPOINT, ...args];
+  const detectionPreload = options.selected === undefined ? undefined : detectionIsolation?.preload;
+  if (options.selected !== undefined && detectionPreload === undefined) {
+    throw new Error('fixture detection isolation was not initialized');
+  }
+  const command = [
+    process.execPath,
+    ...(detectionPreload === undefined ? [] : ['--preload', detectionPreload]),
+    CLI_ENTRYPOINT,
+    ...args,
+  ];
   return Bun.spawn(command, {
     cwd: options.cwd ?? options.selected?.base ?? process.cwd(),
-    env: hermeticGitEnv(fixtureEnv(options.selected, options.env)),
+    env: hermeticGitEnv(
+      fixtureEnv(options.selected, options.env),
+      gitConfig === undefined ? {} : { globalConfigPath: gitConfig },
+    ),
     stdin: 'ignore',
     stdout: 'pipe',
     stderr: 'pipe',
@@ -174,6 +186,45 @@ const readTextMaybe = async (path: string): Promise<string | null> => {
     }
     throw error;
   }
+};
+
+const fixtureBinary = (selected: FixtureFleet, name: 'claude' | 'codex'): string =>
+  join(selected.base, 'bin', name);
+
+const provisionDetectedTools = async (selected: FixtureFleet): Promise<void> => {
+  await Promise.all(
+    [
+      ['claude', '2.1.202'],
+      ['codex', '0.142.5'],
+    ].map(async ([name, version]) => {
+      const path = fixtureBinary(selected, name as 'claude' | 'codex');
+      await writeFile(
+        path,
+        `#!/bin/sh\nif [ "$1" = "--version" ]; then echo "${version}"; exit 0; fi\nexit 0\n`,
+      );
+      await chmod(path, 0o755);
+    }),
+  );
+};
+
+const expectFixtureExecutable = async (
+  selected: FixtureFleet,
+  name: 'claude' | 'codex',
+): Promise<void> => {
+  const status = await lstat(fixtureBinary(selected, name));
+  expect({ file: status.isFile(), executable: (status.mode & 0o111) !== 0 }).toEqual({
+    file: true,
+    executable: true,
+  });
+};
+
+const expectBlockedHostDetection = async (
+  binaries: readonly ('claude' | 'codex')[],
+): Promise<void> => {
+  if (detectionIsolation === undefined)
+    throw new Error('fixture detection isolation was not initialized');
+  const trace = await readFile(detectionIsolation.trace, 'utf8');
+  for (const binary of binaries) expect(trace).toContain(`/opt/homebrew/bin/${binary}`);
 };
 
 const source = () => `${remote.multiSource}//plugins/fh/skills/factor-scan`;
@@ -374,14 +425,61 @@ afterAll(async () => {
 
 beforeEach(async () => {
   fleet = await buildFixtureFleet();
+  const bin = join(fleet.base, 'bin');
+  await mkdir(bin, { recursive: true });
+  const git = Bun.which('git');
+  if (git === null) throw new Error('uninstall fixture requires git');
+  await symlink(git, join(bin, 'git'));
   await writeFile(
     join(fleet.base, 'gitconfig'),
     `[url "${remote.multiUrl}"]\n\tinsteadOf = ${remote.multiSource}\n`,
   );
+  detectionIsolation = await createDetectionIsolation(fleet.base, fixtureEnv(fleet), [
+    'claude',
+    'codex',
+  ]);
+  await provisionDetectedTools(fleet);
+  await Promise.all([
+    expectFixtureExecutable(fleet, 'claude'),
+    expectFixtureExecutable(fleet, 'codex'),
+  ]);
 });
 
 afterEach(async () => {
-  await destroyFixtureFleet(fleet);
+  try {
+    await destroyFixtureFleet(fleet);
+  } finally {
+    detectionIsolation = undefined;
+  }
+});
+
+test('fixture-owned detection blocks host agents and preserves deliberate Claude absence', async () => {
+  await rm(fixtureBinary(fleet, 'claude'));
+  await expectFixtureExecutable(fleet, 'codex');
+  const args = [
+    'install',
+    source(),
+    '--tool',
+    'claude-code',
+    '--no-verify',
+    '--user',
+    ...(installSupportsNoSave ? ['--no-save'] : []),
+    '--json',
+  ];
+  const result = await runCli(args, { selected: fleet });
+  expect(result.code).toBe(4);
+  expect(objects(json(result).results, 'absence results')[0]).toMatchObject({
+    tool: 'claude-code',
+    action: 'refused',
+    reason: expect.stringContaining('not detected'),
+  });
+  await expectBlockedHostDetection(['claude']);
+});
+
+test('fixture-owned Claude and Codex binaries satisfy mixed-tool seed without host fallback', async () => {
+  const report = await seedManaged(fleet, ['claude-code', 'codex']);
+  expect(objects(report.results, 'mixed seed results')).toHaveLength(2);
+  await expectBlockedHostDetection(['claude', 'codex']);
 });
 
 // biome-ignore format: keep the seven selector-owned rows compact and auditable as one bounded matrix.

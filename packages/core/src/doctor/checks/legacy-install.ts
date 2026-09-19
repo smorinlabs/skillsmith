@@ -27,7 +27,13 @@ export const legacyInstall: Check = {
       if (legacyDir !== null) {
         if (await ctx.env.fileExists(legacyDir)) {
           const entries = await ctx.env.listDir(legacyDir);
-          if (entries.length > 0) {
+          let hasUserEntries = false;
+          for (const entry of entries) {
+            if (await placement.isManagedLegacyEntry?.(ctx.env, legacyDir, entry)) continue;
+            hasUserEntries = true;
+            break;
+          }
+          if (hasUserEntries) {
             const label = titleForTool(tool);
             const currentDir = inventory.currentRoot ?? '';
             const currentSuffix = homeRelativePath(ctx.env.homeDir, currentDir);

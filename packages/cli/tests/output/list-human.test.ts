@@ -21,7 +21,7 @@ describe('renderListHuman', () => {
       'No skills installed.\n',
     );
     expect(renderListHuman([], { long: false, outcome: 'filter-noop' })).toBe(
-      'No skills installed.\nActive filters reduced the selected inventory to zero.\n',
+      'No skills matched the active filters.\n',
     );
   });
 
@@ -75,4 +75,10 @@ describe('renderListHuman', () => {
     expect(rendered).toContain('project:/project/ambiguous');
     expect(rendered).toContain('ambiguous.');
   });
+});
+
+test('no duplicate matches does not claim the inventory is empty', () => {
+  expect(renderListHuman([], { long: false, outcome: 'filter-noop', duplicates: true })).toBe(
+    'No duplicate skills matched the selected inventory.\n',
+  );
 });

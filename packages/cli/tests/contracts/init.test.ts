@@ -26,7 +26,6 @@ import {
 } from '../../../core/src/artifacts/manifest.ts';
 import { createTestNodeArtifactCoordinatorPorts } from '../../../core/src/artifacts/node-coordinator.ts';
 import { resolveRuntimeConfiguration } from '../../../core/src/config/runtime.ts';
-import { wellKnownBinDirs } from '../../../core/src/detect/scanners.ts';
 import { validateExecutionPlanShape } from '../../../core/src/execution/scheduler.ts';
 import { prepareInitOperationPlan } from '../../../core/src/init/plan.ts';
 import { executePreparedInit, observeInitManifest } from '../../../core/src/init/run.ts';
@@ -40,6 +39,7 @@ import { defaultRuntimePorts } from '../../../core/src/ports/default.ts';
 import { hermeticGitEnv } from '../../../core/tests/fixtures/git-env.ts';
 import { exitCodeForClass } from '../../src/runtime/adapter.ts';
 import { CLI_ENTRYPOINT } from '../fixtures/cli.ts';
+import { createDetectionIsolation } from '../fixtures/detection.ts';
 
 setDefaultTimeout(30_000);
 
@@ -79,42 +79,17 @@ const fixture = async (): Promise<InitFixture> => {
   const data = join(root, 'xdg', 'data');
   const cache = join(root, 'xdg', 'cache');
   const bin = join(root, 'bin');
-  const detectionPreload = join(root, 'detection-preload.ts');
-  const detectionTrace = join(root, 'detection-trace.txt');
   await Promise.all(
     [cwd, home, config, data, cache, bin].map((path) => mkdir(path, { recursive: true })),
   );
   const git = Bun.which('git');
   if (git === null) throw new Error('init contract fixture requires git');
   await Promise.all([symlink(process.execPath, join(bin, 'bun')), symlink(git, join(bin, 'git'))]);
-  const externalDetectionDirs = wellKnownBinDirs({
-    homeDir: home,
-    executableSearchPath: [bin],
-  } as unknown as Parameters<typeof wellKnownBinDirs>[0]).filter(
-    (path) => path !== root && !path.startsWith(`${root}/`),
-  );
-  const blockedDetectionPaths = externalDetectionDirs.flatMap((path) => [
-    join(path, 'claude'),
-    join(path, 'codex'),
-  ]);
-  await writeFile(
-    detectionPreload,
-    `import { mock } from 'bun:test';
-import * as fs from 'node:fs/promises';
-const blocked = new Set(${JSON.stringify(blockedDetectionPaths)});
-const trace = ${JSON.stringify(detectionTrace)};
-const originalStat = fs.stat;
-const stat = async (path, options) => {
-  const value = String(path);
-  if (blocked.has(value)) {
-    await fs.appendFile(trace, value + '\\n');
-    throw Object.assign(new Error('fixture-owned absent binary'), { code: 'ENOENT' });
-  }
-  return options === undefined ? originalStat(path) : originalStat(path, options);
-};
-mock.module('node:fs/promises', () => ({ ...fs, stat }));
-`,
-  );
+  const {
+    preload: detectionPreload,
+    trace: detectionTrace,
+    blockedPaths: blockedDetectionPaths,
+  } = await createDetectionIsolation(root, { HOME: home, PATH: bin }, ['claude', 'codex']);
   return {
     root,
     cwd,

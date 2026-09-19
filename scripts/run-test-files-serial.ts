@@ -1,13 +1,16 @@
 #!/usr/bin/env bun
 
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { devNull, tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 
 const repositoryRoot = resolve(import.meta.dir, '..');
 const bunTestFilePattern = /(?:^|\/)[^/]+(?:\.(?:test|spec)|_(?:test|spec))\.(?:js|jsx|ts|tsx)$/;
 const safePathComponentPattern = /^[A-Za-z0-9-]+$/;
+const gitEnvironment = Object.fromEntries(
+  Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')),
+);
 export const EXPECTED_BUN_VERSION = '1.3.14';
 const EXPECTED_ALLOWED_SKIP_FILES = 6;
 const EXPECTED_ALLOWED_SKIPS = 28;
@@ -52,8 +55,14 @@ function decode(bytes: Uint8Array): string {
 }
 
 function git(root: string, arguments_: string[]): string {
-  const result = Bun.spawnSync(['git', ...arguments_], {
+  const result = Bun.spawnSync(['git', '-c', 'core.fsmonitor=false', ...arguments_], {
     cwd: root,
+    env: {
+      ...gitEnvironment,
+      GIT_OPTIONAL_LOCKS: '0',
+      GIT_CONFIG_GLOBAL: devNull,
+      GIT_CONFIG_SYSTEM: devNull,
+    },
     stderr: 'pipe',
     stdout: 'pipe',
   });
@@ -257,9 +266,80 @@ export function requireCleanRepository(root: string): void {
   if (status.length > 0) fail('serial test-file terminal runner requires a clean repository');
 }
 
-export function finalizeSuccessfulRun(root: string, runRoot: string): void {
-  rmSync(runRoot, { force: true, recursive: true });
-  requireCleanRepository(root);
+export type RepositoryIdentity = Readonly<{
+  HEAD: string;
+  headRef: string;
+  gitDirectory: string;
+  commonDirectory: string;
+  indexPath: string;
+  index: string | null;
+  config: string | null;
+  worktreeConfig: string | null;
+}>;
+
+function fileDigest(path: string): string | null {
+  try {
+    return createHash('sha256').update(readFileSync(path)).digest('hex');
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+export function captureRepositoryIdentity(root: string): RepositoryIdentity {
+  const gitDirectory = realpathSync(git(root, ['rev-parse', '--absolute-git-dir']).trim());
+  const commonDirectory = realpathSync(
+    git(root, ['rev-parse', '--path-format=absolute', '--git-common-dir']).trim(),
+  );
+  const indexPath = git(root, [
+    'rev-parse',
+    '--path-format=absolute',
+    '--git-path',
+    'index',
+  ]).trim();
+  return {
+    HEAD: git(root, ['rev-parse', '--verify', 'HEAD']).trim(),
+    headRef: git(root, ['rev-parse', '--symbolic-full-name', 'HEAD']).trim(),
+    gitDirectory,
+    commonDirectory,
+    indexPath,
+    index: fileDigest(indexPath),
+    config: fileDigest(join(commonDirectory, 'config')),
+    worktreeConfig: fileDigest(join(gitDirectory, 'config.worktree')),
+  };
+}
+
+function requireUnchangedRepository(root: string, initial: RepositoryIdentity): void {
+  const final = captureRepositoryIdentity(root);
+  const changes = (Object.keys(initial) as (keyof RepositoryIdentity)[])
+    .filter((key) => initial[key] !== final[key])
+    .map((key) => `${key}: ${initial[key] ?? 'missing'} -> ${final[key] ?? 'missing'}`);
+  if (changes.length > 0)
+    fail(`serial test-file repository identity changed: ${changes.join('; ')}`);
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+export function finalizeSuccessfulRun(
+  root: string,
+  runRoot: string,
+  initial: RepositoryIdentity,
+): void {
+  const errors: unknown[] = [];
+  for (const action of [
+    () => requireUnchangedRepository(root, initial),
+    () => rmSync(runRoot, { force: true, recursive: true }),
+    () => requireCleanRepository(root),
+  ]) {
+    try {
+      action();
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (errors.length > 0) fail(errors.map(errorMessage).join('\n'));
 }
 
 export async function main(): Promise<void> {
@@ -273,6 +353,7 @@ export async function main(): Promise<void> {
   requirePinnedBunVersion(Bun.version);
   requireHyphenSafePath(repositoryRoot, 'repository root');
   requireCleanRepository(repositoryRoot);
+  const initial = captureRepositoryIdentity(repositoryRoot);
   const testFiles = discoverTestFiles(repositoryRoot);
   const digest = manifestDigest(testFiles);
   const temporaryBase = resolve(process.env.TMPDIR ?? tmpdir());
@@ -283,7 +364,8 @@ export async function main(): Promise<void> {
     `serial test-file manifest: ${testFiles.length} files; sha256=${digest}; bun=${Bun.version}`,
   );
 
-  let receipt: SerialReceipt;
+  let receipt: SerialReceipt | undefined;
+  const errors: unknown[] = [];
   try {
     receipt = await runFilesSerially(testFiles, async (file, index, total) => {
       const reportPath = join(runRoot, `junit-${String(index + 1).padStart(4, '0')}.xml`);
@@ -291,7 +373,7 @@ export async function main(): Promise<void> {
       console.log(`[${index + 1}/${total}] ${file}`);
       const child = Bun.spawn(command, {
         cwd: repositoryRoot,
-        env: { ...process.env, TMPDIR: runRoot },
+        env: { ...gitEnvironment, TMPDIR: runRoot },
         stderr: 'inherit',
         stdout: 'inherit',
       });
@@ -302,11 +384,15 @@ export async function main(): Promise<void> {
       };
     });
   } catch (error) {
-    rmSync(runRoot, { force: true, recursive: true });
-    throw error;
+    errors.push(error);
   }
 
-  finalizeSuccessfulRun(repositoryRoot, runRoot);
+  try {
+    finalizeSuccessfulRun(repositoryRoot, runRoot, initial);
+  } catch (error) {
+    errors.push(error);
+  }
+  if (errors.length > 0) fail(errors.map(errorMessage).join('\n'));
   console.log(
     `SERIAL_TEST_FILE_RECEIPT ${JSON.stringify({
       ...receipt,
