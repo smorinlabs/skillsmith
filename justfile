@@ -47,6 +47,7 @@ test-terminal:
 
 # Run the ordered canonical ordinary PR gate exactly once.
 check:
+    just secrets
     bun run lint
     bun run lint:boundaries
     bun run typecheck
@@ -73,3 +74,15 @@ install-gitleaks:
 # Install exact checksum-verified actionlint.
 install-actionlint:
     ./scripts/install-actionlint.sh
+
+# Scan current tracked contents with both credential scanners.
+secrets:
+    bun scripts/secret-scan.ts files
+
+# Scan all fetched refs, or commits in an explicit base/head range.
+secrets-history base="" head="":
+    if [ -n {{quote(base)}} ] || [ -n {{quote(head)}} ]; then bun scripts/secret-scan.ts history {{quote(base)}} {{quote(head)}}; else bun scripts/secret-scan.ts history; fi
+
+# Install exact checksum-verified TruffleHog.
+install-trufflehog:
+    ./scripts/install-trufflehog.sh
