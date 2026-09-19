@@ -220,6 +220,7 @@ describe('install preview refusal (SC-I60-R6 redprove)', () => {
         '--no-save',
         '--dry-run',
       ]);
+      requireExit(preview, 2, 'DECISIVE --no-save preview must refuse like actual');
       const previewAction = firstResult(preview.stdout).action;
       console.log(`R6 DECISIVE --no-save: preview exit=${preview.code} action=${previewAction}`);
       // Dry-run must leave durable state byte-identical: live target, sentinel, no ledger.
@@ -271,6 +272,7 @@ describe('install preview refusal (SC-I60-R6 redprove)', () => {
         '--no-verify',
         '--dry-run',
       ]);
+      requireExit(preview, 2, 'DECISIVE default preview must refuse like actual');
       const previewAction = firstResult(preview.stdout).action;
       console.log(`R6 DECISIVE default: preview exit=${preview.code} action=${previewAction}`);
       expect(readLiveSkill(fixture)).toBe(liveBefore);
@@ -360,6 +362,7 @@ describe('install preview refusal (SC-I60-R6 redprove)', () => {
         '--no-save',
         '--dry-run',
       ]);
+      requireExit(preview, 0, 'CONTROL matching preview must succeed');
       const previewAction = firstResult(preview.stdout).action;
       console.log(`R6 CONTROL matching: preview exit=${preview.code} action=${previewAction}`);
       expect(readLiveSkill(fixture)).toBe(liveBefore);
