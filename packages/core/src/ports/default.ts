@@ -24,6 +24,7 @@ import { delimiter, join } from 'node:path';
 import lockfile from 'proper-lockfile';
 import type { ExecOptions, ExecResult, PathKind, Platform, XdgDirs } from '../env/types.ts';
 import { isPortError, toPortError } from './errors.ts';
+import { type GitInitProbeFs, createGitInitProbe } from './git-init-probe.ts';
 import { type BinaryProcessPort, createGitPort } from './git.ts';
 import { createHttpPort } from './http.ts';
 import type {
@@ -797,6 +798,22 @@ const createProcessPorts = (): {
   return { processPort, binaryProcessPort };
 };
 
+/** Raw primitives for the git-init kernel probe. Deliberately NOT wrapped in
+ *  `fileOperation`: the probe measures raw kernel errnos, which port-error
+ *  normalization would erase. */
+const gitInitProbeFs: GitInitProbeFs = {
+  createDir: async (path) => {
+    await mkdir(path, { recursive: false });
+  },
+  removeDir: async (path) => {
+    await rmdir(path);
+  },
+  removeTree: async (path) => {
+    await rm(path, { recursive: true, force: true });
+  },
+  randomHex: (byteCount) => randomBytes(byteCount).toString('hex'),
+};
+
 export const defaultRuntimePorts = async (): Promise<RuntimePorts & BoundedFileReadPort> => {
   const homeDir = homedir();
   const { processPort, binaryProcessPort } = createProcessPorts();
@@ -813,7 +830,7 @@ export const defaultRuntimePorts = async (): Promise<RuntimePorts & BoundedFileR
     ...processPort,
     ...defaultClockPort,
     ...defaultIdPort,
-    git: createGitPort(processPort, binaryProcessPort),
+    git: createGitPort(processPort, binaryProcessPort, createGitInitProbe(gitInitProbeFs)),
     http: createHttpPort(),
   };
 };
