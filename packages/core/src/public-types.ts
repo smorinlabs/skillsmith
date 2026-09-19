@@ -36,6 +36,10 @@ export type {
 export type { DetectOptions } from './scan/index.ts';
 export type { ListCommandsOpts } from './scan/list-commands.ts';
 export type { ListSkillsOpts } from './scan/list-skills.ts';
+export type {
+  CrossToolNameGroup,
+  CrossToolNameMember,
+} from './scan/cross-tool-names.ts';
 export type { Logger } from './env/logger.ts';
 export type { ExecOptions, ExecResult, PathKind, Platform, ScanEnv, XdgDirs } from './env/types.ts';
 export type { SkillSmithError } from './errors.ts';

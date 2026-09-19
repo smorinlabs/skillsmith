@@ -5,6 +5,7 @@ import { checkCommand } from './commands/check.ts';
 import { commandsCommand } from './commands/commands.ts';
 import { type Shell, runCompletion } from './commands/completion.ts';
 import { configCommand } from './commands/config.ts';
+import { crossToolNamesCommand } from './commands/cross-tool-names.ts';
 import { devCommand } from './commands/dev.ts';
 import { doctorCommand } from './commands/doctor.ts';
 import { installCommand } from './commands/install.ts';
@@ -105,6 +106,7 @@ export const buildProgram = (signal?: AbortSignal): Command => {
     );
 
   program.addCommand(configCommand());
+  program.addCommand(crossToolNamesCommand());
   program.addCommand(listCommand());
   program.addCommand(commandsCommand());
   program.addCommand(doctorCommand());

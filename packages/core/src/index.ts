@@ -34,6 +34,8 @@ export type {
   Config,
   ConfigKey,
   ConfigLayer,
+  CrossToolNameGroup,
+  CrossToolNameMember,
   DetectOptions,
   EffectiveConfig,
   EnabledState,
@@ -104,6 +106,7 @@ export { err, isErr, isOk, map, mapErr, ok } from './result.ts';
 export { detectAll, detectTool } from './scan/index.ts';
 export { listCommands } from './scan/list-commands.ts';
 export { listSkills } from './scan/list-skills.ts';
+export { groupCrossToolNames } from './scan/cross-tool-names.ts';
 export { parseSkillFrontmatter } from './skills/frontmatter.ts';
 export { resolveTarget, runVerify, verifyPlugin } from './verify/run.ts';
 export { VERIFIED_AGAINST, VERIFY_TOOLS } from './verify/types.ts';
