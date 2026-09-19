@@ -31,25 +31,33 @@ const isDenial = (code: string | null): code is 'EACCES' | 'EPERM' =>
   code === 'EACCES' || code === 'EPERM';
 
 /** Best-effort removal of a throwaway child this probe created. Never throws;
- *  the recursive fallback runs only when the empty-dir removal fails. */
+ *  the recursive fallback runs only when the empty-dir removal fails for a
+ *  reason other than foreign content or a missing child. */
 const removeProbeChild = async (fs: GitInitProbeFs, childPath: string): Promise<void> => {
   try {
     await fs.removeDir(childPath);
     return;
-  } catch {
-    // Fall through to the recursive fallback below.
+  } catch (error) {
+    // ENOTEMPTY means a third party raced our cleanup and the child now
+    // holds entries the probe did not create: never recursively delete them.
+    // ENOENT means the child is already gone: nothing left to remove.
+    const code = nodeCode(error);
+    if (code === 'ENOTEMPTY' || code === 'ENOENT') return;
+    // Any other failure (transient errors, ...) falls through to the
+    // recursive residue fallback below.
   }
   try {
     await fs.removeTree(childPath);
   } catch {
-    // Nothing further can be done; the child is an owned empty dir.
+    // Nothing further can be done; the child stays as residue.
   }
 };
 
 /** Probe writability of one directory via an owned throwaway child that is
- *  always removed. Residue contract: nothing is left behind on any path —
- *  a failed creation leaves nothing, a success is always followed by removal,
- *  and a pre-existing colliding name is never removed (not ours). */
+ *  always removed. Residue contract: a failed creation leaves nothing, a
+ *  success is always followed by removal, and a pre-existing colliding name
+ *  is never removed (not ours). When cleanup itself fails, foreign content
+ *  is never deleted; the owned child may remain as residue. */
 const probeDirDenied = async (
   fs: GitInitProbeFs,
   dirPath: string,
