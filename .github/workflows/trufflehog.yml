@@ -1,0 +1,64 @@
+# Verified-secret scanning with TruffleHog.
+#
+# PR runs scan the PR's changed refs; the weekly scheduled run scans the full
+# history. The scan fails the job on any verified finding.
+#
+# NOTE: findings are kept as a JSON workflow artifact, NOT uploaded as SARIF:
+# this repo is private without GHAS, so the code-scanning SARIF upload would
+# fail. Revisit SARIF if GHAS is ever enabled.
+name: Secret Scan
+
+on:
+  pull_request:
+  schedule:
+    # Weekly full-history scan, Monday 06:17 UTC (off-peak, off the hour).
+    - cron: '17 6 * * 1'
+
+permissions: {}
+
+concurrency:
+  group: secret-scan-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secret-scan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # The action resolves the scan range from the event (PR base/head refs
+      # on pull_request, full history on schedule) and always passes --fail.
+      - name: Scan for verified secrets
+        uses: trufflesecurity/trufflehog@f714bf454f350590f4a24c3ddb1aef02c35bf5b6 # v3.97.5
+        with:
+          extra_args: --only-verified
+          # Pin the scanner image too: the default `latest` would float.
+          version: v3.97.5
+      # Re-run the same scan range with JSON output so failures (and weekly
+      # runs) keep a machine-readable report. No --fail here: the scan step
+      # above already recorded the verdict.
+      - name: Regenerate JSON report
+        id: report
+        if: ${{ !cancelled() && (failure() || github.event_name == 'schedule') }}
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          image='ghcr.io/trufflesecurity/trufflehog:v3.97.5'
+          set -- git 'file:///scan' --no-update --only-verified --json
+          if [ "$GITHUB_EVENT_NAME" = 'pull_request' ]; then
+            set -- "$@" --since-commit "$PR_BASE_SHA" --branch "$PR_HEAD_SHA"
+          fi
+          docker run --rm -v "$PWD:/scan" -w /scan "$image" "$@" > "$RUNNER_TEMP/trufflehog-report.json"
+      - name: Retain TruffleHog JSON report
+        if: ${{ !cancelled() && steps.report.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4
+        with:
+          name: trufflehog-report-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          path: ${{ runner.temp }}/trufflehog-report.json
