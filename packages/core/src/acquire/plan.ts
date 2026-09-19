@@ -1107,13 +1107,6 @@ const validateInstallGroupPortableIntent = (
   manifest: ManifestImageV1 | AbsentManifestImageV1,
   lock: LockImageV1 | AbsentLockImageV1,
 ): void => {
-  if (
-    manifest.kind !== 'manifest' ||
-    lock.kind !== 'lock' ||
-    !portablePairIsCurrent(manifest, lock)
-  ) {
-    throw new TypeError('acquisition planning: install group requires current portable state');
-  }
   const intents = request.intents.filter(
     (intent) => createOperationGroupId(installGroupIdentityFor(request, intent)) === groupId,
   );
@@ -1136,6 +1129,19 @@ const validateInstallGroupPortableIntent = (
     )
   ) {
     throw new TypeError('acquisition planning: install group lacks complete portable intent');
+  }
+  // Desired-only intents schedule no live operation, and run.ts routes a
+  // uniformly refused group through unchangedGroups without artifact edits, so
+  // current artifacts (possibly absent) legitimately differ from intent.
+  if (intents.every((intent) => intent.execution === 'desired-only')) {
+    return;
+  }
+  if (
+    manifest.kind !== 'manifest' ||
+    lock.kind !== 'lock' ||
+    !portablePairIsCurrent(manifest, lock)
+  ) {
+    throw new TypeError('acquisition planning: install group requires current portable state');
   }
   const declarations = manifest.value.skills.filter(({ name }) => name === seed.skill);
   const lockedSkills = lock.value.skills.filter(({ name }) => name === seed.skill);

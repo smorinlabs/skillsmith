@@ -701,10 +701,17 @@ const placePair = async (
       shadowWarning = shadowWarning ? `${shadowWarning}; ${r.value.warning}` : r.value.warning;
     return { ...finalize('installed'), store: { ...storeOut, reused: storeReused } };
   }
-  // Replace. A managed pair for this same repo may update freely; anything else needs --force.
-  const managed = existing?.origin?.repo === spec.identity.repository;
+  // Replace. A managed pair for this same origin (host + repo) may update freely;
+  // anything else needs --force. A different host is not the same repository.
+  const managed =
+    existing?.origin?.repo === spec.identity.repository &&
+    existing?.origin?.host === spec.identity.host;
   if (!managed && !opts.force) {
-    const recorded = existing?.origin ? existing.origin.repo : 'unmanaged';
+    const recorded = existing?.origin
+      ? typeof existing.origin.host === 'string' && existing.origin.host.length > 0
+        ? `${existing.origin.host}/${existing.origin.repo}`
+        : existing.origin.repo
+      : 'unmanaged';
     return refuse(
       `'${skill}' (${tool}) already exists at ${placementPath} (recorded origin: ${recorded}); re-run with --force to overwrite`,
     );
@@ -844,9 +851,15 @@ const predictPair = async (
     }
     return { ...base, action: 'repaired', placement: null };
   }
-  const managed = existing?.origin?.repo === spec.identity.repository;
+  const managed =
+    existing?.origin?.repo === spec.identity.repository &&
+    existing?.origin?.host === spec.identity.host;
   if (!managed && !opts.force) {
-    const recorded = existing?.origin ? existing.origin.repo : 'unmanaged';
+    const recorded = existing?.origin
+      ? typeof existing.origin.host === 'string' && existing.origin.host.length > 0
+        ? `${existing.origin.host}/${existing.origin.repo}`
+        : existing.origin.repo
+      : 'unmanaged';
     return refuse(
       `'${skill}' (${tool}) already exists at ${placementPath} (recorded origin: ${recorded}); re-run with --force to overwrite`,
     );
@@ -1724,6 +1737,15 @@ const runInstallInternal = async (
       ) {
         throw new Error('install artifact group has ambiguous portable content');
       }
+      const ownershipRefused = group.intents.every(({ seed }) => {
+        const decision = seed.reportPreviews[0];
+        return decision?.action === 'refused' && decision.error?.code === 'flip-refused';
+      });
+      if (ownershipRefused) {
+        // A refused install decides nothing: keep current manifest/lock bytes.
+        unchangedGroups.push(group.groupIdentity);
+        continue;
+      }
       const desiredLockEntry: PortableLockSkillV1 = Object.freeze({
         name: desired.name,
         source: portableSourceToken(desired),
@@ -2256,7 +2278,11 @@ const runInstallInternal = async (
           spec,
           resolved: r,
           tool,
-          execution: preview.action === 'failed' ? 'desired-only' : 'selected',
+          execution:
+            preview.action === 'failed' ||
+            (preview.action === 'refused' && resolution.artifact.outcome === 'selected')
+              ? 'desired-only'
+              : 'selected',
           execute: async (): Promise<InstallResult> => {
             if (snap === null && snapErr === null) {
               const { ns, name } = clampStoreNs(spec.identity.repository);
