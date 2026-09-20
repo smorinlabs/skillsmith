@@ -32,6 +32,7 @@ import {
   flipFailedError,
   flipRefusedError,
   genericError,
+  permissionDeniedError,
   sourceUnresolvableError,
   toolUnavailableError,
 } from '../errors.ts';
@@ -82,6 +83,7 @@ import type {
   OperationImage,
   OperationPlan,
 } from '../planning/types.ts';
+import { isNormalizedPortError } from '../ports/errors.ts';
 import { type Result, err, ok } from '../result.ts';
 import { containsSensitiveMaterial, redactSensitiveString } from '../safety/redaction.ts';
 import { detectTool } from '../scan/index.ts';
@@ -520,6 +522,14 @@ const placePair = async (
   try {
     await env.makeDir(installRoot);
   } catch (e) {
+    if (isNormalizedPortError(e) && e.code === 'permission') {
+      return fail(
+        permissionDeniedError(
+          `cannot create skills root ${installRoot}: ${errorMessage(e)}`,
+          installRoot,
+        ),
+      );
+    }
     return fail(genericError(`cannot create skills root ${installRoot}: ${errorMessage(e)}`));
   }
   // F5: cross-scope shadowing (project shadows user for this repo).
