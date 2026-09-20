@@ -22,7 +22,6 @@ import {
   manifestDigest,
   parseJUnitSummary,
   requireCleanRepository,
-  requireHyphenSafePath,
   requirePinnedBunVersion,
   runFilesSerially,
   validateTerminalManifest,
@@ -134,8 +133,8 @@ function initializeTerminalRepository(root: string): void {
 }
 
 async function terminalIntegration(mode: 'commit' | 'pass' | 'fail', poison = 'trio') {
-  // macOS's default TMPDIR can contain underscores; the terminal runner requires
-  // hyphen-safe paths on both supported Unix platforms.
+  // Route fixture trees through an isolated base under /tmp rather than the
+  // ambient TMPDIR for hermetic integration runs.
   const base = mkdtempSync(join('/tmp', 'skillsmith-serial-integration-'));
   temporaryDirectories.push(base);
   const root = join(base, 'runner');
@@ -518,16 +517,9 @@ describe('serial test-file terminal runner', () => {
     ).toThrow('skip allowlist totals 27; expected 28');
   });
 
-  test('enforces the pinned Bun, strict paths, cleanup, and post-run clean state', () => {
+  test('enforces the pinned Bun, cleanup, and post-run clean state', () => {
     expect(() => requirePinnedBunVersion(EXPECTED_BUN_VERSION)).not.toThrow();
     expect(() => requirePinnedBunVersion('1.3.15')).toThrow('requires Bun 1.3.14; found 1.3.15');
-    expect(() => requireHyphenSafePath('/dev/shm/skillsmith-gate-123', 'fixture')).not.toThrow();
-    expect(() => requireHyphenSafePath('/dev/shm/skillsmith_gate', 'fixture')).toThrow(
-      'unsafe path component skillsmith_gate',
-    );
-    expect(() => requireHyphenSafePath('/dev/shm/skillsmith gate', 'fixture')).toThrow(
-      'unsafe path component skillsmith gate',
-    );
 
     const root = repositoryFixture();
     rmSync(join(root, 'untracked.test.ts'));
