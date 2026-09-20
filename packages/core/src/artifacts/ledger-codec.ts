@@ -47,7 +47,7 @@ type JsonRecord = Record<string, unknown>;
 const LEDGER_TRAVERSAL_LIMITS = Object.freeze({ maxNodes: LEDGER_ARTIFACT_MAX_NODES });
 
 const STATIC_PATHS = new Set(
-  'schemaVersion kind updatedAt skills projects projectRegistrations transactions history tools placementPath mode dev sourcePath resolvedPath repoRoot sourceRelPath remote recordedAt pinned storePath rev gitSha dirty contentHash snapshotAt verify placement origin source host repo skillPath refRequested refResolved pin installedAt journal op txId phase startedAt completedAt before liveKind symlinkTarget stagingPath backupPath consumers skill tool store path transactionId'.split(
+  'schemaVersion kind updatedAt skills projects projectRegistrations transactions history tools placementPath mode dev sourcePath resolvedPath repoRoot sourceRelPath remote recordedAt pinned storePath rev gitSha dirty contentHash snapshotAt verify placement origin source host repo skillPath refRequested refResolved pin installedAt journal op txId phase startedAt completedAt before liveKind symlinkTarget stagingPath backupPath pendingReplacement build stage consumers skill tool store path transactionId'.split(
     ' ',
   ),
 );
@@ -133,6 +133,17 @@ const LegacyJournalSchema = z
     backupPath: string,
   })
   .strict();
+const PendingReplacementSchema = z
+  .object({
+    build: z.enum(['symlink', 'copy']),
+    stage: z.union([z.literal(1), z.literal(2)]),
+    refResolved: string,
+    storePath: string,
+    contentHash: string,
+    backupPath: nullableString,
+    recordedAt: string,
+  })
+  .strict();
 const PairSchema = z
   .object({
     placementPath: string,
@@ -141,6 +152,7 @@ const PairSchema = z
     pinned: PinnedSchema.nullable().optional(),
     origin: OriginSchema.optional(),
     journal: LegacyJournalSchema.nullable().optional(),
+    pendingReplacement: PendingReplacementSchema.nullable().optional(),
   })
   .strict();
 const ToolsV1Schema = z.record(z.enum(FLIP_TOOLS), PairSchema);
@@ -251,6 +263,17 @@ const canonicalLegacyJournal = (value: NonNullable<LedgerPairV1Dto['journal']>) 
   stagingPath: value.stagingPath,
   backupPath: value.backupPath,
 });
+const canonicalPendingReplacement = (
+  value: NonNullable<LedgerPairV1Dto['pendingReplacement']>,
+) => ({
+  build: value.build,
+  stage: value.stage,
+  refResolved: value.refResolved,
+  storePath: value.storePath,
+  contentHash: value.contentHash,
+  backupPath: value.backupPath,
+  recordedAt: value.recordedAt,
+});
 const canonicalPair = (value: LedgerPairV1Dto): LedgerPairV1Dto => ({
   placementPath: value.placementPath,
   mode: value.mode,
@@ -261,6 +284,14 @@ const canonicalPair = (value: LedgerPairV1Dto): LedgerPairV1Dto => ({
   ...(value.origin === undefined ? {} : { origin: canonicalOrigin(value.origin) }),
   ...(hasOwn(value, 'journal')
     ? { journal: value.journal == null ? value.journal : canonicalLegacyJournal(value.journal) }
+    : {}),
+  ...(hasOwn(value, 'pendingReplacement')
+    ? {
+        pendingReplacement:
+          value.pendingReplacement == null
+            ? value.pendingReplacement
+            : canonicalPendingReplacement(value.pendingReplacement),
+      }
     : {}),
 });
 const canonicalSkillsV1 = (value: LedgerSkillsV1Dto): LedgerSkillsV1Dto =>

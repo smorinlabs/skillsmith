@@ -614,14 +614,33 @@ const placePair = async (
     action,
     reason: shadowWarning ?? gate.notice,
   });
-  // Idempotence / repair (F7 / D14) — only when not forcing.
-  if (liveKind !== null && !opts.force) {
-    const recordMatches =
-      existing?.origin?.refResolved === sha &&
-      existing.pinned?.storePath === snap.storePath &&
-      (existing.pinned?.placement ?? 'copy') === liveKind;
+  // SC-I60-MO2: an identical retry landing on the between-swaps gap (live on
+  // the intermediate kind, staged intent for this exact build+content)
+  // completes the remaining stage instead of nooping. Healthy placements (no
+  // staged intent) keep the legacy idempotence policy below.
+  const staged = existing?.pendingReplacement ?? null;
+  const stagedMatchesRequest =
+    staged !== null &&
+    staged.build === build &&
+    staged.refResolved === sha &&
+    staged.storePath === snap.storePath &&
+    staged.contentHash === snap.contentHash;
+  const recordMatches =
+    existing?.origin?.refResolved === sha &&
+    existing.pinned?.storePath === snap.storePath &&
+    (existing.pinned?.placement ?? 'copy') === liveKind;
+  const stagedContinuation = stagedMatchesRequest && liveKind !== null && liveKind !== build;
+  // Idempotence / repair (F7 / D14) — only when not forcing, and never when a
+  // staged replacement for this request still has a stage to run.
+  if (liveKind !== null && !opts.force && !(stagedContinuation && recordMatches)) {
     if (recordMatches) {
-      return { ...finalize('noop'), reason: `already installed at ${sha.slice(0, 12)}` };
+      // SC-I60-MO2 companion: a noop reports the recorded/live placement,
+      // never the requested build.
+      return {
+        ...finalize('noop'),
+        placement: liveKind,
+        reason: `already installed at ${sha.slice(0, 12)}`,
+      };
     }
     // Placement intact + matching the resolved store entry but the record is missing/stale →
     // rewrite the pair record only (no filesystem change).
@@ -646,6 +665,9 @@ const placePair = async (
       pinned,
       origin,
       journal: null,
+      // SC-I60-MO2: a record-only repair must not drop a staged replacement
+      // the live placement has not converged to yet.
+      pendingReplacement: existing?.pendingReplacement ?? null,
     };
     if (p.logicalOperation === null) {
       return fail(
@@ -697,6 +719,9 @@ const placePair = async (
       pinned,
       origin,
       adoptedDev,
+      // SC-I60-MO2: completing a staged replacement runs as the second stage,
+      // converging to the requested build and clearing the staged intent.
+      ...(stagedContinuation ? { replacement: { build, stage: 2 as const } } : {}),
     },
   };
   // Fresh install: the slot is empty. Clear any stale records so the engine lands on an empty slot.
@@ -748,6 +773,20 @@ const placePair = async (
   if (swapWarnings.length > 0) {
     const joined = swapWarnings.join('; ');
     shadowWarning = shadowWarning === null ? joined : `${shadowWarning}; ${joined}`;
+  }
+  // SC-I60-MO2: completing a staged replacement inherits the first stage's
+  // kept backup (R3 family) — surface it instead of silently retaining it.
+  if (stagedContinuation && staged?.backupPath) {
+    let backupSurvives = false;
+    try {
+      backupSurvives = (await env.pathKind(staged.backupPath)) !== 'absent';
+    } catch {
+      backupSurvives = false;
+    }
+    if (backupSurvives) {
+      const kept = `kept backup ${staged.backupPath}: completing the interrupted replacement preserved the first-stage backup`;
+      shadowWarning = shadowWarning === null ? kept : `${shadowWarning}; ${kept}`;
+    }
   }
   return { ...finalize('updated'), store: { ...storeOut, reused: storeReused } };
 };
@@ -869,6 +908,23 @@ const predictPair = async (
   }
   const live = currentResolution.placement;
   if (live.class === 'absent') return { ...base, action: 'installed' };
+  // SC-I60-MO2 companion: predict the staged-replacement completion exactly
+  // as the executor runs it, so dry-run never foresees a noop the real run
+  // would complete.
+  const build: 'symlink' | 'copy' = opts.direct ? 'copy' : 'symlink';
+  const stagedPreview = existing?.pendingReplacement ?? null;
+  const stagedPreviewMatch =
+    stagedPreview !== null &&
+    stagedPreview.build === build &&
+    stagedPreview.refResolved === sha &&
+    stagedPreview.storePath === expectedStorePath &&
+    existing?.origin?.refResolved === sha;
+  const liveIntermediate =
+    (build === 'copy' &&
+      live.class === 'store-linked' &&
+      live.symlinkTarget === expectedStorePath) ||
+    (build === 'symlink' && live.class === 'pinned');
+  if (stagedPreviewMatch && liveIntermediate) return { ...base, action: 'updated' };
   let pinnedMatches = false;
   if (live.class === 'pinned') {
     const [liveHash, resolvedHash] = await Promise.all([
@@ -881,7 +937,13 @@ const predictPair = async (
     (live.class === 'store-linked' && live.symlinkTarget === expectedStorePath) || pinnedMatches;
   if (matchesResolved && !opts.force) {
     if (existing?.origin?.refResolved === sha) {
-      return { ...base, action: 'noop', reason: `already installed at ${sha.slice(0, 12)}` };
+      // A noop reports the recorded/live placement, never the requested build.
+      return {
+        ...base,
+        action: 'noop',
+        placement: existing?.pinned?.placement ?? build,
+        reason: `already installed at ${sha.slice(0, 12)}`,
+      };
     }
     return { ...base, action: 'repaired', placement: null };
   }
@@ -2699,6 +2761,11 @@ const runInstallInternal = async (
           !preserveRefusal && operation === undefined
             ? `already installed at ${prepared.seed.resolved.sha.slice(0, 12)}`
             : reportPreview.reason,
+        // SC-I60-MO2 companion: a planned noop reports the live/recorded
+        // placement from the executor preview, never the requested build.
+        ...(!preserveRefusal && operation === undefined && reportPreview.action === 'noop'
+          ? { placement: reportPreview.placement }
+          : {}),
       };
       canonicalPreviewByOriginal.set(prepared.seed.preview, canonicalPreview);
       for (const occurrence of prepared.seed.reportPreviews) {

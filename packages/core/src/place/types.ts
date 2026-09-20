@@ -93,6 +93,18 @@ export interface PairRecord {
   pinned?: PinnedRecord | null;
   origin?: OriginRecord; // written only by install
   journal?: Journal | null;
+  pendingReplacement?: PendingReplacementRecord | null;
+}
+
+/** Mutable twin of LedgerPendingReplacementV1Dto (see artifacts/ledger-types.ts). */
+export interface PendingReplacementRecord {
+  build: 'symlink' | 'copy';
+  stage: 1 | 2;
+  refResolved: string;
+  storePath: string;
+  contentHash: string;
+  backupPath: string | null;
+  recordedAt: string;
 }
 
 export type JournalPhase = 'prepared' | 'staged' | 'backed-up' | 'live' | 'committed';
@@ -206,6 +218,12 @@ export interface SwapPlan {
     /** Portable provenance is absent only for a machine-bound sync pinned-copy placement. */
     origin: OriginRecord | null;
     adoptedDev: DevRecord | null;
+    /**
+     * Two-stage copy replacement (SC-I60-MO2): stage 1 stages the intermediate
+     * symlink, stage 2 converges to the requested build. The engine attaches
+     * the durable intent marker at stage-1 P1 and preserves it at stage-2 P1.
+     */
+    replacement?: { build: 'symlink' | 'copy'; stage: 1 | 2 };
   };
   // op 'uninstall' needs no payload — the engine reads the pair record.
 }

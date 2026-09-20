@@ -278,10 +278,10 @@ describe('serial test-file terminal runner', () => {
       const receipt = result.stdout.match(/SERIAL_TEST_FILE_RECEIPT (.+)/)?.[1];
       expect(receipt).toBeDefined();
       expect(JSON.parse(receipt as string)).toMatchObject({
-        discovered: 8,
-        executed: 8,
-        passed: 8,
-        skipped: 34,
+        discovered: 9,
+        executed: 9,
+        passed: 9,
+        skipped: 39,
       });
     },
     30_000,
@@ -425,16 +425,16 @@ describe('serial test-file terminal runner', () => {
     });
 
     expect(calls).toEqual(files);
-    expect(ALLOWED_LIVE_E2E_SKIPS.size).toBe(7);
-    expect([...ALLOWED_LIVE_E2E_SKIPS.values()].reduce((sum, count) => sum + count, 0)).toBe(34);
+    expect(ALLOWED_LIVE_E2E_SKIPS.size).toBe(8);
+    expect([...ALLOWED_LIVE_E2E_SKIPS.values()].reduce((sum, count) => sum + count, 0)).toBe(39);
     expect(receipt).toEqual({
-      assertions: 63,
-      discovered: 9,
+      assertions: 70,
+      discovered: 10,
       duplicates: 0,
-      executed: 9,
-      passed: 9,
-      skipped: 34,
-      tests: 36,
+      executed: 10,
+      passed: 10,
+      skipped: 39,
+      tests: 41,
     });
   });
 
@@ -456,7 +456,7 @@ describe('serial test-file terminal runner', () => {
           junit: junit(file, Math.max(1, skipped), skipped),
         };
       }),
-    ).rejects.toThrow(`broken.test.ts exited 9 after 9/${files.length} files`);
+    ).rejects.toThrow(`broken.test.ts exited 9 after 10/${files.length} files`);
     expect(calls).toEqual(files.slice(0, -1));
   });
 
@@ -503,7 +503,7 @@ describe('serial test-file terminal runner', () => {
 
     expect(() =>
       validateTerminalManifest(files, new Map([...ALLOWED_LIVE_E2E_SKIPS].slice(1))),
-    ).toThrow('skip allowlist has 6 files; expected 7');
+    ).toThrow('skip allowlist has 7 files; expected 8');
     expect(() =>
       validateTerminalManifest(
         files,
@@ -514,7 +514,7 @@ describe('serial test-file terminal runner', () => {
           ]),
         ),
       ),
-    ).toThrow('skip allowlist totals 33; expected 34');
+    ).toThrow('skip allowlist totals 38; expected 39');
   });
 
   test('enforces the pinned Bun, cleanup, and post-run clean state', () => {
