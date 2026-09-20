@@ -1,7 +1,6 @@
 # Architecture
 
-This page explains the shape of the Skillsmith codebase so new contributors can orient quickly. It covers decisions that aren't obvious from reading the source — what each layer is for, which directions dependencies are allowed to flow, and how the pieces fit together at runtime.
-For deeper rationale on individual decisions, see the [ADRs](adr/).
+This page explains the shape of the Skillsmith codebase so new contributors can orient quickly. It covers decisions that aren't obvious from reading the source — what each layer is for, which directions dependencies are allowed to flow, and how the pieces fit together at runtime. For deeper rationale on individual decisions, see the [ADRs](adr/).
 
 ## Workspace layout
 
