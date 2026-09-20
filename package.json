@@ -30,7 +30,7 @@
     "build:linux-arm64": "bun build --compile --bytecode --target=bun-linux-arm64 packages/cli/src/index.ts --outfile dist/skillsmith",
     "build:release": "bun scripts/build-release.ts --target all",
     "build": "bun scripts/build-native.ts",
-    "postinstall": "lefthook install || true"
+    "postinstall": "./scripts/install-hooks.sh"
   },
   "devDependencies": {
     "@skillsmith/core": "workspace:*",

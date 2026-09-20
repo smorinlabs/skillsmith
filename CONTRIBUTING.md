@@ -7,14 +7,14 @@ Thanks for your interest. Skillsmith is pre-1.0 and the public API is still shif
 ```sh
 git clone https://github.com/smorinlabs/skillsmith.git
 cd skillsmith
-bun install                 # installs deps and runs `lefthook install`
+bun install                 # installs deps and wires fail-closed hooks
 just install-gitleaks       # pinned scanner for commit and push hooks
 just install-trufflehog     # second scanner for local CI and history
 just install-actionlint    # pinned GitHub Actions linter
 bun run check               # canonical checks, including both credential scanners
 ```
 
-`bun install` wires lefthook via the `postinstall` script; once it has run, every `git commit` triggers:
+`bun install` wires fail-closed lefthook hooks via the `postinstall` script; once it has run, every `git commit` triggers:
 - Biome check on staged files
 - ESLint import boundaries on staged `packages/*/src/**/*.ts`
 - `actionlint` on workflow files
@@ -23,6 +23,23 @@ bun run check               # canonical checks, including both credential scanne
 `git push` scans the commits being pushed with Gitleaks, then runs typechecking, the serial test suite, dependency auditing, and security linting. Commit messages are validated against [Conventional Commits](https://www.conventionalcommits.org/).
 
 Both credential scanners must be installed for the regression suite. See [credential scanning](docs/credential-scanning.md) for scan scopes, exact exceptions, and failure handling. Synthetic test controls never contact credential providers.
+
+## Hook recovery
+
+The `pre-push`, `pre-commit`, and `commit-msg` hooks fail closed: a missing
+lefthook binary blocks the commit or push with an error instead of skipping
+the gates. If a hook refuses with "lefthook binary not found", recover with:
+
+```sh
+bun install                 # full install; lefthook is a devDependency
+just verify-hooks           # or ./scripts/verify-hooks.sh without just
+```
+
+Notes: one hooks directory serves every worktree of a clone, so installing in
+any worktree rewires them all; installing from a branch predating this wiring
+restores the old silent shims until `just install-hooks` runs again. A set
+`core.hooksPath` is refused loudly (unset it first). `LEFTHOOK=0` bypasses the
+hooks explicitly and prints a bypass notice; it is for emergencies only.
 
 ## Scripts
 
@@ -58,7 +75,7 @@ See `eslint.config.js` for the full zone list.
 
 ## Commit format
 
-Conventional Commits, enforced by a lefthook `commit-msg` hook:
+Conventional Commits, enforced by a fail-closed `commit-msg` hook:
 
 ```
 <type>(<optional scope>)!?: <subject>
