@@ -156,8 +156,8 @@ downstream, smorin-harness `skill-create` drops its ln -s step. Plan:
 - [x] [P13-TS02] Crash injection on create path; e2e drift-canary extension (sandboxed SKILLSMITH_HOME)
 - [x] [P13-T04] Adversarial full-branch review (codex) + fable whole-branch review
 - [x] [P13-T05] PR, CI green, merge; release-please v0.7.0
-- [ ] [P13-T06] Downstream: skill-create wire step → single `skillsmith dev --source` per tool; real-skill re-wire proof; smorin-harness release
-  - P19 split: wiring/real-skill evidence and current owner remain [#63](https://github.com/smorinlabs/skillsmith/issues/63); publishing/pre-publishing execution is deferred to [PUB-08 #55](https://github.com/smorinlabs/skillsmith/issues/55). Do not infer this task is complete from shipped P13 code.
+- [x] [P13-T06] Downstream: skill-create wire step → single `skillsmith dev --source` per tool; real-skill re-wire proof; smorin-harness release — DONE 2026-07-10, evidenced 2026-09-20: skill-fleet v0.3.1 (smorin/smorin-harness@ea95442) wires one dev --source per tool with the ln -s round-trip dropped; live-proven on document-merge; see [#63](https://github.com/smorinlabs/skillsmith/issues/63) disposition.
+  - P19 split resolved: owner is smorin/smorin-harness (the 2026-09-15 smorinlabs-harness read was a mapping failure); [PUB-08 #55](https://github.com/smorinlabs/skillsmith/issues/55) stays deferred for publishing machinery with its FOLLOW-P13 dependency satisfied; the T07 22-placement migration is kept distinct as adjacent evidence.
 - [x] [P13-T07] Downstream migration DONE 2026-07-10: all 22 codex placements moved ~/.codex/skills → ~/.agents/skills via dev --source (pilot + gated 21-skill sweep, 21/21 clean, restore path never needed; legacy root holds only the 4 codex-native dirs)
 - [x] [P13-T08] Issue #9 closed (auto, PR #18 'Fixes #9'); memory updated
 
