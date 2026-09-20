@@ -59,9 +59,11 @@ const msg = (e: SkillSmithError): string => ('message' in e ? e.message : e.code
 const CLAUDE_ONLY = ['claude-code'] as const;
 
 const detectBoth: InstallDeps['detect'] = async (_env, tool) =>
-  ok<InstallRecord[]>([
-    { path: `/usr/local/bin/${tool}`, version: '1.0.0', installMethod: 'unknown' },
-  ]);
+  tool === 'muse'
+    ? ok<InstallRecord[]>([])
+    : ok<InstallRecord[]>([
+        { path: `/usr/local/bin/${tool}`, version: '1.0.0', installMethod: 'unknown' },
+      ]);
 
 const detectClaudeOnly: InstallDeps['detect'] = async (_env, tool) =>
   tool === 'claude-code'

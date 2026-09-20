@@ -1263,6 +1263,16 @@ export const validateSavedReconcilePlanValue = async <
       if (adapter?.placement === undefined || (scope === 'project' && projectRoot === null)) {
         return err(stale('apply-saved-token-unknown', `portable token '${token}' is unsupported`));
       }
+      // A scope the tool does not manage (muse in project scope) binds no
+      // saved token: resolving would throw the no-destination invariant.
+      if (
+        adapter.placement.rootFacts(runtime.ports, scope, {
+          cwd: scope === 'project' ? (projectRoot as string) : runtime.projectContext.effectiveCwd,
+          configuration: runtime.configuration,
+        }).length === 0
+      ) {
+        return err(stale('apply-saved-token-unknown', `portable token '${token}' is unsupported`));
+      }
       try {
         const placement = await adapter.placement.resolveScoped(
           runtime.ports,

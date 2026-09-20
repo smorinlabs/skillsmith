@@ -18,7 +18,8 @@
   },
   "verifiedAgainst": {
     "claude-code": "1.0.0",
-    "codex": "1.0.0"
+    "codex": "1.0.0",
+    "muse": "1.0.0"
   },
   "summary": {
     "verdict": "warn",

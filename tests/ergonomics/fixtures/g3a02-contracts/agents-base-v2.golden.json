@@ -382,27 +382,27 @@
           "install": {
             "supported": false,
             "scopes": [],
-            "remediation": "kilo-code is read-only; choose claude-code or codex"
+            "remediation": "kilo-code is read-only; choose claude-code, codex, or muse"
           },
           "uninstall": {
             "supported": false,
             "scopes": [],
-            "remediation": "kilo-code is read-only; choose claude-code or codex"
+            "remediation": "kilo-code is read-only; choose claude-code, codex, or muse"
           },
           "dev": {
             "supported": false,
             "scopes": [],
-            "remediation": "kilo-code is read-only; choose claude-code or codex"
+            "remediation": "kilo-code is read-only; choose claude-code, codex, or muse"
           },
           "promote": {
             "supported": false,
             "scopes": [],
-            "remediation": "kilo-code is read-only; choose claude-code or codex"
+            "remediation": "kilo-code is read-only; choose claude-code, codex, or muse"
           },
           "undo": {
             "supported": false,
             "scopes": [],
-            "remediation": "kilo-code is read-only; choose claude-code or codex"
+            "remediation": "kilo-code is read-only; choose claude-code, codex, or muse"
           },
           "verify-static": {
             "supported": false,
@@ -484,27 +484,27 @@
           "install": {
             "supported": false,
             "scopes": [],
-            "remediation": "opencode is read-only; choose claude-code or codex"
+            "remediation": "opencode is read-only; choose claude-code, codex, or muse"
           },
           "uninstall": {
             "supported": false,
             "scopes": [],
-            "remediation": "opencode is read-only; choose claude-code or codex"
+            "remediation": "opencode is read-only; choose claude-code, codex, or muse"
           },
           "dev": {
             "supported": false,
             "scopes": [],
-            "remediation": "opencode is read-only; choose claude-code or codex"
+            "remediation": "opencode is read-only; choose claude-code, codex, or muse"
           },
           "promote": {
             "supported": false,
             "scopes": [],
-            "remediation": "opencode is read-only; choose claude-code or codex"
+            "remediation": "opencode is read-only; choose claude-code, codex, or muse"
           },
           "undo": {
             "supported": false,
             "scopes": [],
-            "remediation": "opencode is read-only; choose claude-code or codex"
+            "remediation": "opencode is read-only; choose claude-code, codex, or muse"
           },
           "verify-static": {
             "supported": false,
@@ -546,7 +546,7 @@
       {
         "id": "muse",
         "order": 50,
-        "capabilityVersion": 1,
+        "capabilityVersion": 2,
         "operations": {
           "detect": {
             "supported": true,
@@ -584,59 +584,90 @@
             "remediation": null
           },
           "install": {
-            "supported": false,
-            "scopes": [],
-            "remediation": "muse is read-only; choose claude-code or codex"
+            "supported": true,
+            "scopes": [
+              "user",
+              "custom"
+            ],
+            "remediation": null
           },
           "uninstall": {
-            "supported": false,
-            "scopes": [],
-            "remediation": "muse is read-only; choose claude-code or codex"
+            "supported": true,
+            "scopes": [
+              "user",
+              "custom"
+            ],
+            "remediation": null
           },
           "dev": {
-            "supported": false,
-            "scopes": [],
-            "remediation": "muse is read-only; choose claude-code or codex"
+            "supported": true,
+            "scopes": [
+              "user",
+              "custom"
+            ],
+            "remediation": null
           },
           "promote": {
-            "supported": false,
-            "scopes": [],
-            "remediation": "muse is read-only; choose claude-code or codex"
+            "supported": true,
+            "scopes": [
+              "user",
+              "custom"
+            ],
+            "remediation": null
           },
           "undo": {
-            "supported": false,
-            "scopes": [],
-            "remediation": "muse is read-only; choose claude-code or codex"
+            "supported": true,
+            "scopes": [
+              "user",
+              "custom"
+            ],
+            "remediation": null
           },
           "verify-static": {
-            "supported": false,
-            "scopes": [],
-            "remediation": "muse has no registered static verifier"
+            "supported": true,
+            "scopes": [
+              "artifact"
+            ],
+            "remediation": null
           },
           "verify-deep": {
-            "supported": false,
-            "scopes": [],
-            "remediation": "muse has no registered deep verifier"
+            "supported": true,
+            "scopes": [
+              "artifact"
+            ],
+            "remediation": null
           },
           "plan": {
-            "supported": false,
-            "scopes": [],
-            "remediation": "muse cannot participate in desired-state mutations"
+            "supported": true,
+            "scopes": [
+              "user",
+              "custom"
+            ],
+            "remediation": null
           },
           "apply": {
-            "supported": false,
-            "scopes": [],
-            "remediation": "muse cannot participate in desired-state mutations"
+            "supported": true,
+            "scopes": [
+              "user",
+              "custom"
+            ],
+            "remediation": null
           },
           "sync": {
-            "supported": false,
-            "scopes": [],
-            "remediation": "muse cannot participate in desired-state mutations"
+            "supported": true,
+            "scopes": [
+              "user",
+              "custom"
+            ],
+            "remediation": null
           },
           "update": {
-            "supported": false,
-            "scopes": [],
-            "remediation": "muse cannot participate in desired-state mutations"
+            "supported": true,
+            "scopes": [
+              "user",
+              "custom"
+            ],
+            "remediation": null
           },
           "adapt": {
             "supported": false,

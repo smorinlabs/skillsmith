@@ -222,7 +222,7 @@ const makeVerifyReport = (
     schemaVersion: 1,
     target: { path: '/fake', kind: 'skill' },
     requested: { tools: [tool], modes: ['static'], strict: false, explicitTools: true },
-    verifiedAgainst: { 'claude-code': '1.0.0', codex: '1.0.0' },
+    verifiedAgainst: { 'claude-code': '1.0.0', codex: '1.0.0', muse: '1.0.0' },
     summary: {
       verdict,
       verified: verdict === 'pass' || verdict === 'warn' ? [tool] : [],
@@ -828,10 +828,11 @@ describe('runDev — happy paths, --source adoption, missing source', () => {
     expect(Object.keys(afterAdopt.value.model.transactions)).toEqual([]);
   });
 
-  test('a failed mandatory post-operation ledger reread aborts the remaining tool in its group', async () => {
+  test('a failed mandatory post-operation ledger reread aborts the remaining tools in its group', async () => {
     const ledgerPath = ledgerPathOf(f.data);
     const firstLive = join(f.home, '.claude', 'skills', 'boundary-fail');
     const secondLive = join(f.home, '.agents', 'skills', 'boundary-fail');
+    const thirdLive = join(f.env.xdg.config, 'muse', 'skills', 'boundary-fail');
     const verifyCalls: VerifyOptions[] = [];
     let crossedDurableBoundary = 0;
     let failedMandatoryReads = 0;
@@ -864,7 +865,7 @@ describe('runDev — happy paths, --source adoption, missing source', () => {
       passDeps(verifyCalls),
     );
     if (!prepared.ok) throw new Error(msg(prepared.error));
-    expect(prepared.value.plan.operations).toHaveLength(2);
+    expect(prepared.value.plan.operations).toHaveLength(3);
     expect(new Set(prepared.value.plan.operations.map(({ groupId }) => groupId)).size).toBe(1);
 
     const executed = await prepared.value.execute();
@@ -877,6 +878,7 @@ describe('runDev — happy paths, --source adoption, missing source', () => {
     expect(verifyCalls.map(({ tools }) => tools?.[0])).toEqual(['claude-code']);
     expect(await f.env.pathKind(firstLive)).toBe('symlink');
     expect(await f.env.pathKind(secondLive)).toBe('absent');
+    expect(await f.env.pathKind(thirdLive)).toBe('absent');
 
     const canonical = await readLedgerState(f.env, ledgerPath);
     if (!canonical.ok || canonical.value.state !== 'present') {
@@ -886,6 +888,7 @@ describe('runDev — happy paths, --source adoption, missing source', () => {
       getLedgerPairAt(canonical.value.model, null, 'boundary-fail', 'claude-code'),
     ).not.toBeNull();
     expect(getLedgerPairAt(canonical.value.model, null, 'boundary-fail', 'codex')).toBeNull();
+    expect(getLedgerPairAt(canonical.value.model, null, 'boundary-fail', 'muse')).toBeNull();
   });
 
   test('G3B-02: selected store drift after preview is refused with zero execution writes', async () => {

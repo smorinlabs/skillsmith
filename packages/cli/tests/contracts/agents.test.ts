@@ -14,16 +14,16 @@ const FAMILY_ALLOCATION = Object.freeze({
 
 const FIXTURE_MANIFEST = Object.freeze({
   'agents-base-v2.golden.json': Object.freeze({
-    bytes: 16_913,
-    sha256: '3af110be1a7ac64003c161dd31f8f50f02971d76204bbf8e332d4ee67921f16b',
+    bytes: 17_088,
+    sha256: '21741364aa4268cae5df9c36588eb112c8dbd12f3cf045d3e515881f77bf95b3',
   }),
   'agents-capabilities-v2.golden.json': Object.freeze({
-    bytes: 16_913,
-    sha256: '3af110be1a7ac64003c161dd31f8f50f02971d76204bbf8e332d4ee67921f16b',
+    bytes: 17_088,
+    sha256: '21741364aa4268cae5df9c36588eb112c8dbd12f3cf045d3e515881f77bf95b3',
   }),
   'agents-capabilities.golden.txt': Object.freeze({
-    bytes: 5_846,
-    sha256: '987357768a7043b4f9f522a0a4909ee209c342b6638a35a1b4a07d2f45405731',
+    bytes: 5_547,
+    sha256: '1ccecb9d2e0922fcf82b769dc84f79c2b4484ff3ef74956bcc3b79ae42193b12',
   }),
   'agents-default.golden.txt': Object.freeze({
     bytes: 558,
@@ -34,8 +34,8 @@ const FIXTURE_MANIFEST = Object.freeze({
     sha256: '904245c432c2c5f9ac9b694213ac212b9544b302de580cd7b27cb58f3f5eb4f1',
   }),
   'agents-fleet.json': Object.freeze({
-    bytes: 14_675,
-    sha256: 'c40e48b7de570b33d158468b5cba478888a0321d828c974408bd71caf75135ad',
+    bytes: 14_416,
+    sha256: '3d2fbbe829ed6e665d0576679abb2267510abcca3aa9749de8f1a2ad8dfb760d',
   }),
 });
 
@@ -489,7 +489,7 @@ describe('EWP-CMD-AGENTS-TS03', () => {
       kiloInstall: {
         supported: false,
         scopes: [],
-        remediation: 'kilo-code is read-only; choose claude-code or codex',
+        remediation: 'kilo-code is read-only; choose claude-code, codex, or muse',
       },
       opencodeApply: {
         supported: false,

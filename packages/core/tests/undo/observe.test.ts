@@ -573,7 +573,7 @@ describe('undo observation', () => {
 
     expect(observed.ok).toBeTrue();
     if (!observed.ok) return;
-    expect(observed.value.request.tools).toEqual(['claude-code', 'codex']);
+    expect(observed.value.request.tools).toEqual(['claude-code', 'codex', 'muse']);
     expect(observed.value.request.scopes).toEqual(['user']);
     expect(observed.value.selection.outcome).toBe('filter-noop');
   });

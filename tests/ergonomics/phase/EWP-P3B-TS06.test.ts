@@ -1583,9 +1583,9 @@ describe('EWP-P3B-TS06 — registered adapter lifecycle authority', () => {
   describe('family 10 — public and operation compatibility', () => {
     test('EWP-P3B-TS06 characterization: current bytes, wire bindings, and operation IDs remain compatible', () => {
       expect(SUPPORTED_TOOLS).toEqual(['claude-code', 'codex', 'kilo-code', 'opencode', 'muse']);
-      expect(FLIP_TOOLS).toEqual(['claude-code', 'codex']);
-      expect(VERIFY_TOOLS).toEqual(['claude-code', 'codex']);
-      expect(Object.keys(VERIFIED_AGAINST)).toEqual(['claude-code', 'codex']);
+      expect(FLIP_TOOLS).toEqual(['claude-code', 'codex', 'muse']);
+      expect(VERIFY_TOOLS).toEqual(['claude-code', 'codex', 'muse']);
+      expect(Object.keys(VERIFIED_AGAINST)).toEqual(['claude-code', 'codex', 'muse']);
 
       const fingerprints = [
         [
@@ -1632,7 +1632,7 @@ describe('EWP-P3B-TS06 — registered adapter lifecycle authority', () => {
               verifiedAgainst: VERIFIED_AGAINST,
             }),
           ),
-          [1095, '09e53696ef9db571c3823f52c5278b8388a5c11d3ef2b26d2b3026f0ef15e856'],
+          [1116, 'f319fc4a08dc7d9e8b1b26b585cdab9ba9975311cfa4e470213100e333aec58b'],
         ],
         [
           String((renderFlipJson as unknown as AnyFunction)(flipReportFor('codex', 'dev'))),

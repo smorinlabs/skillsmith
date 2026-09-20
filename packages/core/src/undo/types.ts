@@ -20,7 +20,7 @@ import type { Result } from '../result.ts';
 import type { SelectionSource, ValidatedSelectionRequest } from '../selection/types.ts';
 import type { StatusRetentionEligibility, StatusRetentionRequirement } from '../status/types.ts';
 
-export type UndoTool = 'claude-code' | 'codex';
+export type UndoTool = 'claude-code' | 'codex' | 'muse';
 export type UndoScope = 'user' | 'project';
 export type UndoOperationFamily = 'dev' | 'promote' | 'install' | 'uninstall' | 'update';
 export type UndoAction = 'abort-pending' | 'reverse-committed';

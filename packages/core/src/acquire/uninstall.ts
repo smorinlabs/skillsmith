@@ -260,37 +260,43 @@ const collectUninstallMatches = async (
       const bundle = placementBundleFor(registry, tool);
       const roots = bundle.rootFacts(env, scope, ctx).map(({ path }) => path);
       const existing = getPairAt(ledger, scopeKey, name, tool);
-      const resolution = await bundle.resolveScoped(env, ctx, storeRoot, name, scope);
-      if (resolution.duplicateReason !== null) {
-        const inventory = await bundle.listScoped(env, ctx, storeRoot, scope);
-        const duplicatePaths = inventory.placements
-          .filter((placement) => placement.skill === name && placement.class !== 'absent')
-          .map((placement) => placement.path);
-        matches.push({
-          scope,
-          scopeKey,
-          tool,
-          kind: 'duplicate',
-          placement: resolution.placement,
-          existing,
-          notice: null,
-          duplicatePaths,
-          duplicateReason: resolution.duplicateReason,
-        });
-        continue;
-      }
-      if (resolution.placement.class !== 'absent') {
-        const notice = resolution.notices.length === 0 ? null : resolution.notices.join('; ');
-        matches.push({
-          scope,
-          scopeKey,
-          tool,
-          kind: 'live',
-          placement: resolution.placement,
-          existing,
-          notice,
-        });
-        continue;
+      // A scope the tool does not manage (muse in project scope) holds no
+      // live placements: resolving would throw the registry's no-destination
+      // invariant. Ledger-recorded pairs below still resolve to stale matches.
+      const resolution =
+        roots.length === 0 ? null : await bundle.resolveScoped(env, ctx, storeRoot, name, scope);
+      if (resolution !== null) {
+        if (resolution.duplicateReason !== null) {
+          const inventory = await bundle.listScoped(env, ctx, storeRoot, scope);
+          const duplicatePaths = inventory.placements
+            .filter((placement) => placement.skill === name && placement.class !== 'absent')
+            .map((placement) => placement.path);
+          matches.push({
+            scope,
+            scopeKey,
+            tool,
+            kind: 'duplicate',
+            placement: resolution.placement,
+            existing,
+            notice: null,
+            duplicatePaths,
+            duplicateReason: resolution.duplicateReason,
+          });
+          continue;
+        }
+        if (resolution.placement.class !== 'absent') {
+          const notice = resolution.notices.length === 0 ? null : resolution.notices.join('; ');
+          matches.push({
+            scope,
+            scopeKey,
+            tool,
+            kind: 'live',
+            placement: resolution.placement,
+            existing,
+            notice,
+          });
+          continue;
+        }
       }
       // Ledger-recorded custom placements may live outside every standard adapter root.
       if (existing?.placementPath) {
@@ -357,8 +363,10 @@ const resolveUninstallPathTarget = async (
   const uninstallTools = registry.toolsFor('uninstall') as readonly FlipTool[];
   for (const tool of uninstallTools) {
     const bundle = placementBundleFor(registry, tool);
+    const userFacts = bundle.rootFacts(env, 'user', ctxUser);
+    if (userFacts.length === 0) continue;
     const resolution = await bundle.resolveScoped(env, ctxUser, storeRoot, name, 'user');
-    for (const { path: root } of bundle.rootFacts(env, 'user', ctxUser)) {
+    for (const { path: root } of userFacts) {
       candidates.push({
         scope: 'user',
         scopeKey: null,
@@ -375,8 +383,10 @@ const resolveUninstallPathTarget = async (
     const ctxProj = { cwd: projectRoot, configuration: opts.configuration };
     for (const tool of uninstallTools) {
       const bundle = placementBundleFor(registry, tool);
+      const projectFacts = bundle.rootFacts(env, 'project', ctxProj);
+      if (projectFacts.length === 0) continue;
       const resolution = await bundle.resolveScoped(env, ctxProj, storeRoot, name, 'project');
-      for (const { path: root } of bundle.rootFacts(env, 'project', ctxProj)) {
+      for (const { path: root } of projectFacts) {
         candidates.push({
           scope: 'project',
           scopeKey: projectRoot,

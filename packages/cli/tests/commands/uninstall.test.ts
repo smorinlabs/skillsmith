@@ -86,4 +86,23 @@ describe('skillsmith uninstall — smoke (scratch $SKILLSMITH_HOME)', () => {
       rmSync(scratch, { recursive: true, force: true });
     }
   });
+
+  test('explicit muse in project scope has nothing to remove -> exit 0, action noop', async () => {
+    const scratch = mkdtempSync(join(tmpdir(), 'skillsmith-uninstall-test-'));
+    try {
+      const r = await run(
+        ['uninstall', 'nope-not-a-real-skill', '--tool', 'muse', '--project', '--json'],
+        {
+          SKILLSMITH_HOME: scratch,
+          HOME: scratch,
+        },
+      );
+      expect(r.code).toBe(0);
+      const parsed = JSON.parse(r.stdout);
+      expect(parsed.kind).toBe('skillsmith.uninstall');
+      expect(parsed.results[0].action).toBe('noop');
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  });
 });

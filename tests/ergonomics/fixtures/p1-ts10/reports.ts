@@ -638,7 +638,7 @@ export const VERIFY_REPORT_FIXTURE = {
     strict: true,
     explicitTools: true,
   },
-  verifiedAgainst: { 'claude-code': '1.0.0', codex: '1.0.0' },
+  verifiedAgainst: { 'claude-code': '1.0.0', codex: '1.0.0', muse: '1.0.0' },
   summary: {
     verdict: 'warn',
     verified: ['codex'],
@@ -686,7 +686,7 @@ export const VERIFY_REPORT_FIXTURE = {
       ],
     },
   ],
-} satisfies VerifyReport<'claude-code' | 'codex'>;
+} satisfies VerifyReport<'claude-code' | 'codex' | 'muse'>;
 
 export const ERROR_FIXTURE = {
   code: 'fixture-error',
@@ -1167,7 +1167,7 @@ export const HISTORICAL_JSON_GOLDENS = {
   uninstall:
     '{\n  "schemaVersion": 1,\n  "kind": "skillsmith.uninstall",\n  "dryRun": false,\n  "requested": {\n    "targets": [\n      "fixture-skill"\n    ],\n    "tools": [\n      "codex"\n    ],\n    "explicitTools": true,\n    "scope": "project",\n    "allScopes": false,\n    "force": false\n  },\n  "results": [\n    {\n      "skill": "fixture-skill",\n      "tool": "codex",\n      "scope": "project",\n      "placementPath": "/fixture/project/skills/fixture-skill",\n      "action": "removed",\n      "reason": null,\n      "before": {\n        "mode": "pinned",\n        "placement": "symlink",\n        "storePath": "/fixture/store/fixture-skill",\n        "symlinkTarget": "/fixture/store/fixture-skill"\n      },\n      "storeRetained": "/fixture/store/fixture-skill",\n      "backupKept": null\n    }\n  ],\n  "summary": {\n    "removed": 1,\n    "noop": 0,\n    "refused": 0,\n    "failed": 0\n  }\n}',
   verify:
-    '{\n  "schemaVersion": 1,\n  "kind": "skillsmith.verify",\n  "target": {\n    "path": "/fixture/project/skills/fixture-skill",\n    "kind": "skill"\n  },\n  "requested": {\n    "tools": [\n      "codex"\n    ],\n    "modes": [\n      "static",\n      "deep"\n    ],\n    "strict": true,\n    "explicitTools": true\n  },\n  "verifiedAgainst": {\n    "claude-code": "1.0.0",\n    "codex": "1.0.0"\n  },\n  "summary": {\n    "verdict": "warn",\n    "verified": [\n      "codex"\n    ],\n    "failed": [],\n    "skipped": [],\n    "counts": {\n      "error": 0,\n      "warning": 1,\n      "info": 0\n    }\n  },\n  "tools": [\n    {\n      "tool": "codex",\n      "available": true,\n      "toolVersion": "1.0.1",\n      "versionDrift": true,\n      "skipReason": null,\n      "verdict": "warn",\n      "modes": [\n        {\n          "mode": "static",\n          "status": "ran",\n          "skipReason": null,\n          "coverage": {\n            "manifest": true,\n            "skills": true\n          },\n          "verdict": "warn",\n          "command": "codex fixture verify",\n          "findings": [\n            {\n              "checkId": "fixture.frontmatter",\n              "toolSeverity": "warning",\n              "normalizedSeverity": "warning",\n              "message": "Fixture warning",\n              "file": "SKILL.md",\n              "subject": "skill",\n              "raw": "fixture raw detail"\n            }\n          ]\n        },\n        {\n          "mode": "deep",\n          "status": "ran",\n          "skipReason": null,\n          "coverage": {\n            "manifest": true,\n            "skills": true\n          },\n          "verdict": "pass",\n          "command": "codex fixture verify --deep",\n          "findings": []\n        }\n      ]\n    }\n  ]\n}',
+    '{\n  "schemaVersion": 1,\n  "kind": "skillsmith.verify",\n  "target": {\n    "path": "/fixture/project/skills/fixture-skill",\n    "kind": "skill"\n  },\n  "requested": {\n    "tools": [\n      "codex"\n    ],\n    "modes": [\n      "static",\n      "deep"\n    ],\n    "strict": true,\n    "explicitTools": true\n  },\n  "verifiedAgainst": {\n    "claude-code": "1.0.0",\n    "codex": "1.0.0",\n    "muse": "1.0.0"\n  },\n  "summary": {\n    "verdict": "warn",\n    "verified": [\n      "codex"\n    ],\n    "failed": [],\n    "skipped": [],\n    "counts": {\n      "error": 0,\n      "warning": 1,\n      "info": 0\n    }\n  },\n  "tools": [\n    {\n      "tool": "codex",\n      "available": true,\n      "toolVersion": "1.0.1",\n      "versionDrift": true,\n      "skipReason": null,\n      "verdict": "warn",\n      "modes": [\n        {\n          "mode": "static",\n          "status": "ran",\n          "skipReason": null,\n          "coverage": {\n            "manifest": true,\n            "skills": true\n          },\n          "verdict": "warn",\n          "command": "codex fixture verify",\n          "findings": [\n            {\n              "checkId": "fixture.frontmatter",\n              "toolSeverity": "warning",\n              "normalizedSeverity": "warning",\n              "message": "Fixture warning",\n              "file": "SKILL.md",\n              "subject": "skill",\n              "raw": "fixture raw detail"\n            }\n          ]\n        },\n        {\n          "mode": "deep",\n          "status": "ran",\n          "skipReason": null,\n          "coverage": {\n            "manifest": true,\n            "skills": true\n          },\n          "verdict": "pass",\n          "command": "codex fixture verify --deep",\n          "findings": []\n        }\n      ]\n    }\n  ]\n}',
   error:
     '{"schemaVersion":1,"kind":"error","code":"fixture-error","message":"Deterministic fixture failure","exitCode":7}\n',
 } as const;
