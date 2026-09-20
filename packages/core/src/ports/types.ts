@@ -216,6 +216,24 @@ export interface HttpPort {
   request(request: HttpRequest): Promise<HttpResponse>;
 }
 
+/** Bounded decoded response reads; separate from the legacy HEAD-only capability. */
+export interface HttpReadPort {
+  get(request: {
+    readonly url: string;
+    readonly maxResponseBytes: number;
+    readonly signal: AbortSignal;
+  }): Promise<{
+    readonly status: number;
+    readonly retryAfter: string | null;
+    readonly body: Uint8Array;
+  }>;
+}
+
+/** Cancelable scheduling, without exposing ambient timers to domain code. */
+export interface TimerPort {
+  schedule(delayMs: number, callback: () => void): () => void;
+}
+
 export interface ClockPort {
   wallNowIso(): string;
   epochMilliseconds(): number;

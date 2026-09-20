@@ -84,7 +84,30 @@ export {
   unknownToolError,
 } from './errors.ts';
 export { isPortError, portError, PORT_ERROR_CODES } from './ports/errors.ts';
-export { defaultClockPort, defaultIdPort, defaultRuntimePorts } from './ports/default.ts';
+export {
+  defaultClockPort,
+  defaultIdPort,
+  defaultRuntimePorts,
+  defaultSearchPorts,
+  defaultTimerPort,
+} from './ports/default.ts';
+export { createSkillsShProvider } from './search/skills-sh.ts';
+export { runSearchApplication } from './application/search-service.ts';
+export type {
+  SearchHit,
+  SearchReport,
+  SearchRequest,
+  SearchFailure,
+  SearchProvider,
+  SearchPorts,
+  SearchInvocation,
+  SearchSelection,
+  SearchInteractionPort,
+  SearchApplicationContext,
+  SearchApplicationReport,
+  HttpReadPort,
+  TimerPort,
+} from './public-types.ts';
 export {
   OBSERVATION_EVENT_KINDS,
   OPERATION_KINDS,

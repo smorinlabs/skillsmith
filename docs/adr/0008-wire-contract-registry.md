@@ -79,6 +79,15 @@ new command path. The DTO is intentionally minimal — `schemaVersion`, `kind`, 
 report family rather than extending the strict list@3 filter schema. No existing codec,
 mapping, or accepted byte changes.
 
+Remote search adds `search@1` after `plan-report@1` in the live registry. `skillsmith search` and
+its `find` alias select that same codec. Its strict DTO has `schemaVersion: 1`,
+`kind: "skillsmith.search"`, query/owner/limit/returned metadata, search type, and skill results.
+The field-by-field mapper preserves provider order and identities. Results distinguish catalog
+IDs, optional provider IDs, names, optional sources/counts, fixed-origin URLs, and unchecked
+verification. They contain no installation signature. JSON uses two-space indentation and one
+terminal newline. External provider JSON tolerates unknown fields; the owned wire DTO rejects
+them recursively. Existing codecs and accepted output bytes retain their contracts.
+
 Persisted artifacts use a second, deliberately distinct abstraction. `ArtifactCodec` operates on
 owned bytes and maps versioned DTOs to immutable semantic models; it is not a `WireCodec`, and
 `artifactContractRegistry` is not the CLI's `WireContractRegistry`. The single production artifact

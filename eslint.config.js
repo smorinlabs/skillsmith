@@ -312,6 +312,7 @@ export default [
             { target: './packages/core/src/selection', from: './packages/core/src/application' },
             { target: './packages/core/src/skills', from: './packages/core/src/application' },
             { target: './packages/core/src/verify', from: './packages/core/src/application' },
+            { target: './packages/core/src/search', from: './packages/core/src/application' },
           ],
         },
       ],

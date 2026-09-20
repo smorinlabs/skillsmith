@@ -7,6 +7,7 @@ import { runInitApplication } from './init-service.ts';
 import { LIFECYCLE_APPLICATION_SERVICES } from './lifecycle-services.ts';
 import { runPlanApplication } from './plan-service.ts';
 import { CURRENT_READ_APPLICATIONS } from './read-services.ts';
+import { runSearchApplication } from './search-service.ts';
 import { runSyncApplication } from './sync-service.ts';
 import { runUndoApplication } from './undo-service.ts';
 import { runUpdateApplication } from './update-service.ts';
@@ -133,21 +134,21 @@ export type AnyCurrentApplicationService = (
 ) => Promise<CommandOutcome<unknown>>;
 
 /** Exact public registry consumed by the shared CLI runtime and checked against CommandSpec. */
-export const CURRENT_APPLICATION_SERVICES: Readonly<Record<string, AnyCurrentApplicationService>> =
-  Object.freeze({
-    rootHelp: runRootHelpApplication as AnyCurrentApplicationService,
-    configHelp: runConfigHelpApplication as AnyCurrentApplicationService,
-    version: runVersionApplication as unknown as AnyCurrentApplicationService,
-    completion: runCompletionApplication as AnyCurrentApplicationService,
-    help: runHelpApplication as AnyCurrentApplicationService,
-    export: runExportApplication as AnyCurrentApplicationService,
-    gc: runGcApplication as AnyCurrentApplicationService,
-    init: runInitApplication as AnyCurrentApplicationService,
-    plan: runPlanApplication as AnyCurrentApplicationService,
-    apply: runApplyApplication as AnyCurrentApplicationService,
-    sync: runSyncApplication as AnyCurrentApplicationService,
-    update: runUpdateApplication as AnyCurrentApplicationService,
-    undo: runUndoApplication as AnyCurrentApplicationService,
-    ...CURRENT_READ_APPLICATIONS,
-    ...LIFECYCLE_APPLICATION_SERVICES,
-  });
+export const CURRENT_APPLICATION_SERVICES = Object.freeze({
+  search: runSearchApplication,
+  rootHelp: runRootHelpApplication as AnyCurrentApplicationService,
+  configHelp: runConfigHelpApplication as AnyCurrentApplicationService,
+  version: runVersionApplication as unknown as AnyCurrentApplicationService,
+  completion: runCompletionApplication as AnyCurrentApplicationService,
+  help: runHelpApplication as AnyCurrentApplicationService,
+  export: runExportApplication as AnyCurrentApplicationService,
+  gc: runGcApplication as AnyCurrentApplicationService,
+  init: runInitApplication as AnyCurrentApplicationService,
+  plan: runPlanApplication as AnyCurrentApplicationService,
+  apply: runApplyApplication as AnyCurrentApplicationService,
+  sync: runSyncApplication as AnyCurrentApplicationService,
+  update: runUpdateApplication as AnyCurrentApplicationService,
+  undo: runUndoApplication as AnyCurrentApplicationService,
+  ...CURRENT_READ_APPLICATIONS,
+  ...LIFECYCLE_APPLICATION_SERVICES,
+});

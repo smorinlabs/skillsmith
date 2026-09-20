@@ -1,4 +1,6 @@
 export type { AgentsV1Dto } from './agents.ts';
+export type { SearchV1Dto } from './search.ts';
+export { searchV1Codec, toSearchV1Dto } from './search.ts';
 export { agentsV1Codec, toAgentsV1Dto } from './agents.ts';
 export type { CapabilitySnapshotV1Dto } from './capability-snapshot.ts';
 export {

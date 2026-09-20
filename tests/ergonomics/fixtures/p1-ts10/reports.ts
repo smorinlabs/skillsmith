@@ -24,6 +24,7 @@ import type {
   InstallReport,
   ListReport,
   NormalizedSeverity,
+  SearchReport,
   SkillSmithError,
   StatusReport,
   SupportedTool,
@@ -1084,6 +1085,27 @@ export const GC_REPORT_FIXTURE = {
   },
 } satisfies GcReportV1Dto;
 
+export const SEARCH_REPORT_FIXTURE = {
+  provider: 'skills.sh',
+  query: 'react',
+  owner: null,
+  limit: 20,
+  returned: 1,
+  searchType: 'fuzzy',
+  results: [
+    {
+      kind: 'skill',
+      catalogId: 'acme/skills/react',
+      providerSkillId: 'react',
+      name: 'React',
+      source: 'acme/skills',
+      installs: 42,
+      url: 'https://skills.sh/acme/skills/react',
+      verification: 'not-checked',
+    },
+  ],
+} satisfies SearchReport;
+
 export const REPORT_FIXTURES = {
   agents: AGENTS_REPORT_FIXTURE,
   apply: APPLY_REPORT_FIXTURE,
@@ -1100,6 +1122,7 @@ export const REPORT_FIXTURES = {
   currentInstall: CURRENT_INSTALL_REPORT_FIXTURE,
   list: LIST_REPORT_FIXTURE,
   plan: PLAN_REPORT_FIXTURE,
+  search: SEARCH_REPORT_FIXTURE,
   status: STATUS_REPORT_FIXTURE,
   sync: SYNC_REPORT_FIXTURE,
   undo: UNDO_REPORT_FIXTURE,
@@ -1129,6 +1152,7 @@ export const CURRENT_RENDERER_REPORTS = {
   install: { value: REPORT_FIXTURES.currentInstall },
   list: REPORT_FIXTURES.list,
   plan: { result: REPORT_FIXTURES.plan },
+  search: { value: REPORT_FIXTURES.search, selectedCatalogId: null },
   status: { result: STATUS_V1_DTO_FIXTURE },
   sync: { result: REPORT_FIXTURES.sync },
   undo: { result: REPORT_FIXTURES.undo },
@@ -1476,6 +1500,7 @@ const DOCTOR_HEALTH_V2_DTO = {
 
 export const CURRENT_JSON_GOLDENS = {
   ...HISTORICAL_JSON_GOLDENS,
+  search: `${JSON.stringify({ schemaVersion: 1, kind: 'skillsmith.search', ...SEARCH_REPORT_FIXTURE }, null, 2)}\n`,
   agents: `${JSON.stringify(AGENTS_V2_DTO, null, 2)}\n`,
   apply: `${JSON.stringify(APPLY_REPORT_FIXTURE, null, 2)}\n`,
   commands: `${JSON.stringify(COMMANDS_V2_DTO, null, 2)}\n`,
@@ -1509,6 +1534,7 @@ export const GOLDEN_TERMINAL_LF = {
   install: false,
   list: true,
   plan: true,
+  search: true,
   status: true,
   sync: true,
   undo: true,

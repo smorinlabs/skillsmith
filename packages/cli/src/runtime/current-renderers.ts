@@ -21,6 +21,7 @@ import {
   type ListReport,
   type PlanApplicationReport,
   type PromoteApplicationReport,
+  type SearchApplicationReport,
   type StatusApplicationReport,
   type SyncApplicationReport,
   type UndoApplicationReport,
@@ -70,6 +71,8 @@ import { renderListHuman } from '../output/list-human.ts';
 import { renderListJson } from '../output/list-json.ts';
 import { renderPlanHuman } from '../output/plan-human.ts';
 import { renderPlanJson } from '../output/plan-json.ts';
+import { renderSearchHuman } from '../output/search-human.ts';
+import { renderSearchJson } from '../output/search-json.ts';
 import { renderStatusHuman } from '../output/status-human.ts';
 import { renderStatusJson } from '../output/status-json.ts';
 import { renderSyncHuman } from '../output/sync-human.ts';
@@ -393,6 +396,12 @@ export const createCurrentRendererRegistry = (root: Command): RendererRegistry =
           : withDiagnostics(outcome, renderUndoJson(value, currentWireCodecs.undo));
       },
     },
+    search: guarded<SearchApplicationReport>(
+      (report) =>
+        report.value === null ? '' : renderSearchHuman(report.value, report.selectedCatalogId),
+      (report) =>
+        report.value === null ? '' : renderSearchJson(report.value, currentWireCodecs.search),
+    ),
     gc: {
       human: (outcome) => {
         const value = report<GcApplicationReport>(outcome).result;

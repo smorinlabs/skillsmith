@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "kind": "skillsmith.search",
+  "provider": "skills.sh",
+  "query": "react",
+  "owner": null,
+  "limit": 20,
+  "returned": 1,
+  "searchType": "fuzzy",
+  "results": [
+    {
+      "kind": "skill",
+      "catalogId": "acme/skills/react",
+      "providerSkillId": "react",
+      "name": "React",
+      "source": "acme/skills",
+      "installs": 42,
+      "url": "https://skills.sh/acme/skills/react",
+      "verification": "not-checked"
+    }
+  ]
+}

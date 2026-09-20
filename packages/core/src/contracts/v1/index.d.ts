@@ -21,6 +21,7 @@ import type {
   PortableLockV1,
   Result,
   SavedPlanV1,
+  SearchReport,
   StatusReport,
   SupportedTool,
   ToolRegistry,
@@ -29,6 +30,29 @@ import type {
   UninstallReport,
   VerifyReport,
 } from '@skillsmith/core';
+
+export interface SearchV1Dto {
+  schemaVersion: 1;
+  kind: 'skillsmith.search';
+  provider: 'skills.sh';
+  query: string;
+  owner: string | null;
+  limit: number;
+  returned: number;
+  searchType: 'fuzzy' | 'semantic' | 'unknown';
+  results: Array<{
+    kind: 'skill';
+    catalogId: string;
+    providerSkillId: string | null;
+    name: string;
+    source: string | null;
+    installs: number | null;
+    url: string;
+    verification: 'not-checked';
+  }>;
+}
+export declare const searchV1Codec: WireCodec<'search', 1, SearchV1Dto>;
+export declare const toSearchV1Dto: (report: SearchReport) => SearchV1Dto;
 import type { ArtifactCodec, ArtifactCodecError, WireCodec } from '@skillsmith/core/contracts';
 
 type ToolId = 'claude-code' | 'codex';

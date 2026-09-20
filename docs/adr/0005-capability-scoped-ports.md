@@ -30,6 +30,14 @@ Core effects are represented by cohesive public ports in `packages/core/src/port
   named `git` and `http` ports. Only adapter and application composition may name the aggregate.
   Domain functions accept focused structural intersections such as `InventoryReadPorts`.
 
+Remote catalog search adds a separate `HttpReadPort` for GET status, selected headers, and a
+bounded decoded body. The caller supplies a byte ceiling and one abort signal that remains active
+through streaming. `TimerPort` supplies cancellable scheduling. `defaultSearchPorts()` composes
+these capabilities with the existing clock from the same default adapter module, without creating
+filesystem or process authority. Existing HEAD-only `HttpPort` and aggregate `RuntimePorts`
+contracts remain compatible. Search's total deadline, retry policy, and response mapping belong
+to the domain; fetch and decoded-byte accounting belong to `ports/http.ts`.
+
 Raw environment input is decoded once into a frozen `ResolvedRuntimeConfiguration`. It contains
 only the accepted config layer, explicit paths, current tool-specific homes/toggles, color flags,
 and the decoded test-only journal pause. Platform PATH/XDG/home values belong to `PlatformPaths`.

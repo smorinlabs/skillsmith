@@ -213,5 +213,5 @@ export interface CurrentCommandRequest {
 export type ApplicationService<
   TRequest,
   TReport,
-  TContext extends CurrentApplicationContext = CurrentApplicationContext,
+  TContext extends { readonly observation: ObservationBundle } = CurrentApplicationContext,
 > = (request: Readonly<TRequest>, context: TContext) => Promise<CommandOutcome<TReport>>;

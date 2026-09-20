@@ -182,8 +182,8 @@ describe('EWP-CMD-HELP-TS04', () => {
 });
 
 describe('EWP-CMD-HELP-TS05', () => {
-  test('all 24 commands declare bounded minimal invocations and runnable workflows', async () => {
-    expect(publicSpecs()).toHaveLength(24);
+  test('all 25 commands declare bounded minimal invocations and runnable workflows', async () => {
+    expect(publicSpecs()).toHaveLength(25);
     const fixtureRoot = await mkdtemp(join(tmpdir(), 'skillsmith-help-workflows-'));
     await writeFile(join(fixtureRoot, 'sentinel.txt'), 'unchanged\n');
     const before = await snapshotFixture(fixtureRoot);
@@ -298,7 +298,7 @@ describe('EWP-CMD-HELP-TS06', () => {
     const active = `${buildProgram().helpInformation()}\n${reference}\n${readme}`;
     expect(active).not.toMatch(/mapping placeholder|Phase [0-5] will|four groups|help-all/iu);
     expect(active).not.toMatch(/docs\/superpowers|projects\/p17|research\/commands/iu);
-    for (const invented of ['add', 'link', 'show', 'outdated', 'diff', 'recover', 'search']) {
+    for (const invented of ['add', 'link', 'show', 'outdated', 'diff', 'recover']) {
       expect(buildProgram().commands.some((command) => command.name() === invented)).toBeFalse();
     }
   });

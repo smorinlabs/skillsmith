@@ -741,7 +741,26 @@ export const CLI_MIGRATION_PROVENANCE = {
   },
 } as const;
 
+// Additive post-P17 ownership; the frozen target and v0.7.0 snapshots stay unchanged.
+const searchOwnership = {
+  validationOwner: 'SEARCH-CLI-01',
+  phase: 'SEARCH-06',
+  keys: new Set([
+    'command:skillsmith search',
+    'alias:skillsmith search:find',
+    'argument:skillsmith search:query',
+    'option:skillsmith search:-h, --help',
+    'option:skillsmith search:--interactive',
+    'option:skillsmith search:--json',
+    'option:skillsmith search:--limit <number>',
+    'option:skillsmith search:--max-response-size <size>',
+    'option:skillsmith search:--owner <owner>',
+    'option:skillsmith search:--timeout <duration>',
+  ]),
+} as const;
+
 const allowedOwners = new Set([
+  searchOwnership.validationOwner,
   ...commandOwnership.flatMap((row) => [...row.validations, ...row.workflows]),
   ...Array.from({ length: 10 }, (_, index) => `EWP-OPT-TS${String(index + 1).padStart(2, '0')}`),
   'EWP-P1-TS01',
@@ -805,6 +824,12 @@ export const assertClosedMigrationLedger = (
       throw new Error(`unknown disposition: ${entry.key}`);
     if (!entry.phase || !entry.validationOwner || !allowedOwners.has(entry.validationOwner))
       throw new Error(`missing or unknown ownership: ${entry.key}`);
+    if (
+      searchOwnership.keys.has(entry.key) !==
+        (entry.validationOwner === searchOwnership.validationOwner) ||
+      (searchOwnership.keys.has(entry.key) && entry.phase !== searchOwnership.phase)
+    )
+      throw new Error(`additive search ownership differs: ${entry.key}`);
   }
   for (const command of live) {
     for (const option of command.options) {

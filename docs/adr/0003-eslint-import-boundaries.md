@@ -32,6 +32,7 @@ Add ESLint, scoped narrowly to architectural and test-safety rules, and use it a
    - `packages/core/src/{skills,plugins,commands}` ↛ `verify` (verify is a high-level orchestrator, like doctor).
    - `packages/core/src/{skills,plugins,commands,verify}` ↛ `place` (place is a high-level orchestrator that imports verify for the promote gate).
    - `packages/core/src/{skills,plugins,commands,verify,place}` ↛ `acquire` (acquire is the topmost orchestrator: it imports env, detect, agents, verify, and place).
+   - `packages/core/src/search` ↛ `application` (search is a domain consumed by the focused search application service).
 
 2. **Core isolation** (`no-restricted-imports` + `no-restricted-syntax`) — applies to `packages/core/src/**/*.ts` only:
    - Forbidden imports: `commander`, `chalk`, `consola`, `@clack/prompts`, `node:console`.

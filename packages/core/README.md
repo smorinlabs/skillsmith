@@ -34,6 +34,11 @@ import {
   // Result helpers
   err, isErr, isOk, map, mapErr, ok,
 
+  // Remote catalog search (read-only)
+  createSkillsShProvider,
+  defaultSearchPorts,
+  runSearchApplication,
+
   // Portable artifact identity
   HASH_DOMAINS,
   correlatePortableLock,
@@ -71,6 +76,9 @@ import type {
   Platform,
   ReadableArtifactContext,
   Result,
+  SearchRequest,
+  SearchReport,
+  SearchApplicationContext,
   StatusReadPorts,
   StatusReadRequest,
   StatusReport,
@@ -132,6 +140,16 @@ observers, and bounded recursive redaction. Core emits no diagnostics directly; 
 adapters own presentation, and events are never state or error authority. The exported `Logger`
 surface remains a deprecated compatibility facade for existing 1.x callers.
 
+Remote search uses the anonymous skills.sh catalog through `createSkillsShProvider`. Its injected
+`SearchPorts` contain only bounded HTTP reads, a monotonic/epoch clock, and scheduling.
+`defaultSearchPorts()` composes those real adapters without filesystem, process, or installation
+authority. `runSearchApplication` validates arguments and returns `NO_MUTATION`; the CLI supplies
+the optional `SearchInteractionPort`. Each query shares one deadline across at most two attempts.
+The HTTP adapter counts decoded bytes before retaining chunks and cancels unused response bodies.
+Provider records become owned `SearchReport` values with preserved order, fixed-origin catalog
+URLs, and explicit `not-checked` verification. This experimental endpoint has no verified public
+stability contract. Search records do not specify an installation command or selector.
+
 Versioned wire contracts use dedicated entry points so DTO authority does not mix with domain and
 1.x compatibility exports:
 
@@ -142,6 +160,9 @@ import {
   gcV1Codec,
   initV1Codec,
   statusV1Codec,
+  searchV1Codec,
+  type SearchV1Dto,
+  toSearchV1Dto,
   type InitV1Dto,
   type StatusV1Dto,
   toAgentsV1Dto,
@@ -160,7 +181,7 @@ import { listV3Codec, toListV3Dto } from '@skillsmith/core/contracts/v3';
 ```
 
 The current codec IDs are `agents`, `health`, `commands`, `config-get`, `config-list`, `config-set`,
-`config-unset`, `flip`, `init`, `install`, `list`, `status`, `gc`, `uninstall`, `verify`, `error`, and
+`config-unset`, `flip`, `init`, `install`, `list`, `search`, `status`, `gc`, `uninstall`, `verify`, `error`, and
 `capability-snapshot`. Codecs recursively reject unknown object fields, validate before encoding,
 preserve their declared JSON framing, and return sanitized `Result` errors rather than throwing for
 untrusted input. Explicit `to*Dto` mappers keep domain-only fields out of public wire shapes. See

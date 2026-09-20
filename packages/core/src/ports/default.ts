@@ -23,10 +23,11 @@ import { homedir, platform as osPlatform } from 'node:os';
 import { delimiter, join } from 'node:path';
 import lockfile from 'proper-lockfile';
 import type { ExecOptions, ExecResult, PathKind, Platform, XdgDirs } from '../env/types.ts';
+import type { SearchPorts } from '../search/types.ts';
 import { isPortError, toPortError } from './errors.ts';
 import { type GitInitProbeFs, createGitInitProbe } from './git-init-probe.ts';
 import { type BinaryProcessPort, createGitPort } from './git.ts';
-import { createHttpPort } from './http.ts';
+import { createHttpPort, createHttpReadPort } from './http.ts';
 import type {
   BoundedFileReadPort,
   ClockPort,
@@ -41,6 +42,7 @@ import type {
   PathAccessPort,
   ProcessPort,
   RuntimePorts,
+  TimerPort,
 } from './types.ts';
 
 const DEFAULT_VERSION_TIMEOUT_MS = 2_000;
@@ -51,6 +53,20 @@ export const defaultClockPort: ClockPort = Object.freeze({
   wallNowIso: () => new Date().toISOString(),
   epochMilliseconds: () => Date.now(),
   monotonicMilliseconds: () => performance.now(),
+});
+
+export const defaultTimerPort: TimerPort = Object.freeze({
+  schedule: (delayMs: number, callback: () => void) => {
+    const timer = setTimeout(callback, delayMs);
+    return () => clearTimeout(timer);
+  },
+});
+
+/** Search composition does not construct filesystem, Git, or installation capabilities. */
+export const defaultSearchPorts = (): SearchPorts => ({
+  http: createHttpReadPort(),
+  clock: defaultClockPort,
+  timer: defaultTimerPort,
 });
 
 /** Focused real ID authority for zero-discovery command observation. */

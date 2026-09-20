@@ -18,7 +18,15 @@ src/
   util/            color resolver, exit-code mapping, SIGINT handler
 ```
 
-The 24 current public commands are `agents`, `list`, `config`, `check`, `apply`, `commands`, `cross-tool-names`, `completion`, `dev`, `doctor`, `export`, `gc`, `help`, `init`, `install`, `plan`, `promote`, `status`, `sync`, `undo`, `uninstall`, `update`, `verify`, and `version`. Their aliases, options, examples, and exit meanings are generated in the root [command reference](../../docs/commands.md).
+The 25 current public commands are `search`, `agents`, `list`, `config`, `check`, `apply`, `commands`, `cross-tool-names`, `completion`, `dev`, `doctor`, `export`, `gc`, `help`, `init`, `install`, `plan`, `promote`, `status`, `sync`, `undo`, `uninstall`, `update`, `verify`, and `version`. Their aliases, options, examples, and exit meanings are generated in the root [command reference](../../docs/commands.md).
+
+`search [query...]` and its `find` alias query the experimental skills.sh catalog. The default
+deadline is two minutes across connection, body reads, and retries; `--timeout` overrides it.
+The decoded response ceiling is 10,000,000 bytes per attempt; `--max-response-size` overrides it.
+The CLI owns the optional live picker, terminal cleanup, and human/`search@1` JSON rendering.
+Search has a focused application context with no inventory or installation capabilities.
+Picker selection displays details. See the root [search guide](../../README.md#search-the-remote-catalog)
+for units, interaction eligibility, errors, and provider limitations.
 
 `status [skill...]` is a read-only correlation view over desired manifest state, the lockfile,
 placement ledger records, and live tool installations. Use `--json` for the versioned `status@1`
