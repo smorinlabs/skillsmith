@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import type { ExecOptions } from '../env/types.ts';
-import { toPortError } from './errors.ts';
+import { isPortError, toPortError } from './errors.ts';
+import type { GitInitProbe } from './git-init-probe.ts';
 import type { GitPort, ProcessPort } from './types.ts';
 
 export const GIT_REPOSITORY_ENVIRONMENT = [
@@ -126,6 +127,7 @@ const uniqueShaFor = (
 export const createGitPort = (
   processPort: ProcessPort,
   binaryProcessPort: BinaryProcessPort,
+  initProbe?: GitInitProbe,
 ): GitPort => {
   const execute = async (
     operation: string,
@@ -369,12 +371,39 @@ export const createGitPort = (
       return rows[0]?.sha ?? null;
     },
     initializeFetch: async ({ repositoryRoot, remoteUrl, signal }) => {
-      await required(
-        'initializeFetch',
-        ['init', '--', repositoryRoot],
-        { repositoryRoot, remoteUrl },
-        signal,
-      );
+      try {
+        await required(
+          'initializeFetch',
+          ['init', '--', repositoryRoot],
+          { repositoryRoot, remoteUrl },
+          signal,
+        );
+      } catch (error) {
+        // SC-I60-MF2B option A: post-failure kernel probe, init step ONLY.
+        // Only a plain nonzero child exit ('unavailable') probes; timeout,
+        // cancellation, and every other code rethrow untouched, so their
+        // precedence is unchanged. A kernel EACCES/EPERM at the destination
+        // converts to permission; any other probe outcome rethrows the
+        // original error — never invent permission.
+        if (initProbe !== undefined && isPortError(error) && error.code === 'unavailable') {
+          let denied: 'EACCES' | 'EPERM' | null = null;
+          try {
+            denied = await initProbe.probeInitDenied(repositoryRoot);
+          } catch {
+            denied = null;
+          }
+          if (denied === 'EACCES' || denied === 'EPERM') {
+            throw toPortError(error, {
+              capability: 'git',
+              operation: 'initializeFetch',
+              code: 'permission',
+              message: 'git init denied: permission denied',
+              context: { repositoryRoot },
+            });
+          }
+        }
+        throw error;
+      }
       await required(
         'initializeFetch',
         ['-C', repositoryRoot, 'remote', 'add', '--', 'origin', remoteUrl],

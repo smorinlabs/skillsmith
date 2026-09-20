@@ -915,9 +915,16 @@ const predictPair = async (
       live.symlinkTarget === expectedStorePath) ||
     (build === 'symlink' && live.class === 'pinned');
   if (stagedPreviewMatch && liveIntermediate) return { ...base, action: 'updated' };
+  let pinnedMatches = false;
+  if (live.class === 'pinned') {
+    const [liveHash, resolvedHash] = await Promise.all([
+      contentHashOf(env, live.path),
+      contentHashOf(env, resolved.materializedDir),
+    ]);
+    pinnedMatches = liveHash.ok && resolvedHash.ok && liveHash.value === resolvedHash.value;
+  }
   const matchesResolved =
-    (live.class === 'store-linked' && live.symlinkTarget === expectedStorePath) ||
-    live.class === 'pinned';
+    (live.class === 'store-linked' && live.symlinkTarget === expectedStorePath) || pinnedMatches;
   if (matchesResolved && !opts.force) {
     if (existing?.origin?.refResolved === sha) {
       // A noop reports the recorded/live placement, never the requested build.
