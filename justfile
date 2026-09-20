@@ -86,3 +86,11 @@ secrets-history base="" head="":
 # Install exact checksum-verified TruffleHog.
 install-trufflehog:
     ./scripts/install-trufflehog.sh
+
+# Install fail-closed git hook wrappers (recovery: CONTRIBUTING "Hook recovery").
+install-hooks:
+    ./scripts/install-hooks.sh
+
+# Verify installed git hooks, the lefthook binary, and lefthook.yml.
+verify-hooks:
+    ./scripts/verify-hooks.sh
