@@ -22,9 +22,25 @@ import {
   sparseCheckoutSkill,
   sweepFetchOrphans,
 } from '../../src/acquire/fetch.ts';
+import { matchCandidates, selectSkill } from '../../src/acquire/resolve.ts';
+import { parseSource } from '../../src/acquire/source.ts';
 import { defaultRuntimePorts } from '../../src/ports/default.ts';
 import { portError } from '../../src/ports/errors.ts';
-import type { RuntimePorts } from '../../src/ports/types.ts';
+import { type BinaryProcessPort, createGitPort } from '../../src/ports/git.ts';
+import type { ProcessPort, RuntimePorts } from '../../src/ports/types.ts';
+import {
+  CM2_CONTROL_NAME,
+  CM2_CONTROL_PATH,
+  CM2_CONTROL_SKILL_MD,
+  CM2_DASH_SKILL_MD,
+  CM2_ROOT_SKILL_MD,
+  CM2_SIBLING_PATH,
+  CM2_SKILL_NAME,
+  CM2_SKILL_PATH,
+  type Cm2Fixture,
+  buildCm2Fixture,
+  destroyCm2Fixture,
+} from '../fixtures/acquire/cm2-leading-dash.ts';
 import {
   type RemoteFixture,
   buildRemoteFixture,
@@ -565,5 +581,154 @@ describe('sweepFetchOrphans', () => {
     await sweepFetchOrphans(env, data);
     expect(existsSync(join(data, '.fetch'))).toBe(false);
     await rm(data, { recursive: true, force: true });
+  });
+});
+
+describe('leading-dash subtree acquisition (SC-I60-CM2)', () => {
+  let cm2: Cm2Fixture;
+  let cm2Scratch: string;
+  let cm2Counter = 0;
+  let recordingEnv: RuntimePorts;
+  let gitArgv: string[][];
+
+  const freshCm2FetchDir = (): string => join(cm2Scratch, `cm2-${cm2Counter++}`);
+
+  beforeAll(async () => {
+    cm2 = await buildCm2Fixture();
+    cm2Scratch = await mkdtemp(join(tmpdir(), 'skillsmith-cm2-'));
+    gitArgv = [];
+    // Production git port factory over the real process port with a pass-through
+    // argv recorder: every git byte still executes for real. The binary stub is
+    // reachable only via readBlob, which this route never calls; it fails loudly
+    // if that assumption ever breaks.
+    const recordingProcess: ProcessPort = {
+      exec: async (command, args, options) => {
+        if (command === 'git') gitArgv.push([...args]);
+        return env.exec(command, args, options);
+      },
+      runVersion: (binaryPath, args, signal) => env.runVersion(binaryPath, args, signal),
+    };
+    const binaryStub: BinaryProcessPort = {
+      exec: async () => {
+        throw new Error('CM2: unexpected binary git exec (readBlob) on the acquire route');
+      },
+    };
+    recordingEnv = { ...env, git: createGitPort(recordingProcess, binaryStub) };
+  });
+
+  afterAll(async () => {
+    await destroyCm2Fixture(cm2);
+    await rm(cm2Scratch, { recursive: true, force: true });
+  });
+
+  test('a leading-dash subtree acquires end-to-end behind a delimited sparse-checkout', async () => {
+    const spec = parseSource(`${cm2.cloneUrl}//${CM2_SKILL_PATH}@${cm2.head}`);
+    expect(spec.ok).toBe(true);
+    if (!spec.ok) return;
+    expect(spec.value.selector).toEqual({ kind: 'path', path: CM2_SKILL_PATH });
+
+    const fetchDir = freshCm2FetchDir();
+    const fetched = await fetchRepo(recordingEnv, {
+      cloneUrl: cm2.cm2Url,
+      ref: cm2.head,
+      fetchDir,
+    });
+    expect(fetched.ok).toBe(true);
+    if (!fetched.ok) return;
+    expect(fetched.value.sha).toBe(cm2.head);
+
+    const listed = await lsTreeSkills(recordingEnv, fetchDir);
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) return;
+    const byPath = new Map(listed.value.candidates.map((c) => [c.path, c]));
+    expect(byPath.get(CM2_SKILL_PATH)).toMatchObject({
+      path: CM2_SKILL_PATH,
+      name: CM2_SKILL_NAME,
+    });
+    expect(byPath.has(CM2_CONTROL_PATH)).toBe(true);
+    expect(byPath.has(CM2_SIBLING_PATH)).toBe(true);
+
+    const matches = matchCandidates(listed.value.candidates, spec.value.selector);
+    expect(matches.map((m) => m.path)).toEqual([CM2_SKILL_PATH]);
+    const selection = await selectSkill(matches, listed.value.scanned);
+    expect(selection.kind).toBe('chosen');
+    if (selection.kind !== 'chosen') return;
+    expect(selection.skill.path).toBe(CM2_SKILL_PATH);
+
+    const res = await sparseCheckoutSkill(recordingEnv, fetchDir, selection.skill.path);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const dir = res.value;
+    expect(dir).toBe(join(fetchDir, CM2_SKILL_PATH));
+    expect(await readFile(join(dir, 'SKILL.md'), 'utf8')).toBe(CM2_DASH_SKILL_MD);
+    const runStat = await lstat(join(dir, 'bin', 'run.sh'));
+    expect((runStat.mode & 0o100) !== 0).toBe(true);
+    const linkStat = await lstat(join(dir, 'link.md'));
+    expect(linkStat.isSymbolicLink()).toBe(true);
+    expect(await readlink(join(dir, 'link.md'))).toBe('SKILL.md');
+    expect(existsSync(join(fetchDir, CM2_SIBLING_PATH, 'SKILL.md'))).toBe(false);
+
+    const sparseSets = gitArgv.filter((a) => a[2] === 'sparse-checkout' && a[3] === 'set');
+    expect(sparseSets).toEqual([['-C', fetchDir, 'sparse-checkout', 'set', '--', CM2_SKILL_PATH]]);
+  });
+
+  test('regular-subtree control acquires the same way on the same repo', async () => {
+    const spec = parseSource(`${cm2.cloneUrl}//${CM2_CONTROL_PATH}@${cm2.head}`);
+    expect(spec.ok).toBe(true);
+    if (!spec.ok) return;
+
+    const fetchDir = freshCm2FetchDir();
+    const fetched = await fetchRepo(recordingEnv, {
+      cloneUrl: cm2.cm2Url,
+      ref: cm2.head,
+      fetchDir,
+    });
+    expect(fetched.ok).toBe(true);
+    if (!fetched.ok) return;
+    const listed = await lsTreeSkills(recordingEnv, fetchDir);
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) return;
+    const matches = matchCandidates(listed.value.candidates, spec.value.selector);
+    expect(matches.map((m) => m.path)).toEqual([CM2_CONTROL_PATH]);
+    const selection = await selectSkill(matches, listed.value.scanned);
+    expect(selection.kind).toBe('chosen');
+    if (selection.kind !== 'chosen') return;
+    const res = await sparseCheckoutSkill(recordingEnv, fetchDir, selection.skill.path);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.value).toBe(join(fetchDir, CM2_CONTROL_PATH));
+    expect(await readFile(join(res.value, 'SKILL.md'), 'utf8')).toBe(CM2_CONTROL_SKILL_MD);
+    expect(selection.skill.name).toBe(CM2_CONTROL_NAME);
+    expect(existsSync(join(fetchDir, CM2_SIBLING_PATH, 'SKILL.md'))).toBe(false);
+  });
+
+  test('root control acquires the root skill', async () => {
+    const spec = parseSource(`${cm2.rootCloneUrl}@${cm2.rootHead}`);
+    expect(spec.ok).toBe(true);
+    if (!spec.ok) return;
+    expect(spec.value.selector).toEqual({ kind: 'whole-repo' });
+
+    const fetchDir = freshCm2FetchDir();
+    const fetched = await fetchRepo(recordingEnv, {
+      cloneUrl: cm2.rootUrl,
+      ref: cm2.rootHead,
+      fetchDir,
+    });
+    expect(fetched.ok).toBe(true);
+    if (!fetched.ok) return;
+    const listed = await lsTreeSkills(recordingEnv, fetchDir);
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) return;
+    const matches = matchCandidates(listed.value.candidates, spec.value.selector);
+    expect(matches).toHaveLength(1);
+    const selection = await selectSkill(matches, listed.value.scanned);
+    expect(selection.kind).toBe('chosen');
+    if (selection.kind !== 'chosen') return;
+    expect(selection.skill.path).toBe('');
+    const res = await sparseCheckoutSkill(recordingEnv, fetchDir, selection.skill.path);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.value).toBe(fetchDir);
+    expect(await readFile(join(fetchDir, 'SKILL.md'), 'utf8')).toBe(CM2_ROOT_SKILL_MD);
   });
 });

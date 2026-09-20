@@ -22,7 +22,6 @@ import {
   manifestDigest,
   parseJUnitSummary,
   requireCleanRepository,
-  requireHyphenSafePath,
   requirePinnedBunVersion,
   runFilesSerially,
   validateTerminalManifest,
@@ -134,8 +133,8 @@ function initializeTerminalRepository(root: string): void {
 }
 
 async function terminalIntegration(mode: 'commit' | 'pass' | 'fail', poison = 'trio') {
-  // macOS's default TMPDIR can contain underscores; the terminal runner requires
-  // hyphen-safe paths on both supported Unix platforms.
+  // Route fixture trees through an isolated base under /tmp rather than the
+  // ambient TMPDIR for hermetic integration runs.
   const base = mkdtempSync(join('/tmp', 'skillsmith-serial-integration-'));
   temporaryDirectories.push(base);
   const root = join(base, 'runner');
@@ -279,10 +278,10 @@ describe('serial test-file terminal runner', () => {
       const receipt = result.stdout.match(/SERIAL_TEST_FILE_RECEIPT (.+)/)?.[1];
       expect(receipt).toBeDefined();
       expect(JSON.parse(receipt as string)).toMatchObject({
-        discovered: 7,
-        executed: 7,
-        passed: 7,
-        skipped: 28,
+        discovered: 8,
+        executed: 8,
+        passed: 8,
+        skipped: 34,
       });
     },
     30_000,
@@ -426,16 +425,16 @@ describe('serial test-file terminal runner', () => {
     });
 
     expect(calls).toEqual(files);
-    expect(ALLOWED_LIVE_E2E_SKIPS.size).toBe(6);
-    expect([...ALLOWED_LIVE_E2E_SKIPS.values()].reduce((sum, count) => sum + count, 0)).toBe(28);
+    expect(ALLOWED_LIVE_E2E_SKIPS.size).toBe(7);
+    expect([...ALLOWED_LIVE_E2E_SKIPS.values()].reduce((sum, count) => sum + count, 0)).toBe(34);
     expect(receipt).toEqual({
-      assertions: 56,
-      discovered: 8,
+      assertions: 63,
+      discovered: 9,
       duplicates: 0,
-      executed: 8,
-      passed: 8,
-      skipped: 28,
-      tests: 30,
+      executed: 9,
+      passed: 9,
+      skipped: 34,
+      tests: 36,
     });
   });
 
@@ -457,7 +456,7 @@ describe('serial test-file terminal runner', () => {
           junit: junit(file, Math.max(1, skipped), skipped),
         };
       }),
-    ).rejects.toThrow(`broken.test.ts exited 9 after 8/${files.length} files`);
+    ).rejects.toThrow(`broken.test.ts exited 9 after 9/${files.length} files`);
     expect(calls).toEqual(files.slice(0, -1));
   });
 
@@ -504,7 +503,7 @@ describe('serial test-file terminal runner', () => {
 
     expect(() =>
       validateTerminalManifest(files, new Map([...ALLOWED_LIVE_E2E_SKIPS].slice(1))),
-    ).toThrow('skip allowlist has 5 files; expected 6');
+    ).toThrow('skip allowlist has 6 files; expected 7');
     expect(() =>
       validateTerminalManifest(
         files,
@@ -515,19 +514,12 @@ describe('serial test-file terminal runner', () => {
           ]),
         ),
       ),
-    ).toThrow('skip allowlist totals 27; expected 28');
+    ).toThrow('skip allowlist totals 33; expected 34');
   });
 
-  test('enforces the pinned Bun, strict paths, cleanup, and post-run clean state', () => {
+  test('enforces the pinned Bun, cleanup, and post-run clean state', () => {
     expect(() => requirePinnedBunVersion(EXPECTED_BUN_VERSION)).not.toThrow();
     expect(() => requirePinnedBunVersion('1.3.15')).toThrow('requires Bun 1.3.14; found 1.3.15');
-    expect(() => requireHyphenSafePath('/dev/shm/skillsmith-gate-123', 'fixture')).not.toThrow();
-    expect(() => requireHyphenSafePath('/dev/shm/skillsmith_gate', 'fixture')).toThrow(
-      'unsafe path component skillsmith_gate',
-    );
-    expect(() => requireHyphenSafePath('/dev/shm/skillsmith gate', 'fixture')).toThrow(
-      'unsafe path component skillsmith gate',
-    );
 
     const root = repositoryFixture();
     rmSync(join(root, 'untracked.test.ts'));
