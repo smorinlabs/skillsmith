@@ -213,6 +213,205 @@ requires `--force`; future schemas are never downgraded. The sibling lock, live 
 placement ledger are not written. `--dry-run` and strict `--json` expose the same operation identity.
 
 
+## Skill lifecycle workflows
+
+The CLI groups commands by lifecycle area. The recommended names below are documentation
+proposals; the current group names are the headings printed by `skillsmith --help`.
+Commands in this section are available today unless explicitly marked **Proposed**.
+
+| Current group | Recommended name | Existing commands |
+| --- | --- | --- |
+| DISCOVER | Discover and inspect | `agents`, `list`, `commands`, `cross-tool-names`, `status` |
+| MANAGE | Install, update, and remove | `install`, `update`, `uninstall`, `undo` |
+| DEVELOP | Develop and verify | `dev`, `verify`, `promote` |
+| DECLARATIVE | Reproduce and synchronize | `init`, `export`, `plan`, `apply`, `sync` |
+| MAINTAIN | Configure and troubleshoot | `doctor`, `check`, `gc`, `config`, `completion`, `version`, `help` |
+
+Remote catalog search (`search`, alias `find`) is being developed in
+[PR #100](https://github.com/smorinlabs/skillsmith/pull/100) and is not available on `main` yet.
+Aliases such as `ls` and `demote` are alternate spellings of existing commands.
+See the [command reference](docs/commands.md) for all aliases and options.
+
+### Workflows by group
+
+These scenarios combine commands into complete workflows. A manifest, `skillsmith.toml`,
+declares which skills to install. Its lockfile, `skillsmith.lock`, records exact resolved
+revisions. Drift means installed state differs from the selected recorded state.
+
+| Group | Scenario | Workflow |
+| --- | --- | --- |
+| DISCOVER | Understand a new machine | Detect tools with `agents`, inspect skills with `list --long`, and inventory slash commands with `commands`. |
+| DISCOVER | Find a skill or investigate a conflict | Inspect remote repositories and catalogs before installation. For installed skills, inspect names with `cross-tool-names`, same-tool conflicts with `list --duplicates`, and recorded versus live state with `status`. |
+| MANAGE | Adopt a shared skill | Preview `install --dry-run` with the selected source, tools, and scope. Install it, then inspect its placement with `list --long`. |
+| MANAGE | Update or remove an installation | Use `update --check`, preview a selected update with `update --dry-run`, then apply it. Use `uninstall` for removal or preview `undo --dry-run` for an eligible retained operation. |
+| DEVELOP | Iterate on a local skill | Connect a checkout with `dev --source`, edit its files, run `verify`, and test representative tasks in the target agent. |
+| DEVELOP | Keep a stable local snapshot | Commit the source changes, then use `promote` to snapshot a development installation. Use `dev` to return to its recorded development source. |
+| DECLARATIVE | Reproduce a team setup | Create a manifest with `init` and populate it through saved installations, or capture portable installations with `export`. Share the manifest and lockfile, review `plan --locked`, then run `apply --locked`. |
+| DECLARATIVE | Synchronize local environments | Select source and destination scopes or projects with `sync --from ... --to ...`. Preview with `--dry-run`; use `--save` when the destination manifest and lockfile should also change. |
+| MAINTAIN | Configure a new environment | Inspect defaults with `config list`, change them with `config set`, and emit shell completion with `completion`. Use `version` and `help` when diagnosing setup differences. |
+| MAINTAIN | Diagnose and clean up | Run `doctor`, preview supported repairs with `doctor --fix --dry-run`, and use `check` for blocking health checks in automation. Preview unused store cleanup with `gc --dry-run`. |
+
+`undo` covers eligible retained `dev`, `promote`, `install`, and `uninstall` operations.
+To select an earlier published revision, use `update --ref <git-ref>` with that revision.
+Pinned declarations also need an explicit `--ref` when selecting a newer release.
+
+### Potential lifecycle additions
+
+These are suggestions for future coverage, not implemented commands or release commitments.
+External editors, Git, and evaluation tools cover parts of these workflows today.
+
+| Suggested lifecycle area | Group it would belong to | Current route | Potential addition |
+| --- | --- | --- | --- |
+| Inspect a skill before installing it | DISCOVER | Inspect its repository; `list --long` covers installed metadata. | **Proposed:** `view` for skill contents, origin, revision, and compatibility. |
+| Create and edit a skill | DEVELOP | Create `SKILL.md` with an editor or authoring tool, then connect it with `dev --source`. | **Proposed:** `create` for scaffolding; optional `edit` to open the source in an editor. |
+| Evaluate behavior and regressions | DEVELOP | Run representative tasks in the target agent and compare outcomes. | **Proposed:** `eval`, or a documented integration with an existing evaluator. |
+| Temporarily deactivate a skill | MANAGE | Use target-tool controls where available, or uninstall it. | **Proposed:** `enable` and `disable` where the target tool supports them. |
+| Share a reproducible collection | DECLARATIVE | Share the manifest and lockfile; recipients use `plan` and `apply --locked`. | Document the complete team-onboarding workflow using existing commands. |
+| Publish a skill release | New proposed PUBLISH group: Publish and share | Commit, review, tag, and push a Git repository; recipients use `install`. | **Proposed:** `publish` only after its destination and release behavior are defined. |
+| Distribute files for offline installation | New proposed PUBLISH group: Publish and share | No built-in archive distribution workflow. | **Proposed:** `pack` plus archive installation support. |
+| Onboard and maintain an environment | MAINTAIN | Use `config`, `completion`, `doctor`, `check`, and `gc`. | Expand scenario documentation around existing commands. |
+
+`init` creates installation configuration. `verify --static` checks artifact structure;
+`verify --deep` also checks native loading without a model call. Behavioral evaluation
+checks whether the skill performs the intended task.
+
+`promote` creates a fixed local snapshot. `export` writes portable installation declarations
+and resolved revisions. Publishing makes the source revision accessible to recipients;
+an offline archive would additionally need to contain the skill files.
+
+### Installation and sharing scenarios
+
+Choose the source, target tool, installation scope, revision policy, and file placement
+independently. User scope applies across projects; project scope applies to one project.
+These write and verification workflows currently support Claude Code and Codex.
+The other detected tools have read-only support; see the [capability matrix](#capability-and-version-matrix).
+
+| Scenario | Mode or command | What to expect |
+| --- | --- | --- |
+| Use a skill across personal projects | `install --user` | Install into user scope for the selected tool. |
+| Give one project its own skills | `install --project` | Install into project scope and save declarations by default. |
+| Target both supported tools | `--tool claude-code --tool codex` | Select both tools explicitly on commands with repeatable `--tool`. |
+| Edit a local checkout live | `dev --source <path>` | Connect the installation to the source directory so edits affect development use. |
+| Track a branch | `install <source>@<branch>` followed by `update` | Record branch intent; updates explicitly select newer resolved revisions. |
+| Keep an exact revision | `install <source>@<ref> --pin` | Freeze the resolved commit. Use an explicit `update --ref` to select another revision. |
+| Use physical copies | `install --direct` | Copy files into the destination instead of linking from the local store. |
+| Share public or private Git sources | `install <git-source>` | Use repository shorthand or an HTTPS/SSH Git URL. Recipients need access to the repository and revision. |
+| Reproduce a team collection | Share `skillsmith.toml` and `skillsmith.lock`, then use `plan --locked` and `apply --locked` | Recreate exact declared revisions while their sources remain accessible. `export --strict` can reject nonportable entries before sharing. |
+| Copy a selection between local environments | `sync --from <scope-or-path> --to <scope-or-path>` | Reconcile the selected skills into one destination; preview first with `--dry-run`. |
+| Install without saving declarations | `install --no-save` | Change the installation without changing the manifest or lockfile. The installation persists. |
+| Try a skill without installing it | **Proposed** | No dedicated temporary-use command exists today. |
+| Share an offline archive | **Proposed** | Requires packaging and archive installation support; `export` does not include skill files. |
+
+`install` examples require a repository shorthand or Git URL. `<path>` in `dev --source` is a
+local skill directory; `<ref>` is a tag, branch, or full commit SHA. Run `skillsmith help source`
+for exact source syntax.
+
+### Walkthrough: create, edit, verify, and publish
+
+This example creates a skill named `review` for Codex, then shares a tagged version through Git.
+Run author commands from the root of an existing skill-source Git repository with a configured
+`origin` remote. Codex must be installed. `skillsmith` means the executable on your `PATH`, or
+the absolute path to the binary built in [Install](#install).
+
+#### 1. Create the source
+
+Create `skills/review/SKILL.md` with an editor or skill authoring tool:
+
+```markdown
+---
+name: review
+description: Review code changes for correctness and regressions. Use when a code review is requested.
+---
+
+# Review
+
+Inspect the diff and relevant code. Report actionable findings with file paths,
+explain their impact, and identify any behavior you could not verify.
+```
+
+Add supporting scripts or reference files inside `skills/review/` as needed.
+Skill scaffolding is currently an external step; `skillsmith init` creates installation configuration.
+
+#### 2. Connect the checkout and edit
+
+From the skill-source repository root, create the development installation:
+
+```sh
+skillsmith dev review --source ./skills/review --tool codex --project
+```
+
+Edit `skills/review/SKILL.md` and its supporting files. The development installation links
+to that source directory. Open a fresh Codex session in this repository when checking discovery.
+
+#### 3. Verify compatibility
+
+From the same repository root, check the artifact and then its native loading:
+
+```sh
+skillsmith verify ./skills/review --tool codex --static --strict
+skillsmith verify ./skills/review --tool codex --deep --strict
+```
+
+Require successful verification before continuing. These commands check compatibility;
+they do not evaluate the quality of a model's work.
+
+#### 4. Test behavior and revise
+
+In a fresh Codex session in the repository, request a review of a representative change.
+Check whether the findings are correct and useful. Try an unrelated request to check unwanted
+activation, and compare results against the prior skill version when making an update.
+Revise the source and repeat verification and behavioral checks until the results are acceptable.
+
+#### 5. Publish a Git revision
+
+From the skill-source repository root, commit the source files:
+
+```sh
+git add skills/review
+git commit -m "feat: add review skill"
+```
+
+Complete the repository's review process. With the approved release commit checked out on
+the intended release branch, publish it under an unused tag:
+
+```sh
+git tag v1.0.0
+git push origin HEAD
+git push origin v1.0.0
+```
+
+`v1.0.0` is the example skill release tag. Use a different unused tag when needed.
+Git performs publication today. `promote` is an optional local snapshot step, and
+`skillsmith version` reports the Skillsmith CLI version.
+
+#### 6. Install the published skill
+
+From a recipient project's root, replace `owner/repo` with the GitHub repository published
+in the previous step. Use the actual release tag if it differs from `v1.0.0`:
+
+```sh
+skillsmith install owner/repo//skills/review@v1.0.0 --tool codex --project --pin
+skillsmith list review --tool codex --project --long
+skillsmith status review --tool codex --project
+```
+
+The recipient now has the published revision pinned in project scope. For a private repository,
+the recipient also needs working Git access to that source.
+
+#### 7. Deliver the next revision
+
+Repeat editing, verification, behavioral testing, and publication with a new tag.
+After `v1.0.1` is published, the recipient can preview and apply the explicit change
+from the recipient project's root:
+
+```sh
+skillsmith update review --ref v1.0.1 --pin --dry-run
+skillsmith update review --ref v1.0.1 --pin
+```
+
+Review the preview before applying it. The explicit `--ref` is required because this
+walkthrough pinned the original installation.
+
 <!-- skillsmith-capability-matrix:start -->
 ## Capability and version matrix
 
