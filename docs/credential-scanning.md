@@ -35,8 +35,12 @@ cover those files in the current-file scan. The weekly and main-push credential
 history workflow scans fetched history; pull requests scan their introduced commits. Ordinary CI
 and the release common-validation job install both scanners before `just check`.
 
-The workflow must pass once before its `history` job is added to GitHub's required
-checks. Repository configuration alone does not change branch-protection rules.
+The [Require credential scanning on main](https://github.com/smorinlabs/skillsmith/rules/23732051)
+repository ruleset requires GitHub Actions' `Scan Git History for Credentials`
+check before pull requests can merge into `main`. A failed, pending, or missing
+check blocks merging. The check comes from job `scan-git-history-for-credentials`
+in `.github/workflows/secret-scan.yml`. GitHub stores this enforcement setting
+separately from the workflow; editing repository files alone does not change it.
 
 The current-file scan exports tracked files into disposable storage. It scans
 symlink text without following links into unrelated files. Submodules and
