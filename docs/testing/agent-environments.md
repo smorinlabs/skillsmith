@@ -15,8 +15,9 @@ The baseline in `.github/ci-agent-tools.json` is:
 | OpenCode | `opencode` | `opencode-ai` | `1.17.18` |
 | Muse | `muse` | native binary (pinned per-platform artifact) | `1.3.0-R3401.1` |
 
-These versions are a reproducible baseline. Kilo Code, OpenCode, and Muse remain read-only
-Skillsmith adapters. The tests compare the manifest IDs and capability facts with the actual
+These versions are a reproducible baseline. Kilo Code and OpenCode remain read-only
+Skillsmith adapters; Muse supports the full lifecycle in the user and custom scopes. The tests
+compare the manifest IDs and capability facts with the actual
 registry. Muse ships no npm package: the manifest pins one checksum-verified native binary per
 supported platform, and the installer fetches only that pinned URL, accepting the bytes only
 when their size and SHA-256 match the pin.
