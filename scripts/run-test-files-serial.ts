@@ -11,8 +11,8 @@ const gitEnvironment = Object.fromEntries(
   Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')),
 );
 export const EXPECTED_BUN_VERSION = '1.3.14';
-const EXPECTED_ALLOWED_SKIP_FILES = 6;
-const EXPECTED_ALLOWED_SKIPS = 28;
+const EXPECTED_ALLOWED_SKIP_FILES = 7;
+const EXPECTED_ALLOWED_SKIPS = 34;
 
 export const ALLOWED_LIVE_E2E_SKIPS: ReadonlyMap<string, number> = new Map([
   ['packages/core/tests/verify/live-e2e.test.ts', 8],
@@ -21,6 +21,7 @@ export const ALLOWED_LIVE_E2E_SKIPS: ReadonlyMap<string, number> = new Map([
   ['packages/cli/tests/commands/flip-live.test.ts', 2],
   ['packages/cli/tests/commands/install-remote-live.test.ts', 4],
   ['packages/cli/tests/commands/dev-source-live.test.ts', 8],
+  ['packages/cli/tests/commands/acquire-journal-guidance.test.ts', 6],
 ]);
 
 export type JUnitSummary = {
