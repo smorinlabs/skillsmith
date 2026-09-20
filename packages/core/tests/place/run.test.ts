@@ -370,6 +370,30 @@ describe('runPromote / runDev — verify gate matrix', () => {
     }
   });
 
+  test('muse gate mirrors codex: called with deep:true', async () => {
+    const f = await buildFixtureFleet();
+    try {
+      const seed = await runDev(
+        f.env,
+        opts(f, { targets: ['musecut'], tools: ['muse'], source: resolve(f.betaSrc) }),
+        passDeps(),
+      );
+      if (!seed.ok) throw new Error(msg(seed.error));
+      const calls: VerifyOptions[] = [];
+      const r = await runPromote(
+        f.env,
+        opts(f, { targets: ['musecut'], tools: ['muse'] }),
+        passDeps(calls),
+      );
+      if (!r.ok) throw new Error(msg(r.error));
+      const museCall = calls.find((c) => c.tools?.[0] === 'muse');
+      expect(museCall?.deep).toBe(true);
+      expect(r.value.results[0]?.verify?.gate).toBe('passed');
+    } finally {
+      await destroyFixtureFleet(f);
+    }
+  });
+
   test('default verification dispatch uses the injected lifecycle registry adapter', async () => {
     const f = await buildFixtureFleet();
     try {

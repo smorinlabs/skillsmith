@@ -164,4 +164,78 @@ describe('EWP-WF05', () => {
       await destroyUndoFleet(fleet);
     }
   });
+
+  test('EWP-WF05 — muse user-scope lifecycle runs the stubbed static+deep gates', async () => {
+    requireUndoBoundary();
+    const fleet = await createUndoFleet();
+    try {
+      const agents = jsonReport(await runUndoCli(fleet, ['agents', '--json']));
+      expect(JSON.stringify(agents)).toContain('muse');
+
+      const dev = jsonReport(
+        await runUndoCli(fleet, [
+          'dev',
+          'review',
+          '--source',
+          fleet.source,
+          '--scope',
+          'user',
+          '--tool',
+          'muse',
+          '--no-verify',
+          '--json',
+        ]),
+      );
+      expect(dev).toMatchObject({ kind: 'skillsmith.flip', op: 'dev' });
+
+      const verified = jsonReport(
+        await runUndoCli(fleet, [
+          'verify',
+          fleet.source,
+          '--deep',
+          '--strict',
+          '--tool',
+          'muse',
+          '--json',
+        ]),
+      );
+      expect(verified).toMatchObject({
+        kind: 'skillsmith.verify',
+        summary: { verdict: 'pass' },
+      });
+
+      const status = jsonReport(
+        await runUndoCli(fleet, ['status', 'review', '--scope', 'user', '--json']),
+      );
+      expect(status).toMatchObject({ kind: 'skillsmith.status' });
+      expect(JSON.stringify(status)).toContain(fleet.paths.userMuse);
+
+      const promoted = jsonReport(
+        await runUndoCli(fleet, [
+          'promote',
+          'review',
+          '--scope',
+          'user',
+          '--tool',
+          'muse',
+          '--strict',
+          '--json',
+        ]),
+      );
+      expect(promoted).toMatchObject({ kind: 'skillsmith.flip', op: 'promote' });
+
+      // User-scope dev/promote pairs retain no reversible backup (same for
+      // claude-code on main): undo refuses instead of reversing.
+      const undoPreview = jsonReport(
+        await runUndoCli(fleet, ['undo', 'review', '--scope', 'user', '--dry-run', '--json']),
+        3,
+      );
+      expect(undoPreview).toMatchObject({
+        kind: 'error',
+        code: 'undo-not-reversible',
+      });
+    } finally {
+      await destroyUndoFleet(fleet);
+    }
+  });
 });
