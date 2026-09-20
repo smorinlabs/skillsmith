@@ -61,7 +61,7 @@ The three-stream check is search-specific. Existing shared interaction policy ch
 
 The picker accepts Unicode input, supports scrolling through every returned result, and debounces query changes by 250 milliseconds. A new query cancels the previous request immediately. Use a generation number as well as cancellation so an older response cannot replace newer results. Each issued query gets its own timeout; time spent typing does not consume a network deadline.
 
-Selection only displays the selected result and a safely quoted install command. It does not install, verify, clone, or invoke a subprocess. Escape/Ctrl-C cancels the picker. Restore terminal mode and dispose timers, readers, and listeners on every exit path. A provider error is shown distinctly from an empty successful search; the user can edit the query and try again.
+Selection displays the selected result's catalog details and URL. It does not print an install command, install, verify, clone, or invoke a subprocess. Escape/Ctrl-C cancels the picker. Restore terminal mode and dispose timers, readers, and listeners on every exit path. A provider error is shown distinctly from an empty successful search; the user can edit the query and try again.
 
 ### Result and exit semantics
 
