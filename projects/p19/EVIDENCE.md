@@ -404,3 +404,29 @@ Product tasks remain in progress until affected-line carry-forward, review and i
   record. Records merge SHA: recorded in the #60 closure receipt after
   merge. #60 closes only after the records merge, current required
   checks, and a factual issue receipt.
+
+## 2026-09-20 — FOLLOW-P13 disposition via standalone #63-slice records
+
+- Owner established: smorin/smorin-harness (personal repo). The 2026-09-15
+  smorinlabs/smorinlabs-harness read was a mapping failure: revalidated at
+  e6fe51e plus full history, that repo never held skill-create by design
+  (skill docs + harness plugins only; the 17 post-09-15 commits are all
+  ci-fix/Windows/muse-github work).
+- Wire step DONE 2026-07-10: skill-fleet v0.3.1,
+  smorin/smorin-harness@ea95442 ("release: v0.3.1 — skill-create wires via
+  skillsmith dev --source"): one dev --source call per tool with the ln -s +
+  promote/dev round-trip dropped. Current text: skill-create SKILL.md step 4.
+- Live proof DONE same day: document-merge re-wired live (created, gate
+  passed, byte-identical target, dev-only ledger record) per the v0.3.1
+  RELEASE-NOTES and the release commit body. Distinct from the T07
+  22-placement migration (adjacent evidence, not conflated).
+- Release DONE: harness v0.3.1 patch shipped 2026-07-10. PUB-08 #55 stays
+  deferred for downstream publishing/release machinery; its FOLLOW-P13
+  dependency is satisfied.
+- Split: no existing-contract bug found; no new capability required.
+- Marker updates in this records PR: PROJECTS.md P13-T06 flipped to checked
+  with evidence citation; tasks.json FOLLOW-P13 state pending to completed
+  with disposition appended.
+- Reconciliation record: this standalone #63-slice records PR. #63 closes
+  only after the records merge, current required checks, and a factual
+  issue receipt.
