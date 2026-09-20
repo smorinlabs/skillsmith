@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { dirname, join } from 'node:path';
+import type { SupportedTool } from '../../src/agents/types.ts';
 import {
   hashCanonicalInput,
   hashManifestBytes,
@@ -66,7 +67,7 @@ type StatusReader = (
         }>;
     configuration: ResolvedRuntimeConfiguration;
     targets: readonly string[];
-    tools: readonly ('claude-code' | 'codex' | 'kilo-code' | 'opencode')[];
+    tools: readonly SupportedTool[];
     toolSelectionSource: 'explicit' | 'effective-config' | 'unbounded-default';
     scopes: readonly ('system' | 'user' | 'project' | 'managed')[];
     scopeSelectionSource: 'explicit' | 'unbounded-default';
@@ -1740,7 +1741,7 @@ describe('G3A-01 focused status reader', () => {
     controller.abort();
     const selectedUnbounded = await readStatus(readPorts(), {
       ...request(),
-      tools: ['claude-code', 'codex', 'kilo-code', 'opencode'],
+      tools: ['claude-code', 'codex', 'kilo-code', 'opencode', 'muse'],
       toolSelectionSource: 'unbounded-default',
       scopes: ['system', 'user', 'project', 'managed'],
       scopeSelectionSource: 'unbounded-default',
@@ -1761,7 +1762,7 @@ describe('G3A-01 focused status reader', () => {
         lockPath: join(HOME, '.config', 'skillsmith', 'skillsmith.lock'),
         lockSource: 'sibling',
       },
-      tools: ['claude-code', 'codex', 'kilo-code', 'opencode'],
+      tools: ['claude-code', 'codex', 'kilo-code', 'opencode', 'muse'],
       toolSelectionSource: 'unbounded-default',
       scopes: ['system', 'user', 'managed'],
       scopeSelectionSource: 'unbounded-default',
@@ -1885,7 +1886,7 @@ describe('G3A-01 focused status reader', () => {
         ...request(selected('user-default', userManifest, userLock)),
         projectContext: outsideContext,
         projectPlacement: { state: 'unselected' },
-        tools: ['claude-code', 'codex', 'kilo-code', 'opencode'],
+        tools: ['claude-code', 'codex', 'kilo-code', 'opencode', 'muse'],
         toolSelectionSource: 'unbounded-default',
         scopes: ['system', 'user', 'managed'],
         scopeSelectionSource: 'unbounded-default',
@@ -3096,7 +3097,7 @@ describe('G3A-01 focused status reader', () => {
         'future-legacy': { tools: { [unknownTool]: legacyPair } },
       },
     });
-    const allKnownTools = ['claude-code', 'codex', 'kilo-code', 'opencode'] as const;
+    const allKnownTools = ['claude-code', 'codex', 'kilo-code', 'opencode', 'muse'] as const;
 
     for (const source of ['explicit', 'effective-config'] as const) {
       const filtered = unwrapJoin(

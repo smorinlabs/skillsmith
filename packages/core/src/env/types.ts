@@ -44,6 +44,7 @@ export interface ScanEnv {
     binaryPath: string,
     args: readonly string[],
     signal?: AbortSignal,
+    env?: Record<string, string>,
   ): Promise<string | 'unknown'>;
   exec(cmd: string, args: readonly string[], opts?: ExecOptions): Promise<ExecResult>;
   pathKind(p: string): Promise<PathKind>;

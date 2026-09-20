@@ -3,7 +3,7 @@ import type { InstallRecord } from '../detect/types.ts';
 import type { SkillSmithError } from '../errors.ts';
 import type { DetectionPorts, InventoryReadPorts, PlatformPaths } from '../ports/types.ts';
 import type { Result } from '../result.ts';
-import type { Origin } from '../skills/types.ts';
+import type { Origin, SkillEntry } from '../skills/types.ts';
 import type { ToolVerifier, VerifyMode } from '../verify/types.ts';
 import type { Placement } from './placement-shared.ts';
 
@@ -63,6 +63,18 @@ export type InventoryCollisionResolver = (
   candidates: readonly InventoryIdentitySurface[],
 ) => string | null;
 
+/**
+ * Resolve standalone enablement for freshly scanned entries. Invoked once per
+ * scanned root before observations are emitted. Implementations may only assign
+ * `entry.enabled`; replacing entries would drop non-enumerable scanner metadata.
+ * A thrown error fails that root like any other read failure.
+ */
+export type StandaloneActivationResolver = (
+  env: InventoryReadPorts,
+  entries: SkillEntry[],
+  signal?: AbortSignal,
+) => Promise<void>;
+
 export interface InventoryBundle<ToolId extends string = string> {
   readonly tool: ToolId;
   readonly installHint: string;
@@ -78,6 +90,8 @@ export interface InventoryBundle<ToolId extends string = string> {
   readonly inventoryIdentity?: InventoryIdentity;
   /** Return the winning logical path, or null when precedence is intentionally ambiguous. */
   readonly resolveInventoryCollision?: InventoryCollisionResolver;
+  /** Resolve standalone enablement; absent keeps the legacy 'on' default. */
+  readonly resolveStandaloneActivation?: StandaloneActivationResolver;
 }
 
 export interface VerificationGatePolicy {

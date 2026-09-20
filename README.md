@@ -3,7 +3,7 @@
 > P17 disposition: current behavior; authority: packages/cli/src/program.ts
 
 Skills you write for one AI coding tool don't work in the others. Skillsmith unifies skill discovery
-and management across Claude Code, Codex, Kilo Code, and opencode.
+and management across Claude Code, Codex, Kilo Code, opencode, and Muse.
 
 **Today:** `agents`, `config`, `list`, `ls`, `commands`, `cross-tool-names`, `doctor`, `check`, `verify`, `status`, `plan`, `apply`, `sync`, `update`, `undo`, `promote`, `dev`, `demote`, `install`, `i`, `uninstall`, `rm`, `remove`, `export`, `gc`, `init`, `version`, `completion`, and `help` are implemented.
 **P17 target:** consistent behavior across the retained command surface, with generated public help and command documentation.
@@ -70,7 +70,7 @@ Machine-readable form (`--format json`) wraps results in a small envelope. Shape
     "claude-code": [
       { "path": "/usr/local/bin/claude", "version": "2.1.119 (Claude Code)", "installMethod": "unknown" }
     ]
-    // codex, kilo-code, opencode — same shape; each key maps to an array (a tool can have multiple installs on one system)
+    // codex, kilo-code, opencode, muse — same shape; each key maps to an array (a tool can have multiple installs on one system)
   }
 }
 ```
@@ -224,25 +224,26 @@ Generated from the live tool registry for Skillsmith 0.8.0. A scope list means t
 | `codex` | capability v1 | 0.142.5 |
 | `kilo-code` | capability v1 | not applicable |
 | `opencode` | capability v1 | not applicable |
+| `muse` | capability v1 | not applicable |
 
-| Operation | `claude-code` | `codex` | `kilo-code` | `opencode` |
-|---|---|---|---|---|
-| `detect` | yes | yes | yes | yes |
-| `inventory-skills` | user, project, system, managed | user, project, system, managed | user, project, system, managed | user, project, system, managed |
-| `inventory-commands` | user, project, system, managed | user, project, system, managed | user, project, system, managed | user, project, system, managed |
-| `diagnostics` | user, project, system, managed | user, project, system, managed | user, project, system, managed | user, project, system, managed |
-| `install` | user, project, custom | user, project, custom | — | — |
-| `uninstall` | user, project, custom | user, project, custom | — | — |
-| `dev` | user, project, custom | user, project, custom | — | — |
-| `promote` | user, project, custom | user, project, custom | — | — |
-| `undo` | user, project, custom | user, project, custom | — | — |
-| `verify-static` | artifact | artifact | — | — |
-| `verify-deep` | artifact | artifact | — | — |
-| `plan` | user, project, custom | user, project, custom | — | — |
-| `apply` | user, project, custom | user, project, custom | — | — |
-| `sync` | user, project, custom | user, project, custom | — | — |
-| `update` | user, project, custom | user, project, custom | — | — |
-| `adapt` | — | — | — | — |
+| Operation | `claude-code` | `codex` | `kilo-code` | `opencode` | `muse` |
+|---|---|---|---|---|---|
+| `detect` | yes | yes | yes | yes | yes |
+| `inventory-skills` | user, project, system, managed | user, project, system, managed | user, project, system, managed | user, project, system, managed | user, project, system, managed |
+| `inventory-commands` | user, project, system, managed | user, project, system, managed | user, project, system, managed | user, project, system, managed | user, project, system, managed |
+| `diagnostics` | user, project, system, managed | user, project, system, managed | user, project, system, managed | user, project, system, managed | user, project, system, managed |
+| `install` | user, project, custom | user, project, custom | — | — | — |
+| `uninstall` | user, project, custom | user, project, custom | — | — | — |
+| `dev` | user, project, custom | user, project, custom | — | — | — |
+| `promote` | user, project, custom | user, project, custom | — | — | — |
+| `undo` | user, project, custom | user, project, custom | — | — | — |
+| `verify-static` | artifact | artifact | — | — | — |
+| `verify-deep` | artifact | artifact | — | — | — |
+| `plan` | user, project, custom | user, project, custom | — | — | — |
+| `apply` | user, project, custom | user, project, custom | — | — | — |
+| `sync` | user, project, custom | user, project, custom | — | — | — |
+| `update` | user, project, custom | user, project, custom | — | — | — |
+| `adapt` | — | — | — | — | — |
 <!-- skillsmith-capability-matrix:end -->
 ## Supported tools
 
@@ -252,15 +253,16 @@ Generated from the live tool registry for Skillsmith 0.8.0. A scope list means t
 | `codex`        | `codex`       | PATH lookup → `--version` → classify install path |
 | `kilo-code`    | `kilo`        | PATH lookup → `--version` → classify install path |
 | `opencode`     | `opencode`    | PATH lookup → `--version` → classify install path |
+| `muse`         | `muse`        | PATH lookup → `--version` → classify install path |
 
 The install-method classifier recognizes `brew`, `npm-global`, `bun-global`, `native-installer`,
 and `app-bundle`, and falls back to `unknown`. Each tool owns a separate directory under
 [`packages/core/src/agents/`](packages/core/src/agents/) so any one can diverge from the shared
 detection pipeline without touching the others.
 
-Detection, inventory, `doctor`, and `check` support Claude Code, Codex, Kilo Code, and opencode.
-`verify` supports Claude Code and Codex. Write and mutation commands support Claude Code and Codex;
-Kilo Code is read-only/detection today, and opencode is read-only/detection today.
+Detection, inventory, `doctor`, and `check` support Claude Code, Codex, Kilo Code, opencode,
+and Muse. `verify` supports Claude Code and Codex. Write and mutation commands support Claude Code
+and Codex; Kilo Code, opencode, and Muse are read-only/detection today.
 
 Missing a tool? Open an issue with a `skillsmith agents --format json` dump and the OS / install method you used.
 

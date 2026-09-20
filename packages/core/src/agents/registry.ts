@@ -17,6 +17,7 @@ import {
 import { claudeCodeAdapter } from './claude-code/index.ts';
 import { codexAdapter } from './codex/index.ts';
 import { kiloCodeAdapter } from './kilo-code/index.ts';
+import { museAdapter } from './muse/index.ts';
 import { opencodeAdapter } from './opencode/index.ts';
 import { classifyPlacement, listPlacements } from './placement-shared.ts';
 
@@ -25,6 +26,7 @@ const BUILT_IN_ADAPTERS = [
   codexAdapter,
   kiloCodeAdapter,
   opencodeAdapter,
+  museAdapter,
 ] as const;
 
 type AdapterId<Adapter> = Adapter extends { readonly descriptor: { readonly id: infer Id } }
@@ -148,7 +150,11 @@ const validateInventory = (adapter: ToolAdapter): void => {
   ] as const) {
     requireFunction(inventory[method], `${adapter.descriptor.id} inventory.${method}`);
   }
-  for (const method of ['inventoryIdentity', 'resolveInventoryCollision'] as const) {
+  for (const method of [
+    'inventoryIdentity',
+    'resolveInventoryCollision',
+    'resolveStandaloneActivation',
+  ] as const) {
     if (inventory[method] !== undefined) {
       requireFunction(inventory[method], `${adapter.descriptor.id} inventory.${method}`);
     }

@@ -74,8 +74,8 @@ const legacyPlacementBundle = (placement: PlacementBundle): PlacementBundle => (
 });
 
 describe('agents registry', () => {
-  test('listSupportedTools returns all four tools in order', () => {
-    expect(listSupportedTools()).toEqual(['claude-code', 'codex', 'kilo-code', 'opencode']);
+  test('listSupportedTools returns all five tools in order', () => {
+    expect(listSupportedTools()).toEqual(['claude-code', 'codex', 'kilo-code', 'opencode', 'muse']);
   });
 
   test('registry has an Agent for every supported tool', () => {
@@ -135,6 +135,31 @@ describe('agents registry', () => {
         },
       ]),
     ).toThrow(/gate policy requires unsupported verification modes/);
+  });
+
+  test('accepts an optional standalone activation hook and rejects a non-function one', () => {
+    const accepted = createToolRegistry([
+      {
+        ...codexAdapter,
+        inventory: {
+          ...codexAdapter.inventory,
+          resolveStandaloneActivation: async () => {},
+        },
+      },
+    ]);
+    expect(accepted.get('codex')?.inventory?.resolveStandaloneActivation).toBeFunction();
+
+    expect(() =>
+      createToolRegistry([
+        {
+          ...codexAdapter,
+          inventory: {
+            ...codexAdapter.inventory,
+            resolveStandaloneActivation: 'nope' as unknown as () => Promise<void>,
+          },
+        },
+      ]),
+    ).toThrow(/codex inventory\.resolveStandaloneActivation must be a function/);
   });
 
   test('accepts an omitted update policy only at the legacy aggregate boundary', () => {

@@ -7,7 +7,7 @@ import { wellKnownBinDirs } from '../../../core/src/detect/scanners.ts';
 export const createDetectionIsolation = async (
   root: string,
   environment: Readonly<Record<string, string | undefined>>,
-  binaries: readonly string[] = ['claude', 'codex', 'kilo', 'opencode'],
+  binaries: readonly string[] = ['claude', 'codex', 'kilo', 'opencode', 'muse'],
 ) => {
   const directory = await mkdtemp(join(root, '.detection-'));
   const preload = join(directory, 'preload.ts');

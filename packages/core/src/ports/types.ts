@@ -116,6 +116,7 @@ export interface ProcessPort {
     binaryPath: string,
     args: readonly string[],
     signal?: AbortSignal,
+    env?: Record<string, string>,
   ): Promise<string | 'unknown'>;
 }
 

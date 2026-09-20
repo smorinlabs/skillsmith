@@ -55,7 +55,13 @@ describe('EWP-P0A-TS02', () => {
     const tools = migrationLedger.target.filter((row) => row.option?.long === '--tool');
     expect(tools.length).toBeGreaterThan(0);
     for (const row of tools) {
-      expect(row.option?.choices).toEqual(['claude-code', 'codex', 'kilo-code', 'opencode']);
+      expect(row.option?.choices).toEqual([
+        'claude-code',
+        'codex',
+        'kilo-code',
+        'opencode',
+        'muse',
+      ]);
     }
     const scopes = Object.fromEntries(
       migrationLedger.target

@@ -81,7 +81,7 @@ describe('closed lossless manifest edit algebra', () => {
   }
 
   test('accepts every authoritative built-in tool without a duplicated inventory', () => {
-    expect(SUPPORTED_TOOLS).toEqual(['claude-code', 'codex', 'kilo-code', 'opencode']);
+    expect(SUPPORTED_TOOLS).toEqual(['claude-code', 'codex', 'kilo-code', 'opencode', 'muse']);
     const source = 'version = 1\n[defaults]\ntools = ["codex"]\nscope = "project"\n';
     const result = editManifestBytes(encoder.encode(source), {
       edits: [{ kind: 'set-default', field: 'tools', value: [...SUPPORTED_TOOLS] }],
@@ -89,7 +89,7 @@ describe('closed lossless manifest edit algebra', () => {
     expect(result.ok, result.ok ? undefined : result.error.message).toBeTrue();
     if (result.ok) {
       expect(result.value.source).toContain(
-        'tools = ["claude-code", "codex", "kilo-code", "opencode"]',
+        'tools = ["claude-code", "codex", "kilo-code", "opencode", "muse"]',
       );
     }
   });

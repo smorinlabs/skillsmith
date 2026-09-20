@@ -21,3 +21,5 @@
 |---|---|---|
 | /opt/opencode | 0.1.0 | bun-global |
 | /opt/opencode nightly | 0.2 next | brew |
+
+## muse — not detected

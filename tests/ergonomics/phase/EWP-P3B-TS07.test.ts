@@ -3640,7 +3640,7 @@ describe('EWP-P3B-TS07 — causal lifecycle execution and recovery', () => {
       expect(asFunction(moduleRecord(acquireExecution).detectAcquireTool)).not.toBeNull();
       const text = source('packages/core/src/acquire/execute.ts');
       expect(text).not.toMatch(
-        /(?:===|!==|case\s+|\.includes\()\s*['"](?:claude-code|codex|kilo-code|opencode)['"]/u,
+        /(?:===|!==|case\s+|\.includes\()\s*['"](?:claude-code|codex|kilo-code|opencode|muse)['"]/u,
       );
     });
 

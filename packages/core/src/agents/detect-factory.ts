@@ -8,6 +8,7 @@ export const createBinaryDetect =
   (
     tool: SupportedTool,
     binary: string,
+    versionEnv?: Record<string, string>,
   ): ((
     env: DetectionPorts,
     signal?: AbortSignal,
@@ -19,7 +20,7 @@ export const createBinaryDetect =
         paths.map(
           async (p): Promise<InstallRecord> => ({
             path: p,
-            version: await env.runVersion(p, ['--version'], signal),
+            version: await env.runVersion(p, ['--version'], signal, versionEnv),
             installMethod: classifyInstallMethod(p),
           }),
         ),

@@ -495,7 +495,13 @@ describe('G4A-01 install command contract', () => {
       (candidate) => candidate.path === 'skillsmith install',
     );
     const toolOption = installSpec?.options.find((option) => option.long === '--tool');
-    expect(toolOption?.allowedValues).toEqual(['claude-code', 'codex', 'kilo-code', 'opencode']);
+    expect(toolOption?.allowedValues).toEqual([
+      'claude-code',
+      'codex',
+      'kilo-code',
+      'opencode',
+      'muse',
+    ]);
 
     const automatic = await unwrapInstall(
       baseOptions({ tools: undefined, dryRun: true }),

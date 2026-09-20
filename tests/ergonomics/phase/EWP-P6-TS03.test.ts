@@ -555,7 +555,7 @@ describe('EWP-P6-TS03', () => {
     expect(validate(`${CAPABILITY_START}\n${CAPABILITY_START}\n${CAPABILITY_END}`)).not.toEqual([]);
     expect(await check()).toEqual([]);
 
-    expect(toolRegistry.adapters).toHaveLength(4);
+    expect(toolRegistry.adapters).toHaveLength(5);
     for (const adapter of toolRegistry.adapters) {
       expect(block).toContain(`\`${adapter.descriptor.id}\``);
       expect(block).toContain(`capability v${adapter.descriptor.capabilityVersion}`);

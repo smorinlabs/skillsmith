@@ -22,6 +22,8 @@
 | /opt/opencode | 0.1.0 | bun-global |
 | /opt/opencode nightly | 0.2 next | brew |
 
+## muse — not detected
+
 # Capabilities
 
 ## claude-code
@@ -107,3 +109,24 @@
 | sync | no | — | opencode cannot participate in desired-state mutations |
 | update | no | — | opencode cannot participate in desired-state mutations |
 | adapt | no | — | opencode adaptation is not available |
+
+## muse
+
+| Operation | Supported | Scopes | Remediation |
+|---|---|---|---|
+| detect | yes | — | — |
+| inventory-skills | yes | user, project, system, managed | — |
+| inventory-commands | yes | user, project, system, managed | — |
+| diagnostics | yes | user, project, system, managed | — |
+| install | no | — | muse is read-only; choose claude-code or codex |
+| uninstall | no | — | muse is read-only; choose claude-code or codex |
+| dev | no | — | muse is read-only; choose claude-code or codex |
+| promote | no | — | muse is read-only; choose claude-code or codex |
+| undo | no | — | muse is read-only; choose claude-code or codex |
+| verify-static | no | — | muse has no registered static verifier |
+| verify-deep | no | — | muse has no registered deep verifier |
+| plan | no | — | muse cannot participate in desired-state mutations |
+| apply | no | — | muse cannot participate in desired-state mutations |
+| sync | no | — | muse cannot participate in desired-state mutations |
+| update | no | — | muse cannot participate in desired-state mutations |
+| adapt | no | — | muse adaptation is not available |

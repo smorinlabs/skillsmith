@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { hermeticGitEnv } from '../../../core/tests/fixtures/git-env.ts';
@@ -10,7 +10,10 @@ let home = '';
 let project = '';
 
 beforeEach(async () => {
-  root = await mkdtemp(join(tmpdir(), 'skillsmith-cross-tool-names-'));
+  // Canonicalize: the product resolves the project root through the Git worktree root,
+  // so on hosts where TMPDIR contains a symlink (macOS /tmp -> /private/tmp) raw
+  // mkdtemp paths never match product output.
+  root = await realpath(await mkdtemp(join(tmpdir(), 'skillsmith-cross-tool-names-')));
   home = join(root, 'home');
   project = join(root, 'project');
   await mkdir(home);

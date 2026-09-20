@@ -45,6 +45,10 @@
           "installMethod": "brew"
         }
       ]
+    },
+    {
+      "tool": "muse",
+      "installations": []
     }
   ],
   "capabilities": {
@@ -536,6 +540,108 @@
             "supported": false,
             "scopes": [],
             "remediation": "opencode adaptation is not available"
+          }
+        }
+      },
+      {
+        "id": "muse",
+        "order": 50,
+        "capabilityVersion": 1,
+        "operations": {
+          "detect": {
+            "supported": true,
+            "scopes": [],
+            "remediation": null
+          },
+          "inventory-skills": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "project",
+              "system",
+              "managed"
+            ],
+            "remediation": null
+          },
+          "inventory-commands": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "project",
+              "system",
+              "managed"
+            ],
+            "remediation": null
+          },
+          "diagnostics": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "project",
+              "system",
+              "managed"
+            ],
+            "remediation": null
+          },
+          "install": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "muse is read-only; choose claude-code or codex"
+          },
+          "uninstall": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "muse is read-only; choose claude-code or codex"
+          },
+          "dev": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "muse is read-only; choose claude-code or codex"
+          },
+          "promote": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "muse is read-only; choose claude-code or codex"
+          },
+          "undo": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "muse is read-only; choose claude-code or codex"
+          },
+          "verify-static": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "muse has no registered static verifier"
+          },
+          "verify-deep": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "muse has no registered deep verifier"
+          },
+          "plan": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "muse cannot participate in desired-state mutations"
+          },
+          "apply": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "muse cannot participate in desired-state mutations"
+          },
+          "sync": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "muse cannot participate in desired-state mutations"
+          },
+          "update": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "muse cannot participate in desired-state mutations"
+          },
+          "adapt": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "muse adaptation is not available"
           }
         }
       }

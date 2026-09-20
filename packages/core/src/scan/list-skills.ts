@@ -105,6 +105,8 @@ const scanStandalone = async (
             rootOrdinal,
             ...(signal === undefined ? {} : { signal }),
           });
+          throwIfInventoryCancelled(signal);
+          await agent.resolveStandaloneActivation?.(env, entries, signal);
           out.push(...entries);
         } catch (failure) {
           throwIfInventoryCancelled(signal);
