@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { CURRENT_COMMAND_SPECS } from '../../../packages/cli/src/spec/index.ts';
 
 const EXPECTED = [
+  ['discover', 'search', 'Which remote skills match a topic?', 'skillsmith search react'],
   [
     'discover',
     'agents',
@@ -112,7 +113,7 @@ interface PlannedSpec {
 }
 
 describe('EWP-P6-TS05', () => {
-  test('the exact 24-row complexity matrix is registry-owned', () => {
+  test('the exact 25-row complexity matrix is registry-owned', () => {
     const specs = (CURRENT_COMMAND_SPECS as readonly PlannedSpec[])
       .filter((spec) => spec.path.split(' ').length === 2)
       .toSorted(
@@ -127,7 +128,7 @@ describe('EWP-P6-TS05', () => {
       spec.minimalInvocations?.[0],
     ]);
     expect(actual).toEqual(EXPECTED);
-    expect(new Set(specs.map((spec) => spec.primaryQuestion)).size).toBe(24);
+    expect(new Set(specs.map((spec) => spec.primaryQuestion)).size).toBe(25);
     expect(specs.every((spec) => (spec.commonWorkflows?.length ?? 0) >= 2)).toBeTrue();
   });
 });
