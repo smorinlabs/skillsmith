@@ -4,6 +4,7 @@ import {
   copyFileSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -20,9 +21,28 @@ afterAll(() => {
   for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
 });
 
-async function runGit(args: string[], cwd: string): Promise<void> {
+async function runGit(
+  args: string[],
+  cwd: string,
+  overrides: Record<string, string> = {},
+): Promise<void> {
+  const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (typeof value === 'string') env[key] = value;
+  }
+  Object.assign(env, overrides);
+  // Scrub wins over overrides (issue #17 mode): a hook-spawned runner exports
+  // repository-location variables pointing at the real checkout, and a child
+  // git inheriting them would write there instead of the fixture. Superset of
+  // GIT_REPOSITORY_ENVIRONMENT (packages/core/src/ports/git.ts).
+  for (const name of Object.keys(env)) {
+    if (name.startsWith('GIT_')) delete env[name];
+  }
+  env.GIT_CONFIG_GLOBAL = '/dev/null';
+  env.GIT_CONFIG_SYSTEM = '/dev/null';
   const proc = Bun.spawn(['git', ...args], {
     cwd,
+    env,
     stdout: 'ignore',
     stderr: 'ignore',
   });
@@ -165,6 +185,21 @@ describe('fail-closed hook wrapper', () => {
     ]);
     expect(result.code).toBe(0);
     expect(result.stdout).toContain('ARGS:run commit-msg .git/COMMIT_EDITMSG');
+  });
+
+  test('case D: poisoned GIT_DIR/GIT_WORK_TREE cannot redirect fixture git', async () => {
+    const poison = mkdtempSync(join(tmpdir(), 'skillsmith-hooks-poison-'));
+    tempDirs.push(poison);
+    await runGit(['init', '-q', '--bare', poison], tmpdir());
+    const root = mkdtempSync(join(tmpdir(), 'skillsmith-hooks-poisoned-'));
+    tempDirs.push(root);
+    const tainted = { GIT_DIR: poison, GIT_WORK_TREE: poison };
+    await runGit(['init', '-q'], root, tainted);
+    await runGit(['config', 'user.email', 'tainted@example.invalid'], root, tainted);
+    const fixtureConfig = readFileSync(join(root, '.git', 'config'), 'utf8');
+    expect(fixtureConfig).toContain('tainted@example.invalid');
+    const poisonConfig = readFileSync(join(poison, 'config'), 'utf8');
+    expect(poisonConfig).not.toContain('tainted@example.invalid');
   });
 
   test('case C: LEFTHOOK=0 exits 0 with a bypass notice', async () => {

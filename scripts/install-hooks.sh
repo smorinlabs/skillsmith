@@ -14,10 +14,11 @@ if ! repo_top="$(git rev-parse --show-toplevel 2>/dev/null)"; then
   echo 'SKIP: install-hooks: not inside a git checkout; nothing to wire.'
   exit 0
 fi
-if ! common_dir="$(git rev-parse --git-common-dir 2>/dev/null)"; then
-  echo 'error: install-hooks: git refused to resolve the repository directory.' >&2
-  exit 1
-fi
+# Absolute common dir; fall back for git predating --path-format (2.38),
+# resolving relative output from the repo top where it is anchored.
+common_dir="$(git -C "$repo_top" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" \
+  || common_dir="$(git -C "$repo_top" rev-parse --git-common-dir 2>/dev/null)" \
+  || { echo 'error: install-hooks: git refused to resolve the repository directory.' >&2; exit 1; }
 case "$common_dir" in
   /*) hooks_dir="$common_dir/hooks" ;;
   *) hooks_dir="$repo_top/$common_dir/hooks" ;;

@@ -16,7 +16,10 @@ fail() {
 command -v git >/dev/null 2>&1 || fail 'git is not on PATH.' "install git, then rerun verify-hooks."
 repo_top="$(git rev-parse --show-toplevel 2>/dev/null)" \
   || fail 'not inside a git checkout.' 'run verify-hooks inside the repository.'
-common_dir="$(git rev-parse --git-common-dir 2>/dev/null)" \
+# Absolute common dir; fall back for git predating --path-format (2.38),
+# resolving relative output from the repo top where it is anchored.
+common_dir="$(git -C "$repo_top" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" \
+  || common_dir="$(git -C "$repo_top" rev-parse --git-common-dir 2>/dev/null)" \
   || fail 'git refused to resolve the repository directory.' 'check git access to this checkout.'
 case "$common_dir" in
   /*) hooks_dir="$common_dir/hooks" ;;
