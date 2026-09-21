@@ -171,7 +171,7 @@ async function withCheckerFixture(
 }
 
 async function checkerFixture(name: string) {
-  const directory = mkdtempSync(resolve(tmpdir(), 'skillsmith-checker-observation-'));
+  const directory = realpathSync(mkdtempSync(resolve(tmpdir(), 'skillsmith-checker-observation-')));
   const repo = resolve(directory, 'repo');
   const evidence = process.env.SC_I17_R3_EVIDENCE_DIR
     ? mkdtempSync(resolve(process.env.SC_I17_R3_EVIDENCE_DIR, `${name}-`))
@@ -206,7 +206,8 @@ async function checkerFixture(name: string) {
   try {
     git('clone', '--no-local', '--no-hardlinks', '--quiet', root, repo);
     copyFileSync(checker, resolve(repo, 'scripts/check-p17-package.ts'));
-    git('add', '--', 'scripts/check-p17-package.ts');
+    copyFileSync(resolve(root, 'scripts/p17-catalog.ts'), resolve(repo, 'scripts/p17-catalog.ts'));
+    git('add', '--', 'scripts/check-p17-package.ts', 'scripts/p17-catalog.ts');
     git(
       '-c',
       'user.name=Fixture',
