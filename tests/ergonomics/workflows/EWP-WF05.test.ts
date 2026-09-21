@@ -224,15 +224,38 @@ describe('EWP-WF05', () => {
       );
       expect(promoted).toMatchObject({ kind: 'skillsmith.flip', op: 'promote' });
 
-      // User-scope dev/promote pairs retain no reversible backup (same for
-      // claude-code on main): undo refuses instead of reversing.
       const undoPreview = jsonReport(
         await runUndoCli(fleet, ['undo', 'review', '--scope', 'user', '--dry-run', '--json']),
-        3,
       );
       expect(undoPreview).toMatchObject({
-        kind: 'error',
-        code: 'undo-not-reversible',
+        schemaVersion: 1,
+        kind: 'skillsmith.undo',
+        command: 'undo',
+        mode: 'dry-run',
+        summary: { selected: 1, actionable: 1, planned: 1 },
+        groups: [
+          {
+            skill: 'review',
+            scope: 'user',
+            outcome: 'planned',
+            pairs: [{ tool: 'muse', outcome: 'planned' }],
+          },
+        ],
+      });
+      const undone = jsonReport(
+        await runUndoCli(fleet, ['undo', 'review', '--scope', 'user', '--yes', '--json']),
+      );
+      expect(undone).toMatchObject({
+        kind: 'skillsmith.undo',
+        summary: { selected: 1, actionable: 1, succeeded: 1, failed: 0 },
+        groups: [
+          {
+            skill: 'review',
+            scope: 'user',
+            outcome: 'succeeded',
+            pairs: [{ tool: 'muse', outcome: 'succeeded' }],
+          },
+        ],
       });
     } finally {
       await destroyUndoFleet(fleet);
