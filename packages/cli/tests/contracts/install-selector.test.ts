@@ -251,3 +251,23 @@ test('the emitted retry command round-trips shell quoting, and unrepresentable l
   expect(output).toContain('"tëam/review": exact-path retry unavailable');
   expect(output.split('\n')[1]).not.toContain('skillsmith install');
 });
+
+test('informational candidate paths retain Unicode and visibly escape quotes, controls, and lone surrogates', () => {
+  const path =
+    'tëam/🦀/"quoted"\\literal\\n\t\n\r\u0000\u001b[2J\u007f\u0085\u009f\u2028\u2029\ud800x\udc00';
+  const item = {
+    candidateSource: {
+      cloneUrl: 'https://gitlab.example/group/sub/repo.git',
+      ref: null,
+      candidates: [{ path, source: null }],
+    },
+  } as unknown as CurrentInstallReport['results'][number];
+  const output = renderInstallCandidateHints(item);
+  const quotedPath =
+    '"tëam/🦀/\\"quoted\\"\\\\literal\\\\n\\u0009\\u000a\\u000d\\u0000\\u001b[2J\\u007f\\u0085\\u009f\\u2028\\u2029\\ud800x\\udc00"';
+  expect(output).toBe(
+    `  ${quotedPath}: exact-path retry unavailable for this source form; use a unique frontmatter name if available.`,
+  );
+  expect(output.split('\n')).toHaveLength(1);
+  expect(output).not.toContain('skillsmith install');
+});

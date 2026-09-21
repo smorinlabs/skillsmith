@@ -59,6 +59,7 @@ import { renderFlipHuman } from '../output/flip-human.ts';
 import { renderFlipJson } from '../output/flip-json.ts';
 import { renderGcHuman } from '../output/gc-human.ts';
 import { renderGcJson } from '../output/gc-json.ts';
+import { quoteHumanText } from '../output/human-text.ts';
 import { renderInitHuman } from '../output/init-human.ts';
 import { renderInitJson } from '../output/init-json.ts';
 import {
@@ -187,7 +188,7 @@ export const renderInstallCandidateHints = (
         path === ''
           ? '  Repository root (SKILL.md): no exact root-path selector is available; a unique frontmatter name can select it with --skill <name> --skills-match-frontmatter.'
           : source === null
-            ? `  ${JSON.stringify(path)}: exact-path retry unavailable for this source form; use a unique frontmatter name if available.`
+            ? `  ${quoteHumanText(path)}: exact-path retry unavailable for this source form; use a unique frontmatter name if available.`
             : `  skillsmith install ${shellQuote(source)}${ref === null ? '' : ` --ref ${shellQuote(ref)}`}`,
       )
       .join('\n');

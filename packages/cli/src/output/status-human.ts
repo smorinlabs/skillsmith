@@ -1,4 +1,5 @@
 import type { StatusV1Dto } from '@skillsmith/core/contracts/v1';
+import { displayHumanText as display, quoteHumanText } from './human-text.ts';
 
 type StatusEntry = StatusV1Dto['entries'][number];
 type StatusPlacement = StatusEntry['placements'][number];
@@ -8,23 +9,6 @@ type StatusRetention = Extract<
   StatusJournal,
   { readonly state: 'pending' | 'committed' }
 >['retention'][number];
-
-/** Encode untrusted DTO scalars without allowing terminal or line control. */
-const display = (value: string | null): string => {
-  if (value === null) return 'null';
-  return [...value]
-    .map((character) => {
-      const codePoint = character.codePointAt(0);
-      return codePoint !== undefined &&
-        (codePoint <= 0x1f ||
-          (codePoint >= 0x7f && codePoint <= 0x9f) ||
-          codePoint === 0x2028 ||
-          codePoint === 0x2029)
-        ? `\\u${codePoint.toString(16).padStart(4, '0')}`
-        : character;
-    })
-    .join('');
-};
 
 const factLine = (fact: StatusFact, indent: string): string =>
   `${indent}${display(fact.code)} (${display(fact.impact)}): expected ${display(fact.expected)}; actual ${display(fact.actual)}`;
@@ -90,15 +74,6 @@ const contentHashLine = (retention: StatusRetention): string => {
   }
   return `        content hash: ${display(check.state)}; domain ${display(check.domain)}; expected ${display(check.expected)}; observed ${display(check.observed)}`;
 };
-
-const quoteHumanText = (value: string): string =>
-  `"${[...value]
-    .map((character) => {
-      if (character === '"') return '\\"';
-      if (character === '\\') return '\\\\';
-      return display(character);
-    })
-    .join('')}"`;
 
 const legacyNode = (
   node:

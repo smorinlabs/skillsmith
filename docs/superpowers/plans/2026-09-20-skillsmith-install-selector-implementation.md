@@ -325,6 +325,7 @@ changes and owns repository-wide validation and PR delivery.
 | UTF-8 decoding and frontmatter parsing each removed a byte-order mark. | Preserve decoded byte-order marks for the shared parser to handle once; direct parsing and scanning must agree for zero through three marks with YAML and JSON. |
 | Root-content test tracing expected Git's first argument to be `-C`. | Accept the new leading `--no-replace-objects` in the trace counter and transparent archive hook. Retain checkout, archive, content, and recurrence assertions. |
 | The top-level help test still expected a workflow example replaced by selector examples. | Update the expected workflows to the approved three-example help surface while retaining source grammar, ref, destination, and exit-code assertions. |
+| Informational install candidate paths used renderer-local `JSON.stringify`, violating the existing codec ownership audit. | Share the status renderer's explicit human-text escaping and quoting through `output/human-text.ts`, which remains inside the audit scope. Preserve printable Unicode, quotes, backslashes, line/control escapes, and lone surrogates without changing wire serialization or the audit. |
 
 All new lifecycle fixture state, including artifact coordination, lives below the owned temporary
 root. The CLI fixture uses the production command graph and application services with the test
@@ -358,6 +359,7 @@ Candidate validation used Bun 1.3.14 and canonical `TMPDIR=/private/tmp`:
 | Credential scanning | Both pinned scanners reported zero findings outside the process sandbox. An empty-directory control reproduced TruffleHog's sandbox-only process-enumeration cleanup error. |
 | Root-content compatibility after trace repair | All 14 tests pass; fresh checkout/archive counters increase from one to two, and content/hash/no-op/tamper controls remain unchanged. |
 | Help compatibility after workflow repair | All 56 help/help-contract/selector-contract tests pass. The top-level help test now checks both selector workflows while retaining grammar, ref, pin, destination, and exit guidance. No other test reference to a retired workflow was found. |
+| Human path formatter repair | All 87 affected renderer/selector tests and both focused codec-ownership checks pass. Status output matches its existing golden byte for byte. Independent review checked all 65,536 UTF-16 code units plus valid surrogate pairs and literal escapes without a roundtrip or control-escaping failure. Default smoke also passes after the repair. |
 
 Compatibility checks also exercised installation, reconcile planning/apply, update planning, and
 Git ports. Two default filesystem tests fail in this local sandbox: temporary-directory group
@@ -376,6 +378,13 @@ all three real Git directory/root/nested lifecycle roundtrips. File 62, `package
 still expected the retired pinned-ref workflow example; this is the help assertion repair above.
 Six supporting CI jobs passed, including all three native build jobs. The full gate remains required
 for the final repaired candidate.
+
+Linux CI for `67285b9` passed the first 347 of 407 test files, including all five new selector suites,
+then failed `EWP-P1-TS10` family 9 on the renderer-local `JSON.stringify` call described above.
+The repair shares an explicit human-text formatter with status output and adds a regression for
+informational path quoting. A bounded audit of the remaining dependency/option, persisted-codec,
+documentation, and command inventories found no other issue; its five focused checks passed
+930 assertions. This earlier CI run is partial evidence, not a full terminal-gate pass.
 
 [PR #107](https://github.com/smorinlabs/skillsmith/pull/107) records the latest clean candidate SHA,
 compiled CLI evidence, terminal gate result, final CI receipt, and delivery status. Earlier search-PR
