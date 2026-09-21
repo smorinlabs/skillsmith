@@ -14,9 +14,9 @@ verification support depend on the target tool and installation scope; see
 
 > P17 disposition: current behavior; authority: packages/cli/src/program.ts
 
-The status notes in this README refer to [P17](projects/P17-skillsmith-ergonomics-and-declarative-workflow.md),
-the Skillsmith ergonomics and declarative workflow project. They identify the sources used to
-check the documented behavior.
+The status notes in this README refer to P17, the Skillsmith ergonomics and declarative
+workflow project listed in the [project tracker](PROJECTS.md). They identify the sources used
+to check the documented behavior.
 
 **Contents**
 
