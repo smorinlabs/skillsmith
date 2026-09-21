@@ -28,13 +28,15 @@ export const ALLOWED_LIVE_E2E_SKIPS: ReadonlyMap<string, number> = new Map([
 // Frozen environment-gated skip entries. Unlike the live-E2E allowlist above, these files'
 // skip counts depend on the machine running the gate: each entry contributes its frozen
 // magnitude when its gate is closed (tests skip) and 0 when its gate is open (tests run).
-// The resolved total is therefore 42 + 0..6, computed at startup by resolveAllowedSkips().
+// The resolved total is therefore 42 + 0..7, computed at startup by resolveAllowedSkips().
 export const ENV_STRACE_SKIP_FILE = 'packages/cli/tests/commands/install-root-permission.test.ts';
 export const ENV_STRACE_SKIP_COUNT = 5;
 export const ENV_NATIVE_SKIP_FILE = 'packages/cli/tests/commands/install-preserved-backup.test.ts';
 export const ENV_NATIVE_SKIP_COUNT = 1;
+export const ENV_EWP_SKIP_FILE = 'tests/ergonomics/phase/EWP-P6-TS03.test.ts';
+export const ENV_EWP_SKIP_COUNT = 1;
 export const NATIVE_MIN_FREE_BYTES = 300 * 1024 * 1024;
-const EXPECTED_ENV_SKIP_FILES = 2;
+const EXPECTED_ENV_SKIP_FILES = 3;
 
 export type EnvSkipProbes = {
   platform?: string;
@@ -70,10 +72,21 @@ export function nativeCompileEnabled(probes: EnvSkipProbes = {}): boolean {
   }
 }
 
+// Mirrors the `test.skipIf(process.platform !== 'linux')` gate on the family-2 PTY test
+// in EWP-P6-TS03.test.ts (same duplication rationale as above).
+export function ewpPtyEnabled(probes: EnvSkipProbes = {}): boolean {
+  try {
+    return (probes.platform ?? process.platform) === 'linux';
+  } catch {
+    return false;
+  }
+}
+
 export function resolveAllowedSkips(probes: EnvSkipProbes = {}): ReadonlyMap<string, number> {
   const resolved = new Map(ALLOWED_LIVE_E2E_SKIPS);
   resolved.set(ENV_STRACE_SKIP_FILE, straceLaneEnabled(probes) ? 0 : ENV_STRACE_SKIP_COUNT);
   resolved.set(ENV_NATIVE_SKIP_FILE, nativeCompileEnabled(probes) ? 0 : ENV_NATIVE_SKIP_COUNT);
+  resolved.set(ENV_EWP_SKIP_FILE, ewpPtyEnabled(probes) ? 0 : ENV_EWP_SKIP_COUNT);
   return resolved;
 }
 
@@ -245,6 +258,7 @@ export function validateTerminalManifest(
   for (const [file, count] of [
     [ENV_STRACE_SKIP_FILE, ENV_STRACE_SKIP_COUNT],
     [ENV_NATIVE_SKIP_FILE, ENV_NATIVE_SKIP_COUNT],
+    [ENV_EWP_SKIP_FILE, ENV_EWP_SKIP_COUNT],
   ] as const) {
     const actual = allowedSkips.get(file);
     if (actual !== 0 && actual !== count) {
@@ -427,7 +441,7 @@ export async function main(): Promise<void> {
     `serial test-file manifest: ${testFiles.length} files; sha256=${digest}; bun=${Bun.version}`,
   );
   console.log(
-    `serial test-file env-gated skips: ${ENV_STRACE_SKIP_FILE}=${allowedSkips.get(ENV_STRACE_SKIP_FILE)} ${ENV_NATIVE_SKIP_FILE}=${allowedSkips.get(ENV_NATIVE_SKIP_FILE)}`,
+    `serial test-file env-gated skips: ${ENV_STRACE_SKIP_FILE}=${allowedSkips.get(ENV_STRACE_SKIP_FILE)} ${ENV_NATIVE_SKIP_FILE}=${allowedSkips.get(ENV_NATIVE_SKIP_FILE)} ${ENV_EWP_SKIP_FILE}=${allowedSkips.get(ENV_EWP_SKIP_FILE)}`,
   );
 
   let receipt: SerialReceipt | undefined;

@@ -332,6 +332,20 @@ jobs:
           assertReleaseToolVersions(versions);
           console.log(JSON.stringify({ status: "EXACT_RELEASE_TEST_TOOL_VERSIONS_CONFIRMED", versions }));
           '
+      - name: Pin environment-gated test capabilities
+        run: |
+          bun --eval '
+          import { statfsSync } from "node:fs";
+          import { tmpdir } from "node:os";
+          import { resolve } from "node:path";
+          const strace = Bun.which("strace");
+          if (strace === null) throw new Error("serial gate requires strace on Linux (lane-2 fault injection); install it or expect lane-2 skips");
+          const base = resolve(process.env.TMPDIR ?? tmpdir());
+          const stats = statfsSync(base);
+          const free = stats.bavail * stats.bsize;
+          if (free < 300 * 1024 * 1024) throw new Error("serial gate requires 300MB free under " + base + "; found " + free + " bytes");
+          console.log(JSON.stringify({ envCapabilitiesPinned: true, strace, scratchBase: base, freeBytes: free }));
+          '
       - name: Run test shard
         run: bun scripts/run-test-files-shard.ts --shard-index=${{ matrix.shard }} --shard-total=4 --out-dir="$RUNNER_TEMP/test-shard-${{ matrix.shard }}"
       - name: Retain shard evidence
