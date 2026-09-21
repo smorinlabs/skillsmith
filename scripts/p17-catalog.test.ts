@@ -15,9 +15,14 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { relative, resolve } from 'node:path';
+import { dirname, relative, resolve } from 'node:path';
 import { runGit } from '../packages/core/tests/fixtures/git-env.ts';
-import { gitRecordsExactDeletion, ownedPathState } from './p17-catalog.ts';
+import {
+  createSignedReceiptGitReader,
+  gitRecordsExactDeletion,
+  ownedPathState,
+  readSignedReceiptBatch,
+} from './p17-catalog.ts';
 
 const root = resolve(import.meta.dir, '..');
 const checklistPath = resolve(root, 'projects/p17/CHECKLIST.md');
@@ -285,6 +290,105 @@ function commitAll(repository: string, message: string): void {
 function expectFailure(result: ReturnType<typeof runCatalogMutation>, message: string): void {
   expect(result.exitCode).not.toBe(0);
   expect(result.stderr.toString()).toContain(message);
+}
+
+function signedReceiptsSharingTarget() {
+  const catalog = JSON.parse(
+    readFileSync(resolve(root, 'projects/p17/catalog.json'), 'utf8'),
+  ) as CatalogFixture;
+  const earlier = new Map<string, string>();
+  for (const entity of catalog.entities) {
+    if (
+      entity.status !== 'signed-off' ||
+      !entity.target ||
+      typeof entity.target === 'string' ||
+      entity.target.kind !== 'test'
+    )
+      continue;
+    const reference = required(
+      entity.evidence.find((entry) => entry.endsWith(entity.id.toLowerCase())),
+      `missing signed receipt for ${entity.id}`,
+    );
+    const [path, anchor] = reference.split('#');
+    const receipt = required(
+      readFileSync(resolve(root, path ?? ''), 'utf8')
+        .split(/(?=^#{1,6} )/m)
+        .find((section) => {
+          const heading = section.split('\n', 1)[0] ?? '';
+          return heading.replace(/^#+ /, '').toLowerCase().replace(/\s+/g, '-') === anchor;
+        }),
+      `missing receipt section ${reference}`,
+    );
+    const revision = required(
+      receipt.match(/^- Revision: `([0-9a-f]{40})`$/m)?.[1],
+      `missing exact revision in ${reference}`,
+    );
+    const object = `${revision}:${entity.target.path}`;
+    const first = earlier.get(object);
+    if (first) return { object, first, second: entity.id };
+    earlier.set(object, entity.id);
+  }
+  throw new Error('fixture needs two signed receipts sharing an exact target object');
+}
+
+function observeSignedReceiptFailure(mode: 'missing-selector' | 'missing-object') {
+  const target = signedReceiptsSharingTarget();
+  const realGit = required(Bun.which('git') ?? undefined, 'Git is required for signed receipts');
+  const wrapper = temporaryFile('skillsmith-p17-signed-receipt-', 'git');
+  const callsPath = resolve(dirname(wrapper), 'calls.jsonl');
+  const catalogPath = resolve(dirname(wrapper), 'catalog.json');
+  const catalog = JSON.parse(
+    readFileSync(resolve(root, 'projects/p17/catalog.json'), 'utf8'),
+  ) as CatalogFixture;
+  if (mode === 'missing-selector') {
+    const index = catalog.entities.findIndex((entity) => entity.id === target.second);
+    // A malformed later receipt must not replace the earlier selector diagnostic
+    // merely because batch prefetch looks ahead through the catalog.
+    const later = required(
+      catalog.entities.slice(index + 1).find((entity) => entity.status === 'signed-off'),
+      'fixture needs a later signed receipt',
+    );
+    later.target = 'malformed';
+  }
+  writeFileSync(catalogPath, JSON.stringify(catalog));
+  writeFileSync(
+    wrapper,
+    `#!${process.execPath}
+import { appendFileSync } from 'node:fs';
+const args = process.argv.slice(2);
+const target = ${JSON.stringify(target)};
+const batch = args.at(-2) === 'cat-file' && args.at(-1) === '--batch';
+const input = batch ? new Uint8Array(await Bun.stdin.arrayBuffer()) : undefined;
+appendFileSync(${JSON.stringify(callsPath)}, JSON.stringify(args) + '\\n');
+if (${JSON.stringify(mode)} === 'missing-object' && batch) process.exit(1);
+if (${JSON.stringify(mode)} === 'missing-object' && args.at(-1) === target.object && (args.at(-2) === 'show' || (args.at(-3) === 'cat-file' && args.at(-2) === '-e'))) process.exit(1);
+const result = Bun.spawnSync([${JSON.stringify(realGit)}, ...args], { stdin: input, stdout: 'pipe', stderr: 'inherit', timeout: 2000 });
+const output = result.stdout;
+if (${JSON.stringify(mode)} === 'missing-selector' && (batch || (args.at(-2) === 'show' && args.at(-1) === target.object))) {
+  const selector = Buffer.from(target.second);
+  for (let offset = output.indexOf(selector); offset >= 0; offset = output.indexOf(selector, offset + selector.length)) output.fill(88, offset, offset + selector.length);
+}
+process.stdout.write(output);
+process.exitCode = result.exitCode ?? 1;
+`,
+    { mode: 0o755 },
+  );
+  const result = Bun.spawnSync(['bun', 'scripts/p17-catalog.ts', '--check'], {
+    cwd: root,
+    env: {
+      ...process.env,
+      PATH: `${dirname(wrapper)}:${process.env.PATH ?? ''}`,
+      P17_CATALOG_PATH: catalogPath,
+    },
+    stdout: 'pipe',
+    stderr: 'pipe',
+    timeout: 4000,
+  });
+  const calls = readFileSync(callsPath, 'utf8')
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line) as string[]);
+  return { result, calls, target };
 }
 
 function pass(gate: Gate): void {
@@ -915,6 +1019,242 @@ describe('P17 immutable catalog and traceability baseline', () => {
         finding.impactedValidations.filter((value) => value.startsWith('EWP-CMD-')).sort(),
       ).toEqual(expectedCommandTests);
     }
+  });
+});
+
+describe('P17 signed receipt observations', () => {
+  const revision = 'a'.repeat(40);
+  const batchFrame = (type: string, body: Buffer) =>
+    Buffer.concat([
+      Buffer.from(`${'f'.repeat(40)} ${type} ${body.length}\n`),
+      body,
+      Buffer.from('\n'),
+    ]);
+
+  test('frames batch contents by bytes, preserving Unicode, binary bytes, and empty blobs', () => {
+    const commit = ['cat-file', '-e', `${revision}^{commit}`];
+    const unicode = ['show', `${revision}:unicode.ts`];
+    const binary = ['show', `${revision}:binary.ts`];
+    const empty = ['show', `${revision}:empty.ts`];
+    const unicodeBody = Buffer.from('λ\nvalue\0');
+    const binaryBody = Buffer.from([255, 0, 10, 128]);
+    let input = '';
+    const observations = readSignedReceiptBatch(
+      [commit, unicode, binary, empty, unicode, ['show', 'HEAD:mutable.ts']],
+      (bytes) => {
+        input = Buffer.from(bytes).toString();
+        return {
+          exitCode: 0,
+          stdout: Buffer.concat([
+            batchFrame('commit', Buffer.from('commit body\n')),
+            batchFrame('blob', unicodeBody),
+            batchFrame('blob', binaryBody),
+            batchFrame('blob', Buffer.alloc(0)),
+          ]),
+        };
+      },
+    );
+    expect(input).toBe(
+      `${[commit, unicode, binary, empty].map((args) => args.at(-1)).join('\n')}\n`,
+    );
+    expect(observations.map(({ args }) => args)).toEqual([commit, unicode, binary, empty]);
+    expect(observations.map(({ result }) => result.stdout)).toEqual([
+      Buffer.alloc(0),
+      unicodeBody,
+      binaryBody,
+      Buffer.alloc(0),
+    ]);
+  });
+
+  test.each([
+    ['absent header', Buffer.alloc(0)],
+    ['invalid header', Buffer.from('invalid\n')],
+    ['negative size', Buffer.from(`${'f'.repeat(40)} blob -1\n`)],
+    ['unsafe size', Buffer.from(`${'f'.repeat(40)} blob 9007199254740992\n`)],
+    ['short body', Buffer.from(`${'f'.repeat(40)} blob 3\nab`)],
+    ['missing body terminator', Buffer.from(`${'f'.repeat(40)} blob 2\nab`)],
+    ['wrong body terminator', Buffer.from(`${'f'.repeat(40)} blob 1\nab\n`)],
+    [
+      'extra trailing data',
+      Buffer.concat([batchFrame('blob', Buffer.from('ok')), Buffer.from('extra\n')]),
+    ],
+  ])('discards the entire batch after %s', (_label, badFrame) => {
+    const observations = readSignedReceiptBatch(
+      [
+        ['show', `${revision}:first.ts`],
+        ['show', `${revision}:second.ts`],
+      ],
+      () => ({
+        exitCode: 0,
+        stdout: Buffer.concat([batchFrame('blob', Buffer.from('first')), badFrame]),
+      }),
+    );
+    expect(observations).toEqual([]);
+  });
+
+  test('rejects an otherwise valid batch above the response acceptance limit', () => {
+    expect(
+      readSignedReceiptBatch([['show', `${revision}:large.ts`]], () => ({
+        exitCode: 0,
+        stdout: batchFrame('blob', Buffer.alloc(32 * 1024 * 1024)),
+      })),
+    ).toEqual([]);
+  });
+
+  test('does not cache missing batch entries and still observes later availability', () => {
+    const missing = ['show', `${revision}:missing.ts`];
+    const present = ['show', `${revision}:present.ts`];
+    let available = false;
+    let calls = 0;
+    const read = createSignedReceiptGitReader(
+      () => {
+        calls += 1;
+        return { exitCode: available ? 0 : 1, stdout: Buffer.from(available ? 'new target' : '') };
+      },
+      () =>
+        readSignedReceiptBatch([missing, present], () => ({
+          exitCode: 0,
+          stdout: Buffer.concat([
+            Buffer.from(`${missing.at(-1)} missing\n`),
+            batchFrame('blob', Buffer.from('present')),
+          ]),
+        })),
+    );
+    expect(read(missing).exitCode).toBe(1);
+    expect(read(present).stdout.toString()).toBe('present');
+    available = true;
+    expect(read(missing).stdout.toString()).toBe('new target');
+    expect(calls).toBe(2);
+  });
+
+  test('leaves unexpected commit and non-blob target types to individual reads', () => {
+    const queries = [
+      ['cat-file', '-e', `${revision}^{commit}`],
+      ['show', `${revision}:tree.ts`],
+    ];
+    expect(
+      readSignedReceiptBatch(queries, () => ({
+        exitCode: 0,
+        stdout: Buffer.concat([
+          batchFrame('blob', Buffer.from('not a commit')),
+          batchFrame('tree', Buffer.from('tree bytes')),
+        ]),
+      })),
+    ).toEqual([]);
+  });
+
+  test.each(['nonzero', 'signal', 'throw', 'truncated'] as const)(
+    'falls back once after a %s batch and preserves successful individual reads',
+    (failure) => {
+      const args = ['show', `${revision}:target.ts`];
+      let batches = 0;
+      let individual = 0;
+      const prefetch = () =>
+        readSignedReceiptBatch([args], () => {
+          batches += 1;
+          if (failure === 'throw') throw new Error('fixture spawn failure');
+          return {
+            exitCode: failure === 'signal' ? null : failure === 'nonzero' ? 1 : 0,
+            stdout:
+              failure === 'truncated'
+                ? Buffer.from('partial')
+                : batchFrame('blob', Buffer.from('untrusted')),
+          };
+        });
+      const fallback = () => {
+        individual += 1;
+        return { exitCode: 0, stdout: Buffer.from('individual target') };
+      };
+      const first = createSignedReceiptGitReader(fallback, prefetch);
+      expect(first(args).stdout.toString()).toBe('individual target');
+      expect(first(args).stdout.toString()).toBe('individual target');
+      expect(batches).toBe(1);
+      expect(individual).toBe(1);
+      const next = createSignedReceiptGitReader(fallback, prefetch);
+      expect(next(args).stdout.toString()).toBe('individual target');
+      expect(batches).toBe(2);
+      expect(individual).toBe(2);
+    },
+  );
+
+  test('shares successful exact reads without conflating revisions, paths, or query kinds', () => {
+    const calls: string[][] = [];
+    const read = createSignedReceiptGitReader((args) => {
+      calls.push([...args]);
+      return { exitCode: 0, stdout: Buffer.from(args.join(' ')) };
+    });
+    const queries = [
+      ['cat-file', '-e', `${revision}^{commit}`],
+      ['cat-file', '-e', `${revision}:first.ts`],
+      ['show', `${revision}:first.ts`],
+      ['show', `${revision}:second.ts`],
+      ['show', `${'b'.repeat(40)}:first.ts`],
+    ];
+    for (const args of queries) {
+      expect(read(args).stdout.toString()).toBe(args.join(' '));
+      expect(read(args).stdout.toString()).toBe(args.join(' '));
+    }
+    expect(calls).toEqual(queries);
+  });
+
+  test('retries failed reads and starts each validation with fresh observations', () => {
+    let available = false;
+    let calls = 0;
+    const observe = () => {
+      calls += 1;
+      return { exitCode: available ? 0 : 1, stdout: Buffer.from(available ? 'target' : '') };
+    };
+    const args = ['show', `${revision}:target.ts`];
+    const firstValidation = createSignedReceiptGitReader(observe);
+    expect(firstValidation(args).exitCode).toBe(1);
+    available = true;
+    expect(firstValidation(args).stdout.toString()).toBe('target');
+    expect(firstValidation(args).stdout.toString()).toBe('target');
+    expect(calls).toBe(2);
+    available = false;
+    const nextValidation = createSignedReceiptGitReader(observe);
+    expect(nextValidation(args).exitCode).toBe(1);
+    expect(calls).toBe(3);
+  });
+
+  test('observes mutable revisions, history, index, and worktree queries on every call', () => {
+    let observation = 0;
+    const read = createSignedReceiptGitReader(() => ({
+      exitCode: 0,
+      stdout: Buffer.from(String(++observation)),
+    }));
+    for (const args of [
+      ['cat-file', '-e', 'HEAD^{commit}'],
+      ['show', 'HEAD:target.ts'],
+      ['log', '-1', '--format=%H'],
+      ['diff', '--cached', '--exit-code'],
+      ['diff', '--exit-code'],
+    ]) {
+      expect(read(args).stdout.toString()).not.toBe(read(args).stdout.toString());
+    }
+  });
+
+  test('reuses a committed target and rejects its later missing selector before malformed lookahead', () => {
+    const { result, calls, target } = observeSignedReceiptFailure('missing-selector');
+    expectFailure(
+      result,
+      `${target.second} signed receipt revision does not contain its executable selector`,
+    );
+    expect(
+      calls.filter((args) => args.at(-2) === 'show' && args.at(-1) === target.object),
+    ).toHaveLength(0);
+    expect(calls.filter((args) => args.at(-1) === '--batch')).toHaveLength(1);
+  });
+
+  test('rejects a failed exact-object read when batch prefetch is unavailable', () => {
+    const { result, calls, target } = observeSignedReceiptFailure('missing-object');
+    expectFailure(
+      result,
+      `${target.first} signed receipt revision does not contain its executable target`,
+    );
+    expect(
+      calls.filter((args) => args.at(-2) === 'show' && args.at(-1) === target.object),
+    ).toHaveLength(1);
   });
 });
 

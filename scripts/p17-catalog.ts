@@ -236,6 +236,115 @@ const spawnRepositoryGit = (
     stderr: 'ignore',
   });
 
+type SignedReceiptGitResult = Pick<ReturnType<typeof spawnRepositoryGit>, 'exitCode' | 'stdout'>;
+type SignedReceiptGitRead = {
+  readonly args: readonly string[];
+  readonly result: SignedReceiptGitResult;
+};
+
+const signedReceiptBatchMaxBytes = 32 * 1024 * 1024;
+
+const signedReceiptObject = (args: readonly string[]): string | undefined => {
+  const object =
+    args.length === 3 && args[0] === 'cat-file' && args[1] === '-e'
+      ? args[2]
+      : args.length === 2 && args[0] === 'show'
+        ? args[1]
+        : undefined;
+  return object && /^[0-9a-f]{40}(?:\^\{commit\}|:.+)$/u.test(object) ? object : undefined;
+};
+
+const spawnSignedReceiptBatch = (input: Uint8Array): SignedReceiptGitResult =>
+  Bun.spawnSync(['git', '-C', root, 'cat-file', '--batch'], {
+    cwd: root,
+    env: repositoryGitEnvironment(process.env),
+    stdin: input,
+    stdout: 'pipe',
+    stderr: 'ignore',
+    // Prefetch is optional: a bounded failure falls back to individual reads.
+    timeout: 5_000,
+    maxBuffer: signedReceiptBatchMaxBytes,
+    killSignal: 'SIGKILL',
+  });
+
+export const readSignedReceiptBatch = (
+  queries: readonly (readonly string[])[],
+  read: (input: Uint8Array) => SignedReceiptGitResult = spawnSignedReceiptBatch,
+): readonly SignedReceiptGitRead[] => {
+  const requests = new Map<string, { args: readonly string[]; object: string }>();
+  for (const args of queries) {
+    const object = signedReceiptObject(args);
+    if (object && !/[\s\0]/u.test(object)) requests.set(JSON.stringify(args), { args, object });
+  }
+  if (requests.size === 0) return [];
+  let output: SignedReceiptGitResult;
+  try {
+    output = read(
+      Buffer.from(`${[...requests.values()].map(({ object }) => object).join('\n')}\n`),
+    );
+  } catch {
+    return [];
+  }
+  // Bun can return a final buffered chunk beyond maxBuffer before killing Git.
+  if (output.exitCode !== 0 || output.stdout.byteLength > signedReceiptBatchMaxBytes) return [];
+  const successful: SignedReceiptGitRead[] = [];
+  let offset = 0;
+  for (const { args, object } of requests.values()) {
+    const newline = output.stdout.indexOf(10, offset);
+    if (newline < 0) return [];
+    const header = output.stdout.toString('utf8', offset, newline);
+    offset = newline + 1;
+    if (header === `${object} missing`) continue;
+    const fields = header.match(/^([0-9a-f]{40}) (blob|tree|commit|tag) (0|[1-9]\d*)$/u);
+    if (!fields) return [];
+    const size = Number(fields[3]);
+    const end = offset + size;
+    if (!Number.isSafeInteger(size) || end >= output.stdout.length || output.stdout[end] !== 10)
+      return [];
+    const body = output.stdout.subarray(offset, end);
+    offset = end + 1;
+    if (args[0] === 'cat-file' && object.endsWith('^{commit}') && fields[2] === 'commit') {
+      successful.push({ args, result: { exitCode: 0, stdout: Buffer.alloc(0) } });
+    } else if (args[0] === 'show' && fields[2] === 'blob') {
+      successful.push({ args, result: { exitCode: 0, stdout: body } });
+    }
+    // Other object types retain git show's existing formatting through fallback.
+  }
+  return offset === output.stdout.length ? successful : [];
+};
+
+export const createSignedReceiptGitReader = (
+  read: (args: readonly string[]) => SignedReceiptGitResult = spawnRepositoryGit,
+  prefetch?: () => readonly SignedReceiptGitRead[],
+) => {
+  const successful = new Map<string, SignedReceiptGitResult>();
+  let pendingPrefetch = prefetch;
+  return (args: readonly string[]): SignedReceiptGitResult => {
+    // Only full commit IDs and their tree paths are stable within a validation.
+    // Branches, history, the index, and worktree queries must be observed afresh.
+    if (!signedReceiptObject(args)) return read(args);
+    if (pendingPrefetch) {
+      const attempt = pendingPrefetch;
+      pendingPrefetch = undefined;
+      try {
+        for (const observation of attempt()) {
+          if (observation.result.exitCode === 0 && signedReceiptObject(observation.args))
+            successful.set(JSON.stringify(observation.args), observation.result);
+        }
+      } catch {
+        // Prefetch cannot replace the authoritative individual validation.
+      }
+    }
+    const key = JSON.stringify(args);
+    const cached = successful.get(key);
+    if (cached) return cached;
+    const { exitCode, stdout } = read(args);
+    const result = { exitCode, stdout };
+    if (exitCode === 0) successful.set(key, result);
+    return result;
+  };
+};
+
 type GitChange = Readonly<{ status: string; paths: readonly string[] }>;
 
 const parseGitNameStatus = (output: string): readonly GitChange[] | null => {
@@ -1509,6 +1618,49 @@ function validate(catalog: Catalog): void {
     );
     return lines.slice(start, end < 0 ? undefined : end).join('\n');
   };
+  // Lookahead only supplies immutable reads. Every receipt is still validated in
+  // its original order, and malformed candidates retain their individual errors.
+  const readSignedReceiptGit = createSignedReceiptGitReader(spawnRepositoryGit, () => {
+    const queries: string[][] = [];
+    for (const entity of catalog.entities) {
+      try {
+        if (
+          !entity ||
+          entity.status !== 'signed-off' ||
+          entity.stateModel !== 'validation' ||
+          typeof entity.id !== 'string' ||
+          !entity.target ||
+          typeof entity.target !== 'object' ||
+          typeof entity.target.path !== 'string' ||
+          !canonicalOwnedPath(entity.target.path) ||
+          /[\s\0]/u.test(entity.target.path) ||
+          !Array.isArray(entity.evidence) ||
+          entity.evidence.some((reference) => typeof reference !== 'string')
+        )
+          continue;
+        const reference = entity.evidence.find((value) =>
+          (value.split('#', 2)[1] ?? '').toLowerCase().includes(entity.id.toLowerCase()),
+        );
+        const path = reference?.split('#', 2)[0];
+        if (
+          !reference ||
+          !path ||
+          !canonicalOwnedPath(path) ||
+          ownedPathState(path) !== 'regular-file'
+        )
+          continue;
+        const receipt = evidenceSection(reference);
+        if (!receipt || (receipt.match(/^- Revision: `.+`$/gm)?.length ?? 0) !== 1) continue;
+        const revision = receipt.match(/^- Revision: `([0-9a-f]{40})`$/m)?.[1];
+        if (!revision) continue;
+        queries.push(['cat-file', '-e', `${revision}^{commit}`]);
+        queries.push(['show', `${revision}:${entity.target.path}`]);
+      } catch {
+        // Unreadable lookahead is handled when the normal receipt loop reaches it.
+      }
+    }
+    return readSignedReceiptBatch(queries);
+  });
   const requireEvidence = (owner: string, evidence: string[]): void => {
     if (evidence.length === 0) fail(`${owner} has state without evidence`);
     for (const reference of evidence) {
@@ -2026,19 +2178,17 @@ function validate(catalog: Catalog): void {
       if (entity.status === 'signed-off') {
         const revision = receipt.match(/^- Revision: `([0-9a-f]{40})`$/m)?.[1];
         const commitExists = revision
-          ? spawnRepositoryGit(['cat-file', '-e', `${revision}^{commit}`]).exitCode === 0
+          ? readSignedReceiptGit(['cat-file', '-e', `${revision}^{commit}`]).exitCode === 0
           : false;
-        const targetAtRevision = revision
-          ? spawnRepositoryGit(['cat-file', '-e', `${revision}:${target.path}`]).exitCode === 0
-          : false;
-        if (!commitExists || !targetAtRevision) {
+        // A successful show both proves the exact target exists and reads its bytes.
+        const committedTarget = revision
+          ? readSignedReceiptGit(['show', `${revision}:${target.path}`])
+          : undefined;
+        if (!commitExists || !committedTarget || committedTarget.exitCode !== 0) {
           fail(`${entity.id} signed receipt revision does not contain its executable target`);
         }
-        const committedTarget = spawnRepositoryGit([
-          'show',
-          `${revision}:${target.path}`,
-        ]).stdout.toString();
-        const committedExecutableBody = committedTarget
+        const committedExecutableBody = committedTarget.stdout
+          .toString()
           .replace(/\/\*[\s\S]*?\*\//g, '')
           .replace(/^\s*\/\/.*$/gm, '');
         const committedDescribeOwners =
