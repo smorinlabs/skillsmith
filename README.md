@@ -279,7 +279,7 @@ checks whether the skill performs the intended task.
 and resolved revisions. Publishing makes the source revision accessible to recipients;
 an offline archive would additionally need to contain the skill files.
 
-### Installation and sharing scenarios
+### Ways to install and share skills
 
 Choose the source, target tool, installation scope, revision policy, and file placement
 independently. User scope applies across projects; project scope applies to one project.
