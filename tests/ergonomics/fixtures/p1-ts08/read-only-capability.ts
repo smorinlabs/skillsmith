@@ -80,6 +80,7 @@ type _GitPort = Assert<
     | 'fetchRef'
     | 'listTree'
     | 'readBlob'
+    | 'readBlobBounded'
     | 'materializeTree'
   >
 >;

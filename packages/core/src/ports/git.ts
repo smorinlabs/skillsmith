@@ -24,6 +24,10 @@ export const GIT_REPOSITORY_ENVIRONMENT = [
   'GIT_NAMESPACE',
   'GIT_QUARANTINE_PATH',
   'GIT_DISCOVERY_ACROSS_FILESYSTEM',
+  'GIT_LITERAL_PATHSPECS',
+  'GIT_GLOB_PATHSPECS',
+  'GIT_NOGLOB_PATHSPECS',
+  'GIT_ICASE_PATHSPECS',
 ] as const;
 
 const SHA_HEX_40 = /^[0-9a-f]{40}$/i;
@@ -446,24 +450,29 @@ export const createGitPort = (
       assertSafeRevision('listTree', ref);
       const output = await required(
         'listTree',
-        ['-C', repositoryRoot, 'ls-tree', '-r', '-z', ref],
+        ['--no-replace-objects', '-C', repositoryRoot, 'ls-tree', '-r', '-z', '--full-tree', ref],
         { repositoryRoot, ref },
         signal,
       );
+      if (output === '') return [];
+      const invalidTree = () =>
+        toPortError(null, {
+          capability: 'git',
+          operation: 'listTree',
+          code: 'invalid',
+          message: 'git tree listing is incomplete or invalid',
+          context: { repositoryRoot, ref },
+        });
+      if (!output.endsWith('\0')) throw invalidTree();
+      const seen = new Set<string>();
       return output
+        .slice(0, -1)
         .split('\0')
-        .filter(Boolean)
-        .flatMap((row) => {
-          const match = /^([0-7]{6})\s+(blob|tree|commit)\s+[0-9a-f]+\t(.+)$/s.exec(row);
-          return match?.[1] && match[2] && match[3]
-            ? [
-                {
-                  mode: match[1],
-                  kind: match[2] as 'blob' | 'tree' | 'commit',
-                  path: match[3],
-                },
-              ]
-            : [];
+        .map((row) => {
+          const match = /^([0-7]{6}) (blob|tree|commit) ([0-9a-f]{40})\t(.+)$/su.exec(row);
+          if (!match?.[1] || !match[2] || !match[4] || seen.has(match[4])) throw invalidTree();
+          seen.add(match[4]);
+          return { mode: match[1], kind: match[2] as 'blob' | 'tree' | 'commit', path: match[4] };
         });
     },
     readBlob: async ({ repositoryRoot, ref, path, signal }) => {
@@ -478,25 +487,103 @@ export const createGitPort = (
         signal,
       );
     },
+    readBlobBounded: async ({ repositoryRoot, ref, path, maxBytes, signal }) => {
+      const context = { repositoryRoot, ref, path };
+      const invalid = (message: string) =>
+        toPortError(null, {
+          capability: 'git',
+          operation: 'readBlobBounded',
+          code: 'invalid',
+          message,
+          context,
+        });
+      const checkCancelled = () => {
+        if (signal?.aborted)
+          throw toPortError(null, {
+            capability: 'git',
+            operation: 'readBlobBounded',
+            code: 'cancelled',
+            message: 'git blob read cancelled',
+            context,
+          });
+      };
+      checkCancelled();
+      if (
+        !CANONICAL_SHA_HEX_40.test(ref) ||
+        !Number.isSafeInteger(maxBytes) ||
+        maxBytes < 0 ||
+        path.length === 0 ||
+        path.includes('\\') ||
+        /[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}]/u.test(path) ||
+        path.split('/').some((segment) => segment === '' || segment === '.' || segment === '..')
+      ) {
+        throw invalid(
+          'bounded Git reads require a commit SHA, relative file path, and nonnegative byte limit',
+        );
+      }
+      const output = await required(
+        'readBlobBounded',
+        [
+          '--no-replace-objects',
+          '--literal-pathspecs',
+          '-C',
+          repositoryRoot,
+          'ls-tree',
+          '-l',
+          '-z',
+          '--full-tree',
+          ref,
+          '--',
+          path,
+        ],
+        context,
+        signal,
+      );
+      checkCancelled();
+      const match = /^(100644|100755) blob ([0-9a-f]{40}) +([0-9]+)\t([^\0]+)\0$/su.exec(output);
+      if (!match || match[4] !== path)
+        throw invalid('metadata requires one exact regular-file Git blob');
+      const size = Number(match[3]);
+      if (!Number.isSafeInteger(size) || size > maxBytes)
+        throw invalid('skill metadata exceeds the byte limit; use an exact repository path');
+      const bytes = await requiredBytes(
+        'readBlobBounded',
+        [
+          '--no-replace-objects',
+          '-C',
+          repositoryRoot,
+          'cat-file',
+          'blob',
+          '--',
+          match[2] as string,
+        ],
+        context,
+        signal,
+      );
+      checkCancelled();
+      if (bytes.byteLength !== size)
+        throw invalid('Git blob length does not match its probed size');
+      return bytes;
+    },
     materializeTree: async ({ repositoryRoot, ref, path, signal }) => {
       assertSafeRevision('materializeTree', ref);
       if (path.length > 0) {
         await required(
           'materializeTree',
-          ['-C', repositoryRoot, 'sparse-checkout', 'init', '--cone'],
+          ['--no-replace-objects', '-C', repositoryRoot, 'sparse-checkout', 'init', '--cone'],
           { repositoryRoot, ref, path },
           signal,
         );
         await required(
           'materializeTree',
-          ['-C', repositoryRoot, 'sparse-checkout', 'set', '--', path],
+          ['--no-replace-objects', '-C', repositoryRoot, 'sparse-checkout', 'set', '--', path],
           { repositoryRoot, ref, path },
           signal,
         );
       }
       await required(
         'materializeTree',
-        ['-C', repositoryRoot, 'checkout', '--detach', ref],
+        ['--no-replace-objects', '-C', repositoryRoot, 'checkout', '--detach', ref],
         {
           repositoryRoot,
           ref,

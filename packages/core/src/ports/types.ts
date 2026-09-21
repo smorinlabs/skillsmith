@@ -182,6 +182,16 @@ export interface GitBlobRequest extends GitRequest {
   readonly path: string;
 }
 
+export interface GitBoundedBlobReadRequest extends GitBlobRequest {
+  readonly maxBytes: number;
+}
+
+/** Reads a regular-file blob at an immutable commit, refusing before payload buffering
+ * when its object size exceeds maxBytes. Does not bound Git's own resource use. */
+export interface GitBoundedBlobReadPort {
+  readBlobBounded(request: GitBoundedBlobReadRequest): Promise<Uint8Array>;
+}
+
 export interface GitMaterializeTreeRequest extends GitTreeRequest {
   readonly path: string;
 }
@@ -196,6 +206,8 @@ export interface GitPort {
   fetchRef(request: GitFetchRefRequest): Promise<GitFetchRefResult>;
   listTree(request: GitTreeRequest): Promise<readonly GitTreeEntry[]>;
   readBlob(request: GitBlobRequest): Promise<Uint8Array>;
+  /** Optional for compatibility; declared-name selection requires this capability. */
+  readBlobBounded?: GitBoundedBlobReadPort['readBlobBounded'];
   materializeTree(request: GitMaterializeTreeRequest): Promise<string>;
 }
 

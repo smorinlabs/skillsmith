@@ -13,10 +13,13 @@ import {
   defaultClockPort,
   defaultIdPort,
   toolRegistry,
+  validateInstallSelectorRequest,
 } from '@skillsmith/core';
 import type { Command } from 'commander';
 import { HELP_TOPIC_LOOKUP_NAMES } from './help/topics.ts';
 import {
+  cliErrorFormatFromArgv,
+  cliErrorInvocationForCommand,
   isCliBoundaryExit,
   normalizeCliError,
   renderCliError,
@@ -51,6 +54,7 @@ import { CURRENT_COMMAND_SPECS } from './spec/index.ts';
 import type { CommandSpecInput, NormalizedCommandSpec } from './spec/types.ts';
 
 export interface ProgramBuildExtensions {
+  readonly createContext?: typeof createCurrentApplicationContext;
   readonly search?: {
     readonly provider?: SearchProvider;
     readonly interaction?: SearchInteractionPort;
@@ -450,9 +454,25 @@ export const buildProgram = (
           ? { command: 'skillsmith version', workflow: 'version' }
           : { command: spec.path, workflow: spec.application };
       const verbosity = resolveObservationVerbosity(request.options);
-      const format = requestedFormat(request);
+      let format = requestedFormat(request);
       const presentation = presentationPolicyForIo(request.options, format, runtimeIo);
       try {
+        if (application === 'install') {
+          const selection = validateInstallSelectorRequest({
+            sources: request.arguments.flatMap((value) =>
+              Array.isArray(value) ? (value as string[]) : typeof value === 'string' ? [value] : [],
+            ),
+            skill: request.options.skill,
+            skillsMatchFrontmatter: request.options.skillsMatchFrontmatter,
+            ref: request.options.ref,
+          });
+          if (!selection.ok) {
+            // A missing --skill value can consume --json in Commander. Usage errors
+            // still honor the error boundary's literal-argv output policy.
+            format = cliErrorFormatFromArgv(cliErrorInvocationForCommand(command));
+            throw selection.error;
+          }
+        }
         const prepared = createObservation(identity.command, identity.workflow, verbosity);
         const { observation } = prepared;
         const context = CONTEXT_FREE_APPLICATIONS.has(application)
@@ -464,7 +484,7 @@ export const buildProgram = (
                 ...(signal ? { signal } : {}),
                 stdoutIsTTY: Boolean(runtimeIo.stdout.isTTY),
               })
-            : await createCurrentApplicationContext(command, {
+            : await (extensions.createContext ?? createCurrentApplicationContext)(command, {
                 observation,
                 ...(signal === undefined ? {} : { signal }),
                 ...(extensions.runtimePorts?.interaction === undefined

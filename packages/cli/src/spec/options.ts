@@ -227,6 +227,9 @@ const OPTION_DESCRIPTIONS: Readonly<Record<string, string>> = {
   'skillsmith install:--no-verify': 'Skip the verify gate and record that decision in the ledger',
   'skillsmith install:--deep': 'Run static and deep verification before placement',
   'skillsmith install:--continue-on-error': 'Keep going after per-source failures',
+  'skillsmith install:--skill':
+    'Select one repository skill by directory name, then frontmatter name',
+  'skillsmith install:--skills-match-frontmatter': 'Match only frontmatter name; requires --skill',
   'skillsmith install:--dry-run': 'Print the resolved plan without changing anything',
   'skillsmith install:--file': 'Use an explicit desired-state manifest',
   'skillsmith install:--lockfile': 'Use an explicit lockfile (requires --file)',
@@ -322,10 +325,12 @@ const OPTION_HELP_FAMILIES: Readonly<
     '--pin',
     '--plan',
     '--ref',
+    '--skill',
     '--source',
     '--to',
   ]),
   'behavior-verification': new Set([
+    '--skills-match-frontmatter',
     '--interactive',
     '--timeout',
     '--max-response-size',

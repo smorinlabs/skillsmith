@@ -175,7 +175,7 @@ const ledgerMatchesPortableSource = (
     (pair.pinned.placement ?? 'copy') !== representation ||
     pair.origin.host !== source.identity.host ||
     pair.origin.repo !== source.identity.repository ||
-    pair.origin.skillPath !== source.sourcePath ||
+    (pair.origin.skillPath.length === 0 ? '.' : pair.origin.skillPath) !== source.sourcePath ||
     pair.origin.refRequested !== source.requestedRef ||
     pair.origin.refResolved !== source.resolvedSha ||
     (pair.pinned.gitSha !== null && pair.pinned.gitSha !== source.resolvedSha)

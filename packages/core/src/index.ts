@@ -175,6 +175,8 @@ export type {
   FlipTool,
   Frontmatter,
   GitBlobRequest,
+  GitBoundedBlobReadRequest,
+  GitBoundedBlobReadPort,
   GitFetchRefResult,
   GitFetchRefRequest,
   GitFindRepositoryRootRequest,
@@ -370,6 +372,8 @@ export { listSkills } from './scan/list-skills.ts';
 export { resolveTargetSelection, validateSelectionRequest } from './selection/resolve.ts';
 export { SELECTION_CAPABILITIES } from './selection/types.ts';
 export * from './status/index.ts';
+export { validateInstallSelectorRequest } from './acquire/selector-request.ts';
+export type { InstallSkillSelection } from './acquire/selector-request.ts';
 export { parseSkillFrontmatter } from './skills/frontmatter.ts';
 export { resolveTarget, runVerify, verifyPlugin } from './verify/run.ts';
 export { VERIFIED_AGAINST, VERIFY_TOOLS } from './verify/types.ts';

@@ -170,6 +170,60 @@ selects color on an eligible TTY but never through a pipe; `--no-color`, `--colo
 `NO_COLOR`, `CLICOLOR=0`, and JSON output disable it. stdout carries command reports while stderr
 carries diagnostics, warnings, and errors.
 
+### Select one repository skill
+
+`install <repository> --skill <name>` selects one `SKILL.md` directory. Skillsmith first matches
+its directory basename exactly, including case. If no directory matches, it reads eligible
+`SKILL.md` files and compares the complete frontmatter `name:` value, ignoring case. Frontmatter
+is the YAML or JSON metadata block at the beginning of `SKILL.md`.
+
+`--skills-match-frontmatter` is a boolean option that requires `--skill`. It skips directory
+matching and uses only frontmatter names. Multiple matches in the chosen mode refuse with exit 2,
+even in a terminal. No matches exit 5. Use a displayed exact-path source to resolve an ambiguity.
+Root candidates and paths that cannot be represented by the source grammar are shown as locations,
+without an executable retry.
+
+For example, suppose a repository contains these two skills:
+
+| Directory | Frontmatter `name:` | Installed name |
+| --- | --- | --- |
+| `skills/review` | `code-review` | `review` |
+| `skills/security-review` | `review` | `security-review` |
+
+| Intent | Existing interface | New interface and result |
+| --- | --- | --- |
+| Select the `review` directory | `skillsmith install acme/skills/review` | `skillsmith install acme/skills --skill review` selects `skills/review`. |
+| Select declared name `code-review` | Use `skillsmith install acme/skills//skills/review` after finding its path. | `skillsmith install acme/skills --skill code-review` falls back to frontmatter and installs as `review`. |
+| Select declared name `review` despite the directory conflict | Use `skillsmith install acme/skills//skills/security-review`. | `skillsmith install acme/skills --skill review --skills-match-frontmatter` installs as `security-review`. |
+
+The existing `owner/repo/<name>` form continues to match directory names only. The existing
+`owner/repo//path/to/skill` form continues to select an exact source path. `--skill` accepts exactly
+one whole repository and cannot be combined with either embedded selector. `--ref` selects the
+Git revision, and `--path` selects the local destination; neither changes the matching mode.
+
+```sh
+skillsmith install acme/skills --skill review --ref feature/review --tool claude-code
+skillsmith install acme/skills --skill "Code Review" --skills-match-frontmatter --dry-run
+```
+
+Names contain 1–256 Unicode code points, without surrounding whitespace, a leading dash, control
+characters, or invisible formatting characters. Internal spaces and punctuation are allowed.
+Directory and hidden-path eligibility rules remain unchanged. At the repository root, the
+repository basename supplies the directory name.
+
+Frontmatter scanning reads data without executing document content. It permits at most 1,000
+eligible candidates, 1 MiB per file, and 16 MiB across the scan. Exact limits are accepted. Invalid
+UTF-8, malformed or unsupported frontmatter, non-regular metadata files, failed reads, and exceeded
+limits fail the entire scan; an early match cannot hide an unreadable competitor. A directory
+match does not require a metadata scan. These internal limits are separate from search's HTTP
+limits. Permission errors exit 6; cancellation exits 130.
+
+Installation saves the selected directory path, commit SHA, and content hash with the existing
+manifest and lockfile formats. The installed name comes from the directory, even when frontmatter
+selected it. `plan`, `apply`, and `update` reuse the saved path, including the exact repository root.
+Changing frontmatter names later cannot redirect an update. A missing saved path fails resolution.
+The `install@2` and `search@1` JSON formats remain unchanged; search does not generate install commands.
+
 ### Search the remote catalog
 
 `search [query...]`, also spelled `find`, searches skill listings on skills.sh. Words are joined

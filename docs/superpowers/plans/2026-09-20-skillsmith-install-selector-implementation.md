@@ -1,6 +1,6 @@
 # Skillsmith repository skill selection implementation plan
 
-**Status:** Ready for implementation after three independent adversarial reviews of the plan and follow-up review of the repairs. The user approved the second-PR interface and implementation. All implementation tasks below are pending; runtime implementation has not started.
+**Status at implementation candidate:** INSTALL-01 through INSTALL-06 are complete on `feat/install-skill-selector`. Three subagents completed bounded implementation tasks and independent cross-review; all selector findings are repaired and rechecked. INSTALL-07 awaits the clean-candidate canonical gate and INSTALL-08 awaits separate PR delivery. The PR will record final commit-specific gate evidence and delivery status.
 
 **Purpose:** Let a user select one skill from a repository by its directory name or declared frontmatter name. Preserve the exact selected source through installation and subsequent `plan`, `apply`, and `update` operations.
 
@@ -14,13 +14,13 @@ Implement the selector as a separate second PR. Begin with INSTALL-01, which est
 
 | Task ID | Deliverable | Depends on | Status |
 | --- | --- | --- | --- |
-| [INSTALL-01](#install-01--establish-failing-behavior-and-compatibility-fixtures) | Regression fixtures for name conflicts, cached installs, root skills, and existing installation forms. | Reviewed plan | Pending |
-| [INSTALL-02](#install-02--make-frontmatter-reads-data-only-and-bounded) | Data-only frontmatter parsing and bounded Git reads with correct cancellation. | INSTALL-01 | Pending |
-| [INSTALL-03](#install-03--implement-deterministic-selection-at-one-commit) | Directory-first matching, declared-name fallback/override, and ambiguity refusal at one commit. | INSTALL-02 | Pending |
-| [INSTALL-04](#install-04--wire-production-cli-and-application-preflight) | Production CLI options and shared validation before installation context creation. | INSTALL-03 | Pending |
-| [INSTALL-05](#install-05--preserve-exact-saved-paths-across-lifecycle-commands) | Exact root and nested source identities across `plan`, `apply`, and `update`. | INSTALL-03, INSTALL-04 | Pending |
-| [INSTALL-06](#install-06--document-the-new-contract-and-close-live-inventories) | README, help, completion, command references, and contract inventory updates. | INSTALL-04, INSTALL-05 | Pending |
-| [INSTALL-07](#install-07--review-and-validate-implementation) | Adversarial implementation review, focused/smoke checks, a clean candidate commit, and the terminal gate. | INSTALL-02 through INSTALL-06 | Pending |
+| [INSTALL-01](#install-01--establish-failing-behavior-and-compatibility-fixtures) | Regression fixtures for name conflicts, cached installs, root skills, and existing installation forms. | Reviewed plan | Complete; baseline failures recorded |
+| [INSTALL-02](#install-02--make-frontmatter-reads-data-only-and-bounded) | Data-only frontmatter parsing and bounded Git reads with correct cancellation. | INSTALL-01 | Complete; parser, bound, and cancellation controls pass |
+| [INSTALL-03](#install-03--implement-deterministic-selection-at-one-commit) | Directory-first matching, declared-name fallback/override, and ambiguity refusal at one commit. | INSTALL-02 | Complete; focused regressions pass |
+| [INSTALL-04](#install-04--wire-production-cli-and-application-preflight) | Production CLI options and shared validation before installation context creation. | INSTALL-03 | Complete; preflight and contract checks pass |
+| [INSTALL-05](#install-05--preserve-exact-saved-paths-across-lifecycle-commands) | Exact root and nested source identities across `plan`, `apply`, and `update`. | INSTALL-03, INSTALL-04 | Complete; real Git lifecycle checks pass |
+| [INSTALL-06](#install-06--document-the-new-contract-and-close-live-inventories) | README, help, completion, command references, and contract inventory updates. | INSTALL-04, INSTALL-05 | Complete; generated references and inventories agree |
+| [INSTALL-07](#install-07--review-and-validate-implementation) | Adversarial implementation review, focused/smoke checks, a clean candidate commit, and the terminal gate. | INSTALL-02 through INSTALL-06 | In progress |
 | [INSTALL-08](#install-08--deliver-the-selector-pr-separately) | Separate selector PR with resolved findings and evidence for its exact head. | INSTALL-07 | Pending |
 
 Mark a task complete only when its acceptance checks pass. Record the implementing commit and check results with the task. A completed plan review does not satisfy INSTALL-07, which reviews the actual implementation.
@@ -176,11 +176,11 @@ Keep `install@2` unchanged. Its closed `requested` record must not gain undeclar
 
 ## 5. Ordered implementation tasks
 
-Each task is complete only after its acceptance checks pass. Tests should establish behavioral failures and inverse controls, rather than mirror the implementation. No runtime work is claimed complete by this plan.
+Each task is complete only after its acceptance checks pass. Tests establish behavioral failures and inverse controls, rather than mirror the implementation. Section 8 records implementation evidence separately from the original planning review.
 
 ### INSTALL-01 — Establish failing behavior and compatibility fixtures
 
-**Depends on:** reviewed plan. **Files:** new `packages/core/tests/acquire/declared-name.test.ts` and `declared-name-roundtrip.test.ts`; relevant existing resolve/source/CLI contracts.
+**Depends on:** reviewed plan. **Files:** new `packages/core/tests/acquire/declared-name.test.ts` and `packages/cli/tests/commands/install-selector-roundtrip.test.ts`; relevant existing resolve/source/CLI contracts.
 
 Create dedicated local bare repositories using the pattern in `packages/core/tests/fixtures/acquire/remote.ts`; do not change shared fixture candidate counts. Record current failures for the new options and root saved-path reconstruction. Build directory/frontmatter conflicts, repeated basenames, duplicate declarations, root plus nested skills, hidden paths, and two revisions with changed declarations. Include positive controls for existing name/path/ref installs and negative controls proving metadata reads and pickers are not called on a directory winner or directory ambiguity.
 
@@ -224,7 +224,7 @@ After reproducing the root hazard, make persisted-root reconstruction exact and 
 
 Add the before/after example from section 1 and the directory-first/override explanation near existing install usage. Explain that lookup names do not rename installations, list the metadata scan limits and exact-path remedy, and document the root ambiguity limitation. Update ambiguity output without inventing a root command or dropping host/ref. Keep completion local: no repository or network lookup for `--skill`.
 
-Live option count increases from 288 to 290; canonical command count remains 25. Recompute the live inventory hash in `EWP-P1-TS11.test.ts`. Replace the search-PR-only assertion in `packages/cli/tests/contracts/search.test.ts` that prohibits `install --skill` with positive selector assertions. Keep historical release/P17 snapshots unchanged. Regenerate command docs from the registry, then check that generation is clean.
+Live option count increases from 288 to 290; the canonical command inventory remains unchanged. Recompute the live inventory hash and declare the parser dependency additions in `EWP-P1-TS11.test.ts`. Replace the search-PR-only assertion in `packages/cli/tests/contracts/search.test.ts` that prohibits `install --skill` with positive selector assertions. Keep historical release/P17 snapshots unchanged. Regenerate command docs from the registry, then check that generation is clean.
 
 **Acceptance:** source help, alias help, generated docs, README, completion inventory, strict JSON, and rendered retry guidance agree with the final interface, including the leading-dash lookup restriction. Every nested retry command parses back to the exact host/transport/path/ref and omits both selector options; root candidates never get a misleading executable retry. CLI Standard 1.4.14 scoped note covers long kebab-case options (R3.3), both value forms for every accepted lookup value (R3.5), and default-false presence booleans (R3.6); existing whole-CLI deviations remain recorded in the parent plan. No new MUST deviation or SHOULD waiver is introduced by this selector design.
 
@@ -240,7 +240,8 @@ Use pinned Bun 1.3.14. On this macOS checkout, set `TMPDIR=/private/tmp` so file
 
 ```sh
 bun test packages/core/tests/skills/frontmatter.test.ts packages/core/tests/ports/git.test.ts packages/core/tests/ports/default.test.ts packages/core/tests/ports/types.test.ts
-bun test packages/core/tests/acquire/declared-name.test.ts packages/core/tests/acquire/declared-name-roundtrip.test.ts packages/core/tests/acquire/source.test.ts packages/core/tests/acquire/resolve.test.ts
+bun test packages/core/tests/acquire/declared-name.test.ts packages/core/tests/acquire/selector-request.test.ts packages/core/tests/acquire/source.test.ts packages/core/tests/acquire/resolve.test.ts
+bun test packages/cli/tests/commands/install-selector-roundtrip.test.ts packages/cli/tests/contracts/install-selector.test.ts packages/core/tests/ports/git-bounded.test.ts
 bun test packages/core/tests/application/lifecycle-services.test.ts --test-name-pattern 'install'
 bun test packages/cli/tests/contracts/install.test.ts packages/cli/tests/contracts/options.test.ts packages/cli/tests/contracts/help.test.ts packages/cli/tests/contracts/search.test.ts
 bun test packages/cli/tests/contracts/completion.test.ts tests/ergonomics/phase/EWP-P6-TS04.test.ts
@@ -295,4 +296,68 @@ Planning evidence is separate from implementation acceptance:
 - Reviewer probes confirmed repeated malformed frontmatter could change from failure to success through gray-matter's default cache, inherited pathspec settings could fail literal-mode commands, and cancellation was misclassified by the existing helper.
 - Root-selection probes compared root-only, root plus unrelated nested skill, root plus same-basename nested skill, and missing-root layouts. The proposed exact-path selector matched the intended root or refused its absence.
 
-**Final disposition:** all reviewed plan findings are resolved. No owner decision remains open for this implementation plan. Runtime changes, regression tests, the terminal gate, and second-PR delivery remain future work; this review is not an implementation sign-off.
+**Final disposition:** all reviewed plan findings are resolved. No owner decision remains open for this implementation plan. This closes the plan review only. Implementation acceptance is recorded separately below.
+
+
+## 8. Implementation evidence and review
+
+Implementation began from `d14ac19`, which contains this reviewed plan and its task roadmap.
+The initial parser, selector, and saved-root fixtures ran against unchanged runtime code:
+22 tests passed and 21 failed. The failing cases included new selector behavior, executable
+frontmatter/cache handling, and incorrect saved-root resolution. These are distinct from later
+implementation checks.
+
+Three independent adversarial reviewers examined core metadata/Git behavior, CLI contracts,
+and persistence. The user subsequently requested subagent-driven development, and those agents
+became the owners of bounded core, CLI, and lifecycle completion tasks. The parent integrates
+changes and owns repository-wide validation and PR delivery.
+
+| Implementation finding | Resolution and evidence |
+| --- | --- |
+| Multiple byte-order marks could expose a JavaScript engine after header validation. | Only validated opening headers reach gray-matter; body-only input returns directly. Parser and byte-decoding scanner tests use an inert in-memory marker. |
+| Thrown transport cancellation lost its classification. | Preserve cancellation/permission before generic wrapping; check the abort signal between acquisition phases. Tests cover thrown/returned failures and successful results after cancellation. |
+| Selector preflight omitted explicit refs and masked short-SHA source failures. | Pass `ref` through the shared validator and preserve existing source parse errors. Poisoned-context tests prove invalid inputs cause no context access. |
+| Ambiguity lacked its matching mode, and some generated retry operands did not parse. | Diagnostics name the matching mode. Nested retry operands must round-trip host, transport, path, and separate ref. Otherwise display a location without an executable command. |
+| Root update history copied the ledger's empty path into a portable source that requires `"."`. | Normalize retained source history, plan ownership, apply observation, and update provenance at their boundaries. Real Git root and nested lifecycle tests pass, including zero-drift checks after apply and update. |
+| The first lifecycle fixture retained its lock and therefore missed fresh manifest resolution. | Remove the lock, ledger, cache, and live placement before saved planning/apply. Assert the reconstructed path, SHA, and content hash equal the installed source. |
+| A custom transport could supply a candidate name different from its directory basename. | Derive nested names from their paths, reject inconsistent supplied names, and preserve directory-derived installed identity. |
+| CLI help expanded beyond its three-workflow contract. | Retain one established install example and two selector examples; preserve other source forms in source help and README. |
+| UTF-8 decoding and frontmatter parsing each removed a byte-order mark. | Preserve decoded byte-order marks for the shared parser to handle once; direct parsing and scanning must agree for zero through three marks with YAML and JSON. |
+
+All new lifecycle fixture state, including artifact coordination, lives below the owned temporary
+root. The CLI fixture uses the production command graph and application services with the test
+artifact coordinator. Production coordination deliberately ignores HOME/XDG and is not redirected
+by product behavior.
+
+A separate existing behavior was reproduced with an exact nested source and no new selector:
+removing a managed live placement while retaining its ledger record makes saved apply refuse
+`reconcile-execution-stale`. The physical absent-state guard requires both the placement and ledger
+pair to be absent. That retained-ledger repair behavior is outside this selector change; the fresh
+manifest roundtrip removes the ledger to test the specified reconstruction workflow.
+
+Read-only cross-review also reproduced existing root rehome and prune refusals in
+`reconcile/observe.ts` and `reconcile/plan.ts`: those ownership comparisons still compare the
+ledger's empty root path with portable `"."`. Identical nested-path controls remain correct.
+These conservative refusals do not permit wrong-source mutation and are outside the selector's
+install, reconstructed plan, saved apply, and update acceptance scope.
+
+Candidate validation used Bun 1.3.14 and canonical `TMPDIR=/private/tmp`:
+
+| Check | Observed result |
+| --- | --- |
+| Integrated 13-file selector/CLI/lifecycle/registry run | 261 passed; one live dependency-inventory assertion failed because it omitted the new declared parser packages. The inventory was corrected and its focused family then passed. |
+| Final parser and declared-name checks | 49 passed, including eight YAML/JSON controls for zero through three byte-order marks; two new controls reproduced failure before the decoder repair. |
+| Independent CLI/request review | 74 focused tests and 715 assertions passed; six additional argv probes confirmed preflight and terminator behavior. |
+| Lifecycle owner checks | 18 passed; final affected root/nested roundtrips passed with 47 assertions after strengthening `.git` exclusion. |
+| Default smoke | Five passed, 3,737 assertions. |
+| Recovery smoke | Four passed, 453 assertions. |
+| Static and generated checks | Biome, ESLint boundaries, TypeScript, generated references, actionlint, and `check:p17` passed. Frozen dependency installation passed. |
+
+Compatibility checks also exercised installation, reconcile planning/apply, update planning, and
+Git ports. Two default filesystem tests fail in this local sandbox: temporary-directory group
+ownership differs from the effective process group, and Unix-domain socket creation is denied.
+Unchanged baseline controls reproduce both. Their assertions remain intact; final acceptance
+requires the canonical Ubuntu CI gate for this candidate, not the earlier search PR's receipt.
+
+The PR records the clean candidate SHA, compiled CLI evidence, terminal gate result, final CI
+receipt, and delivery status. Earlier search-PR CI results are not selector validation evidence.

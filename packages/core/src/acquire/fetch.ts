@@ -1,6 +1,7 @@
 import { basename, dirname, join } from 'node:path';
 import {
   type SkillSmithError,
+  cancelledError,
   errorMessage,
   permissionDeniedError,
   safeErrorCode,
@@ -27,8 +28,10 @@ const stderrTail = (message: string): string =>
     .slice(-5)
     .join('\n');
 
-const sourceFailure = (error: unknown, message: string): SkillSmithError => {
+const sourceFailure = (error: unknown, message: string, signal?: AbortSignal): SkillSmithError => {
   const code = safeErrorCode(error);
+  if (signal?.aborted || code === 'cancelled' || code === 'ABORT_ERR')
+    return cancelledError('source acquisition cancelled');
   return code === 'permission' ||
     code === 'permission-denied' ||
     code === 'EACCES' ||
@@ -73,7 +76,7 @@ export const fetchRepo = async (
     }
     return ok({ sha: fetched.sha });
   } catch (e) {
-    return err(sourceFailure(e, `cannot fetch ${cloneUrl}`));
+    return err(sourceFailure(e, `cannot fetch ${cloneUrl}`, signal));
   }
 };
 
@@ -85,11 +88,12 @@ export const lsTreeSkills = async (
   ports: FetchGitPorts,
   fetchDir: string,
   signal?: AbortSignal,
+  resolvedSha?: string,
 ): Promise<Result<{ candidates: CandidateSkill[]; scanned: number }, SkillSmithError>> => {
   try {
     const entries = await ports.git.listTree({
       repositoryRoot: fetchDir,
-      ref: 'FETCH_HEAD',
+      ref: resolvedSha ?? 'FETCH_HEAD',
       ...(signal ? { signal } : {}),
     });
     const candidates: CandidateSkill[] = [];
@@ -105,7 +109,7 @@ export const lsTreeSkills = async (
     }
     return ok({ candidates, scanned: candidates.length });
   } catch (e) {
-    return err(sourceFailure(e, `cannot list ${fetchDir}`));
+    return err(sourceFailure(e, `cannot list ${fetchDir}`, signal));
   }
 };
 
@@ -117,18 +121,21 @@ export const sparseCheckoutSkill = async (
   fetchDir: string,
   skillPath: string,
   signal?: AbortSignal,
+  resolvedSha?: string,
 ): Promise<Result<string, SkillSmithError>> => {
   try {
     return ok(
       await ports.git.materializeTree({
         repositoryRoot: fetchDir,
-        ref: 'FETCH_HEAD',
+        ref: resolvedSha ?? 'FETCH_HEAD',
         path: skillPath,
         ...(signal ? { signal } : {}),
       }),
     );
   } catch (e) {
-    return err(sourceFailure(e, `cannot check out ${skillPath === '' ? '<root>' : skillPath}`));
+    return err(
+      sourceFailure(e, `cannot check out ${skillPath === '' ? '<root>' : skillPath}`, signal),
+    );
   }
 };
 

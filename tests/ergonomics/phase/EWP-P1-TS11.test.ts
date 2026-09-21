@@ -2356,8 +2356,8 @@ describe('EWP-P1-TS11', () => {
         ],
       },
       'packages/core/package.json': {
-        dependencies: ['gray-matter', 'proper-lockfile', 'smol-toml', 'zod'],
-        devDependencies: ['@types/proper-lockfile'],
+        dependencies: ['gray-matter', 'js-yaml', 'proper-lockfile', 'smol-toml', 'zod'],
+        devDependencies: ['@types/js-yaml', '@types/proper-lockfile'],
         scripts: ['test'],
       },
       'packages/cli/package.json': {
@@ -2413,7 +2413,7 @@ describe('EWP-P1-TS11', () => {
       JSON.stringify(expectedPaths)
     )
       findings.push('command registry: command inventory changed');
-    if (CURRENT_COMMAND_SPECS.reduce((count, spec) => count + spec.options.length, 0) !== 288)
+    if (CURRENT_COMMAND_SPECS.reduce((count, spec) => count + spec.options.length, 0) !== 290)
       findings.push('command registry: option inventory changed');
     const optionInventory = CURRENT_COMMAND_SPECS.flatMap((spec) =>
       spec.options.map((option) => [spec.path, option.flags]),
@@ -2421,7 +2421,7 @@ describe('EWP-P1-TS11', () => {
     const optionHash = new Bun.CryptoHasher('sha256')
       .update(JSON.stringify(optionInventory))
       .digest('hex');
-    if (optionHash !== '76e9753ee79f2384c4253707c7c583d8579c68a24c1cc275e895bae8b0b39af4')
+    if (optionHash !== '1619f2a25b6ebe93071ef9e12ee5da596f3c68ff7641590b5a657f0bbda40069')
       findings.push('command registry: option rows changed');
     const adr = await readFile(
       join(ROOT, 'docs/adr/0009-operation-scoped-observation.md'),

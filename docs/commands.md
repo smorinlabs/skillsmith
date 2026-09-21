@@ -318,8 +318,8 @@ Minimal invocation: `skillsmith install <source>`
 #### Common workflows
 
 - **Start here** (changes-state): Install factor-scan into user scope. — `skillsmith install smorinlabs/smorinlabs-harness/factor-scan --user`
-- **Focused workflow** (changes-state): Install and pin an exact tagged review skill in project scope. — `skillsmith install acme/agent-tools/review@v1.2.0 --project --pin`
-- **Advanced workflow** (changes-state): Install a nested GitLab skill path for Claude Code. — `skillsmith install gitlab.com/acme/platform/tools//skills/review --tool claude-code`
+- **Focused workflow** (changes-state): Select directory review, falling back to frontmatter only when no directory matches. — `skillsmith install acme/skills --skill review`
+- **Advanced workflow** (changes-state): Select only the declared frontmatter name review, even when directory review exists. — `skillsmith install acme/skills --skill review --skills-match-frontmatter`
 
 #### Arguments
 
@@ -338,6 +338,7 @@ Minimal invocation: `skillsmith install <source>`
 - `--lockfile <path>` _(advanced)_ — Use an explicit lockfile (requires --file)
 - `--pin` _(advanced)_ — Freeze the resolved commit SHA in the ledger
 - `--ref <git-ref>` — Tag, branch, or full SHA; valid with a single source only
+- `--skill <name>` — Select one repository skill by directory name, then frontmatter name
 - `-p, --path <dir>` _(advanced)_ — Use a custom placement directory for one source and one effective tool
 
 #### BEHAVIOR AND VERIFICATION
@@ -346,6 +347,7 @@ Minimal invocation: `skillsmith install <source>`
 - `--direct` _(advanced)_ — Copy files instead of symlinking from the store
 - `--no-save` _(advanced)_ — Change live placement without inspecting or changing portable desired state
 - `--no-verify` _(advanced)_ — Skip the verify gate and record that decision in the ledger
+- `--skills-match-frontmatter` — Match only frontmatter name; requires --skill
 - `--strict` — Make verify warnings block installation
 
 #### SAFETY AND APPROVAL

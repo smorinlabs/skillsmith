@@ -1,6 +1,6 @@
 # Skillsmith search implementation plan
 
-**Status:** Search is implemented in PR #100 on `feat/search-discovery`, based on Skillsmith `ddcb870`. Its final Linux CI passed at `8189acb`. The user has refined the second-PR interface to `--skill <name>` with directory-first matching and the boolean `--skills-match-frontmatter` override. The user approved implementation. The authoritative second-PR plan is [the repository skill selection plan](2026-09-20-skillsmith-install-selector-implementation.md), now ready after three adversarial reviews and follow-up checks; runtime implementation has not started.
+**Status:** Search is implemented in PR #100 on `feat/search-discovery`, based on Skillsmith `ddcb870`. Its final Linux CI passed at `8189acb`. The user has refined the second-PR interface to `--skill <name>` with directory-first matching and the boolean `--skills-match-frontmatter` override. The user approved implementation. The authoritative second-PR plan is [the repository skill selection plan](2026-09-20-skillsmith-install-selector-implementation.md), now in implementation with separate core, CLI, and lifecycle subagent owners; its evidence section tracks tests, review repairs, and second-PR delivery.
 
 **Outcome:** Add `skillsmith search` to the existing DISCOVER command group, using the same hosted search endpoint as Vercel's `skills` CLI. The first PR displays catalog details and URLs. It does not add an install selector, print install commands, or publish an `installHint` field.
 

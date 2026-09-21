@@ -239,10 +239,7 @@ const executionSourceSpec = (operation: PhysicalPlacementOperation): SourceSpec 
     }`,
     originSource: canonicalSource,
     cloneUrl: `https://${source.identity.host}/${source.identity.repository}.git`,
-    selector:
-      sourcePath.length === 0
-        ? Object.freeze({ kind: 'name' as const, name: operation.skill })
-        : Object.freeze({ kind: 'path' as const, path: sourcePath }),
+    selector: Object.freeze({ kind: 'path' as const, path: sourcePath }),
     ref: source.requestedRef,
   });
 };
@@ -585,7 +582,8 @@ const observePhysicalPlacement = async (
     (pair.pinned.placement ?? 'copy') === operation.before.representation &&
     pair.origin.host === approvedSource.identity.host &&
     pair.origin.repo === approvedSource.identity.repository &&
-    pair.origin.skillPath === approvedSource.sourcePath &&
+    (pair.origin.skillPath.length === 0 ? '.' : pair.origin.skillPath) ===
+      approvedSource.sourcePath &&
     pair.origin.refRequested === approvedSource.requestedRef &&
     pair.origin.refResolved === approvedSource.resolvedSha &&
     (pair.pinned.gitSha === null || pair.pinned.gitSha === approvedSource.resolvedSha) &&
@@ -806,7 +804,7 @@ const executePhysicalPlacement = async (
             }),
             requestedRef: origin.refRequested,
             resolvedSha: origin.refResolved,
-            sourcePath: origin.skillPath,
+            sourcePath: origin.skillPath.length === 0 ? '.' : origin.skillPath,
             contentHash: beforeHash,
           }),
         });

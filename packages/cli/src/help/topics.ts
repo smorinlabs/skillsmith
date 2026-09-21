@@ -69,12 +69,18 @@ const TOPIC_CONTENT: Readonly<Record<Exclude<HelpTopic, 'workflows'>, string>> =
   source:
     'Source forms (`skillsmith install <source>[@<ref>]`)\n\n' +
     '  owner/repo                        GitHub repository sugar\n' +
-    '  owner/repo/<name>                 resolve a skill by name\n' +
+    '  owner/repo/<name>                 exact directory basename only\n' +
     '  owner/repo//path/to/skill         explicit in-repository path\n' +
     '  <host>/owner/repo[/<name>]        host-explicit source\n' +
     '  <git-url>[//path/to/skill]        HTTPS, SSH, or SCP-style Git URL\n\n' +
     'Append @<ref> for a tag, branch, or full SHA. Local paths belong to `skillsmith dev --source`; ' +
-    'one-part registry names are not currently accepted.',
+    'one-part registry names are not currently accepted.\n\n' +
+    'Use `install owner/repo --skill <name>` for directory-first selection with frontmatter-name ' +
+    'fallback. Directory matching is case-sensitive; frontmatter matching ignores case. ' +
+    '`--skills-match-frontmatter` requires --skill and uses only frontmatter. Ambiguity refuses ' +
+    'without a picker. Use one whole repository without an embedded name/path selector. ' +
+    '`--ref feature/review` selects a revision; --path still selects a local destination. ' +
+    'Installed names remain directory-derived; later plan/apply/update use the saved exact path.',
   environment:
     'Environment variables\n\n' +
     '  NO_COLOR, FORCE_COLOR, CLICOLOR, CLICOLOR_FORCE, TERM — terminal color behavior\n' +
