@@ -692,7 +692,9 @@ eligible candidates, 1 MiB per file, and 16 MiB across the scan. Exact limits ar
 UTF-8, malformed or unsupported frontmatter, non-regular metadata files, failed reads, and exceeded
 limits fail the entire scan; an early match cannot hide an unreadable competitor. A directory
 match does not require a metadata scan. These internal limits are separate from search's HTTP
-limits. Permission errors exit 6; cancellation exits 130.
+limits. Permission errors identified by the Git adapter exit 6. Some Git subprocess permission
+failures remain source errors and exit 5 because Git does not return structured permission
+information. Either classification stops the incomplete scan. Cancellation exits 130.
 
 Installation saves the selected directory path, commit SHA, and content hash with the existing
 manifest and lockfile formats. The installed name comes from the directory, even when frontmatter
