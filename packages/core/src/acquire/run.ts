@@ -537,11 +537,17 @@ const placePair = async (
   let shadowWarning: string | null = null;
   const otherScope: InstallScope = p.scope === 'project' ? 'user' : 'project';
   const otherKey = otherScope === 'project' ? p.projectRoot : null;
-  if (!(otherScope === 'project' && otherKey === null)) {
-    const otherCtx = {
-      cwd: otherScope === 'project' ? (otherKey as string) : opts.cwd,
-      configuration: opts.configuration,
-    };
+  const otherCtx = {
+    cwd: otherScope === 'project' ? (otherKey as string) : opts.cwd,
+    configuration: opts.configuration,
+  };
+  // A scope the tool does not manage (muse in project scope) cannot shadow.
+  // Skipped for an unrooted project other-scope (otherCtx.cwd would be null).
+  const otherManaged =
+    otherScope === 'project' && otherKey === null
+      ? false
+      : skillRootFactsFor(p.registry, tool, env, otherScope, otherCtx).length > 0;
+  if (!(otherScope === 'project' && otherKey === null) && otherManaged) {
     const otherResolution = await resolvePlacementFor(
       p.registry,
       tool,
@@ -872,11 +878,17 @@ const predictPair = async (
   }
   const otherScope: InstallScope = p.scope === 'project' ? 'user' : 'project';
   const otherKey = otherScope === 'project' ? p.projectRoot : null;
-  if (!(otherScope === 'project' && otherKey === null)) {
-    const otherCtx = {
-      cwd: otherScope === 'project' ? (otherKey as string) : opts.cwd,
-      configuration: opts.configuration,
-    };
+  const otherCtx = {
+    cwd: otherScope === 'project' ? (otherKey as string) : opts.cwd,
+    configuration: opts.configuration,
+  };
+  // A scope the tool does not manage (muse in project scope) cannot shadow.
+  // Skipped for an unrooted project other-scope (otherCtx.cwd would be null).
+  const otherManaged =
+    otherScope === 'project' && otherKey === null
+      ? false
+      : skillRootFactsFor(p.registry, tool, env, otherScope, otherCtx).length > 0;
+  if (!(otherScope === 'project' && otherKey === null) && otherManaged) {
     const otherResolution = await resolvePlacementFor(
       p.registry,
       tool,
@@ -1484,9 +1496,23 @@ const runInstallInternal = async (
     if (d.value.length > 0) detectedTools.push(tool);
     else if (explicitTools) undetectedExplicit.push(tool);
   }
+  // A detected tool with no placement roots in this scope (muse in project
+  // scope) cannot install here: resolving would throw the registry's
+  // no-destination invariant. Default selection drops such tools silently;
+  // explicit requests refuse per source below.
+  const scopeRootsContext = {
+    cwd: scope === 'project' ? (scopeKey ?? opts.cwd) : opts.cwd,
+    configuration: opts.configuration,
+  };
+  const managesScope = (tool: FlipTool): boolean =>
+    skillRootFactsFor(registry, tool, env, scope, scopeRootsContext).length > 0;
+  const scopedTools = detectedTools.filter(managesScope);
+  const unsupportedScopeExplicit = explicitTools
+    ? detectedTools.filter((tool) => !managesScope(tool))
+    : [];
   const requested: InstallReport['requested'] = {
     ...requestedBase,
-    tools: explicitTools ? candidateTools : detectedTools,
+    tools: explicitTools ? candidateTools : scopedTools,
     scope,
     explicitScope,
   };
@@ -1507,9 +1533,30 @@ const runInstallInternal = async (
       error: safeError(e),
     };
   };
-  if (detectedTools.length === 0) {
+  const unsupportedScopeResult = (
+    source: string,
+    requestIndex: number,
+    tool: FlipTool,
+    skill: string | null = null,
+  ): InstallResult => {
+    const reason = `${tool} does not manage ${scope} scope`;
+    const e = flipRefusedError(reason);
+    return {
+      ...emptyResult(source, scope, 'refused', requestIndex),
+      skill,
+      tool,
+      reason,
+      error: safeError(e),
+    };
+  };
+  if (scopedTools.length === 0) {
     if (!explicitTools) {
-      const e = toolUnavailableError(`no supported tool detected (${installTools.join(', ')})`);
+      const e =
+        detectedTools.length === 0
+          ? toolUnavailableError(`no supported tool detected (${installTools.join(', ')})`)
+          : toolUnavailableError(
+              `no detected tool manages ${scope} scope (detected: ${detectedTools.join(', ')})`,
+            );
       const results = specs.map(({ source, requestIndex }) => ({
         ...emptyResult(source, scope, 'refused', requestIndex),
         reason: msg(e),
@@ -1526,9 +1573,10 @@ const runInstallInternal = async (
         ),
       );
     }
-    const planningRefusals = specs.flatMap(({ source, requestIndex }) =>
-      undetectedExplicit.map((tool) => unavailableToolResult(source, requestIndex, tool)),
-    );
+    const planningRefusals = specs.flatMap(({ source, requestIndex }) => [
+      ...undetectedExplicit.map((tool) => unavailableToolResult(source, requestIndex, tool)),
+      ...unsupportedScopeExplicit.map((tool) => unsupportedScopeResult(source, requestIndex, tool)),
+    ]);
     return ok(
       createInstallDiagnosticReport(
         false,
@@ -2082,7 +2130,7 @@ const runInstallInternal = async (
         }
         names.push(r.skillName);
         let sourceFailed = false;
-        for (const tool of detectedTools) {
+        for (const tool of scopedTools) {
           if (opts.signal?.aborted) continue;
           const roots = {
             cwd: scope === 'project' ? (scopeKey as string) : opts.cwd,
@@ -2255,9 +2303,14 @@ const runInstallInternal = async (
         if (!opts.continueOnError) planningFailFast = true;
         continue;
       }
-      const unavailableResults = undetectedExplicit.map((tool) =>
-        unavailableToolResult(source, requestIndex, tool, r.skillName),
-      );
+      const unavailableResults = [
+        ...undetectedExplicit.map((tool) =>
+          unavailableToolResult(source, requestIndex, tool, r.skillName),
+        ),
+        ...unsupportedScopeExplicit.map((tool) =>
+          unsupportedScopeResult(source, requestIndex, tool, r.skillName),
+        ),
+      ];
       if (artifactBlocksBinding(resolution)) {
         const refusal = resolution.artifact.outcome === 'refused' ? resolution.artifact : undefined;
         const reason =
@@ -2269,7 +2322,7 @@ const runInstallInternal = async (
             ? flipRefusedError(reason)
             : configError(reason);
         results.push(...unavailableResults);
-        for (const tool of detectedTools) {
+        for (const tool of scopedTools) {
           results.push({
             ...emptyResult(source, scope, 'refused', requestIndex),
             skill: r.skillName,
@@ -2300,7 +2353,7 @@ const runInstallInternal = async (
       let snap: SnapshotResult | null = null;
       let snapErr: SkillSmithError | null = null;
       let snapConsumed = false;
-      for (const tool of detectedTools) {
+      for (const tool of scopedTools) {
         if (opts.signal?.aborted) {
           sourceResults.push({
             ...emptyResult(source, scope, 'skipped', requestIndex),

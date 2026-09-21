@@ -36,7 +36,7 @@ const passDeps = (): FlipDeps => ({
         strict: false,
         explicitTools: true,
       },
-      verifiedAgainst: { 'claude-code': '1.0.0', codex: '1.0.0' },
+      verifiedAgainst: { 'claude-code': '1.0.0', codex: '1.0.0', muse: '1.0.0' },
       summary: {
         verdict: 'pass',
         verified: o.tools ? [...o.tools] : ['claude-code'],

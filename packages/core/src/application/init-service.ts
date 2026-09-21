@@ -163,7 +163,9 @@ export const runInitApplication: ApplicationService<
     });
   }
   if (toolsOption.some((tool) => !writable.has(tool))) {
-    return fail(capabilityFailure('init supports writable Claude Code and Codex manifests only'));
+    return fail(
+      capabilityFailure('init supports writable Claude Code, Codex, and Muse manifests only'),
+    );
   }
 
   const explicitConfigPath =

@@ -55,7 +55,7 @@ export declare const searchV1Codec: WireCodec<'search', 1, SearchV1Dto>;
 export declare const toSearchV1Dto: (report: SearchReport) => SearchV1Dto;
 import type { ArtifactCodec, ArtifactCodecError, WireCodec } from '@skillsmith/core/contracts';
 
-type ToolId = 'claude-code' | 'codex';
+type ToolId = 'claude-code' | 'codex' | 'muse';
 type ConfigToolId = ToolId | 'kilo-code' | 'opencode' | 'muse';
 type Scope = 'user' | 'project';
 type ConfigScope = 'system' | Scope | 'managed';
@@ -1027,7 +1027,7 @@ type LedgerSkillsV1Dto = Readonly<
   Record<
     string,
     Readonly<{
-      readonly tools: Readonly<Partial<Record<'claude-code' | 'codex', LedgerPairV1Dto>>>;
+      readonly tools: Readonly<Partial<Record<'claude-code' | 'codex' | 'muse', LedgerPairV1Dto>>>;
     }>
   >
 >;

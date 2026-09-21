@@ -55,6 +55,7 @@ export interface UndoFleet {
   readonly paths: Readonly<{
     readonly userClaude: string;
     readonly userCodex: string;
+    readonly userMuse: string;
     readonly projectClaude: string;
     readonly projectCodex: string;
   }>;
@@ -187,6 +188,19 @@ export const createUndoFleet = async (): Promise<UndoFleet> => {
       { mode: 0o755 },
     ),
     writeFile(
+      join(bin, 'muse'),
+      [
+        '#!/bin/sh',
+        'if [ "$#" -eq 1 ] && [ "$1" = "--version" ]; then echo "Muse Code 1.3.0 (1.3.0-R3401.1)"; exit 0; fi',
+        'if [ "$#" -eq 4 ] && [ "$1" = "skills" ] && [ "$2" = "validate" ] && [ "$4" = "--json" ]; then echo "{\\"valid\\":true,\\"diagnostics\\":[]}"; exit 0; fi',
+        'if [ "$#" -eq 5 ] && [ "$1" = "skills" ] && [ "$2" = "list" ] && [ "$3" = "--source" ] && [ "$4" = "user" ] && [ "$5" = "--json" ]; then echo "{\\"skills\\":[{\\"name\\":\\"review\\",\\"scope\\":\\"user\\",\\"activation\\":\\"on\\",\\"path\\":\\"\\$CONFIG_DIR/skills/review/SKILL.md\\"}],\\"diagnostics\\":[]}"; exit 0; fi',
+        'if [ "$#" -eq 8 ] && [ "$1" = "skills" ] && [ "$2" = "list" ] && [ "$3" = "--source" ] && [ "$4" = "project" ] && [ "$5" = "--workspace" ] && [ "$7" = "--trust-workspace" ] && [ "$8" = "--json" ]; then echo "{\\"skills\\":[{\\"name\\":\\"review\\",\\"scope\\":\\"project\\",\\"activation\\":\\"on\\",\\"path\\":\\".agents/skills/review/SKILL.md\\"}],\\"diagnostics\\":[]}"; exit 0; fi',
+        'exit 64',
+        '',
+      ].join('\n'),
+      { mode: 0o755 },
+    ),
+    writeFile(
       gitConfig,
       [
         '[protocol "file"]',
@@ -229,6 +243,7 @@ export const createUndoFleet = async (): Promise<UndoFleet> => {
     paths: Object.freeze({
       userClaude: join(home, '.claude', 'skills', 'review'),
       userCodex: join(home, '.agents', 'skills', 'review'),
+      userMuse: join(config, 'muse', 'skills', 'review'),
       projectClaude: join(projectRoot, '.claude', 'skills', 'review'),
       projectCodex: join(projectRoot, '.agents', 'skills', 'review'),
     }),

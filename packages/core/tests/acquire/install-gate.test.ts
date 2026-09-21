@@ -230,11 +230,15 @@ describe('runInstall — verify gate matrix', () => {
     if (!r.ok) throw new Error(msg(r.error));
     const claudeCall = calls.find((c) => c.tools[0] === 'claude-code');
     const codexCall = calls.find((c) => c.tools[0] === 'codex');
+    const museCall = calls.find((c) => c.tools[0] === 'muse');
     expect(claudeCall?.deep).toBe(false);
     expect(codexCall?.deep).toBe(true);
+    expect(museCall?.deep).toBe(true);
     const claudeRes = r.value.results.find((x) => x.tool === 'claude-code');
     const codexRes = r.value.results.find((x) => x.tool === 'codex');
+    const museRes = r.value.results.find((x) => x.tool === 'muse');
     expect(claudeRes?.verify?.mode).toBe('static');
     expect(codexRes?.verify?.mode).toBe('static+deep');
+    expect(museRes?.verify?.mode).toBe('static+deep');
   });
 });

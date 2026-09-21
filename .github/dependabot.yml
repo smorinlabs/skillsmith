@@ -8,4 +8,10 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: chore
-      include: scope
+    groups:
+      all-dependencies:
+        applies-to: version-updates
+        patterns: ["*"]
+      security-updates:
+        applies-to: security-updates
+        patterns: ["*"]
