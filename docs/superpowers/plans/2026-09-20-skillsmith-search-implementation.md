@@ -1,6 +1,6 @@
 # Skillsmith search implementation plan
 
-**Status:** Search is implemented on `feat/search-discovery`, based on Skillsmith `ddcb870`. The associated PR records validation results. The user requested search in the first PR, followed by an install-signature review before any second-part implementation.
+**Status:** Search is implemented in PR #100 on `feat/search-discovery`, based on Skillsmith `ddcb870`. Its final Linux CI passed at `8189acb`. The user has refined the second-PR interface to `--skill <name>` with directory-first matching and the boolean `--skills-match-frontmatter` override. The user approved implementation. The authoritative second-PR plan is [the repository skill selection plan](2026-09-20-skillsmith-install-selector-implementation.md), now ready after three adversarial reviews and follow-up checks; runtime implementation has not started.
 
 **Outcome:** Add `skillsmith search` to the existing DISCOVER command group, using the same hosted search endpoint as Vercel's `skills` CLI. The first PR displays catalog details and URLs. It does not add an install selector, print install commands, or publish an `installHint` field.
 
@@ -8,7 +8,7 @@
 
 **Evidence baseline:** Skillsmith `b65c94c88e5f8d6098a7182e7f7c1060918469f1`; Vercel `skills` `7407f3893ad4dceab546ac002c3ef806e4000c73`. Both local checkouts were updated to `origin/main` during research. Refresh relevant source before implementation if either baseline moves.
 
-**Delivery boundary:** This document describes the search implementation and retains an explicitly deferred installation candidate for the next discussion. Section 3 and SEARCH-05 are not authorized for implementation before the install-signature review. It does not authorize a release or change existing publication holds. Task identifiers `SEARCH-01` through `SEARCH-09` are local to this plan; they are not reserved project IDs. P17 explicitly deferred remote search, so this plan does not reopen P17 or change its historical completion evidence.
+**Delivery boundary:** The first PR remains search-only. Section 3 and SEARCH-05 link the separately reviewed second-PR plan. The install-signature approval gate and implementation-plan review are complete. This plan does not authorize a release, a merge, or changes to existing publication holds. Task identifiers `SEARCH-01` through `SEARCH-09` are local to this plan; they are not reserved project IDs. P17 explicitly deferred remote search, so this plan does not reopen P17 or change its historical completion evidence.
 
 ## 1. Product contract
 
@@ -161,50 +161,21 @@ Decode the bounded bytes with a fatal UTF-8 decoder. If decoding incrementally, 
 
 [Bun's fetch documentation](https://bun.com/docs/runtime/networking/fetch) documents response streaming and automatic decompression. [Bun's fetch options reference](https://bun.com/reference/globals/BunFetchRequestInit) distinguishes its socket idle timeout from an abort-signal deadline. Verify decoded-stream behavior with the repository-supported Bun runtime using a local compressed-response fixture.
 
-## 3. Deferred installation candidate — signature review required
+## 3. Revised installation selector — second PR
 
-**Deferred:** This section records the earlier candidate design, not the approved first-PR interface. Review the install signature with the user after the search PR. Revise this section before implementing any selector, metadata scan, install hint, or Git capability.
+The approved interface is:
 
-The Vercel catalog can return `vercel-react-best-practices` for the directory `skills/react-best-practices`. Appending the catalog name as a path would be wrong. The intended handoff is:
-
-```sh
-skillsmith search react
-skillsmith install vercel-labs/agent-skills --skill vercel-react-best-practices
-skillsmith list
+```text
+skillsmith install <repository> --skill <name> [--skills-match-frontmatter]
 ```
 
-The example describes future command behavior. It is not an instruction to install that skill during implementation or testing.
+Directory names take precedence. A zero-directory-match result falls back to the `name:` field in `SKILL.md`. The boolean `--skills-match-frontmatter` takes no value, requires `--skill`, and forces frontmatter matching without directory fallback. Lookup names do not change installed names or saved source paths.
 
-Add an optional declared-name selector to `InstallOptions` and `ResolveRemoteSourceInput`. Keep `SourceSpec.selector`, `CandidateSkill`, and `InstallSourceTransport` structurally compatible. These are public types with exact-shape compatibility tests. In particular, keep candidate records as `{ path, name }`, where `name` is the directory basename or the repository basename for a root skill.
-
-`--skill` requires exactly one whole-repository source. It may be combined with the existing valid `--ref` and `--pin` forms. Reject an embedded directory/name/path selector, multiple sources, repeated `--skill`, and an empty or unusable declared name before source resolution or installation context discovery. Existing `--path` still means an installation destination; do not reinterpret it as a repository selector. Existing `owner/repo/name` retains its directory-name meaning, and `@` retains its Git-ref meaning.
-
-Use one pure declared-name validator for CLI input, catalog hint eligibility, and parsed metadata. A usable name contains 1–256 Unicode code points, has no leading or trailing Unicode whitespace, and contains no control/format characters or Unicode line/paragraph separators (`Cc`, `Cf`, `Zl`, `Zp`). Internal spaces and punctuation are allowed. Do not trim, normalize Unicode, slugify, or otherwise rewrite it. Compare names with locale-independent JavaScript `toLowerCase()` on both complete strings, matching Vercel's comparison behavior; do not use locale-sensitive matching or substring search. These validation bounds are an explicit Skillsmith implementation policy. Quote punctuation correctly in printed hints, using `--skill=<quoted-value>` when needed to keep a leading dash inside the value.
-
-Resolve installation in this order:
-
-1. Complete existing pure preflight, then fetch and resolve the chosen repository/ref to an immutable commit SHA.
-2. Enumerate eligible `SKILL.md` candidates using the existing path eligibility policy. Dot-prefixed paths remain excluded in this version. A catalog listing may therefore be discoverable but unavailable through this resolver; report that limitation honestly.
-3. Read declared-name metadata for the complete candidate set at that same SHA. Use a separate internal metadata record, not an extra property on `CandidateSkill`. Parse with the existing frontmatter parser and apply stricter declared-name validation at this boundary.
-4. Match the requested declared name exactly using the comparison defined above, without changing stored names or paths. A valid frontmatter document with no usable string name is ineligible. A failed read, malformed document, or exhausted scan budget makes selection incomplete and must fail; it cannot establish uniqueness.
-5. Require one match. For multiple matches, return the existing ambiguous outcome directly and show exact repository-path alternatives. Bypass `selectSkill()`'s interactive `pick` callback for declared-name ambiguity, because that callback can choose among duplicate matches. For zero matches, return a source failure. Never pick the first matching entry.
-6. Materialize that unchanged candidate and use existing verification, installation planning, placement, manifest, and lock code.
-
-Use these initial internal limits for declared-name resolution: at most 1,000 eligible candidates, at most 1 MiB (1,048,576 bytes) per `SKILL.md`, and at most 16 MiB (16,777,216 bytes) across the scan. Read sequentially and pass the lesser of the per-file ceiling and remaining aggregate budget to each read. These are proposed metadata-resolution limits, separate from the user-requested HTTP limit and timeout. Preserve parent cancellation and existing Git operation timeouts. Exhausting any limit fails selection as incomplete, with guidance to use a known exact repository path. Do not return an apparent unique match from a partial scan.
-
-Add `GitBoundedBlobReadRequest` and `GitBoundedBlobReadPort` in `ports/types.ts`, with optional `GitPort.readBlobBounded` for compatibility with existing fakes. Declared-name resolution requires that capability; it must not fall back to unrestricted `readBlob()`. The Git adapter first probes the immutable commit/path for its blob object ID, type, and byte size. Require a valid single blob record and reject an excessive size before calling the binary payload reader. Read the exact probed object ID with replacement objects disabled for both operations, then verify the returned length agrees. The pre-read size check supplies the payload bound; the final length check detects inconsistency. This does not impose a general download or memory limit on Git itself.
-
-Keep all Git command construction inside `ports/git.ts`. Keep this additive capability separate from the existing exact-key `InstallSourceTransport` interface, and keep unrestricted `readBlob()` and `BinaryProcessPort` behavior unchanged.
-
-Disable the existing store-elision shortcut for declared-name selection until it has proven a match and uniqueness at the exact SHA. Cached directory names alone do not prove a frontmatter-name match.
-
-Keep directory-derived installed names. For a root skill, retain the repository-derived name. Save the resolved source path, full commit SHA, and content hash using current manifest/lock schemas. Root remains `source.path: null` and lock `sourcePath: "."`; nested paths remain exact. A later plan/apply/update operation must use these saved facts and must not contact skills.sh.
-
-Keep the current `install@2` wire schema unchanged. Its `requested` record is closed, so do not silently add `requested.skill`. The report already carries the resolved source/path/SHA; selector provenance is documented in the CLI and search report for this change.
+The authoritative contract, before/after examples, architecture, ordered work, acceptance checks, and adversarial review record are in the [repository skill selection implementation plan](2026-09-20-skillsmith-install-selector-implementation.md). That document supersedes this plan's earlier SEARCH-05 detail. Search remains a separately delivered first PR; its wire schema and output do not change merely because installation gains a selector.
 
 ## 4. Ordered implementation tasks
 
-Each first-PR task is incomplete until its listed acceptance checks pass. SEARCH-05 is deferred and is not a dependency of the search PR. Commands run from the Skillsmith repository root. `bun` currently resolves to `/opt/homebrew/bin/bun`.
+Each first-PR task is incomplete until its listed acceptance checks pass. SEARCH-05 belongs to the second PR and is not a dependency of the search PR. Commands run from the Skillsmith repository root using pinned Bun 1.3.14.
 
 | Task | Deliverable | Dependencies |
 | --- | --- | --- |
@@ -212,7 +183,7 @@ Each first-PR task is incomplete until its listed acceptance checks pass. SEARCH
 | SEARCH-02 | Bounded HTTP reads and shared query deadline | SEARCH-01 |
 | SEARCH-03 | skills.sh provider and owned search records | SEARCH-01, SEARCH-02 |
 | SEARCH-04 | Strict search wire contract and application service | SEARCH-03 |
-| SEARCH-05 | Deferred installation candidate | User install-signature review after the first PR |
+| SEARCH-05 | Directory-first selector and boolean frontmatter override | Interface approved; detailed second-PR implementation plan reviewed and ready |
 | SEARCH-06 | Live CLI registration, flags, and catalog rendering | SEARCH-04 |
 | SEARCH-07 | Interactive search session and cleanup | SEARCH-06 |
 | SEARCH-08 | Generated reference, README, completion, and architecture docs | SEARCH-06, SEARCH-07 |
@@ -264,32 +235,9 @@ Extend the closed wire inventories and fixtures in `tests/ergonomics/phase/EWP-P
 
 **Focused check:** `bun test packages/core/tests/application/search-service.test.ts packages/core/tests/contracts/search.test.ts`
 
-### SEARCH-05 — Deferred: review installation signature before implementation
+### SEARCH-05 — Second PR: repository skill selection
 
-**Create:** An internal declared-name resolver such as `packages/core/src/acquire/declared-name.ts`; dedicated fixtures and tests in `packages/core/tests/acquire/declared-name.test.ts` and `packages/core/tests/acquire/declared-name-roundtrip.test.ts`.
-
-**Modify:** `acquire/types.ts`, `acquire/resolve.ts`, `acquire/run.ts`, `application/lifecycle-services.ts`, `ports/types.ts`, `ports/git.ts`, `ports/default.ts` where composition typing requires it, and the core public exports. Add the optional bounded method to the exact Git-port assertion in `tests/ergonomics/fixtures/p1-ts08/read-only-capability.ts`. Preserve `acquire/source.ts` grammar and the public candidate/transport envelopes.
-
-**Work:** Validate the new option in both lifecycle application preflight and `runInstallInternal()` for embedders. Pass an additive declared-name request into resolution. Perform complete SHA-bound metadata selection before materialization. Audit `tryElide()` explicitly. Keep malformed metadata/read failure distinct from a valid document without a name.
-
-Production install dispatch is in `application/lifecycle-services.ts`. Updating only `packages/cli/src/commands/install.ts`, a compatibility path, would leave the shipped command unchanged. Update any supported compatibility path after the production service is covered.
-
-Keep manifest/lock schemas and install wire contracts stable. Check root reconstruction in `reconcile/resolve.ts` and `reconcile/apply-execution.ts`; fix only if new round-trip tests expose an actual incompatibility.
-
-**Acceptance:** Use dedicated local bare Git repositories based on `packages/core/tests/fixtures/acquire/remote.ts`, without changing its shared candidate counts. Cover declared name different from basename; case-insensitive match; missing name; malformed metadata; duplicate declarations; root-name mismatch; hidden-path exclusion; exact-path alternatives; ref changes; metadata scan bounds; cancellation; cached-store mismatch; and existing directory/path selectors. For duplicates, supply a picker that throws if called and assert direct refusal. Test install → saved manifest/lock → fresh plan/apply/update resolution with the provider unavailable. Confirm root and nested identities remain stable. No fixture uses the user's installed skills or real accounts.
-
-Extend `packages/core/tests/ports/git.test.ts`, `ports/default.test.ts`, and `ports/types.test.ts` for the bounded capability. Prove an oversized blob causes zero binary payload reads, the checked object ID is the one read, replacement objects cannot change it, a missing capability fails explicitly, and old Git-port fakes remain assignable. Cover malformed probe output, non-blob objects, cancellation between probe and read, exact-boundary acceptance, length mismatch, and aggregate-budget exhaustion.
-
-**Focused checks:**
-
-```sh
-bun test packages/core/tests/acquire/declared-name.test.ts packages/core/tests/acquire/declared-name-roundtrip.test.ts
-bun test packages/core/tests/ports/git.test.ts packages/core/tests/ports/default.test.ts packages/core/tests/ports/types.test.ts
-bun test packages/core/tests/acquire/source.test.ts packages/core/tests/acquire/resolve.test.ts packages/core/tests/skills/frontmatter.test.ts
-bun test tests/ergonomics/phase/EWP-P1-TS08.test.ts
-bun test packages/core/tests/application/lifecycle-services.test.ts --test-name-pattern 'install forwards normalized|install validates selection|install and uninstall reject additive'
-bun test tests/ergonomics/phase/EWP-P2-TS07.test.ts --test-name-pattern 'canonical acquisition DTO|shared authority at observation and public type'
-```
+Superseded by INSTALL-01 through INSTALL-08 in the [repository skill selection implementation plan](2026-09-20-skillsmith-install-selector-implementation.md). That plan owns the matching contract, bounded metadata reads, saved-path compatibility, CLI inventory changes, test matrix, and second-PR delivery. SEARCH-05 is not a dependency of the search-only first PR.
 
 ### SEARCH-06 — Register and render the CLI surface
 
@@ -376,7 +324,7 @@ Record the tested commit, commands, outcomes, any unavailable checks, and provid
 - Search remains read-only and works without local skill inventory or installation configuration.
 - `search@1` is registered, exported, recursively strict, and covered by wire goldens and public-type tests.
 - Interactive and noninteractive behavior matches the invocation table; stale responses and errors cannot masquerade as current successful results.
-- Installation selectors, metadata resolution, install hints, and persistence changes remain deferred until the user reviews the signature.
+- The first PR excludes installation selectors, metadata resolution, install hints, and persistence changes; the revised second-PR scope is defined in Section 3 and SEARCH-05.
 - Existing source grammar, install reports, HEAD HTTP users, interaction callers, and historical migration snapshots retain their contracts.
 - Focused tests, required smoke lanes, generated-doc checks, and the terminal repository gate pass, or any unresolved failure is reported as incomplete work.
 
@@ -399,6 +347,8 @@ This plan contains the interface specification and seeded conformance note for t
 **Waived SHOULD rules:** None recorded by this plan. Inherited MUST deviations above are not declared waived. The implementation review must report any additional applicable gaps before making a conformance claim. A whole-CLI migration remains separate from this feature's approved scope.
 
 **Audit history:** 2026-09-20, standard version 1.4.14. Scope amended for a search-only first PR. Focused search, HTTP, picker, CLI, and public wire/type tests are being run; terminal acceptance is recorded with the delivered PR. SEARCH-04, SEARCH-06, SEARCH-07, and SEARCH-08 define the fixture work needed for this feature.
+
+**Second-PR interface amendment:** Standard version 1.4.14 applies. Both new flags use kebab-case long forms (R3.3). `--skill` accepts separated or attached values (R3.5). `--skills-match-frontmatter` defaults to false and is enabled by presence alone (R3.6); it takes no value. Existing short aliases and argument meanings are preserved. This is an interface review, not a claim of runtime conformance before implementation and tests.
 
 ## 7. Source evidence and remaining external uncertainty
 
