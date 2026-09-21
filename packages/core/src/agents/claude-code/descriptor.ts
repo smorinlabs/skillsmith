@@ -1,6 +1,6 @@
 import { type ToolDescriptor, fullLifecycleOperations } from '../adapter-types.ts';
 
-export const CLAUDE_CODE_VERIFIED_AGAINST = '2.1.202';
+export const CLAUDE_CODE_VERIFIED_AGAINST = '2.1.278';
 
 export const claudeCodeDescriptor: ToolDescriptor<'claude-code'> = {
   id: 'claude-code',

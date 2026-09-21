@@ -384,7 +384,7 @@ describe('EWP-P1-TS09', () => {
     expect(VERIFY_TOOLS).toEqual(registry.toolsFor('verify-static'));
     expect(FLIP_TOOLS).toEqual(registry.toolsFor('install'));
     expect(VERIFIED_AGAINST).toEqual({
-      'claude-code': '2.1.202',
+      'claude-code': '2.1.278',
       codex: '0.142.5',
       muse: '1.3.0',
     });

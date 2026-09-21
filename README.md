@@ -155,7 +155,7 @@ Generated from the live tool registry for Skillsmith 0.8.0. A scope list means t
 
 | Tool | Capability contract | Verifier baseline |
 |---|---|---|
-| `claude-code` | capability v1 | 2.1.202 |
+| `claude-code` | capability v1 | 2.1.278 |
 | `codex` | capability v1 | 0.142.5 |
 | `kilo-code` | capability v1 | not applicable |
 | `opencode` | capability v1 | not applicable |

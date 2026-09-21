@@ -604,7 +604,7 @@ describe('EWP-CMD-VERIFY-TS04', () => {
     for (const fixture of [
       {
         name: 'claude' as const,
-        exact: '2.1.202',
+        exact: '2.1.278',
         drift: '2.1.203',
         verify: verifyClaudeCode,
       },

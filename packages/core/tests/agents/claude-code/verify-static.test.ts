@@ -142,6 +142,30 @@ describe('parseClaudeValidateOutput', () => {
     expect(findings[0]?.file).toBeNull();
     expect(findings[0]?.subject).toBe('skill');
   });
+
+  test('short missing-name diagnostic retains the manifest error identity', () => {
+    // Native Claude 2.1.278 preserves the check token but omits the schema detail.
+    const output = [
+      'Validating plugin manifest: /work/claude-noname/.claude-plugin/plugin.json',
+      '',
+      '✘ Found 1 error:',
+      '',
+      '  ❯ name: Invalid input',
+      '',
+      '✘ Validation failed',
+    ].join('\n');
+    expect(parseClaudeValidateOutput(output, '/work/claude-noname')).toEqual([
+      {
+        checkId: 'claude.name',
+        toolSeverity: 'error',
+        normalizedSeverity: 'error',
+        message: 'Invalid input',
+        file: '.claude-plugin/plugin.json',
+        subject: 'manifest',
+        raw: '❯ name: Invalid input',
+      },
+    ]);
+  });
 });
 
 describe('verifyClaudeCode', () => {
@@ -151,7 +175,7 @@ describe('verifyClaudeCode', () => {
       path: ['/fake'],
       fileExists: async (p) => p === '/fake/claude',
       realpath: async (p) => p,
-      runVersion: async () => '2.1.202 (Claude Code)',
+      runVersion: async () => '2.1.278 (Claude Code)',
       ...overrides,
     });
 
@@ -167,7 +191,7 @@ describe('verifyClaudeCode', () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.value.available).toBe(true);
-    expect(r.value.toolVersion).toBe('2.1.202');
+    expect(r.value.toolVersion).toBe('2.1.278');
     expect(r.value.versionDrift).toBe(false);
     expect(r.value.modes).toHaveLength(1);
     const mode = r.value.modes[0];
@@ -270,7 +294,7 @@ describe('verifyClaudeCode', () => {
     });
   });
 
-  test('version drift: 2.3.0 differs from verified 2.1.202 -> versionDrift true + info finding appended', async () => {
+  test('version drift: 2.3.0 differs from verified 2.1.278 -> versionDrift true + info finding appended', async () => {
     const scanEnv = fakeInstalled({
       runVersion: async () => '2.3.0 (Claude Code)',
       exec: async () => ({ code: 0, stdout: '', stderr: '', timedOut: false }),
@@ -290,7 +314,7 @@ describe('verifyClaudeCode', () => {
       checkId: 'claude.version-drift',
       toolSeverity: null,
       normalizedSeverity: 'info',
-      message: 'claude 2.3.0 differs from verified 2.1.202; parsing may be less reliable',
+      message: 'claude 2.3.0 differs from verified 2.1.278; parsing may be less reliable',
       file: null,
       subject: 'plugin',
     });

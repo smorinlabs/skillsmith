@@ -1632,7 +1632,7 @@ describe('EWP-P3B-TS06 — registered adapter lifecycle authority', () => {
               verifiedAgainst: VERIFIED_AGAINST,
             }),
           ),
-          [1116, 'f319fc4a08dc7d9e8b1b26b585cdab9ba9975311cfa4e470213100e333aec58b'],
+          [1116, '548419515ca6fe5e51e1f6eb8fed82a673ef63819337b30d6ee7ce706bee32ac'],
         ],
         [
           String((renderFlipJson as unknown as AnyFunction)(flipReportFor('codex', 'dev'))),
