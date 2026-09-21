@@ -1,11 +1,13 @@
 import type { InventoryBundle, InventoryIdentitySurface, ToolAdapter } from '../adapter-types.ts';
 import { getCommandRoots } from './command-roots.ts';
-import { museDescriptor } from './descriptor.ts';
+import { MUSE_VERIFIED_AGAINST, museDescriptor } from './descriptor.ts';
 import { detect } from './detect.ts';
 import { resolveStandaloneActivation } from './enablement.ts';
 import { installHint } from './install-hint.ts';
+import { musePlacementBundle } from './placement.ts';
 import { getPluginCommandDir, getPluginSkillDir } from './plugin-paths.ts';
 import { getSkillRoots } from './skill-roots.ts';
+import { MUSE_TARGET_MANIFEST, verifyMuse } from './verify.ts';
 
 // Verified Muse precedence: project shadows user, and the native user root
 // shadows the `.agents` compatibility root, including when the winner is
@@ -41,4 +43,16 @@ export const museAgent: InventoryBundle<'muse'> = {
 export const museAdapter = {
   descriptor: museDescriptor,
   inventory: museAgent,
+  verification: {
+    verifiedAgainst: MUSE_VERIFIED_AGAINST,
+    modes: ['static', 'deep'],
+    verify: verifyMuse,
+    gatePolicy: { installDeep: true, promote: 'static+deep', update: 'static+deep' },
+    targetManifests: [MUSE_TARGET_MANIFEST],
+    renderedFacts: {
+      deepSkillCoverageSuffix: null,
+      installStaticNotice: null,
+    },
+  },
+  placement: musePlacementBundle,
 } satisfies ToolAdapter<'muse'>;

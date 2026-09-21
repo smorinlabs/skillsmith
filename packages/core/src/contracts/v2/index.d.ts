@@ -14,7 +14,7 @@ import type {
 import type { ArtifactCodec, ArtifactCodecError, WireCodec } from '@skillsmith/core/contracts';
 import type { LedgerV1Dto } from '@skillsmith/core/contracts/v1';
 
-type ToolId = 'claude-code' | 'codex';
+type ToolId = 'claude-code' | 'codex' | 'muse';
 type EntryOrigin =
   | { kind: 'standalone' }
   | {

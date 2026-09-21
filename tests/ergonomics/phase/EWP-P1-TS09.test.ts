@@ -6,6 +6,7 @@ import { CLI_ENTRYPOINT } from '../../../packages/cli/tests/fixtures/cli.ts';
 import { TOOL_OPERATIONS } from '../../../packages/core/src/agents/adapter-types.ts';
 import { verifyClaudeCode } from '../../../packages/core/src/agents/claude-code/verify.ts';
 import { verifyCodex } from '../../../packages/core/src/agents/codex/verify.ts';
+import { verifyMuse } from '../../../packages/core/src/agents/muse/verify.ts';
 import { SUPPORTED_TOOLS } from '../../../packages/core/src/agents/types.ts';
 import { resolveRuntimeConfiguration } from '../../../packages/core/src/config/runtime.ts';
 import { parseConfig } from '../../../packages/core/src/config/schema.ts';
@@ -16,7 +17,8 @@ import { readOnlyFixtureAdapter } from '../fixtures/p1-ts09/read-only-adapter.ts
 import { writeFixtureAdapter } from '../fixtures/p1-ts09/write-adapter.ts';
 
 const BUILT_INS = ['claude-code', 'codex', 'kilo-code', 'opencode', 'muse'] as const;
-const FULL = ['claude-code', 'codex'] as const;
+const FULL = ['claude-code', 'codex', 'muse'] as const;
+const MUSE_WRITE_SCOPES = ['user', 'custom'] as const;
 const READ_SCOPES = ['user', 'project', 'system', 'managed'] as const;
 const WRITE_SCOPES = ['user', 'project', 'custom'] as const;
 const OPERATIONS = [
@@ -104,7 +106,9 @@ const expectedScopes = (tool: string, operation: string): readonly string[] => {
     return FULL.includes(tool as (typeof FULL)[number]) ? ['artifact'] : [];
   }
   if (operation === 'adapt') return [];
-  return FULL.includes(tool as (typeof FULL)[number]) ? WRITE_SCOPES : [];
+  if (!FULL.includes(tool as (typeof FULL)[number])) return [];
+  // Muse lifecycle is user+custom scoped: project mutations are deferred (D-scope).
+  return tool === 'muse' ? MUSE_WRITE_SCOPES : WRITE_SCOPES;
 };
 
 describe('EWP-P1-TS09', () => {
@@ -123,7 +127,7 @@ describe('EWP-P1-TS09', () => {
       orders.every((order, index) => index === 0 || order > (orders[index - 1] ?? order)),
     ).toBe(true);
     for (const adapter of registry.adapters) {
-      expect(adapter.descriptor.capabilityVersion).toBe(1);
+      expect(adapter.descriptor.capabilityVersion).toBe(adapter.descriptor.id === 'muse' ? 2 : 1);
       expect(Object.keys(adapter.descriptor.operations).sort()).toEqual([...OPERATIONS].sort());
       expect(typeof (adapter.inventory as { detect?: unknown }).detect).toBe('function');
       expect(typeof (adapter.inventory as { getSkillRoots?: unknown }).getSkillRoots).toBe(
@@ -379,7 +383,11 @@ describe('EWP-P1-TS09', () => {
     expect(SUPPORTED_TOOLS).toEqual(registry.ids);
     expect(VERIFY_TOOLS).toEqual(registry.toolsFor('verify-static'));
     expect(FLIP_TOOLS).toEqual(registry.toolsFor('install'));
-    expect(VERIFIED_AGAINST).toEqual({ 'claude-code': '2.1.202', codex: '0.142.5' });
+    expect(VERIFIED_AGAINST).toEqual({
+      'claude-code': '2.1.202',
+      codex: '0.142.5',
+      muse: '1.3.0',
+    });
     expect(Object.keys(VERIFIED_AGAINST)).toEqual(registry.toolsFor('verify-static'));
     expect(Object.keys(module.registry ?? {})).toEqual(registry.ids);
     for (const adapter of registry.adapters) {
@@ -437,7 +445,7 @@ describe('EWP-P1-TS09', () => {
 
   test('distinguishes known unsupported capability exit 4 from unknown usage exit 2', async () => {
     const registry = await requireRegistry();
-    for (const tool of ['kilo-code', 'opencode', 'muse']) {
+    for (const tool of ['kilo-code', 'opencode']) {
       expect(registry.capability(tool, 'install')).toMatchObject({
         code: 'capability',
         exitCode: 4,
@@ -455,7 +463,7 @@ describe('EWP-P1-TS09', () => {
     });
   });
 
-  test('registers Claude/Codex verification and placement bundles only', async () => {
+  test('registers Claude/Codex/Muse verification and placement bundles only', async () => {
     const registry = await requireRegistry();
     for (const adapter of registry.adapters) {
       const full = FULL.includes(adapter.descriptor.id as (typeof FULL)[number]);
@@ -468,13 +476,17 @@ describe('EWP-P1-TS09', () => {
           VERIFIED_AGAINST[adapter.descriptor.id as keyof typeof VERIFIED_AGAINST],
         );
         expect(adapter.verification?.gatePolicy).toEqual(
-          adapter.descriptor.id === 'codex'
-            ? { installDeep: true, promote: 'static+deep', update: 'static+deep' }
-            : { installDeep: false, promote: 'static', update: 'static' },
+          adapter.descriptor.id === 'claude-code'
+            ? { installDeep: false, promote: 'static', update: 'static' }
+            : { installDeep: true, promote: 'static+deep', update: 'static+deep' },
         );
         expect(typeof adapter.verification?.verify).toBe('function');
         expect(adapter.verification?.verify).toBe(
-          adapter.descriptor.id === 'codex' ? verifyCodex : verifyClaudeCode,
+          adapter.descriptor.id === 'codex'
+            ? verifyCodex
+            : adapter.descriptor.id === 'muse'
+              ? verifyMuse
+              : verifyClaudeCode,
         );
         expect(typeof adapter.placement?.list).toBe('function');
         expect(registry.toolsFor('verify-static')).toContain(adapter.descriptor.id);

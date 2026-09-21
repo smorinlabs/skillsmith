@@ -44,10 +44,16 @@ const mode = (overrides: Partial<ModeResult> = {}): ModeResult => ({
   ...overrides,
 });
 
+const TOOL_VERSIONS: Record<VerifyTool, string> = {
+  'claude-code': '2.1.202',
+  codex: '0.142.5',
+  muse: '1.3.0',
+};
+
 const tool = (id: VerifyTool, overrides: Partial<ToolVerdict> = {}): ToolVerdict => ({
   tool: id,
   available: true,
-  toolVersion: id === 'claude-code' ? '2.1.202' : '0.142.5',
+  toolVersion: TOOL_VERSIONS[id],
   versionDrift: false,
   skipReason: null,
   verdict: 'pass',
@@ -64,7 +70,7 @@ const report = (overrides: Partial<VerifyReport> = {}): VerifyReport => ({
     strict: false,
     explicitTools: false,
   },
-  verifiedAgainst: { 'claude-code': '2.1.202', codex: '0.142.5' },
+  verifiedAgainst: { 'claude-code': '2.1.202', codex: '0.142.5', muse: '1.3.0' },
   summary: {
     verdict: 'pass',
     verified: ['claude-code', 'codex'],
@@ -88,6 +94,7 @@ const checker =
 const checkers = {
   'claude-code': checker('claude-code'),
   codex: checker('codex'),
+  muse: checker('muse'),
 };
 
 const absentChecker =
@@ -334,12 +341,13 @@ describe('EWP-CMD-VERIFY-TS02', () => {
     expect(deep.ok).toBeTrue();
     if (!deep.ok) return;
     expect(deep.value.requested).toMatchObject({
-      tools: ['claude-code', 'codex'],
+      tools: ['claude-code', 'codex', 'muse'],
       modes: ['static', 'deep'],
       explicitTools: false,
     });
     expect(deep.value.tools.map((entry) => entry.modes.map((entryMode) => entryMode.mode))).toEqual(
       [
+        ['static', 'deep'],
         ['static', 'deep'],
         ['static', 'deep'],
       ],
@@ -357,6 +365,7 @@ describe('EWP-CMD-VERIFY-TS02', () => {
       {
         'claude-code': checker('claude-code'),
         codex: absentChecker('codex'),
+        muse: checker('muse'),
       },
     );
     expect(autoAbsent.ok).toBeTrue();
@@ -368,6 +377,7 @@ describe('EWP-CMD-VERIFY-TS02', () => {
       {
         'claude-code': checker('claude-code'),
         codex: absentChecker('codex'),
+        muse: checker('muse'),
       },
     );
     expect(explicitAbsent.ok).toBeTrue();
@@ -379,6 +389,7 @@ describe('EWP-CMD-VERIFY-TS02', () => {
       {
         'claude-code': absentChecker('claude-code'),
         codex: absentChecker('codex'),
+        muse: absentChecker('muse'),
       },
     );
     expect(noneRan.ok).toBeTrue();
@@ -390,6 +401,7 @@ describe('EWP-CMD-VERIFY-TS02', () => {
       {
         'claude-code': staticOnlyChecker('claude-code'),
         codex: staticOnlyChecker('codex'),
+        muse: staticOnlyChecker('muse'),
       },
     );
     expect(deepGap.ok).toBeTrue();

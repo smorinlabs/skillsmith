@@ -42,15 +42,30 @@ describe('museAgent', () => {
     expect(museAgent.installHint).toContain('dev.meta.ai/install.sh');
   });
 
-  test('descriptor is read-only at order 50', () => {
+  test('descriptor is user+custom lifecycle at order 50', () => {
     expect(museDescriptor.id).toBe('muse');
     expect(museDescriptor.order).toBe(50);
-    expect(museDescriptor.capabilityVersion).toBe(1);
+    expect(museDescriptor.capabilityVersion).toBe(2);
     expect(museDescriptor.operations['inventory-skills'].supported).toBeTrue();
     expect(museDescriptor.operations.diagnostics.supported).toBeTrue();
-    expect(museDescriptor.operations.install.supported).toBeFalse();
-    expect(museDescriptor.operations.install.remediation).toContain('read-only');
-    expect(museDescriptor.operations['verify-static'].supported).toBeFalse();
+    for (const op of [
+      'install',
+      'uninstall',
+      'dev',
+      'promote',
+      'undo',
+      'plan',
+      'apply',
+      'sync',
+      'update',
+    ] as const) {
+      expect(museDescriptor.operations[op].supported).toBeTrue();
+      expect(museDescriptor.operations[op].scopes).toEqual(['user', 'custom']);
+    }
+    expect(museDescriptor.operations['verify-static'].supported).toBeTrue();
+    expect(museDescriptor.operations['verify-static'].scopes).toEqual(['artifact']);
+    expect(museDescriptor.operations['verify-deep'].supported).toBeTrue();
+    expect(museDescriptor.operations.adapt.supported).toBeFalse();
   });
 
   test('detects the `muse` binary', async () => {

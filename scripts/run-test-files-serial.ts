@@ -12,10 +12,10 @@ const gitEnvironment = Object.fromEntries(
 );
 export const EXPECTED_BUN_VERSION = '1.3.14';
 const EXPECTED_ALLOWED_SKIP_FILES = 8;
-const EXPECTED_ALLOWED_SKIPS = 39;
+const EXPECTED_ALLOWED_SKIPS = 42;
 
 export const ALLOWED_LIVE_E2E_SKIPS: ReadonlyMap<string, number> = new Map([
-  ['packages/core/tests/verify/live-e2e.test.ts', 8],
+  ['packages/core/tests/verify/live-e2e.test.ts', 11],
   ['packages/core/tests/acquire/copy-replacement-recovery.test.ts', 5],
   ['packages/cli/tests/commands/install-live.test.ts', 3],
   ['packages/cli/tests/commands/verify-live.test.ts', 3],

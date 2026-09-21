@@ -423,7 +423,7 @@ Generated from the live tool registry for Skillsmith 0.8.0. A scope list means t
 | `codex` | capability v1 | 0.142.5 |
 | `kilo-code` | capability v1 | not applicable |
 | `opencode` | capability v1 | not applicable |
-| `muse` | capability v1 | not applicable |
+| `muse` | capability v2 | 1.3.0 |
 
 | Operation | `claude-code` | `codex` | `kilo-code` | `opencode` | `muse` |
 |---|---|---|---|---|---|
@@ -431,17 +431,17 @@ Generated from the live tool registry for Skillsmith 0.8.0. A scope list means t
 | `inventory-skills` | user, project, system, managed | user, project, system, managed | user, project, system, managed | user, project, system, managed | user, project, system, managed |
 | `inventory-commands` | user, project, system, managed | user, project, system, managed | user, project, system, managed | user, project, system, managed | user, project, system, managed |
 | `diagnostics` | user, project, system, managed | user, project, system, managed | user, project, system, managed | user, project, system, managed | user, project, system, managed |
-| `install` | user, project, custom | user, project, custom | — | — | — |
-| `uninstall` | user, project, custom | user, project, custom | — | — | — |
-| `dev` | user, project, custom | user, project, custom | — | — | — |
-| `promote` | user, project, custom | user, project, custom | — | — | — |
-| `undo` | user, project, custom | user, project, custom | — | — | — |
-| `verify-static` | artifact | artifact | — | — | — |
-| `verify-deep` | artifact | artifact | — | — | — |
-| `plan` | user, project, custom | user, project, custom | — | — | — |
-| `apply` | user, project, custom | user, project, custom | — | — | — |
-| `sync` | user, project, custom | user, project, custom | — | — | — |
-| `update` | user, project, custom | user, project, custom | — | — | — |
+| `install` | user, project, custom | user, project, custom | — | — | user, custom |
+| `uninstall` | user, project, custom | user, project, custom | — | — | user, custom |
+| `dev` | user, project, custom | user, project, custom | — | — | user, custom |
+| `promote` | user, project, custom | user, project, custom | — | — | user, custom |
+| `undo` | user, project, custom | user, project, custom | — | — | user, custom |
+| `verify-static` | artifact | artifact | — | — | artifact |
+| `verify-deep` | artifact | artifact | — | — | artifact |
+| `plan` | user, project, custom | user, project, custom | — | — | user, custom |
+| `apply` | user, project, custom | user, project, custom | — | — | user, custom |
+| `sync` | user, project, custom | user, project, custom | — | — | user, custom |
+| `update` | user, project, custom | user, project, custom | — | — | user, custom |
 | `adapt` | — | — | — | — | — |
 <!-- skillsmith-capability-matrix:end -->
 ## Supported tools
@@ -460,8 +460,8 @@ and `app-bundle`, and falls back to `unknown`. Each tool owns a separate directo
 detection pipeline without touching the others.
 
 Detection, inventory, `doctor`, and `check` support Claude Code, Codex, Kilo Code, opencode,
-and Muse. `verify` supports Claude Code and Codex. Write and mutation commands support Claude Code
-and Codex; Kilo Code, opencode, and Muse are read-only/detection today.
+and Muse. `verify` supports Claude Code, Codex, and Muse. Write and mutation commands support
+Claude Code and Codex, plus Muse in the user and custom scopes; Kilo Code and opencode are read-only/detection today.
 
 Missing a tool? Open an issue with a `skillsmith agents --format json` dump and the OS / install method you used.
 

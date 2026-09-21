@@ -79,6 +79,12 @@ describe('resolveTarget', () => {
     );
     expect(claude.name).toBe('bare-skill');
     expect(await pathExists(join(r.value.path, '.codex-plugin', 'plugin.json'))).toBe(true);
+    // The muse target manifest rides the same wrapper without changing the
+    // bare-skill classification: only plugin-shaped targets match manifests.
+    const muse = JSON.parse(
+      await readFile(join(r.value.path, '.muse-plugin', 'plugin.json'), 'utf8'),
+    );
+    expect(muse.name).toBe('bare-skill');
 
     const wrapped = await readFile(join(r.value.path, 'skills', 'bare-skill', 'SKILL.md'), 'utf8');
     const original = await readFile(join(path, 'SKILL.md'), 'utf8');
@@ -119,32 +125,44 @@ describe('runVerify', () => {
         path: join(FIXTURES, 'dummytest'),
         ...(explicit ? { tools: ['claude-code', 'codex'] as const } : {}),
       },
-      { 'claude-code': okChecker('claude-code', 'pass'), codex: absentChecker('codex') },
+      {
+        'claude-code': okChecker('claude-code', 'pass'),
+        codex: absentChecker('codex'),
+        muse: okChecker('muse', 'pass'),
+      },
     );
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.value.summary.verdict).toBe(explicit ? 'inconclusive' : 'pass');
   });
 
-  test('dummytest with two passing fake checkers, default opts', async () => {
+  test('dummytest with three passing fake checkers, default opts', async () => {
     const env = await defaultScanEnv();
     const r = await runVerify(
       env,
       { path: join(FIXTURES, 'dummytest') },
-      { 'claude-code': okChecker('claude-code', 'pass'), codex: okChecker('codex', 'pass') },
+      {
+        'claude-code': okChecker('claude-code', 'pass'),
+        codex: okChecker('codex', 'pass'),
+        muse: okChecker('muse', 'pass'),
+      },
     );
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.value.schemaVersion).toBe(1);
     expect(r.value.target.kind).toBe('plugin');
     expect(r.value.requested).toEqual({
-      tools: ['claude-code', 'codex'],
+      tools: ['claude-code', 'codex', 'muse'],
       modes: ['static'],
       strict: false,
       explicitTools: false,
     });
-    expect(r.value.verifiedAgainst).toEqual({ 'claude-code': '2.1.202', codex: '0.142.5' });
+    expect(r.value.verifiedAgainst).toEqual({
+      'claude-code': '2.1.202',
+      codex: '0.142.5',
+      muse: '1.3.0',
+    });
     expect(r.value.summary.verdict).toBe('pass');
-    expect(r.value.tools.length).toBe(2);
+    expect(r.value.tools.length).toBe(3);
   });
 
   test('deep mode requests both static and deep for every tool', async () => {
@@ -152,7 +170,11 @@ describe('runVerify', () => {
     const r = await runVerify(
       env,
       { path: join(FIXTURES, 'dummytest'), deep: true },
-      { 'claude-code': okChecker('claude-code', 'pass'), codex: okChecker('codex', 'pass') },
+      {
+        'claude-code': okChecker('claude-code', 'pass'),
+        codex: okChecker('codex', 'pass'),
+        muse: okChecker('muse', 'pass'),
+      },
     );
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -167,7 +189,11 @@ describe('runVerify', () => {
     const r = await runVerify(
       env,
       { path: join(FIXTURES, 'dummytest'), tools: ['codex'] },
-      { 'claude-code': okChecker('claude-code', 'pass'), codex: okChecker('codex', 'pass') },
+      {
+        'claude-code': okChecker('claude-code', 'pass'),
+        codex: okChecker('codex', 'pass'),
+        muse: okChecker('muse', 'pass'),
+      },
     );
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -180,13 +206,17 @@ describe('runVerify', () => {
     const r = await runVerify(
       env,
       { path: join(FIXTURES, 'dummytest') },
-      { 'claude-code': okChecker('claude-code', 'fail'), codex: absentChecker('codex') },
+      {
+        'claude-code': okChecker('claude-code', 'fail'),
+        codex: absentChecker('codex'),
+        muse: okChecker('muse', 'pass'),
+      },
     );
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.value.summary).toEqual({
       verdict: 'fail',
-      verified: [],
+      verified: ['muse'],
       failed: ['claude-code'],
       skipped: ['codex'],
       counts: { error: 0, warning: 0, info: 0 },
@@ -222,7 +252,11 @@ describe('runVerify', () => {
     const r = await runVerify(
       env,
       { path, tools: ['claude-code'] },
-      { 'claude-code': spyChecker('claude-code'), codex: spyChecker('codex') },
+      {
+        'claude-code': spyChecker('claude-code'),
+        codex: spyChecker('codex'),
+        muse: spyChecker('muse'),
+      },
     );
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -240,7 +274,11 @@ describe('runVerify', () => {
     const r = await runVerify(
       env,
       { path: join(FIXTURES, 'dummytest'), signal: controller.signal },
-      { 'claude-code': okChecker('claude-code', 'pass'), codex: okChecker('codex', 'pass') },
+      {
+        'claude-code': okChecker('claude-code', 'pass'),
+        codex: okChecker('codex', 'pass'),
+        muse: okChecker('muse', 'pass'),
+      },
     );
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe('generic');
@@ -249,26 +287,28 @@ describe('runVerify', () => {
 });
 
 describe('verifyPlugin', () => {
-  test('with neither tool on PATH, both are not-installed and summary is inconclusive', async () => {
+  test('with no tool on PATH, all are not-installed and summary is inconclusive', async () => {
     const base = await defaultScanEnv();
     // `path: []` alone isn't enough — wellKnownBinDirs always probes fixed OS/home
-    // locations too, so also hide the two tool binaries there regardless of what's
+    // locations too, so also hide the three tool binaries there regardless of what's
     // actually installed on the machine running this test.
     const env = {
       ...base,
       executableSearchPath: [] as string[],
       fileExists: async (p: string) =>
-        p.endsWith('/claude') || p.endsWith('/codex') ? false : base.fileExists(p),
+        p.endsWith('/claude') || p.endsWith('/codex') || p.endsWith('/muse')
+          ? false
+          : base.fileExists(p),
     };
     const r = await verifyPlugin(env, { path: join(FIXTURES, 'dummytest') });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.value.tools).toHaveLength(2);
+    expect(r.value.tools).toHaveLength(3);
     for (const t of r.value.tools) {
       expect(t.available).toBe(false);
       expect(t.skipReason).toBe('not-installed');
     }
     expect(r.value.summary.verdict).toBe('inconclusive');
-    expect(r.value.summary.skipped).toEqual(['claude-code', 'codex']);
+    expect(r.value.summary.skipped).toEqual(['claude-code', 'codex', 'muse']);
   });
 });

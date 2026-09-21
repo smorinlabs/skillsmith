@@ -16,6 +16,14 @@ for Meta's Muse CLI (`muse` binary).
   default on
 - No standalone command roots or installed-plugin discovery in this build
   (plugin commands require an authenticated session)
+- Placement (user scope only): the native `$XDG_CONFIG_HOME/muse/skills/`
+  root; the `~/.agents/skills` compat root stays inventory-visible and is
+  never a placement target
+- Verification: `muse skills validate <dir> --json` per skill directory
+  (static), `muse skills list --source user|project --json` loader matching
+  (deep); every invocation runs offline (`MUSE_NO_AUTO_UPDATE=1` plus an
+  isolated HOME/XDG layout)
 
 Muse paths were probed against Muse 1.3.0-R3401.1 on 2026-09-19; the verified behavior is
-recorded in this directory (`skill-roots.ts`, `enablement.ts`, `index.ts`).
+recorded in this directory (`skill-roots.ts`, `enablement.ts`, `index.ts`,
+`placement.ts`, `verify.ts`).

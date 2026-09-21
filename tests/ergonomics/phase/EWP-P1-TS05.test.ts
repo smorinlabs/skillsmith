@@ -79,7 +79,7 @@ describe('EWP-P1-TS05', () => {
     expect(readme).toMatch(/verify[^\n]*Claude Code[^\n]*Codex/i);
     expect(readme).toMatch(/Kilo Code[^\n]*(?:read-only|detection)/i);
     expect(readme).toMatch(/opencode[^\n]*(?:read-only|detection)/i);
-    expect(readme).toMatch(/Muse[^\n]*(?:read-only|detection)/i);
+    expect(readme).toMatch(/Muse[^\n]*user and custom scopes/i);
     expect(readme).toMatch(/check[^\n]*fail[^\n]*default/i);
     expect(readme).toContain('--report-only');
     expect(readme).toContain('-C');

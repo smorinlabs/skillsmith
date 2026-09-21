@@ -281,7 +281,7 @@ describe('serial test-file terminal runner', () => {
         discovered: 9,
         executed: 9,
         passed: 9,
-        skipped: 39,
+        skipped: 42,
       });
     },
     30_000,
@@ -426,15 +426,15 @@ describe('serial test-file terminal runner', () => {
 
     expect(calls).toEqual(files);
     expect(ALLOWED_LIVE_E2E_SKIPS.size).toBe(8);
-    expect([...ALLOWED_LIVE_E2E_SKIPS.values()].reduce((sum, count) => sum + count, 0)).toBe(39);
+    expect([...ALLOWED_LIVE_E2E_SKIPS.values()].reduce((sum, count) => sum + count, 0)).toBe(42);
     expect(receipt).toEqual({
       assertions: 70,
       discovered: 10,
       duplicates: 0,
       executed: 10,
       passed: 10,
-      skipped: 39,
-      tests: 41,
+      skipped: 42,
+      tests: 44,
     });
   });
 
@@ -480,10 +480,10 @@ describe('serial test-file terminal runner', () => {
     const liveFile = 'packages/core/tests/verify/live-e2e.test.ts';
     await expect(
       runFilesSerially(terminalFiles(), async (file) => {
-        const skipped = file === liveFile ? 7 : (ALLOWED_LIVE_E2E_SKIPS.get(file) ?? 0);
+        const skipped = file === liveFile ? 10 : (ALLOWED_LIVE_E2E_SKIPS.get(file) ?? 0);
         return { exitCode: 0, junit: junit(file, Math.max(1, skipped), skipped) };
       }),
-    ).rejects.toThrow(`${liveFile} reported 7 skipped tests; expected 8`);
+    ).rejects.toThrow(`${liveFile} reported 10 skipped tests; expected 11`);
   });
 
   test('fails closed on missing or drifted live-E2E manifest closure', async () => {
@@ -514,7 +514,7 @@ describe('serial test-file terminal runner', () => {
           ]),
         ),
       ),
-    ).toThrow('skip allowlist totals 38; expected 39');
+    ).toThrow('skip allowlist totals 41; expected 42');
   });
 
   test('enforces the pinned Bun, cleanup, and post-run clean state', () => {
