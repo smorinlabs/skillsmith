@@ -1,6 +1,6 @@
 # Skillsmith repository skill selection implementation plan
 
-**Status at validation follow-up:** INSTALL-01 through INSTALL-06 are complete on `feat/install-skill-selector`. Three subagents completed bounded implementation tasks and independent cross-review; all selector findings are repaired and rechecked. The canonical gate identified a stale Git-trace fixture; its repair passes all 14 root-content tests with semantic assertions unchanged. [Draft PR #107](https://github.com/smorinlabs/skillsmith/pull/107) is published separately from search PR #100. INSTALL-07 and INSTALL-08 await final commit-specific gate evidence and PR readiness, recorded in that PR.
+**Status when this candidate was committed:** INSTALL-01 through INSTALL-06 are complete on `feat/install-skill-selector`. Three subagents completed bounded implementation tasks and independent cross-review; all confirmed implementation and test findings are repaired and rechecked. [PR #107](https://github.com/smorinlabs/skillsmith/pull/107) is published separately from search PR #100. INSTALL-07 and INSTALL-08 await final commit-specific gate evidence and PR readiness. That PR records the final validation and delivery status after this snapshot.
 
 **Purpose:** Let a user select one skill from a repository by its directory name or declared frontmatter name. Preserve the exact selected source through installation and subsequent `plan`, `apply`, and `update` operations.
 
@@ -324,6 +324,7 @@ changes and owns repository-wide validation and PR delivery.
 | CLI help expanded beyond its three-workflow contract. | Retain one established install example and two selector examples; preserve other source forms in source help and README. |
 | UTF-8 decoding and frontmatter parsing each removed a byte-order mark. | Preserve decoded byte-order marks for the shared parser to handle once; direct parsing and scanning must agree for zero through three marks with YAML and JSON. |
 | Root-content test tracing expected Git's first argument to be `-C`. | Accept the new leading `--no-replace-objects` in the trace counter and transparent archive hook. Retain checkout, archive, content, and recurrence assertions. |
+| The top-level help test still expected a workflow example replaced by selector examples. | Update the expected workflows to the approved three-example help surface while retaining source grammar, ref, destination, and exit-code assertions. |
 
 All new lifecycle fixture state, including artifact coordination, lives below the owned temporary
 root. The CLI fixture uses the production command graph and application services with the test
@@ -356,6 +357,7 @@ Candidate validation used Bun 1.3.14 and canonical `TMPDIR=/private/tmp`:
 | Compiled CLI | Native ARM64 production build with bytecode passed both help aliases and eight invalid-input/ref cases without changing isolated state. A compiled fixture command graph installed the expected exact path and passed strict `install@2` validation with isolated coordination. |
 | Credential scanning | Both pinned scanners reported zero findings outside the process sandbox. An empty-directory control reproduced TruffleHog's sandbox-only process-enumeration cleanup error. |
 | Root-content compatibility after trace repair | All 14 tests pass; fresh checkout/archive counters increase from one to two, and content/hash/no-op/tamper controls remain unchanged. |
+| Help compatibility after workflow repair | All 56 help/help-contract/selector-contract tests pass. The top-level help test now checks both selector workflows while retaining grammar, ref, pin, destination, and exit guidance. No other test reference to a retired workflow was found. |
 
 Compatibility checks also exercised installation, reconcile planning/apply, update planning, and
 Git ports. Two default filesystem tests fail in this local sandbox: temporary-directory group
@@ -368,6 +370,12 @@ suite reported eight failures caused by its outdated Git-argument tracing and de
 observations, which prompted the narrow fixture repair above. That attempt also reported a changed
 Git configuration because the parent set the branch's upstream while tests were running. Future
 candidate runs keep Git configuration unchanged until the gate exits; this attempt is not a pass.
+
+Linux CI for `d2e895f` passed the first 61 test files, including both new CLI selector suites and
+all three real Git directory/root/nested lifecycle roundtrips. File 62, `packages/cli/tests/help.test.ts`,
+still expected the retired pinned-ref workflow example; this is the help assertion repair above.
+Six supporting CI jobs passed, including all three native build jobs. The full gate remains required
+for the final repaired candidate.
 
 [PR #107](https://github.com/smorinlabs/skillsmith/pull/107) records the latest clean candidate SHA,
 compiled CLI evidence, terminal gate result, final CI receipt, and delivery status. Earlier search-PR

@@ -98,9 +98,29 @@ describe('skillsmith help routing', () => {
     expect(r.stdout).toContain('Keep going after per-source failures');
     expect(r.stdout).toContain('--ref <git-ref>');
     expect(r.stdout).toContain('Tag, branch, or full SHA');
-    expect(r.stdout).toContain(
-      '$ skillsmith install acme/agent-tools/review@v1.2.0 --project --pin',
+    expect(r.stdout).toContain('--pin');
+    expect(r.stdout).toMatch(/Freeze the resolved commit SHA in the\s+ledger/);
+    expect(r.stdout).toContain('-p, --path <dir>');
+    expect(r.stdout).toMatch(
+      /Use a custom placement directory for\s+one source and one effective tool/,
     );
+    expect(r.stdout).toContain('--skill <name>');
+    expect(r.stdout).toMatch(
+      /Select one repository skill by directory name,\s+then frontmatter name/,
+    );
+    expect(r.stdout).toContain('--skills-match-frontmatter');
+    expect(r.stdout).toContain('Match only frontmatter name; requires --skill');
+    expect(
+      r.stdout
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.startsWith('$ skillsmith install ')),
+    ).toEqual([
+      '$ skillsmith install smorinlabs/smorinlabs-harness/factor-scan --user',
+      '$ skillsmith install acme/skills --skill review',
+      '$ skillsmith install acme/skills --skill review --skills-match-frontmatter',
+    ]);
+    expect(r.stdout).toContain('2    usage error or refusal, including non-interactive ambiguity');
     expect(r.stdout).toContain('5    source, repository, revision, or skill is unresolvable');
     expect(r.stdout).not.toContain('See skillsmith help exit-codes.');
   });
