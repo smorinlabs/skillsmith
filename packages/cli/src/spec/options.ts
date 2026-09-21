@@ -50,6 +50,14 @@ const DEFAULT_OPTION_DESCRIPTIONS: Readonly<Record<string, string>> = {
 };
 
 const OPTION_DESCRIPTIONS: Readonly<Record<string, string>> = {
+  'skillsmith search:--owner': 'Filter indexed skills by GitHub owner',
+  'skillsmith search:--limit': 'Maximum results (1–20; default: 20)',
+  'skillsmith search:--timeout':
+    'Total query deadline including retries and response reads (ms, s, m, h; default: 2m)',
+  'skillsmith search:--max-response-size':
+    'Decoded body ceiling (B, KB, MB, KiB, MiB; default: 10MB = 10,000,000 bytes)',
+  'skillsmith search:--interactive':
+    'Open the query/results picker; requires terminal input and output',
   'skillsmith:--version': 'Print version',
   'skillsmith:--verbose': 'Verbose output; repeatable',
   'skillsmith:--quiet': 'Suppress non-error output',
@@ -289,6 +297,8 @@ const OPTION_HELP_FAMILIES: Readonly<
   Record<Exclude<OptionHelpFamily, 'inherited-globals'>, ReadonlySet<string>>
 > = {
   'targets-scope': new Set([
+    '--owner',
+    '--limit',
     '--all',
     '--all-scopes',
     '--all-tools',
@@ -316,6 +326,9 @@ const OPTION_HELP_FAMILIES: Readonly<
     '--to',
   ]),
   'behavior-verification': new Set([
+    '--interactive',
+    '--timeout',
+    '--max-response-size',
     '--allow-dirty',
     '--capabilities',
     '--check',

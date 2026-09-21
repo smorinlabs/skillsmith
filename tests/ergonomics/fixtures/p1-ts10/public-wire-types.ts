@@ -21,6 +21,7 @@ import {
   type InitV1Dto,
   type InstallV1Dto,
   type PlanV1Dto,
+  type SearchV1Dto,
   type StatusV1Dto,
   type SyncReportV1Dto,
   type UndoReportV1Dto,
@@ -42,6 +43,7 @@ import {
   initV1Codec,
   installV1Codec,
   type planV1Codec,
+  type searchV1Codec,
   statusV1Codec,
   type syncV1Codec,
   toAgentsV1Dto,
@@ -181,6 +183,8 @@ type _V1RuntimeClosure = Assert<
     | 'toCrossToolNamesV1Dto'
     | 'installV1Codec'
     | 'toInstallV1Dto'
+    | 'searchV1Codec'
+    | 'toSearchV1Dto'
     | 'planV1Codec'
     | 'initV1Codec'
     | 'toInitV1Dto'
@@ -217,6 +221,13 @@ type _V1RuntimeClosure = Assert<
     | 'toJournalV1Dto'
     | 'fromJournalV1Dto'
   >
+>;
+
+type _SearchCodecDto = Assert<
+  Equal<ReturnType<typeof searchV1Codec.validate>, ExpectedWireResult<SearchV1Dto>>
+>;
+type _SearchDoesNotPromiseInstall = Assert<
+  Not<HasKey<SearchV1Dto['results'][number], 'installHint'>>
 >;
 
 type _PlanCodecDto = Assert<

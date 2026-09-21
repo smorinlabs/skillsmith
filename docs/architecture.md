@@ -1,7 +1,6 @@
 # Architecture
 
-This page explains the shape of the Skillsmith codebase so new contributors can orient quickly. It covers decisions that aren't obvious from reading the source — what each layer is for, which directions dependencies are allowed to flow, and how the pieces fit together at runtime.
-For deeper rationale on individual decisions, see the [ADRs](adr/).
+This page explains the shape of the Skillsmith codebase so new contributors can orient quickly. It covers decisions that aren't obvious from reading the source — what each layer is for, which directions dependencies are allowed to flow, and how the pieces fit together at runtime. For deeper rationale on individual decisions, see the [ADRs](adr/).
 
 ## Workspace layout
 
@@ -12,6 +11,7 @@ packages/
   core/          @skillsmith/core — embeddable, non-interactive library
     src/
       acquire/       install/uninstall orchestration
+      search/        read-only remote catalog requests, deadlines, and provider validation
       application/   public CommandOutcome and application-service boundary
       agents/        per-tool adapters (claude-code, codex, kilo-code, opencode, muse) + registry
       commands/      installed slash-command domain types
@@ -89,6 +89,17 @@ zero-discovery canary and does not read environment, cwd, project, or config sta
 parser graph is reconstructed from `CommandSpec`; one action factory resolves every current command
 through the public application registry and shared renderer/exit adapter. Legacy command-local
 runtime handlers have been removed.
+
+`runSearchApplication` uses a separate `SearchApplicationContext` containing observation, a
+`SearchProvider`, a typed optional search interaction, and cancellation. The command action
+composes this context directly without resolving project installation state or scanning local
+inventory. The provider owns request validation, response mapping, and one retry within a shared
+deadline. `HttpReadPort` owns bounded, decoded GET streaming in the existing HTTP adapter;
+`TimerPort` supplies scheduling through the default adapter. Neither capability widens existing
+HEAD-only `HttpPort` or `RuntimePorts` fakes. The CLI owns debounce, generation checks, terminal
+state, and final rendering. The picker uses an alternate screen so resize cannot leave stale
+results behind. It restores raw mode, input flow, listeners, and the previous screen on exit.
+Search does not receive filesystem-write, Git, process, or installation capabilities.
 
 The same `CommandSpec` registry owns each command's primary question, minimal invocation, bounded
 common workflows, option help family/level, and exit meanings. Commander 15 renders the native
@@ -292,7 +303,7 @@ or define a second public schema.
 The current registry contains `agents@1`, `agents@2`, `health@1`, `health@2`, `commands@1`,
 `commands@2`, `config-get@1`, `config-list@1`, `config-set@1`, `config-unset@1`,
 `cross-tool-names@1`, `flip@2`,
-`flip@3`, `flip@4`, `install@1`, `install@2`, `list@2`, `list@3`, `status@1`, `uninstall@1`,
+`flip@3`, `flip@4`, `install@1`, `install@2`, `list@2`, `list@3`, `search@1`, `status@1`, `uninstall@1`,
 `init@1`, `plan-report@1`, `apply-report@1`, `sync@1`, `update@1`, `undo@1`, `gc@1`, `uninstall@2`, `verify@1`, `error@1`, and
 `capability-snapshot@1`. Each descriptor fixes recursive
 unknown-field rejection, embedded kind and version policy, JSON indentation, terminal framing, and

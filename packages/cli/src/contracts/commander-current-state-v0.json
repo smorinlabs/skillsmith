@@ -5036,6 +5036,185 @@
     }
   },
   {
+    "key": "command:skillsmith search",
+    "disposition": "N",
+    "phase": "SEARCH-06",
+    "validationOwner": "SEARCH-CLI-01"
+  },
+  {
+    "key": "alias:skillsmith search:find",
+    "disposition": "A",
+    "phase": "SEARCH-06",
+    "validationOwner": "SEARCH-CLI-01"
+  },
+  {
+    "key": "argument:skillsmith search:query",
+    "disposition": "N",
+    "phase": "SEARCH-06",
+    "validationOwner": "SEARCH-CLI-01",
+    "argument": {
+      "required": false,
+      "variadic": true,
+      "choices": [],
+      "defaultValue": "null",
+      "defaultSource": "none"
+    }
+  },
+  {
+    "key": "option:skillsmith search:-h, --help",
+    "disposition": "N",
+    "phase": "SEARCH-06",
+    "validationOwner": "SEARCH-CLI-01",
+    "option": {
+      "flags": "-h, --help",
+      "short": "-h",
+      "long": "--help",
+      "attributeName": "help",
+      "requiredValue": false,
+      "optionalValue": false,
+      "variadic": false,
+      "valueShape": "boolean",
+      "choices": [],
+      "defaultValue": "null",
+      "defaultSource": "none",
+      "repeatable": false,
+      "negated": false,
+      "hidden": false
+    }
+  },
+  {
+    "key": "option:skillsmith search:--interactive",
+    "disposition": "N",
+    "phase": "SEARCH-06",
+    "validationOwner": "SEARCH-CLI-01",
+    "option": {
+      "flags": "--interactive",
+      "short": null,
+      "long": "--interactive",
+      "attributeName": "interactive",
+      "requiredValue": false,
+      "optionalValue": false,
+      "variadic": false,
+      "valueShape": "boolean",
+      "choices": [],
+      "defaultValue": "false",
+      "defaultSource": "literal",
+      "repeatable": false,
+      "negated": false,
+      "hidden": false
+    }
+  },
+  {
+    "key": "option:skillsmith search:--json",
+    "disposition": "N",
+    "phase": "SEARCH-06",
+    "validationOwner": "SEARCH-CLI-01",
+    "option": {
+      "flags": "--json",
+      "short": null,
+      "long": "--json",
+      "attributeName": "json",
+      "requiredValue": false,
+      "optionalValue": false,
+      "variadic": false,
+      "valueShape": "boolean",
+      "choices": [],
+      "defaultValue": "false",
+      "defaultSource": "literal",
+      "repeatable": false,
+      "negated": false,
+      "hidden": false
+    }
+  },
+  {
+    "key": "option:skillsmith search:--limit <number>",
+    "disposition": "N",
+    "phase": "SEARCH-06",
+    "validationOwner": "SEARCH-CLI-01",
+    "option": {
+      "flags": "--limit <number>",
+      "short": null,
+      "long": "--limit",
+      "attributeName": "limit",
+      "requiredValue": true,
+      "optionalValue": false,
+      "variadic": false,
+      "valueShape": "required",
+      "choices": [],
+      "defaultValue": "\"20\"",
+      "defaultSource": "literal",
+      "repeatable": false,
+      "negated": false,
+      "hidden": false
+    }
+  },
+  {
+    "key": "option:skillsmith search:--max-response-size <size>",
+    "disposition": "N",
+    "phase": "SEARCH-06",
+    "validationOwner": "SEARCH-CLI-01",
+    "option": {
+      "flags": "--max-response-size <size>",
+      "short": null,
+      "long": "--max-response-size",
+      "attributeName": "maxResponseSize",
+      "requiredValue": true,
+      "optionalValue": false,
+      "variadic": false,
+      "valueShape": "required",
+      "choices": [],
+      "defaultValue": "\"10MB\"",
+      "defaultSource": "literal",
+      "repeatable": false,
+      "negated": false,
+      "hidden": false
+    }
+  },
+  {
+    "key": "option:skillsmith search:--owner <owner>",
+    "disposition": "N",
+    "phase": "SEARCH-06",
+    "validationOwner": "SEARCH-CLI-01",
+    "option": {
+      "flags": "--owner <owner>",
+      "short": null,
+      "long": "--owner",
+      "attributeName": "owner",
+      "requiredValue": true,
+      "optionalValue": false,
+      "variadic": false,
+      "valueShape": "required",
+      "choices": [],
+      "defaultValue": "null",
+      "defaultSource": "none",
+      "repeatable": false,
+      "negated": false,
+      "hidden": false
+    }
+  },
+  {
+    "key": "option:skillsmith search:--timeout <duration>",
+    "disposition": "N",
+    "phase": "SEARCH-06",
+    "validationOwner": "SEARCH-CLI-01",
+    "option": {
+      "flags": "--timeout <duration>",
+      "short": null,
+      "long": "--timeout",
+      "attributeName": "timeout",
+      "requiredValue": true,
+      "optionalValue": false,
+      "variadic": false,
+      "valueShape": "required",
+      "choices": [],
+      "defaultValue": "\"2m\"",
+      "defaultSource": "literal",
+      "repeatable": false,
+      "negated": false,
+      "hidden": false
+    }
+  },
+  {
     "key": "command:skillsmith status",
     "disposition": "N",
     "phase": "P17-G3A-01",

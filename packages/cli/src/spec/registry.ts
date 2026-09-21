@@ -54,6 +54,12 @@ const PROFILE: Readonly<
     capability: 'read',
     application: 'agents',
   },
+  'skillsmith search': {
+    group: 'discover',
+    question: 'Which remote skills match a topic?',
+    capability: 'read',
+    application: 'search',
+  },
   'skillsmith config': {
     group: 'maintain',
     question: 'What defaults are active and how do I change them?',
@@ -219,6 +225,7 @@ const PROFILE: Readonly<
 };
 
 const DESCRIPTION: Readonly<Record<string, string>> = {
+  'skillsmith search': 'Search the skills.sh catalog (experimental; sends your query to skills.sh)',
   skillsmith: 'SkillSmith installs and manages agent skills for AI coding tools.',
   'skillsmith agents': 'List every supported tool SkillSmith detects on this system',
   'skillsmith config': 'Manage SkillSmith configuration',
@@ -253,6 +260,8 @@ const DESCRIPTION: Readonly<Record<string, string>> = {
 };
 
 const ARGUMENT_DESCRIPTIONS: Readonly<Record<string, string>> = {
+  'skillsmith search:query':
+    'Search words (at least two characters); omitted opens an interactive picker on a terminal',
   'skillsmith commands:glob': 'Glob filters for installed command names',
   'skillsmith completion:shell': 'Target shell: bash, zsh, or fish',
   'skillsmith config get:key': 'Configuration key to read',
@@ -278,6 +287,11 @@ const ARGUMENT_DESCRIPTIONS: Readonly<Record<string, string>> = {
 };
 
 const EXAMPLES: Readonly<Record<string, readonly string[]>> = {
+  'skillsmith search': [
+    'skillsmith search react',
+    'skillsmith search react native --owner expo --json',
+    'skillsmith search react --timeout 4m --max-response-size 20MB',
+  ],
   skillsmith: ['skillsmith --help', 'skillsmith list --long'],
   'skillsmith agents': ['skillsmith agents --detected-only', 'skillsmith agents --format json'],
   'skillsmith config': ['skillsmith config list', 'skillsmith config get tool'],
@@ -373,6 +387,11 @@ const EXAMPLES: Readonly<Record<string, readonly string[]>> = {
 };
 
 const WORKFLOW_DESCRIPTIONS: Readonly<Record<string, readonly string[]>> = {
+  'skillsmith search': [
+    'Find remote catalog entries without installing them.',
+    'Search one indexed GitHub owner and emit JSON.',
+    'Override the total query deadline and decoded response byte limit.',
+  ],
   skillsmith: ['Open the grouped command index.', 'Inspect installed skills with detailed rows.'],
   'skillsmith agents': [
     'List only coding tools detected on this machine.',
@@ -495,6 +514,7 @@ const WORKFLOW_DESCRIPTIONS: Readonly<Record<string, readonly string[]>> = {
 };
 
 const PUBLIC_COMMAND_ORDER = [
+  'skillsmith search',
   'skillsmith agents',
   'skillsmith list',
   'skillsmith commands',
@@ -522,6 +542,7 @@ const PUBLIC_COMMAND_ORDER = [
 ] as const;
 
 const MINIMAL_INVOCATIONS: Readonly<Record<(typeof PUBLIC_COMMAND_ORDER)[number], string>> = {
+  'skillsmith search': 'skillsmith search react',
   'skillsmith agents': 'skillsmith agents',
   'skillsmith list': 'skillsmith list',
   'skillsmith commands': 'skillsmith commands',
@@ -594,6 +615,13 @@ const STANDARD_READ_EXIT_CODES = exitCodes(
 );
 
 const EXIT_CODES: Readonly<Record<string, readonly CommandExitCodeSpec[]>> = {
+  'skillsmith search': exitCodes(
+    [0, 'search completed, including an empty result'],
+    [1, 'unexpected runtime failure'],
+    [2, 'invalid search options or unavailable interactive input'],
+    [5, 'search provider unavailable, deadline expired, or response refused'],
+    [130, 'search cancelled'],
+  ),
   skillsmith: exitCodes([0, 'top-level help page emitted']),
   'skillsmith agents': exitCodes(
     [0, 'tool detection completed successfully'],
@@ -923,6 +951,12 @@ const requiredOption = (command: string, option: string): OptionRelationSpec => 
  * Invocation still interprets CURRENT_OPTION_RELATIONS directly.
  */
 const requiredCurrentOptionRelations = (): readonly OptionRelationSpec[] => [
+  ...['--owner', '--limit', '--timeout', '--max-response-size'].map((option) =>
+    singularOption('skillsmith search', option),
+  ),
+  conflicts('skillsmith search', '--interactive', '--json'),
+  conflicts('skillsmith search', '--interactive', '--no-prompt'),
+  conflicts('skillsmith search', '--interactive', '--quiet'),
   conflicts('skillsmith', '--quiet', '--verbose'),
   conflicts('skillsmith', '--quiet', '--debug'),
   conflicts('skillsmith', '--color', '--no-color'),

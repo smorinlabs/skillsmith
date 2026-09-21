@@ -15,6 +15,7 @@ type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ?
   : false;
 
 type DtoDeclarationClosure = [
+  Assert<Equal<publicV1.SearchV1Dto, implementationV1.SearchV1Dto>>,
   Assert<Equal<publicV1.AgentsV1Dto, implementationV1.AgentsV1Dto>>,
   Assert<Equal<publicV1.HealthV1Dto, implementationV1.HealthV1Dto>>,
   Assert<Equal<publicV1.CommandsV1Dto, implementationV1.CommandsV1Dto>>,
@@ -52,6 +53,7 @@ const v2Bindings: typeof publicV2 = implementationV2;
 const v3Bindings: typeof publicV3 = implementationV3;
 
 const dtoDeclarationClosure: DtoDeclarationClosure = [
+  true,
   true,
   true,
   true,

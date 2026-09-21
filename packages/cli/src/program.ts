@@ -6,6 +6,8 @@ import {
   type InteractionPort,
   type ObservationBundle,
   type ObservationVerbosity,
+  type SearchInteractionPort,
+  type SearchProvider,
   createObservationEmitter,
   createOperationContext,
   defaultClockPort,
@@ -32,7 +34,10 @@ import {
   createCommandFromSpec,
   normalizeCommandSpec,
 } from './runtime/command-spec.ts';
-import { createCurrentApplicationContext } from './runtime/context.ts';
+import {
+  createCurrentApplicationContext,
+  createSearchApplicationContext,
+} from './runtime/context.ts';
 import { createCurrentRendererRegistry } from './runtime/current-renderers.ts';
 import { createCliDiagnosticObserver, resolveObservationVerbosity } from './runtime/diagnostics.ts';
 import { type CliRuntimeIo, processRuntimeIo } from './runtime/io.ts';
@@ -46,6 +51,10 @@ import { CURRENT_COMMAND_SPECS } from './spec/index.ts';
 import type { CommandSpecInput, NormalizedCommandSpec } from './spec/types.ts';
 
 export interface ProgramBuildExtensions {
+  readonly search?: {
+    readonly provider?: SearchProvider;
+    readonly interaction?: SearchInteractionPort;
+  };
   readonly additionalSpecs?: readonly CommandSpecInput[];
   readonly applications?: ApplicationRegistry;
   readonly renderers?: RendererRegistry;
@@ -448,13 +457,20 @@ export const buildProgram = (
         const { observation } = prepared;
         const context = CONTEXT_FREE_APPLICATIONS.has(application)
           ? Object.freeze({ observation })
-          : await createCurrentApplicationContext(command, {
-              observation,
-              ...(signal === undefined ? {} : { signal }),
-              ...(extensions.runtimePorts?.interaction === undefined
-                ? {}
-                : { interaction: extensions.runtimePorts.interaction }),
-            });
+          : application === 'search'
+            ? createSearchApplicationContext({
+                observation,
+                ...extensions.search,
+                ...(signal ? { signal } : {}),
+                stdoutIsTTY: Boolean(runtimeIo.stdout.isTTY),
+              })
+            : await createCurrentApplicationContext(command, {
+                observation,
+                ...(signal === undefined ? {} : { signal }),
+                ...(extensions.runtimePorts?.interaction === undefined
+                  ? {}
+                  : { interaction: extensions.runtimePorts.interaction }),
+              });
         await runtime.execute({
           application,
           reportKind: application === 'version' ? 'version' : (spec.reportKind ?? application),

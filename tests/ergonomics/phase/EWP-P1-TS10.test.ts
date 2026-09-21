@@ -71,6 +71,7 @@ const EXPECTED_PATHS = [
   'skillsmith list',
   'skillsmith plan',
   'skillsmith promote',
+  'skillsmith search',
   'skillsmith status',
   'skillsmith sync',
   'skillsmith undo',
@@ -98,6 +99,7 @@ const EXPECTED_MAPPINGS = [
   ['skillsmith list', 'list', 3],
   ['skillsmith plan', 'plan-report', 1],
   ['skillsmith promote', 'flip', 4],
+  ['skillsmith search', 'search', 1],
   ['skillsmith status', 'status', 1],
   ['skillsmith sync', 'sync', 1],
   ['skillsmith undo', 'undo', 1],
@@ -129,6 +131,7 @@ const EXPECTED_CODECS = [
   ['list', 2],
   ['list', 3],
   ['plan-report', 1],
+  ['search', 1],
   ['status', 1],
   ['sync', 1],
   ['update', 1],
@@ -152,6 +155,12 @@ const EXPECTED_DESCRIPTOR_POLICY: Readonly<
     }
   >
 > = {
+  'search@1': {
+    wireKind: 'skillsmith.search',
+    embeddedVersion: 'schemaVersion',
+    indent: 2,
+    terminalLf: true,
+  },
   'agents@1': { wireKind: null, embeddedVersion: 'schemaVersion', indent: 2, terminalLf: true },
   'agents@2': {
     wireKind: 'skillsmith.agents',
@@ -317,6 +326,7 @@ const GOLDEN_FILES = {
   install: 'install.stdout',
   list: 'list.stdout',
   plan: 'plan.stdout',
+  search: 'search.stdout',
   status: 'status.stdout',
   sync: 'sync.stdout',
   undo: 'undo.stdout',
@@ -359,6 +369,8 @@ const V1_RUNTIME_EXPORTS = [
   'initV1Codec',
   'installV1Codec',
   'planV1Codec',
+  'searchV1Codec',
+  'toSearchV1Dto',
   'syncV1Codec',
   'updateV1Codec',
   'toAgentsV1Dto',
@@ -613,6 +625,7 @@ const renderedCurrentBytes = (): CurrentBytes => {
     install: render('install', CURRENT_RENDERER_REPORTS.install),
     list: render('list', CURRENT_RENDERER_REPORTS.list),
     plan: render('plan', CURRENT_RENDERER_REPORTS.plan),
+    search: render('search', CURRENT_RENDERER_REPORTS.search),
     status: render('status', CURRENT_RENDERER_REPORTS.status),
     sync: render('sync', CURRENT_RENDERER_REPORTS.sync),
     undo: render('undo', CURRENT_RENDERER_REPORTS.undo),
@@ -682,7 +695,7 @@ const typescriptFiles = async (root: string): Promise<readonly string[]> => {
 };
 
 describe('EWP-P1-TS10', () => {
-  test('family 1: characterizes exactly the twenty-four live JSON-selectable command paths', () => {
+  test('family 1: characterizes exactly the twenty-five live JSON-selectable command paths', () => {
     const paths = CURRENT_COMMAND_SPECS.filter((spec) =>
       spec.options.some(
         (option) =>
@@ -691,7 +704,7 @@ describe('EWP-P1-TS10', () => {
       ),
     ).map((spec) => spec.path);
     expect(paths).toEqual([...EXPECTED_PATHS]);
-    expect(new Set(paths).size).toBe(24);
+    expect(new Set(paths).size).toBe(25);
     for (const excluded of ['skillsmith version', 'skillsmith completion', 'skillsmith help'])
       expect(paths).not.toContain(excluded);
   });
@@ -732,6 +745,7 @@ describe('EWP-P1-TS10', () => {
       ['list', 'skillsmith list'],
       ['plan', 'skillsmith plan'],
       ['promote', 'skillsmith promote'],
+      ['search', 'skillsmith search'],
       ['status', 'skillsmith status'],
       ['sync', 'skillsmith sync'],
       ['undo', 'skillsmith undo'],
@@ -2380,6 +2394,7 @@ describe('EWP-P1-TS10', () => {
       ['list', 2, HISTORICAL_JSON_GOLDENS.list],
       ['list', 3, CURRENT_JSON_GOLDENS.list],
       ['plan-report', 1, CURRENT_JSON_GOLDENS.plan],
+      ['search', 1, CURRENT_JSON_GOLDENS.search],
       ['status', 1, CURRENT_JSON_GOLDENS.status],
       ['sync', 1, CURRENT_JSON_GOLDENS.sync],
       ['undo', 1, CURRENT_JSON_GOLDENS.undo],

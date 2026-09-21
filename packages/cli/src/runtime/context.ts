@@ -2,8 +2,14 @@ import {
   type CurrentApplicationContext,
   type InteractionPort,
   type ObservationBundle,
+  type SearchApplicationContext,
+  type SearchInteractionPort,
+  type SearchProvider,
+  createSkillsShProvider,
   defaultArtifactCoordinatorPorts,
   defaultRuntimePorts,
+  defaultSearchPorts,
+  defaultTimerPort,
   resolveRuntimeConfiguration,
 } from '@skillsmith/core';
 import type { Command } from 'commander';
@@ -12,6 +18,31 @@ import {
   promptInteraction,
   resolveInteractionPolicy,
 } from './interaction.ts';
+import { createSearchInteraction } from './search-interaction.ts';
+
+export interface SearchContextOptions {
+  readonly observation: ObservationBundle;
+  readonly signal?: AbortSignal;
+  readonly provider?: SearchProvider;
+  readonly interaction?: SearchInteractionPort;
+  readonly stdoutIsTTY?: boolean;
+}
+
+export const createSearchApplicationContext = (
+  options: SearchContextOptions,
+): SearchApplicationContext => ({
+  observation: options.observation,
+  provider: options.provider ?? createSkillsShProvider(defaultSearchPorts()),
+  interaction:
+    options.interaction ??
+    createSearchInteraction(
+      process.stdin,
+      process.stderr,
+      options.stdoutIsTTY ?? Boolean(process.stdout.isTTY),
+      defaultTimerPort,
+    ),
+  ...(options.signal ? { signal: options.signal } : {}),
+});
 
 export interface RuntimeContextOptions {
   readonly signal?: AbortSignal;

@@ -1,4 +1,20 @@
 export type {
+  SearchHit,
+  SearchReport,
+  SearchRequest,
+  SearchFailure,
+  SearchProvider,
+  SearchPorts,
+} from './search/types.ts';
+export type { SearchInvocation } from './search/options.ts';
+export type {
+  SearchSelection,
+  SearchInteractionPort,
+  SearchApplicationContext,
+  SearchApplicationReport,
+} from './application/search-service.ts';
+export type { HttpReadPort, TimerPort } from './ports/types.ts';
+export type {
   CandidateSkill,
   CurrentInstallReport,
   CurrentInstallResult,

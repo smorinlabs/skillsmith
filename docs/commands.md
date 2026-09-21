@@ -20,6 +20,51 @@ This reference is generated from the same command registry used by the parser an
 
 ## DISCOVER
 
+### `search`
+
+Search the skills.sh catalog (experimental; sends your query to skills.sh)
+
+Aliases: `find`
+
+Primary question: Which remote skills match a topic?
+
+Minimal invocation: `skillsmith search react`
+
+#### Common workflows
+
+- **Start here** (read-only): Find remote catalog entries without installing them. — `skillsmith search react`
+- **Focused workflow** (read-only): Search one indexed GitHub owner and emit JSON. — `skillsmith search react native --owner expo --json`
+- **Advanced workflow** (read-only): Override the total query deadline and decoded response byte limit. — `skillsmith search react --timeout 4m --max-response-size 20MB`
+
+#### Arguments
+
+- `[query...]` — Search words (at least two characters); omitted opens an interactive picker on a terminal
+
+#### TARGETS AND SCOPE
+
+- `--limit <number>` — Maximum results (1–20; default: 20)
+- `--owner <owner>` — Filter indexed skills by GitHub owner
+
+#### BEHAVIOR AND VERIFICATION
+
+- `--interactive` — Open the query/results picker; requires terminal input and output
+- `--max-response-size <size>` — Decoded body ceiling (B, KB, MB, KiB, MiB; default: 10MB = 10,000,000 bytes)
+- `--timeout <duration>` — Total query deadline including retries and response reads (ms, s, m, h; default: 2m)
+
+#### AUTOMATION AND OUTPUT
+
+- `--json` — Emit a versioned JSON report on stdout
+- `-h, --help` — Show help for this command
+
+#### Exit codes
+
+- `0` — search completed, including an empty result
+- `1` — unexpected runtime failure
+- `2` — invalid search options or unavailable interactive input
+- `5` — search provider unavailable, deadline expired, or response refused
+- `130` — search cancelled
+
+
 ### `agents`
 
 List every supported tool SkillSmith detects on this system

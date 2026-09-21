@@ -18,6 +18,8 @@ The status notes in this README refer to P17, the Skillsmith ergonomics and decl
 workflow project listed in the [project tracker](PROJECTS.md). They identify the sources used
 to check the documented behavior.
 
+**Today:** `search`, `find`, `agents`, `config`, `list`, `ls`, `commands`, `cross-tool-names`, `doctor`, `check`, `verify`, `status`, `plan`, `apply`, `sync`, `update`, `undo`, `promote`, `dev`, `demote`, `install`, `i`, `uninstall`, `rm`, `remove`, `export`, `gc`, `init`, `version`, `completion`, and `help` are implemented.
+**P17 target:** consistent behavior across the retained command surface, with generated public help and command documentation.
 **Contents**
 
 - [Install](#install) and [Quickstart](#quickstart)
@@ -270,15 +272,13 @@ Commands in this section are available today unless explicitly marked **Proposed
 
 | Current group | Recommended name | Existing commands |
 | --- | --- | --- |
-| DISCOVER | Discover and inspect | `agents`, `list`, `commands`, `cross-tool-names`, `status` |
+| DISCOVER | Discover and inspect | `search`, `agents`, `list`, `commands`, `cross-tool-names`, `status` |
 | MANAGE | Install, update, and remove | `install`, `update`, `uninstall`, `undo` |
 | DEVELOP | Develop and verify | `dev`, `verify`, `promote` |
 | DECLARATIVE | Reproduce and synchronize | `init`, `export`, `plan`, `apply`, `sync` |
 | MAINTAIN | Configure and troubleshoot | `doctor`, `check`, `gc`, `config`, `completion`, `version`, `help` |
 
-Remote catalog search (`search`, alias `find`) is being developed in
-[PR #100](https://github.com/smorinlabs/skillsmith/pull/100) and is not available on `main` yet.
-Aliases such as `ls` and `demote` are alternate spellings of existing commands.
+Aliases such as `find`, `ls`, and `demote` are alternate spellings of existing commands.
 See the [command reference](docs/commands.md) for all aliases and options.
 
 ### Workflows by group
@@ -518,7 +518,8 @@ Choose a command by the question you need answered. This table and the full [com
 
 | Group | Command | Primary question |
 |---|---|---|
-| DISCOVER | `agents` | Which coding tools are detected and what can Skillsmith do with them? |
+| DISCOVER | `search` | Which remote skills match a topic? |
+|  | `agents` | Which coding tools are detected and what can Skillsmith do with them? |
 |  | `list` | Which skills are installed? |
 |  | `commands` | Which slash commands are installed? |
 |  | `cross-tool-names` | Which skill names repeat across tools? |
@@ -544,7 +545,7 @@ Choose a command by the question you need answered. This table and the full [com
 |  | `help` | How do I learn a command, topic, or workflow? |
 <!-- skillsmith-command-index:end -->
 
-**Today:** `agents`, `config`, `list`, `ls`, `commands`, `cross-tool-names`, `doctor`, `check`, `verify`, `status`, `plan`, `apply`, `sync`, `update`, `undo`, `promote`, `dev`, `demote`, `install`, `i`, `uninstall`, `rm`, `remove`, `export`, `gc`, `init`, `version`, `completion`, and `help` are implemented.
+**Today:** `search`, `find`, `agents`, `config`, `list`, `ls`, `commands`, `cross-tool-names`, `doctor`, `check`, `verify`, `status`, `plan`, `apply`, `sync`, `update`, `undo`, `promote`, `dev`, `demote`, `install`, `i`, `uninstall`, `rm`, `remove`, `export`, `gc`, `init`, `version`, `completion`, and `help` are implemented.
 
 ## Command examples
 
@@ -559,6 +560,8 @@ skillsmith agents --format json         # machine-readable; see Example output
 skillsmith agents --detected-only       # skip the "Not detected" section
 skillsmith agents --tool claude-code    # scan one tool only (repeatable)
 skillsmith list                         # inspect installed skills
+skillsmith search react native          # search the remote skills.sh catalog
+skillsmith find react --owner vercel-labs --json # alias, owner filter, machine output
 skillsmith config list                  # show effective configuration and source layers
 skillsmith check --report-only          # report CI checks without failing on findings
 ```
@@ -642,6 +645,52 @@ Human output uses semantic color only when its destination is an eligible TTY. `
 selects color on an eligible TTY but never through a pipe; `--no-color`, `--color never`,
 `NO_COLOR`, `CLICOLOR=0`, and JSON output disable it. stdout carries command reports while stderr
 carries diagnostics, warnings, and errors.
+
+### Search the remote catalog
+
+`search [query...]`, also spelled `find`, searches skill listings on skills.sh. Words are joined
+with spaces and trimmed; an explicit query needs at least two Unicode code points. `--owner`
+filters indexed entries for one GitHub owner. Results retain the provider's order. Installation
+counts describe catalog activity, and `verification: "not-checked"` means Skillsmith has not
+inspected the listed skill. Catalog IDs and provider names are not repository path selectors or
+local installed records. Use the displayed catalog URL to inspect an entry.
+
+```sh
+skillsmith search react
+skillsmith search react native --owner expo --limit 10 --json
+skillsmith search react --timeout 4m --max-response-size 20MB
+skillsmith search --interactive react
+```
+
+An explicit query prints results and exits unless `--interactive` is supplied. Bare `search`
+opens a live picker when stdin, stdout, and stderr are terminals. Type to search, use the arrow
+keys to browse all returned results, and press Enter to display the selected entry's details.
+Escape or Ctrl-C cancels. Prompts use stderr; final reports use stdout. Bare search and
+`--interactive` require prompting to be enabled and cannot be combined with `--json` or `--quiet`.
+Redirected streams require an explicit, noninteractive query. Selection does not install a skill.
+
+| Option | Default | Accepted override |
+| --- | --- | --- |
+| `--limit` | `20` results | Integer from `1` to `20` |
+| `--timeout` | `2m` | Positive integer followed by `ms`, `s`, `m`, or `h` |
+| `--max-response-size` | `10MB` | Positive integer followed by `B`, `KB`, `MB`, `KiB`, or `MiB` |
+
+The two-minute deadline covers connection setup, response reading, and at most one retry for each
+issued query. The default response limit is 10,000,000 bytes **after decompression**, per attempt.
+`KB` and `MB` are decimal; `KiB` and `MiB` are binary. Units are case-sensitive. Converted timeout
+and size values must each be between 1 and 2,147,483,647 milliseconds or bytes, respectively;
+fractions, missing units, repeated options, and zero are rejected. These limits can be raised or
+lowered, but cannot be disabled. A body limit is not a bound on total process memory.
+
+This provider is experimental. Search sends the query and optional owner to the same anonymous
+`https://skills.sh/api/search` endpoint used by Vercel's `skills` CLI. Its public stability and
+rate-limit contract are not documented. Search uses no API key, local index, persisted cache, or
+telemetry, and does not change local skill state. Completion never searches the network.
+`--json` emits strict `search@1` data with `schemaVersion: 1` and `kind: "skillsmith.search"`.
+It includes the requested limit and returned count, without inventing a total or pagination token.
+A successful empty result exits 0; invalid input exits 2, provider failures exit 5, and cancellation
+exits 130. Failures use the existing `error@1` JSON envelope. For timeout or body-limit failures,
+adjust the corresponding flag; for rate limits or unavailable service, try again later.
 
 `status` is read-only: it correlates the selected manifest/lock pair, placement ledger, journals,
 and live skill roots without running verification or writing recovery state. Use repeatable

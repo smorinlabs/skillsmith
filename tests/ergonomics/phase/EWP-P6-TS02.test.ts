@@ -41,6 +41,8 @@ describe('P17 Phase 6 completion aggregate', () => {
     expect(root.exitCode, root.stderr).toBe(0);
     expect(root.stderr).toBe('');
     expect(root.stdout).toMatch(/\n:4\n$/);
+    expect(root.stdout).toContain('search\t');
+    expect(root.stdout).toContain('find\t');
     expect(root.stdout).toContain('agents\t');
     expect(root.stdout).toContain('ls\t');
     expect(root.stdout).not.toContain('\ncomplete\t');
@@ -48,10 +50,10 @@ describe('P17 Phase 6 completion aggregate', () => {
     const publicPaths = canonicalizeCommanderTree(buildProgram())
       .map(({ path }) => path)
       .filter((path) => path.split(' ').length === 2);
-    expect(publicPaths).toHaveLength(24);
+    expect(publicPaths).toHaveLength(25);
     expect(publicPaths).not.toContain('skillsmith complete');
     expect(CURRENT_COMMAND_SPECS.filter((spec) => spec.path.split(' ').length === 2)).toHaveLength(
-      24,
+      25,
     );
     expect((await runCli(['complete'])).exitCode).toBe(2);
 

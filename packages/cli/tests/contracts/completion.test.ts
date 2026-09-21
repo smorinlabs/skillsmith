@@ -312,7 +312,7 @@ const manifest = (names: readonly string[]): string =>
   ].join('\n');
 
 describe('P17-G6-02B completion contracts', () => {
-  test('EWP-CMD-COMPLETION-TS01 root candidates close over 23 commands and adjacent aliases', async () => {
+  test('EWP-CMD-COMPLETION-TS01 root candidates close over 25 commands and adjacent aliases', async () => {
     const result = await runCli(['complete', '--', '']);
     expect(result.exitCode, result.stderr).toBe(0);
     expect(result.stderr).toBe('');
@@ -323,8 +323,8 @@ describe('P17-G6-02B completion contracts', () => {
       spec.path.split(' ').at(-1) ?? spec.path,
       ...spec.aliases,
     ]);
-    expect(topLevelSpecs).toHaveLength(24);
-    expect(expected).toHaveLength(29);
+    expect(topLevelSpecs).toHaveLength(25);
+    expect(expected).toHaveLength(31);
     expect(parsed.candidates.map(({ value }) => value)).toEqual(expected);
     expect(parsed.candidates.map(({ value }) => value)).not.toContain('complete');
 
