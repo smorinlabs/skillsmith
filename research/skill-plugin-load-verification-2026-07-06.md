@@ -340,3 +340,59 @@ for temp workdirs.
 
 **Addendum (2026-07-07):** the parser format above was re-frozen and re-verified against Claude Code
 `2.1.202` live output — no shape changes; `VERIFIED_AGAINST['claude-code']` bumped to `2.1.202`.
+
+## Addendum (2026-09-21 UTC): Claude missing-name diagnostic
+
+**Verified against:** native Claude Code `2.1.278` and an isolated npm installation of
+`@anthropic-ai/claude-code@2.1.202`, both macOS arm64 binaries. The host ran macOS `26.4`
+(build `25E246`), Bun `1.3.14`, and Apple Git `2.50.1`. The starting Skillsmith revision was
+`51afbf21da6ff6de924671677a2766e8f1dc6c35`.
+
+The same missing-name manifest fails native validation in both versions, but its diagnostic differs:
+
+| Claude version | Native check and message | Native exit |
+|---|---|---|
+| `2.1.202` | `name: Invalid input: expected string, received undefined` | `1` |
+| `2.1.278` | `name: Invalid input` | `1` |
+
+The installed `2.1.278` executable was the native arm64 binary selected by `~/.local/bin/claude`.
+The isolated `2.1.202` installation selected its `@anthropic-ai/claude-code-darwin-arm64` binary;
+no global CLI installation changed. The shorter diagnostic was also observed with an already-installed
+`2.1.276` binary. An empty `CLAUDE_CONFIG_DIR` did not change the `2.1.278` static output.
+These observations establish version-dependent output on one Mac, but not the first changed release.
+
+`parseClaudeValidateOutput` preserves both complete messages. Each becomes a `claude.name` finding
+with subject `manifest`, file `.claude-plugin/plugin.json`, and native/normalized severity `error`.
+The static verdict remains `fail`; no parser change was needed. The missing-name live canary now
+checks those facts and accepts exactly the two observed messages. Other live canaries are unchanged.
+
+The updated missing-name canary and all four Claude static live cases passed against both versions:
+
+```sh
+SKILLSMITH_E2E=1 bun test packages/core/tests/verify/live-e2e.test.ts -t 'claude-noname'
+SKILLSMITH_E2E=1 bun test packages/core/tests/verify/live-e2e.test.ts -t 'claude-code.*static:'
+```
+
+For each run, `PATH` selected the intended Claude installation and Bun `1.3.14`, and `TMPDIR=/tmp`.
+Wrapped-skill checks used an external scratch `XDG_CACHE_HOME`.
+
+The unchanged Claude deep canary also passed against `2.1.278` under explicit credential isolation.
+Its process environment was an allowlist containing no account/provider credentials. Fresh config
+and cache directories and `CLAUDE_CODE_SIMPLE=1` were used; the native CLI documents simple/bare mode
+as skipping OAuth/keychain reads while retaining explicit `--plugin-dir` loading. Nonessential traffic
+and updates were disabled. `ANTHROPIC_BASE_URL` pointed to a loopback HTTP fixture that rejected
+requests. The raw `init` event listed `dummytest:good-skill` and the `dummytest` plugin, but none of the
+three broken skills in `skills`. The process then emitted `authentication_failed`, zero API duration,
+and zero cost. The loopback fixture received zero requests.
+
+An earlier isolation probe supplied a synthetic API key to the rejecting fixture and encountered
+repeated local `401` responses until its 60-second harness deadline. That probe did not establish a
+loader failure. It was replaced by the credential-free control above; no real-account model call was
+made. An empty config alone must not be treated as proof that inherited credentials or API requests
+are absent.
+
+The Claude verifier baseline is now `2.1.278`, owned by
+`packages/core/src/agents/claude-code/descriptor.ts`; `verify/types.ts` only reexports the registry
+value. Baseline-dependent tests and the generated README version table track it. Historical output
+fixtures retain their original versions and messages. Release workflow/toolchain pins remain at
+their existing versions, including Claude `2.1.202`, whose static compatibility was rechecked above.

@@ -157,7 +157,7 @@ describe('runVerify', () => {
       explicitTools: false,
     });
     expect(r.value.verifiedAgainst).toEqual({
-      'claude-code': '2.1.202',
+      'claude-code': '2.1.278',
       codex: '0.142.5',
       muse: '1.3.0',
     });

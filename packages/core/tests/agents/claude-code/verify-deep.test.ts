@@ -108,7 +108,7 @@ describe('verifyClaudeCode deep mode', () => {
       path: ['/fake'],
       fileExists: async (p) => p === '/fake/claude',
       realpath: async (p) => p,
-      runVersion: async () => '2.1.202 (Claude Code)',
+      runVersion: async () => '2.1.278 (Claude Code)',
       ...overrides,
     });
 
@@ -331,7 +331,7 @@ describe('verifyClaudeCode deep mode', () => {
         ...real,
         path: ['/fake'],
         fileExists: async (p) => p === '/fake/claude',
-        runVersion: async () => '2.1.202 (Claude Code)',
+        runVersion: async () => '2.1.278 (Claude Code)',
         readText: async () => '{"name":"noskills"}',
         exec: async (_cmd, args) => {
           if (args[0] === 'plugin') return { code: 0, stdout: '', stderr: '', timedOut: false };

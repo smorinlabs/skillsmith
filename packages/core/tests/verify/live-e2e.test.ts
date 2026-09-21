@@ -80,7 +80,7 @@ describe.skipIf(!E2E)('verify live e2e (real claude/codex/muse CLIs)', () => {
       expect(manifestFinding?.message).toContain('Invalid JSON syntax');
     }, 120_000);
 
-    test('static: claude-noname — manifest error contains "expected string, received undefined"', async () => {
+    test('static: claude-noname — missing-name manifest error retains a verified diagnostic', async () => {
       const env = await defaultScanEnv();
       const r = await verifyClaudeCode(env, {
         path: CLAUDE_NONAME,
@@ -92,7 +92,17 @@ describe.skipIf(!E2E)('verify live e2e (real claude/codex/muse CLIs)', () => {
 
       const mode = requireRan(r.value.modes[0], 'claude static claude-noname');
       const manifestFinding = mode.findings.find((f) => f.subject === 'manifest');
-      expect(manifestFinding?.message).toContain('expected string, received undefined');
+      expect(mode.verdict).toBe('fail');
+      expect(manifestFinding).toMatchObject({
+        checkId: 'claude.name',
+        subject: 'manifest',
+        file: '.claude-plugin/plugin.json',
+        toolSeverity: 'error',
+        normalizedSeverity: 'error',
+      });
+      expect(['Invalid input', 'Invalid input: expected string, received undefined']).toContain(
+        manifestFinding?.message ?? '',
+      );
     }, 120_000);
 
     test('deep: dummytest — ran despite the auth-failed tail; presence warnings for the three broken skills only', async () => {
