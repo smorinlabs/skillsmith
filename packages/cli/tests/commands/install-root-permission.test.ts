@@ -485,6 +485,9 @@ describe('SC-I60-MF2A lane 1 — core exact-API (real makeDir wrapper, genuine P
 
 // strace fault injection is Linux-only; skip the lane where it cannot run
 // (Bun.which tool gate per dev-source-live.test.ts precedent).
+// Cross-ref: scripts/run-test-files-serial.ts mirrors this gate (straceLaneEnabled) and the
+// 5-test magnitude (ENV_STRACE_SKIP_COUNT). Keep both in sync: the serial gate expects exactly
+// 5 skips here when this lane is closed and 0 when it is open.
 const lane2StraceOk = process.platform === 'linux' && Bun.which('strace') !== null;
 
 describe.skipIf(!lane2StraceOk)(

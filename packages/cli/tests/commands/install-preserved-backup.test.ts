@@ -108,6 +108,10 @@ let compiledBinary = '';
 // When the scratch filesystem cannot fit it, only that control skips (disclosed); the six source
 // CLI tests still run. Native/hosted acceptance remains a later gate.
 const NATIVE_MIN_FREE_BYTES = 300 * 1024 * 1024;
+// Cross-ref: scripts/run-test-files-serial.ts mirrors this gate (nativeCompileEnabled), the
+// 300MB threshold (NATIVE_MIN_FREE_BYTES), and the 1-test magnitude (ENV_NATIVE_SKIP_COUNT).
+// Keep both in sync: the serial gate expects exactly 1 skip here when native compile is
+// unsupported and 0 when it is supported.
 const nativeCompileSupported = (): boolean => {
   try {
     const s = statfsSync(tmpdir());
