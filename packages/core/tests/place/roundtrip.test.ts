@@ -80,7 +80,7 @@ const minimalVerifyReport = (tool: VerifyTool, verdict: SummaryVerdict): VerifyR
   schemaVersion: 1,
   target: { path: '/fake', kind: 'skill' },
   requested: { tools: [tool], modes: ['static'], strict: false, explicitTools: true },
-  verifiedAgainst: { 'claude-code': '1.0.0', codex: '1.0.0' },
+  verifiedAgainst: { 'claude-code': '1.0.0', codex: '1.0.0', muse: '1.0.0' },
   summary: {
     verdict,
     verified: verdict === 'pass' || verdict === 'warn' ? [tool] : [],

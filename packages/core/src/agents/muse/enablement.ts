@@ -1,4 +1,4 @@
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { z } from 'zod';
 import { type SkillSmithError, configError, errorMessage } from '../../errors.ts';
 import { rethrowInventoryReadFailure, throwIfInventoryCancelled } from '../../inventory-control.ts';
@@ -63,6 +63,18 @@ const readActivationRecords = async (
     for (const [skillPath, state] of Object.entries(scopeMap))
       records.push([scope, skillPath, state]);
   }
+  // Project records nest two levels deep under the plural `projects` key by
+  // realpath'd workspace (`projects["<abs-ws>"][".agents/skills/<n>/SKILL.md"]`).
+  // They flatten after the scope maps so the real format wins on conflicts.
+  const projects = activation.projects;
+  if (typeof projects === 'object' && projects !== null && !Array.isArray(projects)) {
+    for (const [workspace, docs] of Object.entries(projects)) {
+      if (!isStringMap(docs)) continue;
+      for (const [rel, state] of Object.entries(docs)) {
+        records.push(['project', join(workspace, rel), state]);
+      }
+    }
+  }
   return ok(records);
 };
 
@@ -72,6 +84,28 @@ const expandRecordKey = (env: InventoryReadPorts, key: string): string =>
   normalizeSeparators(key)
     .replaceAll('$CONFIG_DIR', normalizeSeparators(join(env.xdg.config, 'muse')))
     .replaceAll('$HOME', normalizeSeparators(env.homeDir));
+
+const AGENTS_SKILLS_SUFFIX = '/.agents/skills';
+
+// Nested `projects` records key the realpath'd workspace, while the scan root
+// may still carry symlinks (macOS `/tmp` versus `/private/tmp`), so project
+// entries resolve their document through the real workspace root.
+const projectDocument = async (
+  env: InventoryReadPorts,
+  settingsPath: string,
+  entry: SkillEntry,
+): Promise<string | null> => {
+  const root = normalizeSeparators(entry.root);
+  if (!root.endsWith(AGENTS_SKILLS_SUFFIX)) return null;
+  const workspace = root.slice(0, -AGENTS_SKILLS_SUFFIX.length);
+  if (workspace.length === 0) return null;
+  const resolved = await env
+    .realpath(workspace)
+    .catch((failure: unknown) => rethrowInventoryReadFailure(failure, settingsPath));
+  const relSkill = normalizeSeparators(relative(entry.root, entry.path));
+  if (relSkill === '' || relSkill === '.' || relSkill.startsWith('../')) return null;
+  return normalizeSeparators(join(resolved, '.agents', 'skills', relSkill, 'SKILL.md'));
+};
 
 export const resolveStandaloneActivation: StandaloneActivationResolver = async (
   env,
@@ -101,8 +135,16 @@ export const resolveStandaloneActivation: StandaloneActivationResolver = async (
     byDocument.set(expandRecordKey(env, skillPath), state);
   }
   for (const entry of entries) {
-    const document = normalizeSeparators(join(entry.path, 'SKILL.md'));
-    const state = byScope.get(entry.scope)?.get(document);
+    throwIfInventoryCancelled(signal);
+    const raw = normalizeSeparators(join(entry.path, 'SKILL.md'));
+    const table = byScope.get(entry.scope);
+    // Project entries consult the nested record first and fall back to the
+    // flat scope map, which keeps keys written against the unscanned path.
+    const nested =
+      entry.scope === 'project' ? await projectDocument(env, settingsPath, entry) : null;
+    const state = (nested === null ? undefined : table?.get(nested)) ?? table?.get(raw);
+    // Only `on`/`off` map onto the inventory flag. Third states such as
+    // `user-invocable-only` (settings- or frontmatter-driven) keep the default.
     if (state === 'off') entry.enabled = 'off';
     else if (state === 'on') entry.enabled = 'on';
   }

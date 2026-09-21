@@ -1,8 +1,9 @@
-# Skill & Plugin Load Verification — Claude Code + Codex (empirical)
+# Skill & Plugin Load Verification — Claude Code + Codex + Muse (empirical)
 
 **Date:** 2026-07-06 · **Verified against:** Claude Code `2.1.201`, `codex-cli 0.142.5`, macOS.
+**Muse addendum:** 2026-09-20 · **Verified against:** `muse 1.3.0`, macOS.
 All results below were **reproduced live**, not taken from docs. Every load was **ephemeral —
-nothing was installed into the real `~/.claude` or `~/.codex`.**
+nothing was installed into the real `~/.claude`, `~/.codex`, or `~/.config/muse`.**
 
 > Purpose: establish exactly which skill/plugin load failures each tool detects **deterministically**
 > (no model probing), the exact commands, and the exact error strings — so a verifier can assert on them.
@@ -20,6 +21,12 @@ nothing was installed into the real `~/.claude` or `~/.codex`.**
 - **Critical asymmetry:** the two tools disagree on *severity* — a skill missing `description` is a
   **warning** in Claude (loads unless `--strict`) but a hard **error** in Codex (dropped). A cross-tool
   verifier cannot have one verdict; it needs a per-tool result.
+- **Muse:** one static command — `muse skills validate <dir> --json` — exits 0/4 with per-skill
+  reasons on stderr and a structured JSON document (diagnostics + compatibility). Deep confirmation is
+  `muse skills list --source user|project --json` against staged skills; broken skills surface as
+  **`malformed: <reason>`** loader diagnostics. **No model call, no auth, no install.** Muse is
+  **lenient about bad YAML** (valid, with the unknown field merely reported) but strict about missing
+  frontmatter/`description`.
 
 ---
 
@@ -161,6 +168,63 @@ Asking the model "list your skills" (model-probe) — non-deterministic; use it 
 
 ---
 
+## Deterministic checks — MUSE (addendum 2026-09-20, `muse 1.3.0`)
+
+### 1. Static validation (primary gate — no model call, no auth, no install)
+
+```bash
+muse skills validate <dir> --json    # validates in place; <dir> holds skills/<name>/SKILL.md
+```
+
+Observed (dummytest fixture: good-skill, bad-yaml, bad-noframe, bad-nodesc):
+```
+exit 0, valid:true   →  clean target (per-skill files[] with sha256/bytes + diagnostics[])
+exit 4, valid:false  →  stderr, one pair per bad skill:
+   "bad-noframe" is not a valid skill
+   Reason: SKILL.md must start with YAML frontmatter
+   "bad-nodesc" is not a valid skill
+   Reason: SKILL.md frontmatter must include description
+```
+The JSON document carries `diagnostics[]` (`code`/`severity`/`message`/`path`) and a
+`compatibility` block (`profile: agent-skills-common-subset`, `known_fields`, `unknown_fields`,
+`unsupported_fields`, `allowed_tools`). Advisory metadata the tool does not enforce surfaces as a
+warning diagnostic, e.g. `unsupported-skill-field`: `` `allowed-tools` is recorded as advisory
+metadata but is not enforced and grants no tool permissions ``. Unknown frontmatter fields (e.g.
+`tags`, `version`) are reported in `unknown_fields`, never fatal.
+
+**YAML leniency:** a skill whose frontmatter fails to parse still reports `valid:true` — the tool
+tolerates it and reports whatever fields it recovered. A verifier must treat "muse says valid" as
+"loads", not "well-formed".
+
+### 2. Runtime load enumeration (confirms actual availability — no model call, no auth)
+
+```bash
+export HOME=$(mktemp -d) XDG_CONFIG_HOME=$HOME/.config   # isolate user scope
+# stage skills/<name>/SKILL.md → $HOME/.config/muse/skills/<name>/SKILL.md
+muse skills list --source user --json
+# stage skills/<name>/SKILL.md → <tmp-proj>/.agents/skills/<name>/SKILL.md
+muse skills list --source project --workspace <tmp-proj> --trust-workspace --json
+```
+
+Observed (dummytest staged into both scopes; both legs exit 0):
+```
+skill file at .../.config/muse/skills/bad-nodesc/SKILL.md is malformed:
+   SKILL.md frontmatter must include description
+skill file at .../.config/muse/skills/bad-noframe/SKILL.md is malformed:
+   SKILL.md must start with YAML frontmatter
+(+ the same two diagnostics from the project leg → 2 bad skills × 2 legs)
+```
+Each leg reports its own loader diagnostics (joined by path + scope); the valid `good-skill`
+matched in both scopes with no presence warnings, and `bad-yaml` produced no diagnostic (same
+leniency as static). Diagnostics are embedded in the JSON transcript — a non-zero exit is *not*
+required to conclude failure.
+
+### Do NOT rely on
+`--source project` without `--workspace`/`--trust-workspace` (loads the ambient project, not the
+staged one), and the bare non-JSON `skills list` table (no diagnostics, no paths to join on).
+
+---
+
 ## Failure taxonomy — what "doesn't work" (observed matrix)
 
 | Failure mode | Claude `plugin validate` | Claude runtime load | Codex |
@@ -199,11 +263,23 @@ Asking the model "list your skills" (model-probe) — non-deterministic; use it 
 4. **Watch the format gap:** Codex loads `.agents/skills`, **not** `.claude/skills` — a skill left in
    `.claude/skills` simply never loads (needs a migration step).
 
+### Muse
+1. **Primary gate: `muse skills validate <dir> --json`** in CI/pre-publish — static, no auth, no
+   model call, exit 0/4. Catches missing frontmatter/`description` with per-skill reasons; parse the
+   JSON `diagnostics[]` for warnings (e.g. `unsupported-skill-field`) and `unknown_fields` for
+   tolerated-but-unknown frontmatter.
+2. **Load confirmation:** stage into a temp `HOME` (`~/.config/muse/skills`) and a temp project
+   (`.agents/skills`), then `muse skills list --source user --json` and `muse skills list --source
+   project --workspace <tmp> --trust-workspace --json` — assert each expected skill matches by
+   (path, scope) and no `malformed:` diagnostic names it. No auth, no model call.
+3. **Remember the leniency:** bad YAML is `valid:true` — if well-formedness matters, lint the
+   frontmatter yourself; muse only promises loadability.
+
 ### Cross-tool
 - **Normalize severity per tool** — the same skill can pass Claude (warning) and fail Codex (error).
 - Deterministic, **no model call:** `claude plugin validate`, `codex plugin add`, `codex plugin list --json`,
-  `codex app-server skills/list`. **Needs a session:** Claude init-event enumeration, Codex `exec` stderr.
-- Claude = single static command; Codex = stitch two surfaces (install for manifests, session-stderr for skills).
+  `codex app-server skills/list`, `muse skills validate --json`, `muse skills list --json`. **Needs a session:** Claude init-event enumeration, Codex `exec` stderr.
+- Claude = single static command; Codex = stitch two surfaces (install for manifests, session-stderr for skills); Muse = single static command + two scoped list legs.
 
 ---
 

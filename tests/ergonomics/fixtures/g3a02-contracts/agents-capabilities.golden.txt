@@ -76,11 +76,11 @@
 | inventory-skills | yes | user, project, system, managed | — |
 | inventory-commands | yes | user, project, system, managed | — |
 | diagnostics | yes | user, project, system, managed | — |
-| install | no | — | kilo-code is read-only; choose claude-code or codex |
-| uninstall | no | — | kilo-code is read-only; choose claude-code or codex |
-| dev | no | — | kilo-code is read-only; choose claude-code or codex |
-| promote | no | — | kilo-code is read-only; choose claude-code or codex |
-| undo | no | — | kilo-code is read-only; choose claude-code or codex |
+| install | no | — | kilo-code is read-only; choose claude-code, codex, or muse |
+| uninstall | no | — | kilo-code is read-only; choose claude-code, codex, or muse |
+| dev | no | — | kilo-code is read-only; choose claude-code, codex, or muse |
+| promote | no | — | kilo-code is read-only; choose claude-code, codex, or muse |
+| undo | no | — | kilo-code is read-only; choose claude-code, codex, or muse |
 | verify-static | no | — | kilo-code has no registered static verifier |
 | verify-deep | no | — | kilo-code has no registered deep verifier |
 | plan | no | — | kilo-code cannot participate in desired-state mutations |
@@ -97,11 +97,11 @@
 | inventory-skills | yes | user, project, system, managed | — |
 | inventory-commands | yes | user, project, system, managed | — |
 | diagnostics | yes | user, project, system, managed | — |
-| install | no | — | opencode is read-only; choose claude-code or codex |
-| uninstall | no | — | opencode is read-only; choose claude-code or codex |
-| dev | no | — | opencode is read-only; choose claude-code or codex |
-| promote | no | — | opencode is read-only; choose claude-code or codex |
-| undo | no | — | opencode is read-only; choose claude-code or codex |
+| install | no | — | opencode is read-only; choose claude-code, codex, or muse |
+| uninstall | no | — | opencode is read-only; choose claude-code, codex, or muse |
+| dev | no | — | opencode is read-only; choose claude-code, codex, or muse |
+| promote | no | — | opencode is read-only; choose claude-code, codex, or muse |
+| undo | no | — | opencode is read-only; choose claude-code, codex, or muse |
 | verify-static | no | — | opencode has no registered static verifier |
 | verify-deep | no | — | opencode has no registered deep verifier |
 | plan | no | — | opencode cannot participate in desired-state mutations |
@@ -118,15 +118,15 @@
 | inventory-skills | yes | user, project, system, managed | — |
 | inventory-commands | yes | user, project, system, managed | — |
 | diagnostics | yes | user, project, system, managed | — |
-| install | no | — | muse is read-only; choose claude-code or codex |
-| uninstall | no | — | muse is read-only; choose claude-code or codex |
-| dev | no | — | muse is read-only; choose claude-code or codex |
-| promote | no | — | muse is read-only; choose claude-code or codex |
-| undo | no | — | muse is read-only; choose claude-code or codex |
-| verify-static | no | — | muse has no registered static verifier |
-| verify-deep | no | — | muse has no registered deep verifier |
-| plan | no | — | muse cannot participate in desired-state mutations |
-| apply | no | — | muse cannot participate in desired-state mutations |
-| sync | no | — | muse cannot participate in desired-state mutations |
-| update | no | — | muse cannot participate in desired-state mutations |
+| install | yes | user, custom | — |
+| uninstall | yes | user, custom | — |
+| dev | yes | user, custom | — |
+| promote | yes | user, custom | — |
+| undo | yes | user, custom | — |
+| verify-static | yes | artifact | — |
+| verify-deep | yes | artifact | — |
+| plan | yes | user, custom | — |
+| apply | yes | user, custom | — |
+| sync | yes | user, custom | — |
+| update | yes | user, custom | — |
 | adapt | no | — | muse adaptation is not available |

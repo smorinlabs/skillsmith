@@ -38,7 +38,7 @@ const passDeps = (): FlipDeps => ({
         strict: false,
         explicitTools: true,
       },
-      verifiedAgainst: { 'claude-code': '1.0.0', codex: '1.0.0' },
+      verifiedAgainst: { 'claude-code': '1.0.0', codex: '1.0.0', muse: '1.0.0' },
       summary: {
         verdict: 'pass',
         verified: o.tools ? [...o.tools] : ['claude-code'],
@@ -73,7 +73,7 @@ const gateFailDeps = (): FlipDeps => ({
         schemaVersion: 1,
         target: { path: o.path, kind: 'skill' },
         requested: { tools: [tool], modes: ['static'], strict: false, explicitTools: true },
-        verifiedAgainst: { 'claude-code': '1.0.0', codex: '1.0.0' },
+        verifiedAgainst: { 'claude-code': '1.0.0', codex: '1.0.0', muse: '1.0.0' },
         summary: {
           verdict: 'fail',
           verified: [],

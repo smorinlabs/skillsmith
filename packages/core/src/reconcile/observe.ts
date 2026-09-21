@@ -427,6 +427,25 @@ export const observeReconcileInput = async (
       );
       continue;
     }
+    // A scope the tool does not manage (muse in project scope) refuses like
+    // a missing adapter: resolving would throw the no-destination invariant.
+    if (
+      adapter.placement.rootFacts(runtime.ports, row.declaration.scope, {
+        cwd: placementCwdForScope(resolved, row.declaration.scope),
+        configuration: runtime.configuration,
+      }).length === 0
+    ) {
+      desiredPlacements.push(
+        refusedDesiredPlacement(
+          row,
+          'capability',
+          'plan-placement-scope-unsupported',
+          null,
+          `${row.tool} does not manage ${row.declaration.scope} scope`,
+        ),
+      );
+      continue;
+    }
     try {
       const customRoot = customRootFor(resolved, row, runtime.ports);
       const standardResolution = await adapter.placement.resolveScoped(
@@ -782,6 +801,15 @@ export const observeReconcileInput = async (
     for (const { tool, scope } of selectedPairs) {
       const adapter = toolRegistry.get(tool);
       if (adapter?.placement === undefined) continue;
+      // A scope the tool does not manage holds no prunable placements.
+      if (
+        adapter.placement.rootFacts(runtime.ports, scope, {
+          cwd: placementCwdForScope(resolved, scope),
+          configuration: runtime.configuration,
+        }).length === 0
+      ) {
+        continue;
+      }
       for (const pin of removedPins) {
         try {
           if (runtime.signal?.aborted) return err(cancellation());

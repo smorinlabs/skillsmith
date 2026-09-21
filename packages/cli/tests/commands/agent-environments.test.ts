@@ -451,10 +451,10 @@ const assertDiscovery = (value: Workspace, report: Agents, missing?: string): vo
     expect(capabilities?.operations.detect.supported).toBe(true);
     expect(capabilities?.operations['inventory-skills'].supported).toBe(true);
     expect(capabilities?.operations.install.supported).toBe(
-      ['claude-code', 'codex'].includes(tool.id),
+      ['claude-code', 'codex', 'muse'].includes(tool.id),
     );
     expect(capabilities?.operations['verify-static'].supported).toBe(
-      ['claude-code', 'codex'].includes(tool.id),
+      ['claude-code', 'codex', 'muse'].includes(tool.id),
     );
     const installations = report.detections.find((row) => row.tool === tool.id)?.installations;
     if (mode !== 'present' || missing === tool.id) {

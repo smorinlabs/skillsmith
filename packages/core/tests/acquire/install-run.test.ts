@@ -211,6 +211,7 @@ afterEach(async () => {
 
 const claudeRoot = (): string => join(f.home, '.claude', 'skills');
 const agentsRoot = (): string => join(f.home, '.agents', 'skills');
+const museRoot = (): string => join(f.home, '.config', 'muse', 'skills');
 const legacyRoot = (): string => join(f.home, '.codex', 'skills');
 const led = async () => {
   const r = await readLedgerState(f.env, ledgerPathOf(f.data));
@@ -225,10 +226,10 @@ const fetchDirs = async (): Promise<readonly string[]> => {
 };
 
 describe('runInstall — fresh install', () => {
-  test('symlink placement into both tool roots, full origin, shared store, exec + symlink preserved', async () => {
+  test('symlink placement into all tool roots, full origin, shared store, exec + symlink preserved', async () => {
     const r = await runInstall(f.env, userOpts, makeDeps());
     if (!r.ok) throw new Error(msg(r.error));
-    expect(r.value.summary.installed).toBe(2);
+    expect(r.value.summary.installed).toBe(3);
 
     const claudeLink = join(claudeRoot(), 'factor-scan');
     const agentsLink = join(agentsRoot(), 'factor-scan');
@@ -357,19 +358,19 @@ describe('runInstall — fresh install', () => {
 });
 
 describe('runInstall — idempotence / update / repair', () => {
-  test('idempotent re-run → both noop; --force same rev → updated', async () => {
+  test('idempotent re-run → all noop; --force same rev → updated', async () => {
     const r1 = await runInstall(f.env, userOpts, makeDeps());
     if (!r1.ok) throw new Error(msg(r1.error));
-    expect(r1.value.summary.installed).toBe(2);
+    expect(r1.value.summary.installed).toBe(3);
 
     const r2 = await runInstall(f.env, userOpts, makeDeps());
     if (!r2.ok) throw new Error(msg(r2.error));
-    expect(r2.value.summary.noop).toBe(2);
+    expect(r2.value.summary.noop).toBe(3);
     expect(r2.value.results[0]?.reason).toContain('already installed');
 
     const r3 = await runInstall(f.env, { ...userOpts, force: true }, makeDeps());
     if (!r3.ok) throw new Error(msg(r3.error));
-    expect(r3.value.summary.updated).toBe(2);
+    expect(r3.value.summary.updated).toBe(3);
   });
 
   test('an exact one-tool rerun is zero-op and a missing lock repairs without touching exact live state', async () => {
@@ -457,7 +458,7 @@ describe('runInstall — idempotence / update / repair', () => {
     if (!r1.ok) throw new Error(msg(r1.error));
     const r2 = await runInstall(f.env, { ...userOpts, ref: 'v1.0.0', force: true }, makeDeps());
     if (!r2.ok) throw new Error(msg(r2.error));
-    expect(r2.value.summary.updated).toBe(2);
+    expect(r2.value.summary.updated).toBe(3);
     const ledger = await led();
     const pair = getPairAt(ledger, null, 'factor-scan', 'claude-code');
     expect(pair?.pinned?.rev).toBe(fixture.multiTagSha.slice(0, 12));
@@ -468,7 +469,7 @@ describe('runInstall — idempotence / update / repair', () => {
   test('--direct re-install over an existing copy (dir→dir) is routed as a kind change → updated', async () => {
     const r1 = await runInstall(f.env, { ...userOpts, direct: true }, makeDeps());
     if (!r1.ok) throw new Error(msg(r1.error));
-    expect(r1.value.summary.installed).toBe(2);
+    expect(r1.value.summary.installed).toBe(3);
     const claudeDir = join(claudeRoot(), 'factor-scan');
     expect(await f.env.pathKind(claudeDir)).toBe('dir');
 
@@ -476,7 +477,7 @@ describe('runInstall — idempotence / update / repair', () => {
     // reject a same-kind dir→dir replace, so the run layer routes it via a store-symlink intermediate.
     const r2 = await runInstall(f.env, { ...userOpts, direct: true, force: true }, makeDeps());
     if (!r2.ok) throw new Error(msg(r2.error));
-    expect(r2.value.summary.updated).toBe(2);
+    expect(r2.value.summary.updated).toBe(3);
     // ends as a real dir copy, fully committed (no journal), no residue
     expect(await f.env.pathKind(claudeDir)).toBe('dir');
     expect(await f.env.pathKind(join(claudeDir, 'SKILL.md'))).toBe('file');
@@ -1045,7 +1046,7 @@ describe('runInstall — resolution ambiguity', () => {
       makeDeps({ pick }),
     );
     if (!r.ok) throw new Error(msg(r.error));
-    expect(r.value.summary.installed).toBe(2);
+    expect(r.value.summary.installed).toBe(3);
     expect(r.value.results[0]?.skill).toBe('factor-scan');
   });
 });
@@ -1172,7 +1173,7 @@ describe('runInstall — batch semantics', () => {
     expect(
       r.value.results.find((x) => x.source === badLabel.value.canonicalInvocation)?.action,
     ).toBe('failed');
-    expect(r.value.summary.installed).toBe(2);
+    expect(r.value.summary.installed).toBe(3);
   });
 
   test('G3B-02: a started source group attempts every tool pair before fail-fast skips later groups', async () => {
@@ -1865,9 +1866,11 @@ describe('runInstall — post-transport safety boundary', () => {
     );
     if (!result.ok) throw new Error(msg(result.error));
     expect(result.value.requested.sources).toEqual([fsLabel, fsLabel]);
-    expect(result.value.results.map(({ requestIndex }) => requestIndex)).toEqual([0, 0, 1, 1]);
+    expect(result.value.results.map(({ requestIndex }) => requestIndex)).toEqual([
+      0, 0, 0, 1, 1, 1,
+    ]);
     expect(result.value.results.every(({ source }) => source === fsLabel)).toBeTrue();
-    expect(result.value.plan.operations).toHaveLength(2);
+    expect(result.value.plan.operations).toHaveLength(3);
   });
 
   test('threads an exact explicit non-sibling artifact pair into snapshot observation', async () => {
@@ -2044,6 +2047,7 @@ describe('runInstall — fetch elision', () => {
     // uninstall-shaped removal of the placement dirs (leave the ledger + store intact)
     await f.env.removeTree(join(claudeRoot(), 'factor-scan'));
     await f.env.removeTree(join(agentsRoot(), 'factor-scan'));
+    await f.env.removeTree(join(museRoot(), 'factor-scan'));
 
     // fetch-forbidding env: any git 'fetch' fails hard
     const noFetch: RuntimePorts = {
@@ -2066,6 +2070,7 @@ describe('runInstall — fetch elision', () => {
       true,
     );
     expect(await f.env.pathKind(join(claudeRoot(), 'factor-scan'))).not.toBe('absent');
+    expect(await f.env.pathKind(join(museRoot(), 'factor-scan'))).not.toBe('absent');
     const cc = r.value.results.find((x) => x.tool === 'claude-code');
     expect(cc?.store?.reused).toBe(true);
   });
@@ -2182,8 +2187,8 @@ describe('runInstall — dry run', () => {
     expect(Object.isFrozen(previewPlan)).toBeTrue();
     expect(preview.value.executionResults).toEqual([]);
     for (const operation of preview.value.plan.operations) {
-      expect(operation.preconditionIds).toHaveLength(10);
-      expect(new Set(operation.preconditionIds).size).toBe(10);
+      expect(operation.preconditionIds).toHaveLength(11);
+      expect(new Set(operation.preconditionIds).size).toBe(11);
       expect(
         operation.preconditionIds.every((id) => /^precondition:v1:[0-9a-f]{64}$/.test(id)),
       ).toBeTrue();
@@ -2194,7 +2199,8 @@ describe('runInstall — dry run', () => {
     const observeLiveMutation = (path: string): void => {
       if (
         path !== join(claudeRoot(), 'factor-scan') &&
-        path !== join(agentsRoot(), 'factor-scan')
+        path !== join(agentsRoot(), 'factor-scan') &&
+        path !== join(museRoot(), 'factor-scan')
       ) {
         return;
       }
@@ -2522,7 +2528,7 @@ describe('runInstall — dry run', () => {
       .map(({ kind }) => kind);
     expect(artifactKinds.length).toBeGreaterThan(0);
     expect(artifactKinds.at(-1)).toBe('write-lock');
-    expect(pairKinds).toEqual(['install', 'install']);
+    expect(pairKinds).toEqual(['install', 'install', 'install']);
     expect(r.value.executionResults).toEqual([]);
     // no placements, no ledger file, fetch cleaned
     expect(await f.env.pathKind(join(claudeRoot(), 'factor-scan'))).toBe('absent');
@@ -2562,7 +2568,7 @@ describe('runInstall — dry run', () => {
     expect(await f.env.readText(ledgerPath)).toBe(source);
   });
 
-  test('supported v1 execution migrates before installing and commits both histories', async () => {
+  test('supported v1 execution migrates before installing and commits all histories', async () => {
     const ledgerPath = ledgerPathOf(f.data);
     await f.env.writeTextFile(
       ledgerPath,
@@ -2606,13 +2612,13 @@ describe('runInstall — dry run', () => {
     );
     if (!result.ok) throw new Error(msg(result.error));
     expect(result.value.plan.operations[0]?.kind).toBe('migrate-ledger');
-    expect(result.value.summary.installed).toBe(2);
+    expect(result.value.summary.installed).toBe(3);
     expect(calls).toEqual({
       resolveRef: 0,
       fetchRepo: 1,
       listSkills: 1,
       materializeSkill: 1,
-      verify: 2,
+      verify: 3,
     });
 
     const state = await readLedgerState(f.env, ledgerPath);
@@ -2622,6 +2628,7 @@ describe('runInstall — dry run', () => {
     expect(state.value.sourceVersion).toBe(2);
     expect(state.value.model.history.map((journal) => journal.intent.kind)).toEqual([
       'migrate-ledger',
+      'install',
       'install',
       'install',
     ]);

@@ -949,6 +949,33 @@ describe('desired/current plan reconciliation', () => {
     ]);
   });
 
+  test('refuses a muse project declaration the adapter does not manage', async () => {
+    const state = await fixture();
+    const base = declaration('codex');
+    const museProject: NormalizedManifestDeclaration = {
+      ...base,
+      name: 'gamma',
+      source: { ...base.source, path: 'skills/gamma' },
+      tools: ['muse'],
+      scope: 'project',
+    };
+    const rows: ResolvedPlanDeclaration[] = [
+      { declaration: museProject, tool: 'muse', lock: pinFor(museProject, digest('e')) },
+    ];
+    const result = await reconcile(productInput(state.root, rows), state);
+    expect(result.ok).toBeTrue();
+    if (!result.ok) throw new Error(result.error.message);
+    expect(result.value.plan.operations).toEqual([]);
+    expect(result.value.plan.diagnostics).toMatchObject([
+      {
+        kind: 'refuse',
+        refusalClass: 'capability',
+        affected: { tool: 'muse', path: null },
+        reason: { code: 'plan-placement-scope-unsupported' },
+      },
+    ]);
+  });
+
   test('prunes only a lock-owned managed placement with matching observed content', async () => {
     const state = await fixture();
     const live = join(state.ports.homeDir, '.agents', 'skills', 'orphan');

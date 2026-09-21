@@ -320,6 +320,17 @@ const resolveNamedTarget = async (
   }
 
   for (const tool of toolsInOrder) {
+    // A tool with no placement roots in this scope (muse in project scope)
+    // contributes nothing: resolving would throw the registry's
+    // no-destination invariant. Explicit requests refuse loudly; default
+    // selection skips silently.
+    if (placementBundleFor(registry, tool).rootFacts(env, scope, ctx).length === 0) {
+      if (explicitTools) {
+        const reason = `'${target}' cannot target ${tool} in ${scope} scope`;
+        preResults.push(emptyFlipResult(target, tool, null, reason, flipRefusedError(reason)));
+      }
+      continue;
+    }
     let res: ToolResolution;
     if (dest !== undefined) {
       // P13 `--dest`: create at a custom root (requires exactly one --tool). `dest` is already
@@ -716,7 +727,10 @@ export const planFlipsWithRegistry = async (
           const placement = perTool.get(tool)?.get(skill);
           if (!inventories.has(tool))
             throw new Error(`tool registry invariant: ${tool} placement inventory is missing`);
-          if (hasOpenJournal(ledger, scopeKey, skill, tool)) {
+          if (
+            hasOpenJournal(ledger, scopeKey, skill, tool) &&
+            placementBundleFor(registry, tool).rootFacts(env, scope, ctx).length > 0
+          ) {
             const resolution = await classifyForTool(
               registry,
               env,
@@ -878,6 +892,12 @@ export const planFlipsWithRegistry = async (
       if (!existsAnywhere) {
         for (const { scope, scopeKey, ctx } of scopes) {
           for (const tool of registeredPlacementTools) {
+            // A scope the tool does not manage holds no placements, pairs,
+            // or duplicates: resolving would throw the no-destination
+            // invariant.
+            if (placementBundleFor(registry, tool).rootFacts(env, scope, ctx).length === 0) {
+              continue;
+            }
             const resolution = await classifyForTool(
               registry,
               env,

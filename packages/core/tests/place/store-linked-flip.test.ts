@@ -173,7 +173,7 @@ const makeVerifyReport = (tool: VerifyTool): VerifyReport => {
     schemaVersion: 1,
     target: { path: '/fake', kind: 'skill' },
     requested: { tools: [tool], modes: ['static'], strict: false, explicitTools: true },
-    verifiedAgainst: { 'claude-code': '1.0.0', codex: '1.0.0' },
+    verifiedAgainst: { 'claude-code': '1.0.0', codex: '1.0.0', muse: '1.0.0' },
     summary: {
       verdict: 'pass',
       verified: [tool],
