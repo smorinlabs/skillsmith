@@ -1,12 +1,31 @@
 # Skillsmith repository skill selection implementation plan
 
-**Status:** Ready for implementation after three independent adversarial reviews and follow-up review of the repairs. The user approved the second-PR interface and implementation. This pass completed the plan and reviews; runtime implementation has not started.
+**Status:** Ready for implementation after three independent adversarial reviews of the plan and follow-up review of the repairs. The user approved the second-PR interface and implementation. All implementation tasks below are pending; runtime implementation has not started.
 
 **Purpose:** Let a user select one skill from a repository by its directory name or declared frontmatter name. Preserve the exact selected source through installation and subsequent `plan`, `apply`, and `update` operations.
 
 **Scope:** Skillsmith is an open-source CLI for managing packages whose primary artifact is `SKILL.md`. Validation uses local Git repositories, isolated installation directories, and synthetic fixtures. It does not use the user's installed skills, real credentials, or third-party networks.
 
 **References:** [Parent search plan](2026-09-20-skillsmith-search-implementation.md); [search PR #100](https://github.com/smorinlabs/skillsmith/pull/100). Source baseline: `8189acb5622bdb5fbde7db2abc09c46228ec8ede`. Working branch: `feat/install-skill-selector`, based on the search PR. Task IDs `INSTALL-01`–`INSTALL-08` are local to this plan, not project IDs.
+
+## Execution overview
+
+Implement the selector as a separate second PR. Begin with INSTALL-01, which establishes failing regression cases and passing compatibility controls. The detailed tasks in section 5 identify the files, work, and acceptance checks for each deliverable.
+
+| Task ID | Deliverable | Depends on | Status |
+| --- | --- | --- | --- |
+| [INSTALL-01](#install-01--establish-failing-behavior-and-compatibility-fixtures) | Regression fixtures for name conflicts, cached installs, root skills, and existing installation forms. | Reviewed plan | Pending |
+| [INSTALL-02](#install-02--make-frontmatter-reads-data-only-and-bounded) | Data-only frontmatter parsing and bounded Git reads with correct cancellation. | INSTALL-01 | Pending |
+| [INSTALL-03](#install-03--implement-deterministic-selection-at-one-commit) | Directory-first matching, declared-name fallback/override, and ambiguity refusal at one commit. | INSTALL-02 | Pending |
+| [INSTALL-04](#install-04--wire-production-cli-and-application-preflight) | Production CLI options and shared validation before installation context creation. | INSTALL-03 | Pending |
+| [INSTALL-05](#install-05--preserve-exact-saved-paths-across-lifecycle-commands) | Exact root and nested source identities across `plan`, `apply`, and `update`. | INSTALL-03, INSTALL-04 | Pending |
+| [INSTALL-06](#install-06--document-the-new-contract-and-close-live-inventories) | README, help, completion, command references, and contract inventory updates. | INSTALL-04, INSTALL-05 | Pending |
+| [INSTALL-07](#install-07--review-and-validate-implementation) | Adversarial implementation review, focused/smoke checks, a clean candidate commit, and the terminal gate. | INSTALL-02 through INSTALL-06 | Pending |
+| [INSTALL-08](#install-08--deliver-the-selector-pr-separately) | Separate selector PR with resolved findings and evidence for its exact head. | INSTALL-07 | Pending |
+
+Mark a task complete only when its acceptance checks pass. Record the implementing commit and check results with the task. A completed plan review does not satisfy INSTALL-07, which reviews the actual implementation.
+
+Delivery is complete when the second PR contains the approved behavior, all required validation has passed, and confirmed review findings are resolved. Merge and release remain separate actions. Search's two-minute deadline and 10 MB decoded-response limit remain part of the first PR; this selector plan does not alter them.
 
 ## 1. Interface and existing behavior
 
@@ -209,9 +228,11 @@ Live option count increases from 288 to 290; canonical command count remains 25.
 
 **Acceptance:** source help, alias help, generated docs, README, completion inventory, strict JSON, and rendered retry guidance agree with the final interface, including the leading-dash lookup restriction. Every nested retry command parses back to the exact host/transport/path/ref and omits both selector options; root candidates never get a misleading executable retry. CLI Standard 1.4.14 scoped note covers long kebab-case options (R3.3), both value forms for every accepted lookup value (R3.5), and default-false presence booleans (R3.6); existing whole-CLI deviations remain recorded in the parent plan. No new MUST deviation or SHOULD waiver is introduced by this selector design.
 
-### INSTALL-07 — Run focused verification, smoke, and final gate
+### INSTALL-07 — Review and validate implementation
 
 **Depends on:** INSTALL-02 through INSTALL-06. Run implementation iterations with the relevant focused selectors and `bun run test:smoke`. Add `bun run test:smoke:p2-ts04:recovery` only if coordinator/recovery behavior is actually touched. Do not repeat the full crash/permission matrix during ordinary iterations.
+
+Have three independent reviewers inspect the implemented diff against this plan: one for matching and CLI compatibility, one for Git/frontmatter reads, and one for cache and saved-state behavior. Each finding must identify a concrete counterexample, source location, and impact. Verify findings against live behavior, fix confirmed defects, and have the relevant reviewer recheck the repair. Record refuted findings with evidence and keep unresolved findings visible. This implementation review is distinct from the completed plan review in section 6.
 
 After focused checks and smoke pass, commit the implementation candidate, including every new regression suite, and verify a clean worktree before the terminal gate. `scripts/run-test-files-serial.ts` first requires a clean repository and then discovers tests through `git ls-files -z`; staging alone is insufficient. Verify every new suite appears in the captured discovery list or per-file execution log. The final JSON receipt has counts and a manifest hash, not a list of filenames. The candidate commit is not a claim that the terminal gate passed. Any repair after that gate needs focused verification, a new clean candidate commit, and gate evidence for the new head.
 
@@ -232,7 +253,7 @@ bun run test:smoke
 
 Verify test-name selectors against the live titles before use; a zero-test run is not evidence. Include focused reconcile/update and completion/documentation checks when those files change. Run lint, boundary lint, typecheck, and the canonical `bun run check` terminal gate once at the implementation milestone. If a failure also occurs on unchanged baseline, record the reproduction and obtain the appropriate CI evidence; do not label an unrun or failing check as passed. Build a native binary and verify help, invalid-option preflight, and a hermetic local-repository install to cover compiled dispatch.
 
-**Acceptance:** retain commands, commit SHA, counts/skips, and relevant platform limitations in the second PR evidence. Search PR test receipts do not validate this new branch. A final diff audit confirms no schema drift or unrelated recovery changes.
+**Acceptance:** all three implementation reviews are complete, confirmed defects are repaired, and no unresolved finding is hidden by a passing test suite. Retain commands, commit SHA, counts/skips, and relevant platform limitations in the second PR evidence. Search PR test receipts do not validate this new branch. A final diff audit confirms no schema drift or unrelated recovery changes.
 
 ### INSTALL-08 — Deliver the selector PR separately
 
