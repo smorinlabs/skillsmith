@@ -1,6 +1,6 @@
 # Skillsmith repository skill selection implementation plan
 
-**Status at implementation candidate:** INSTALL-01 through INSTALL-06 are complete on `feat/install-skill-selector`. Three subagents completed bounded implementation tasks and independent cross-review; all selector findings are repaired and rechecked. INSTALL-07 awaits the clean-candidate canonical gate and INSTALL-08 awaits separate PR delivery. The PR will record final commit-specific gate evidence and delivery status.
+**Status at validation follow-up:** INSTALL-01 through INSTALL-06 are complete on `feat/install-skill-selector`. Three subagents completed bounded implementation tasks and independent cross-review; all selector findings are repaired and rechecked. The canonical gate identified a stale Git-trace fixture; its repair passes all 14 root-content tests with semantic assertions unchanged. [Draft PR #107](https://github.com/smorinlabs/skillsmith/pull/107) is published separately from search PR #100. INSTALL-07 and INSTALL-08 await final commit-specific gate evidence and PR readiness, recorded in that PR.
 
 **Purpose:** Let a user select one skill from a repository by its directory name or declared frontmatter name. Preserve the exact selected source through installation and subsequent `plan`, `apply`, and `update` operations.
 
@@ -21,7 +21,7 @@ Implement the selector as a separate second PR. Begin with INSTALL-01, which est
 | [INSTALL-05](#install-05--preserve-exact-saved-paths-across-lifecycle-commands) | Exact root and nested source identities across `plan`, `apply`, and `update`. | INSTALL-03, INSTALL-04 | Complete; real Git lifecycle checks pass |
 | [INSTALL-06](#install-06--document-the-new-contract-and-close-live-inventories) | README, help, completion, command references, and contract inventory updates. | INSTALL-04, INSTALL-05 | Complete; generated references and inventories agree |
 | [INSTALL-07](#install-07--review-and-validate-implementation) | Adversarial implementation review, focused/smoke checks, a clean candidate commit, and the terminal gate. | INSTALL-02 through INSTALL-06 | In progress |
-| [INSTALL-08](#install-08--deliver-the-selector-pr-separately) | Separate selector PR with resolved findings and evidence for its exact head. | INSTALL-07 | Pending |
+| [INSTALL-08](#install-08--deliver-the-selector-pr-separately) | Separate selector PR with resolved findings and evidence for its exact head. | INSTALL-07 | Draft PR #107 published; final validation pending |
 
 Mark a task complete only when its acceptance checks pass. Record the implementing commit and check results with the task. A completed plan review does not satisfy INSTALL-07, which reviews the actual implementation.
 
@@ -323,6 +323,7 @@ changes and owns repository-wide validation and PR delivery.
 | A custom transport could supply a candidate name different from its directory basename. | Derive nested names from their paths, reject inconsistent supplied names, and preserve directory-derived installed identity. |
 | CLI help expanded beyond its three-workflow contract. | Retain one established install example and two selector examples; preserve other source forms in source help and README. |
 | UTF-8 decoding and frontmatter parsing each removed a byte-order mark. | Preserve decoded byte-order marks for the shared parser to handle once; direct parsing and scanning must agree for zero through three marks with YAML and JSON. |
+| Root-content test tracing expected Git's first argument to be `-C`. | Accept the new leading `--no-replace-objects` in the trace counter and transparent archive hook. Retain checkout, archive, content, and recurrence assertions. |
 
 All new lifecycle fixture state, including artifact coordination, lives below the owned temporary
 root. The CLI fixture uses the production command graph and application services with the test
@@ -352,6 +353,9 @@ Candidate validation used Bun 1.3.14 and canonical `TMPDIR=/private/tmp`:
 | Default smoke | Five passed, 3,737 assertions. |
 | Recovery smoke | Four passed, 453 assertions. |
 | Static and generated checks | Biome, ESLint boundaries, TypeScript, generated references, actionlint, and `check:p17` passed. Frozen dependency installation passed. |
+| Compiled CLI | Native ARM64 production build with bytecode passed both help aliases and eight invalid-input/ref cases without changing isolated state. A compiled fixture command graph installed the expected exact path and passed strict `install@2` validation with isolated coordination. |
+| Credential scanning | Both pinned scanners reported zero findings outside the process sandbox. An empty-directory control reproduced TruffleHog's sandbox-only process-enumeration cleanup error. |
+| Root-content compatibility after trace repair | All 14 tests pass; fresh checkout/archive counters increase from one to two, and content/hash/no-op/tamper controls remain unchanged. |
 
 Compatibility checks also exercised installation, reconcile planning/apply, update planning, and
 Git ports. Two default filesystem tests fail in this local sandbox: temporary-directory group
@@ -359,5 +363,12 @@ ownership differs from the effective process group, and Unix-domain socket creat
 Unchanged baseline controls reproduce both. Their assertions remain intact; final acceptance
 requires the canonical Ubuntu CI gate for this candidate, not the earlier search PR's receipt.
 
-The PR records the clean candidate SHA, compiled CLI evidence, terminal gate result, final CI
-receipt, and delivery status. Earlier search-PR CI results are not selector validation evidence.
+Candidate `676cbce` reached file 20 of 407 in the canonical run outside the sandbox. The root-content
+suite reported eight failures caused by its outdated Git-argument tracing and dependent shared
+observations, which prompted the narrow fixture repair above. That attempt also reported a changed
+Git configuration because the parent set the branch's upstream while tests were running. Future
+candidate runs keep Git configuration unchanged until the gate exits; this attempt is not a pass.
+
+[PR #107](https://github.com/smorinlabs/skillsmith/pull/107) records the latest clean candidate SHA,
+compiled CLI evidence, terminal gate result, final CI receipt, and delivery status. Earlier search-PR
+CI results are not selector validation evidence.
