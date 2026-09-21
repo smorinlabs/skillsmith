@@ -203,7 +203,7 @@ Git revision, and `--path` selects the local destination; neither changes the ma
 
 ```sh
 skillsmith install acme/skills --skill review --ref feature/review --tool claude-code
-skillsmith install acme/skills --skill "Code Review" --skills-match-frontmatter --dry-run
+skillsmith install acme/skills --skill "CODE-REVIEW" --skills-match-frontmatter --dry-run
 ```
 
 Names contain 1–256 Unicode code points, without surrounding whitespace, a leading dash, control
