@@ -11,7 +11,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, sep } from 'node:path';
 import { runInitApplication } from '../../../core/src/application/init-service.ts';
 import type {
   CurrentApplicationContext,
@@ -26,6 +26,7 @@ import {
 } from '../../../core/src/artifacts/manifest.ts';
 import { createTestNodeArtifactCoordinatorPorts } from '../../../core/src/artifacts/node-coordinator.ts';
 import { resolveRuntimeConfiguration } from '../../../core/src/config/runtime.ts';
+import { wellKnownBinDirs } from '../../../core/src/detect/scanners.ts';
 import { validateExecutionPlanShape } from '../../../core/src/execution/scheduler.ts';
 import { prepareInitOperationPlan } from '../../../core/src/init/plan.ts';
 import { executePreparedInit, observeInitManifest } from '../../../core/src/init/run.ts';
@@ -197,11 +198,19 @@ const applicationContext = async (
   }> = {},
 ): Promise<CurrentApplicationContext> => {
   const basePorts = overrides.ports ?? (await defaultRuntimePorts());
+  const executableSearchPath = overrides.ports?.executableSearchPath ?? [];
+  const externalDirs = new Set(
+    wellKnownBinDirs({ ...basePorts, homeDir: value.home, executableSearchPath }).filter(
+      (path) => path !== value.root && !path.startsWith(value.root + sep),
+    ),
+  );
   const ports = Object.freeze({
     ...basePorts,
     homeDir: value.home,
-    executableSearchPath: overrides.ports?.executableSearchPath ?? [],
+    executableSearchPath,
     xdg: Object.freeze({ config: value.config, data: value.data, cache: value.cache }),
+    fileExists: async (path: string) =>
+      externalDirs.has(dirname(path)) ? false : basePorts.fileExists(path),
   });
   return {
     observation,
