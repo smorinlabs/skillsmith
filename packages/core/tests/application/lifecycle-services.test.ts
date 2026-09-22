@@ -1376,3 +1376,62 @@ describe('lifecycle application services', () => {
     expect(cancelled.mutation.kind).toBe('applied');
   });
 });
+
+describe('repository skill selector application boundary', () => {
+  test.each([false, true])(
+    'forwards lookup name and boolean mode %s without changing installed identity',
+    async (forced) => {
+      let options: unknown;
+      const services = createLifecycleApplicationServices({
+        install: (async (_ports, opts) => {
+          options = opts;
+          return ok(installReport());
+        }) as typeof runInstall,
+      });
+      const result = await services.install(
+        {
+          arguments: [['owner/repo']],
+          options: {
+            skill: 'Code Review',
+            ...(forced ? { skillsMatchFrontmatter: true } : {}),
+            ref: 'feature/review',
+            tool: ['codex'],
+            save: false,
+          },
+        },
+        context(),
+      );
+      expect(result.exitClass).toBe('success');
+      expect(options).toMatchObject({
+        sources: ['owner/repo'],
+        skill: 'Code Review',
+        skillsMatchFrontmatter: forced,
+        ref: 'feature/review',
+        noSave: true,
+      });
+    },
+  );
+  test('invalid selectors refuse before any application context or domain call', async () => {
+    const forbidden = () => {
+      throw new Error('unexpected selector effect');
+    };
+    const services = createLifecycleApplicationServices({
+      install: forbidden as typeof runInstall,
+    });
+    const poisoned = new Proxy({} as CurrentApplicationContext, { get: forbidden });
+    for (const request of [
+      { arguments: [['owner/repo/review']], options: { skill: 'review' } },
+      { arguments: [['owner/repo']], options: { skillsMatchFrontmatter: true } },
+      { arguments: [['owner/repo']], options: { skill: ['review'] } },
+      { arguments: [['owner/repo']], options: { skill: '-review' } },
+      { arguments: [['owner/repo']], options: { skill: 'review', ref: 'bad ref' } },
+      { arguments: [['owner/repo@main']], options: { skill: 'review', ref: 'other' } },
+    ])
+      expect((await services.install(request, poisoned)).exitClass).toBe('usage');
+    for (const request of [
+      { arguments: [['owner/repo@abcdef1']], options: { skill: 'review' } },
+      { arguments: [['owner/repo']], options: { skill: 'review', ref: 'abcdef1' } },
+    ])
+      expect((await services.install(request, poisoned)).exitClass).toBe('source');
+  });
+});

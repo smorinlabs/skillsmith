@@ -270,7 +270,10 @@ export const prepareUpdateObservationV1 = async (
     }
     const resolved = await resolveRemoteSource({
       ports: runtime.ports,
-      source: parsed.value,
+      source: {
+        ...parsed.value,
+        selector: { kind: 'path', path: inspection.selected.declaration.source.path ?? '' },
+      },
       transport: sourceTransportBoundTo(inspection.proposedInspection.resolvedSha),
       ledger: EMPTY_LEDGER,
       scopeKey: null,
@@ -300,8 +303,7 @@ export const prepareUpdateObservationV1 = async (
     if (
       materialization.sha !== inspection.proposedInspection.resolvedSha ||
       materialization.skillName !== inspection.selected.declaration.name ||
-      (inspection.selected.declaration.source.path !== null &&
-        actualPath !== inspection.selected.declaration.source.path)
+      actualPath !== (inspection.selected.declaration.source.path ?? '.')
     ) {
       const rejected = await rejectCandidate(
         failure(

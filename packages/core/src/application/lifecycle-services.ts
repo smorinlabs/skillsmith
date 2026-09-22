@@ -5,6 +5,7 @@ import {
   runUninstallWithRegistryObserved,
 } from '../acquire/run.ts';
 import type { runInstall, runUninstall } from '../acquire/run.ts';
+import { validateInstallSelectorRequest } from '../acquire/selector-request.ts';
 import type {
   CandidateSkill,
   CurrentInstallReport,
@@ -803,6 +804,13 @@ export const createLifecycleApplicationServices = (
   ) => {
     const sources = positionals(request);
     const options = request.options;
+    const skillSelection = validateInstallSelectorRequest({
+      sources,
+      skill: options.skill,
+      skillsMatchFrontmatter: options.skillsMatchFrontmatter,
+      ref: options.ref,
+    });
+    if (!skillSelection.ok) return domainFailure('install', skillSelection.error);
     const selection = select(registry, 'install', sources, options, 'install');
     if (!selection.ok)
       return refusal(
@@ -874,6 +882,12 @@ export const createLifecycleApplicationServices = (
     const force = bool(options, 'force');
     const installOptions = {
       sources,
+      ...(skillSelection.value === undefined
+        ? {}
+        : {
+            skill: skillSelection.value.name,
+            skillsMatchFrontmatter: skillSelection.value.mode === 'frontmatter',
+          }),
       ...(selection.value.tools.length === 0
         ? {}
         : { tools: selection.value.tools as readonly FlipTool[] }),

@@ -162,6 +162,6 @@ describe('SEARCH-CLI-01 search surface', () => {
       program.commands
         .find((command) => command.name() === 'install')
         ?.options.some((option) => option.long === '--skill'),
-    ).toBe(false);
+    ).toBe(true);
   });
 });

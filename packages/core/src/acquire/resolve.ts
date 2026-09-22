@@ -1,10 +1,18 @@
 import { basename, join } from 'node:path';
 import { normalizeSourceIdentity, validateManifestName } from '../artifacts/identity.ts';
-import { type SkillSmithError, genericError, sourceUnresolvableError } from '../errors.ts';
+import {
+  type SkillSmithError,
+  cancelledError,
+  genericError,
+  permissionDeniedError,
+  safeErrorCode,
+  sourceUnresolvableError,
+} from '../errors.ts';
 import { clampStoreNs } from '../place/store.ts';
 import type { FlipTool, LedgerFile } from '../place/types.ts';
 import { type Result, err, ok } from '../result.ts';
 import { containsSensitiveMaterial, redactSensitiveValue } from '../safety/redaction.ts';
+import { matchDeclaredNames } from './declared-name.ts';
 import {
   exportRootPayload,
   fetchRepo,
@@ -12,6 +20,7 @@ import {
   resolveRefViaLsRemote,
   sparseCheckoutSkill,
 } from './fetch.ts';
+import type { InstallSkillSelection } from './selector-request.ts';
 import type {
   AcquisitionPorts,
   CandidateSkill,
@@ -174,6 +183,7 @@ export type ResolveRemoteSourceOutcome =
   | {
       readonly kind: 'ambiguous';
       readonly candidates: readonly string[];
+      readonly matchedBy?: 'directory' | 'frontmatter';
       readonly cleanupDirectory: string;
     }
   | {
@@ -185,6 +195,7 @@ export type ResolveRemoteSourceOutcome =
 export interface ResolveRemoteSourceInput {
   readonly ports: AcquisitionPorts;
   readonly source: SourceSpec;
+  readonly skillSelection?: InstallSkillSelection;
   readonly transport?: InstallSourceTransport;
   readonly ledger: LedgerFile;
   readonly scopeKey: string | null;
@@ -282,8 +293,17 @@ export const resolveRemoteSource = async (
   input: ResolveRemoteSourceInput,
 ): Promise<ResolveRemoteSourceOutcome> => {
   const { ports, source, signal, pick } = input;
+  if (signal?.aborted)
+    return {
+      kind: 'source-failure',
+      error: cancelledError('skill acquisition cancelled'),
+      cleanupDirectory: null,
+    };
   const transport = input.transport ?? defaultInstallSourceTransport;
-  const elided = input.allowStoreElision === false ? null : await tryElide(input, transport);
+  const elided =
+    input.skillSelection !== undefined || input.allowStoreElision === false
+      ? null
+      : await tryElide(input, transport);
   if (elided) return { kind: 'resolved', materialization: elided, cleanupDirectory: null };
 
   const fetchDirectory = input.createFetchDirectory();
@@ -292,6 +312,14 @@ export const resolveRemoteSource = async (
     error,
     cleanupDirectory: fetchDirectory,
   });
+  const transportFailure = (error: unknown, operation: string): SkillSmithError => {
+    const code = safeErrorCode(error);
+    if (signal?.aborted || code === 'cancelled' || code === 'ABORT_ERR')
+      return cancelledError('skill acquisition cancelled');
+    if (['permission', 'permission-denied', 'EACCES', 'EPERM'].includes(code ?? ''))
+      return permissionDeniedError(`${operation}: permission denied`);
+    return sourceUnresolvableError(`${operation}: ${safeUnknownMessage(error)}`);
+  };
   let rawFetchResult: unknown;
   try {
     rawFetchResult = await transport.fetchRepo(ports, {
@@ -301,11 +329,10 @@ export const resolveRemoteSource = async (
       ...(signal ? { signal } : {}),
     });
   } catch (error) {
-    rawFetchResult = err(
-      sourceUnresolvableError(`source transport failed: ${safeUnknownMessage(error)}`),
-    );
+    rawFetchResult = err(transportFailure(error, 'source transport failed'));
   }
   const fetchResult = safeTransportResult(rawFetchResult);
+  if (signal?.aborted) return failure(cancelledError('skill acquisition cancelled'));
   if (fetchResult.kind !== 'ok') {
     return failure(
       fetchResult.kind === 'error'
@@ -327,13 +354,12 @@ export const resolveRemoteSource = async (
 
   let rawListResult: unknown;
   try {
-    rawListResult = await transport.listSkills(ports, fetchDirectory, signal);
+    rawListResult = await transport.listSkills(ports, fetchDirectory, signal, sha);
   } catch (error) {
-    rawListResult = err(
-      sourceUnresolvableError(`source listing failed: ${safeUnknownMessage(error)}`),
-    );
+    rawListResult = err(transportFailure(error, 'source listing failed'));
   }
   const listResult = safeTransportResult(rawListResult);
+  if (signal?.aborted) return failure(cancelledError('skill acquisition cancelled'));
   if (listResult.kind !== 'ok') {
     return failure(
       listResult.kind === 'error'
@@ -367,9 +393,10 @@ export const resolveRemoteSource = async (
     const path = candidate === null ? undefined : ownDataValue(candidate, 'path');
     const candidateName = candidate === null ? undefined : ownDataValue(candidate, 'name');
     if (typeof path !== 'string' || typeof candidateName !== 'string') return candidateFailure();
-    const name = path === '' ? lastSegment(source.identity.repository) : candidateName;
+    const name = path === '' ? lastSegment(source.identity.repository) : basename(path);
     if (
       !sourcePathIsValid(path) ||
+      (path !== '' && candidateName !== name) ||
       !validateManifestName(name, 'install.candidate.name').ok ||
       containsSensitiveMaterial(path) ||
       containsSensitiveMaterial(name)
@@ -379,7 +406,35 @@ export const resolveRemoteSource = async (
     candidates.push(Object.freeze({ path, name }));
   }
 
-  const selection = await selectSkill(matchCandidates(candidates, source.selector), scanned, pick);
+  let matches: CandidateSkill[];
+  let matchedBy: 'directory' | 'frontmatter' = 'directory';
+  if (input.skillSelection === undefined) {
+    matches = matchCandidates(candidates, source.selector);
+  } else {
+    const lookup = input.skillSelection;
+    matches =
+      lookup.mode === 'frontmatter'
+        ? []
+        : candidates.filter((candidate) => candidate.name === lookup.name);
+    if (matches.length === 0) {
+      matchedBy = 'frontmatter';
+      const declared = await matchDeclaredNames({
+        git: ports.git,
+        repositoryRoot: fetchDirectory,
+        sha,
+        candidates,
+        name: lookup.name,
+        ...(signal ? { signal } : {}),
+      });
+      if (!declared.ok) return failure(declared.error);
+      matches = declared.value;
+    }
+  }
+  const selection = await selectSkill(
+    matches,
+    scanned,
+    input.skillSelection === undefined ? pick : undefined,
+  );
   if (selection.kind === 'none') {
     return {
       kind: 'no-match',
@@ -396,13 +451,14 @@ export const resolveRemoteSource = async (
     return {
       kind: 'ambiguous',
       candidates: ambiguousCandidates,
+      ...(input.skillSelection === undefined ? {} : { matchedBy }),
       cleanupDirectory: fetchDirectory,
     };
   }
 
   const skillPath = selection.skill.path;
   const skillName =
-    skillPath === '' ? lastSegment(source.identity.repository) : selection.skill.name;
+    skillPath === '' ? lastSegment(source.identity.repository) : basename(skillPath);
   if (
     !sourcePathIsValid(skillPath) ||
     !validateManifestName(skillName, 'install.skill.name').ok ||
@@ -418,13 +474,13 @@ export const resolveRemoteSource = async (
       fetchDirectory,
       skillPath,
       signal,
+      sha,
     );
   } catch (error) {
-    rawMaterializeResult = err(
-      sourceUnresolvableError(`source materialization failed: ${safeUnknownMessage(error)}`),
-    );
+    rawMaterializeResult = err(transportFailure(error, 'source materialization failed'));
   }
   const materialization = safeTransportResult(rawMaterializeResult);
+  if (signal?.aborted) return failure(cancelledError('skill acquisition cancelled'));
   if (materialization.kind !== 'ok') {
     return failure(
       materialization.kind === 'error'

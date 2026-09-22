@@ -329,6 +329,7 @@ describe('EWP-P1-TS08', () => {
       'fetchRef',
       'listTree',
       'readBlob',
+      'readBlobBounded',
       'materializeTree',
     ])
       expect(gitContract ?? '', `missing GitPort operation ${operation}`).toContain(operation);

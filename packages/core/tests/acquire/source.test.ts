@@ -124,3 +124,38 @@ describe('parseSource — canonical acquisition boundary', () => {
     expect(unwrap(`owner/repo@${FULL_SHA}`).ref).toBe(FULL_SHA);
   });
 });
+
+describe('exact-source retry operands', () => {
+  test('preserves transport, host, ref, and exact path or reports no representable retry', async () => {
+    const { exactSourceRetry } = await import('../../src/acquire/source.ts');
+    for (const url of [
+      'https://gitlab.example/group/sub/repo.git',
+      'ssh://git@gitlab.example/group/sub/repo.git',
+      'git@gitlab.example:group/sub/repo.git',
+    ]) {
+      const original = parseSource(url, { overrideRef: 'feature/review' });
+      if (!original.ok) throw new Error('invalid fixture');
+      for (const path of [
+        'skills/review',
+        "team's/review",
+        'tëam/review',
+        'team"s/review',
+        'team`s/review',
+        'team{s}/review',
+        '',
+      ]) {
+        const operand = exactSourceRetry(original.value, path);
+        if (path === '' || (url.includes('://') && /[ë"`{}]/u.test(path)))
+          expect(operand).toBeNull();
+        else {
+          expect(operand).not.toBeNull();
+          if (operand === null) throw new Error('missing retry');
+          expect(parseSource(operand, { overrideRef: 'feature/review' })).toMatchObject({
+            ok: true,
+            value: { cloneUrl: url, ref: 'feature/review', selector: { kind: 'path', path } },
+          });
+        }
+      }
+    }
+  });
+});

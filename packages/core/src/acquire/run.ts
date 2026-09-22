@@ -157,8 +157,9 @@ import {
   safeError,
   safeUnknownMessage,
 } from './resolve.ts';
+import { validateInstallSelectorRequest } from './selector-request.ts';
 export { defaultInstallSourceTransport } from './resolve.ts';
-import { parseSource } from './source.ts';
+import { exactSourceRetry, parseSource } from './source.ts';
 import type {
   AcquisitionPorts,
   CurrentInstallReport,
@@ -1328,6 +1329,8 @@ const runInstallInternal = async (
   observation?: ObservationBundle,
   planObservation?: AcquisitionPlanObservationState,
 ): Promise<Result<PlannedInstallReport, SkillSmithError>> => {
+  const skillSelection = validateInstallSelectorRequest(opts);
+  if (!skillSelection.ok) return err(skillSelection.error);
   const dataDir = resolveDataDir(env, opts.configuration);
   const storeRoot = storeRootOf(dataDir);
   const ledgerPath = ledgerPathOf(dataDir);
@@ -2093,6 +2096,7 @@ const runInstallInternal = async (
         const outcome = await resolveRemoteSource({
           ports: env,
           source: spec,
+          ...(skillSelection.value === undefined ? {} : { skillSelection: skillSelection.value }),
           ...(deps.transport === undefined ? {} : { transport: deps.transport }),
           ledger,
           scopeKey,
@@ -2239,10 +2243,20 @@ const runInstallInternal = async (
         if (!opts.continueOnError) planningFailFast = true;
         continue;
       }
+      const lookupLabel =
+        skillSelection.value === undefined
+          ? selectorLabel(spec)
+          : redactSensitiveString(skillSelection.value.name);
       if (resolved.kind === 'no-match') {
+        const mode =
+          skillSelection.value === undefined
+            ? ''
+            : skillSelection.value.mode === 'frontmatter'
+              ? ' by frontmatter name'
+              : ' by directory or frontmatter name';
         const error = {
           code: 'source-unresolvable' as const,
-          message: `'${selectorLabel(spec)}' matched no skills in ${spec.identity.repository} @ ${resolved.resolvedSha.slice(0, 12)}: searched ${resolved.searched} SKILL.md directories`,
+          message: `'${lookupLabel}' matched no skills${mode} in ${spec.identity.repository} @ ${resolved.resolvedSha.slice(0, 12)}: searched ${resolved.searched} SKILL.md directories`,
         };
         results.push({
           ...emptyResult(spec.canonicalInvocation, scope, 'failed', requestIndex),
@@ -2253,11 +2267,20 @@ const runInstallInternal = async (
         continue;
       }
       if (resolved.kind === 'ambiguous') {
-        const reason = `'${selectorLabel(spec)}' matches ${resolved.candidates.length} skills — re-run with one of the exact paths above`;
+        const mode = resolved.matchedBy === undefined ? '' : ` by ${resolved.matchedBy} name`;
+        const reason = `'${lookupLabel}' matches ${resolved.candidates.length} skills${mode}`;
         results.push({
           ...emptyResult(spec.canonicalInvocation, scope, 'refused', requestIndex),
           reason,
           candidates: [...resolved.candidates],
+          candidateSource: {
+            cloneUrl: spec.cloneUrl,
+            ref: spec.ref,
+            candidates: resolved.candidates.map((candidate) => {
+              const path = candidate.slice(`${spec.identity.repository}//`.length);
+              return { path, source: exactSourceRetry(spec, path) };
+            }),
+          },
           error: flipRefusedError(reason),
         });
         if (!opts.continueOnError) planningFailFast = true;

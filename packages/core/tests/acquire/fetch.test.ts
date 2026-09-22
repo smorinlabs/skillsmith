@@ -668,8 +668,13 @@ describe('leading-dash subtree acquisition (SC-I60-CM2)', () => {
     expect(await readlink(join(dir, 'link.md'))).toBe('SKILL.md');
     expect(existsSync(join(fetchDir, CM2_SIBLING_PATH, 'SKILL.md'))).toBe(false);
 
-    const sparseSets = gitArgv.filter((a) => a[2] === 'sparse-checkout' && a[3] === 'set');
-    expect(sparseSets).toEqual([['-C', fetchDir, 'sparse-checkout', 'set', '--', CM2_SKILL_PATH]]);
+    const sparseSets = gitArgv.filter((args) => {
+      const commandIndex = args.indexOf('sparse-checkout');
+      return commandIndex >= 0 && args[commandIndex + 1] === 'set';
+    });
+    expect(sparseSets).toEqual([
+      ['--no-replace-objects', '-C', fetchDir, 'sparse-checkout', 'set', '--', CM2_SKILL_PATH],
+    ]);
   });
 
   test('regular-subtree control acquires the same way on the same repo', async () => {

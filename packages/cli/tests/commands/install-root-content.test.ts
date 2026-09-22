@@ -325,6 +325,8 @@ const makeWorkspace = async (
       '"$real" "$@"',
       'code=$?',
       'printf \'exit: %s\\n\' "$code" >>"$trace"',
+      '# Normalize the global option only after forwarding and logging the original argv.',
+      'if [ "$1" = "--no-replace-objects" ]; then shift; fi',
       'if [ "$code" -eq 0 ] && [ "$1" = "-C" ] && [ "$3" = "checkout" ]; then',
       '  repo="$2"',
       '  case "$repo" in',
@@ -568,7 +570,7 @@ const fetchProofOf = async (ws: Workspace): Promise<FetchProof> => {
   return {
     inits: count(/^argv: init -- /),
     fetches: count(/^argv: -C .* fetch --depth=1 /),
-    checkouts: count(/^argv: -C .* checkout --detach /),
+    checkouts: count(/^argv: (?:--no-replace-objects )?-C .* checkout --detach /),
     archives,
   };
 };

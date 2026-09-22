@@ -323,8 +323,8 @@ const EXAMPLES: Readonly<Record<string, readonly string[]>> = {
   ],
   'skillsmith install': [
     'skillsmith install smorinlabs/smorinlabs-harness/factor-scan --user',
-    'skillsmith install acme/agent-tools/review@v1.2.0 --project --pin',
-    'skillsmith install gitlab.com/acme/platform/tools//skills/review --tool claude-code',
+    'skillsmith install acme/skills --skill review',
+    'skillsmith install acme/skills --skill review --skills-match-frontmatter',
   ],
   'skillsmith export': [
     'skillsmith export',
@@ -444,8 +444,8 @@ const WORKFLOW_DESCRIPTIONS: Readonly<Record<string, readonly string[]>> = {
   ],
   'skillsmith install': [
     'Install factor-scan into user scope.',
-    'Install and pin an exact tagged review skill in project scope.',
-    'Install a nested GitLab skill path for Claude Code.',
+    'Select directory review, falling back to frontmatter only when no directory matches.',
+    'Select only the declared frontmatter name review, even when directory review exists.',
   ],
   'skillsmith export': [
     'Capture the default live fleet in portable desired state.',
@@ -1223,6 +1223,26 @@ const requiredCurrentOptionRelations = (): readonly OptionRelationSpec[] => [
   singularOption('skillsmith install', '--file'),
   singularOption('skillsmith install', '--lockfile'),
   singularOption('skillsmith install', '--ref'),
+  singularOption('skillsmith install', '--skill'),
+  singularOption('skillsmith install', '--skills-match-frontmatter'),
+  {
+    id: 'skillsmith.install.skills-match-frontmatter.requires.skill',
+    command: 'skillsmith install',
+    kind: 'requires',
+    option: '--skills-match-frontmatter',
+    requiredOption: '--skill',
+    description: '--skills-match-frontmatter requires --skill',
+  },
+  {
+    id: 'skillsmith.install.skill.exactly-one-source',
+    command: 'skillsmith install',
+    kind: 'cardinality',
+    subject: 'positionals',
+    whenOption: '--skill',
+    exact: 1,
+    label: '--skill requires exactly one repository source',
+    description: '--skill requires exactly one repository source',
+  },
   singularOption('skillsmith install', '--path'),
   {
     id: 'skillsmith.install.ref.exactly-one-source',

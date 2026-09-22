@@ -3534,6 +3534,50 @@
     }
   },
   {
+    "key": "option:skillsmith install:--skill <name>",
+    "disposition": "N",
+    "phase": "INSTALL-04",
+    "validationOwner": "INSTALL-CLI-01",
+    "option": {
+      "flags": "--skill <name>",
+      "short": null,
+      "long": "--skill",
+      "attributeName": "skill",
+      "requiredValue": true,
+      "optionalValue": false,
+      "variadic": false,
+      "valueShape": "required",
+      "choices": [],
+      "defaultValue": "null",
+      "defaultSource": "none",
+      "repeatable": false,
+      "negated": false,
+      "hidden": false
+    }
+  },
+  {
+    "key": "option:skillsmith install:--skills-match-frontmatter",
+    "disposition": "N",
+    "phase": "INSTALL-04",
+    "validationOwner": "INSTALL-CLI-01",
+    "option": {
+      "flags": "--skills-match-frontmatter",
+      "short": null,
+      "long": "--skills-match-frontmatter",
+      "attributeName": "skillsMatchFrontmatter",
+      "requiredValue": false,
+      "optionalValue": false,
+      "variadic": false,
+      "valueShape": "boolean",
+      "choices": [],
+      "defaultValue": "false",
+      "defaultSource": "literal",
+      "repeatable": false,
+      "negated": false,
+      "hidden": false
+    }
+  },
+  {
     "key": "option:skillsmith install:--continue-on-error",
     "disposition": "K",
     "phase": "P17-G4A-01",

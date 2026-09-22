@@ -265,6 +265,8 @@ export type {
   FileReadPort,
   FileWritePort,
   GitBlobRequest,
+  GitBoundedBlobReadRequest,
+  GitBoundedBlobReadPort,
   GitFetchRefResult,
   GitFetchRefRequest,
   GitFindRepositoryRootRequest,

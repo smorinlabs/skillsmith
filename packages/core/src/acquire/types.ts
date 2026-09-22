@@ -126,6 +126,8 @@ interface CurrentAcquisitionReportFacts {
 
 export interface InstallOptions {
   sources: readonly string[];
+  skill?: string;
+  skillsMatchFrontmatter?: boolean;
   tools?: readonly FlipTool[]; // explicit --tool list; undefined = all DETECTED tools
   scope?: InstallScope; // undefined = project inside a git work tree, else user
   ref?: string; // --ref; only valid with exactly one source
@@ -170,7 +172,13 @@ export interface InstallResult {
     verdict: 'pass' | 'warn' | 'fail' | 'inconclusive' | null;
     mode: 'static' | 'static+deep' | null;
   } | null; // mode actually run for THIS tool
-  candidates: string[] | null; // `<repoPath>//<path>` re-run lines on R2/R3 ambiguity
+  candidates: string[] | null; // Legacy `<repoPath>//<path>` candidate identities; not executable commands.
+  /** CORE-ONLY human diagnostic context; omitted from install wire contracts. */
+  readonly candidateSource?: {
+    readonly cloneUrl: string;
+    readonly ref: string | null;
+    readonly candidates: readonly { readonly path: string; readonly source: string | null }[];
+  };
   error?: SkillSmithError; // CORE-ONLY: drives the CLI exit code; NOT rendered in JSON
   readonly requestIndex?: number; // CORE-ONLY: duplicate-safe human grouping; omitted from public v1
 }

@@ -759,7 +759,17 @@ const searchOwnership = {
   ]),
 } as const;
 
+const installSelectorOwnership = {
+  validationOwner: 'INSTALL-CLI-01',
+  phase: 'INSTALL-04',
+  keys: new Set([
+    'option:skillsmith install:--skill <name>',
+    'option:skillsmith install:--skills-match-frontmatter',
+  ]),
+} as const;
+
 const allowedOwners = new Set([
+  installSelectorOwnership.validationOwner,
   searchOwnership.validationOwner,
   ...commandOwnership.flatMap((row) => [...row.validations, ...row.workflows]),
   ...Array.from({ length: 10 }, (_, index) => `EWP-OPT-TS${String(index + 1).padStart(2, '0')}`),
@@ -824,12 +834,13 @@ export const assertClosedMigrationLedger = (
       throw new Error(`unknown disposition: ${entry.key}`);
     if (!entry.phase || !entry.validationOwner || !allowedOwners.has(entry.validationOwner))
       throw new Error(`missing or unknown ownership: ${entry.key}`);
-    if (
-      searchOwnership.keys.has(entry.key) !==
-        (entry.validationOwner === searchOwnership.validationOwner) ||
-      (searchOwnership.keys.has(entry.key) && entry.phase !== searchOwnership.phase)
-    )
-      throw new Error(`additive search ownership differs: ${entry.key}`);
+    for (const ownership of [searchOwnership, installSelectorOwnership]) {
+      if (
+        ownership.keys.has(entry.key) !== (entry.validationOwner === ownership.validationOwner) ||
+        (ownership.keys.has(entry.key) && entry.phase !== ownership.phase)
+      )
+        throw new Error(`additive ${ownership.validationOwner} ownership differs: ${entry.key}`);
+    }
   }
   for (const command of live) {
     for (const option of command.options) {

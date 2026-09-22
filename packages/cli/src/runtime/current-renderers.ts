@@ -59,6 +59,7 @@ import { renderFlipHuman } from '../output/flip-human.ts';
 import { renderFlipJson } from '../output/flip-json.ts';
 import { renderGcHuman } from '../output/gc-human.ts';
 import { renderGcJson } from '../output/gc-json.ts';
+import { quoteHumanText } from '../output/human-text.ts';
 import { renderInitHuman } from '../output/init-human.ts';
 import { renderInitJson } from '../output/init-json.ts';
 import {
@@ -175,6 +176,26 @@ const itemLine = (level: 'error' | 'warning', label: string, reason: string): st
   return level === 'error' ? rendered : rendered.replace(/^error:/, 'warning:');
 };
 
+const shellQuote = (value: string): string => `'${value.replace(/'/gu, "'\\''")}'`;
+
+export const renderInstallCandidateHints = (
+  item: CurrentInstallReport['results'][number],
+): string => {
+  if (item.candidateSource !== undefined) {
+    const { ref, candidates } = item.candidateSource;
+    return candidates
+      .map(({ path, source }) =>
+        path === ''
+          ? '  Repository root (SKILL.md): no exact root-path selector is available; a unique frontmatter name can select it with --skill <name> --skills-match-frontmatter.'
+          : source === null
+            ? `  ${quoteHumanText(path)}: exact-path retry unavailable for this source form; use a unique frontmatter name if available.`
+            : `  skillsmith install ${shellQuote(source)}${ref === null ? '' : ` --ref ${shellQuote(ref)}`}`,
+      )
+      .join('\n');
+  }
+  return (item.candidates ?? []).map((candidate) => `  ${candidate}`).join('\n');
+};
+
 const installStderr = (value: CurrentInstallReport): string =>
   value.results
     .map((item) => {
@@ -182,9 +203,7 @@ const installStderr = (value: CurrentInstallReport): string =>
       if (item.action === 'refused' || item.action === 'failed') {
         const candidates = item.candidates ?? [];
         return `${itemLine('error', label, item.reason ?? item.action)}${
-          candidates.length === 0
-            ? ''
-            : `\n${candidates.map((candidate) => `  ${candidate}`).join('\n')}\n\nRe-run with one of the exact paths above.\n`
+          candidates.length === 0 ? '' : `\n${renderInstallCandidateHints(item)}\n`
         }`;
       }
       return item.action !== 'noop' && item.reason ? itemLine('warning', label, item.reason) : '';

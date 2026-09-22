@@ -64,10 +64,7 @@ const sourceSpecFor = (declaration: NormalizedManifestDeclaration): SourceSpec =
     }`,
     originSource: canonicalSource,
     cloneUrl: `https://${declaration.source.host}/${declaration.source.repository}.git`,
-    selector:
-      declaration.source.path === null
-        ? ({ kind: 'name', name: declaration.name } as const)
-        : ({ kind: 'path', path: declaration.source.path } as const),
+    selector: { kind: 'path', path: declaration.source.path ?? '' } as const,
     ref: declaration.ref,
   });
 };
@@ -162,6 +159,16 @@ const resolvePin = async (
   let pin: Result<PortableLockSkillV1, PlanReconcileError>;
   if (runtime.signal?.aborted) {
     pin = err(cancelled());
+  } else if (
+    resolved.kind === 'resolved' &&
+    resolved.materialization.skillPath !== (declaration.source.path ?? '')
+  ) {
+    pin = err(
+      sourceError(
+        'plan-source-mismatch',
+        'resolved source path differs from the saved declaration',
+      ),
+    );
   } else if (resolved.kind === 'resolved') {
     let readFailure: unknown = null;
     const track = async <T>(read: () => Promise<T>): Promise<T> => {

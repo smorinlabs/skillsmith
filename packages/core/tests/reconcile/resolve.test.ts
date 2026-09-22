@@ -116,6 +116,47 @@ const configuration = (root: string): ResolvedRuntimeConfiguration => ({
 });
 
 describe('plan source resolution', () => {
+  test.each(['root-only', 'root-and-other', 'root-and-same-name', 'missing-root'])(
+    'saved root identity remains exact for %s',
+    async (layout) => {
+      const state = await setup([{ name: 'skills' }]);
+      await writeFile(
+        state.pair.file.path,
+        manifest([{ name: 'skills' }]).replace(
+          'fixture.invalid/acme/skills//skills/skills',
+          'fixture.invalid/acme/skills',
+        ),
+      );
+      const observed = await observePlanArtifacts(state.ports, state.project, state.pair);
+      if (!observed.ok) throw new Error(observed.error.message);
+      const candidates = [
+        ...(layout === 'missing-root' ? [] : [{ path: '', name: '' }]),
+        ...(layout === 'root-only'
+          ? []
+          : [
+              {
+                path: layout === 'root-and-other' ? 'skills/other' : 'skills/skills',
+                name: layout === 'root-and-other' ? 'other' : 'skills',
+              },
+            ]),
+      ];
+      const calls: string[] = [];
+      const result = await resolvePlanInput(observed.value, request, {
+        ports: state.ports,
+        configuration: configuration(state.root),
+        transport: {
+          ...transport(calls),
+          listSkills: async () => ok({ candidates, scanned: candidates.length }),
+        },
+      });
+      expect(result.ok).toBe(layout !== 'missing-root');
+      if (result.ok) {
+        expect(result.value.declarations[0]?.lock?.sourcePath).toBe('.');
+        expect(calls).toContain('materialize:');
+      } else expect(calls.some((c) => c.startsWith('materialize:'))).toBe(false);
+    },
+  );
+
   test('resolves a selected missing pin, hashes immutable content, and cleans temporary state', async () => {
     const state = await setup([{ name: 'alpha' }]);
     const calls: string[] = [];

@@ -16,6 +16,7 @@ describe('defaultRuntimePorts', () => {
     expect(ports.readText).toBeFunction();
     expect(ports.exec).toBeFunction();
     expect(ports.git.readBlob).toBeFunction();
+    expect(ports.git.readBlobBounded).toBeFunction();
     expect(ports.http.request).toBeFunction();
     expect(ports.wallNowIso()).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(ports.nextId('test')).toMatch(/^test-[0-9a-f]{16}$/);

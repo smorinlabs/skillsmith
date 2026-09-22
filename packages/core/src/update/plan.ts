@@ -739,7 +739,7 @@ const exactPriorManagedPlacement = (
       (observed.placement.class === 'store-linked' ? 'symlink' : 'copy') ||
     origin.host !== observed.row.declaration.source.host ||
     origin.repo !== observed.row.declaration.source.repository ||
-    origin.skillPath !== operation.source.sourcePath ||
+    (origin.skillPath.length === 0 ? '.' : origin.skillPath) !== operation.source.sourcePath ||
     (pinned.gitSha !== null && pinned.gitSha !== origin.refResolved)
   ) {
     return false;

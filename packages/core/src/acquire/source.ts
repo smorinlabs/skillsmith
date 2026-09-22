@@ -296,3 +296,19 @@ export const parseSource = (
   if (!projection.ok) return projection;
   return buildSpec(projection.value, ref);
 };
+
+/** Preserve transport and exact path only when the existing public grammar can round-trip them. */
+export const exactSourceRetry = (source: SourceSpec, path: string): string | null => {
+  if (path === '') return null;
+  const operand = `${source.cloneUrl}//${path}`;
+  const parsed = parseSource(operand, source.ref === null ? {} : { overrideRef: source.ref });
+  return parsed.ok &&
+    parsed.value.cloneUrl === source.cloneUrl &&
+    parsed.value.ref === source.ref &&
+    parsed.value.identity.host === source.identity.host &&
+    parsed.value.identity.repository === source.identity.repository &&
+    parsed.value.selector.kind === 'path' &&
+    parsed.value.selector.path === path
+    ? operand
+    : null;
+};
