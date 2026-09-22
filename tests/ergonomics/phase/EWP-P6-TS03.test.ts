@@ -430,13 +430,12 @@ describe('EWP-P6-TS03', () => {
     expect(usage.stderr).toStartWith('error: ');
     expect(usage.stderr).not.toContain(ESCAPE);
 
+    // util-linux `script` takes `-qefc <command> <file>`; BSD/macOS takes `-qe <file> <argv...>`.
+    const ttyCommand = 'bun run packages/cli/src/index.ts --color always --definitely-unknown';
     const ttyUsage = Bun.spawnSync(
-      [
-        'script',
-        '-qefc',
-        'bun run packages/cli/src/index.ts --color always --definitely-unknown',
-        '/dev/null',
-      ],
+      process.platform === 'linux'
+        ? ['script', '-qefc', ttyCommand, '/dev/null']
+        : ['script', '-qe', '/dev/null', 'sh', '-c', ttyCommand],
       {
         cwd: ROOT,
         env: { ...withoutColorEnvironment(), TERM: 'xterm-256color' },
