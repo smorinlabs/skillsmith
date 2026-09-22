@@ -420,6 +420,12 @@ export function finalizeSuccessfulRun(
   if (errors.length > 0) fail(errors.map(errorMessage).join('\n'));
 }
 
+// Resolve symlinks so children never observe a symlinked TMPDIR: macOS TMPDIR lives
+// under /var (a symlink), and the artifact coordinator rejects symlinked ancestors.
+export function createRunRoot(temporaryBase: string): string {
+  return realpathSync(mkdtempSync(join(temporaryBase, 'skillsmith-serial-tests-')));
+}
+
 export async function main(): Promise<void> {
   if (process.argv.length !== 2) {
     fail('serial test-file terminal runner accepts no arguments');
@@ -435,7 +441,7 @@ export async function main(): Promise<void> {
   const digest = manifestDigest(testFiles);
   const allowedSkips = resolveAllowedSkips();
   const temporaryBase = resolve(process.env.TMPDIR ?? tmpdir());
-  const runRoot = mkdtempSync(join(temporaryBase, 'skillsmith-serial-tests-'));
+  const runRoot = createRunRoot(temporaryBase);
 
   console.log(
     `serial test-file manifest: ${testFiles.length} files; sha256=${digest}; bun=${Bun.version}`,

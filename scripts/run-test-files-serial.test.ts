@@ -25,6 +25,7 @@ import {
   NATIVE_MIN_FREE_BYTES,
   buildBunTestCommand,
   captureRepositoryIdentity,
+  createRunRoot,
   discoverTestFiles,
   ewpPtyEnabled,
   finalizeSuccessfulRun,
@@ -731,6 +732,13 @@ describe('serial test-file terminal runner', () => {
     expect(() => validateTerminalManifest(files, tamperedEwp)).toThrow(
       `environment-gated skip entry drifted for ${ENV_EWP_SKIP_FILE}: ${ENV_EWP_SKIP_COUNT + 1}; expected 0 or ${ENV_EWP_SKIP_COUNT}`,
     );
+  });
+
+  test('creates symlink-free run roots for child TMPDIR', () => {
+    const root = createRunRoot(tmpdir());
+    temporaryDirectories.push(root);
+    expect(readdirSync(root)).toEqual([]);
+    expect(realpathSync(root)).toBe(root);
   });
 
   test('enforces the pinned Bun, cleanup, and post-run clean state', () => {
