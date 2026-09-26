@@ -35,6 +35,7 @@
 
 ## Project index
 
+- [ ] **P21** — [Skillsmith v2 (Rust) architecture, tracked in skillsmith-rs](projects/P21-skillsmith-v2-rust-architecture.md)
 - [ ] **P20** — [Git adapter permission classification for bounded reads](projects/P20-git-adapter-permission-classification.md)
 - [~] **P19** — [Product bug closeout and publication deferral](projects/P19-product-bug-closeout-and-publication-deferral.md)
 - [?] **P18** — [verify: validate against external consumer schemas (claude plugin validate parity)](projects/P18-verify-external-consumer-schema-validation-.md)
