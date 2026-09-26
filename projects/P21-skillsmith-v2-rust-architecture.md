@@ -20,8 +20,11 @@ Skillsmith v2 is a Rust rewrite that runs alongside this TypeScript v1. Decision
   manifest@1, lock@1, plan@1, journal@1, and ledger@2; it also reads ledger@1 to migrate older
   ledgers, as v1 does. These are codec versions, not product versions. v1's persisted formats are
   therefore frozen for v2 compatibility until v1 is retired.
-- v2 takes v1's ledger lock with the same identity (the `placements.json.lock` directory), so the
-  lock mechanism in `packages/core/src/place/ledger.ts` is also part of the compatibility contract.
+- v2 takes the same `proper-lockfile@4.1.2` locks v1 takes, with the same on-disk identities and
+  timings, so all three lock families are part of the compatibility contract: the ledger lock
+  (`<data>/placements.json.lock`), the artifact central lock
+  (`~/.skillsmith/coordination/artifacts-v1/global.lock`), and the per-target artifact locks
+  (`<target>.lock`). Changing `proper-lockfile`'s version or options is a v2 compatibility break.
 - v2 command output is new and not compatible with v1's CLI output, so v1's CLI wire schemas
   (ADR 0008) remain free to change.
 - During the overlap v1 keeps the `skillsmith` command and v2 installs as `sks`.
@@ -33,4 +36,4 @@ Skillsmith v2 is a Rust rewrite that runs alongside this TypeScript v1. Decision
 ## Tests & Tasks
 
 - [ ] [P21-T01] Link the merged skillsmith-rs ADR 0001 once it lands on `main`.
-- [ ] [P21-T02] Flag any v1 PR that changes a persisted format or the ledger lock as a v2 compatibility break.
+- [ ] [P21-T02] Flag any v1 PR that changes a persisted format or any of the three lock families as a v2 compatibility break.
