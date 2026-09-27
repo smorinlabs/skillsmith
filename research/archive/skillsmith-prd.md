@@ -1,5 +1,7 @@
 # SkillSmith — PRD (v0.2, Gathering Draft)
 
+> **Archived:** historical v0.2 draft kept for reference. It is not maintained and does not describe current behavior.
+
 > **Working name:** `SkillSmith` — placeholder, to be replaced.
 > **Status:** Early gathering. This document captures intent and scope for a POC; it is not yet a committed spec.
 > **Changes from v0.1:** manifest/config file moved into MVP; cross-scope existence check added; `list` command added; LLM-based adaptation deferred to Phase 2; several open questions resolved.
