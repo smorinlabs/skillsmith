@@ -11,14 +11,25 @@ the global allowlist must still contain 42 skips across eight files. Missing,
 duplicate, failed, or inconsistent evidence fails the check.
 
 `CI result` waits for every product CI job, including the shard matrix, aggregate,
-ordinary checks, native build smoke, agent environments, and PR-title lint. Every
-result must succeed. Only PR-title lint is allowed to skip, and only for a push
+the three fast-check jobs, ordinary environment prerequisites, native build
+smoke, agent environments, and PR-title lint. Every result must succeed.
+Only PR-title lint is allowed to skip, and only for a push
 to `main`. The overall job uses `always()` so failed or skipped prerequisites do
 not prevent it from reporting failure. It requires no checkout or network call.
 
 Local `just check` retains the serial test terminal and the same seven non-test
-checks. CI uses `just check-gates` for those seven checks and runs the tests in
-the four shard jobs.
+checks. CI runs those same seven commands exactly once across three parallel
+jobs, alongside the four test shards:
+
+| CI job | Commands |
+|---|---|
+| `fast-lint` | `bun run lint`, `bun run lint:boundaries` |
+| `fast-typecheck` | `bun run typecheck`, `bun scripts/generate-command-reference.ts --check` |
+| `fast-static` | `just secrets`, `bun run actions-lint`, `just p17-check` |
+
+`ordinary-check` retains the pinned tool-version and agent-environment checks
+that preceded the old canonical gate. It does not repeat the seven fast checks
+or run a second test terminal. `just check-gates` remains available locally.
 
 ## Rerunning CI
 
