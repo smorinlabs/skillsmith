@@ -56,8 +56,9 @@ is_prose() {
   return 1
 }
 
-# Every tracked file outside the audited set may read prose.
-non_prose=(.)
+# Every tracked file outside the audited set may read prose, except this
+# script: it names each audited path only as its own allowlist.
+non_prose=(. ':(exclude,literal)scripts/ci-classify-changed-paths.sh')
 for entry in "${audited_prose[@]}"; do non_prose+=(":(exclude,literal)$entry"); done
 
 # Succeeds when <pattern> occurs literally in the tested tree under the
