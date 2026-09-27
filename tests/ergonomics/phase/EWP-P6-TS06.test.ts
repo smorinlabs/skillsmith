@@ -130,7 +130,7 @@ const assertAutomaticReleaseBoundary = (
   }
   boundary(
     Object.keys(product.jobs).toSorted().join(',') ===
-      'agent-environments,lint-pr-title,native-receipt,ordinary-check',
+      'agent-environments,fast-lint,fast-static,fast-typecheck,lint-pr-title,native-receipt,ordinary-check',
     'automatic job roster changed',
   );
   boundary(installers.length === 1, 'exactly one ordinary GoReleaser installer required');
@@ -164,7 +164,7 @@ const assertAutomaticReleaseBoundary = (
   const versions = ordinary.findIndex(
     (step) => step.name === 'Check exact release-test tool versions before canonical gate',
   );
-  const canonical = ordinary.findIndex((step) => step.run === 'just check');
+  const canonical = ordinary.findIndex((step) => step.run === 'just test-terminal');
   boundary(
     node >= 0 &&
       ordinary[node].uses === 'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020' &&
@@ -247,7 +247,21 @@ describe('EWP-P6-TS06', () => {
     ]);
     expect(justfile).toContain('release-check lane:');
     expect(justfile.match(/scripts\/run-test-files-serial\.ts/gu)).toHaveLength(1);
-    expect(ci).toContain('run: just check');
+    expect(ci.match(/run: just test-terminal/gu)).toHaveLength(1);
+    expect(ci).not.toContain('run: just check');
+    // Every non-test command of `just check` runs verbatim in exactly one fast-* job.
+    const checkRecipe = (justfile.split('\ncheck:\n')[1] ?? '').split('\n\n')[0];
+    const checkCommands = checkRecipe.split('\n').map((line) => line.trim());
+    const jobs = (Bun.YAML.parse(ci) as BoundaryWorkflow).jobs;
+    const runsIn = (name: string) => (jobs[name].steps ?? []).map((step) => step.run);
+    expect(checkCommands.at(-1)).toBe('just test-terminal');
+    expect(runsIn('ordinary-check')).toContain('just test-terminal');
+    for (const command of checkCommands.slice(0, -1)) {
+      const owners = ['fast-lint', 'fast-typecheck', 'fast-static'].filter((name) =>
+        runsIn(name).includes(command),
+      );
+      expect(owners, command).toHaveLength(1);
+    }
     expect(ci).toContain('just-version: 1.50.0');
     expect(ci).toContain('ubuntu-24.04-arm');
     expect(ci).toContain('macos-15-intel');
@@ -258,7 +272,7 @@ describe('EWP-P6-TS06', () => {
   test('family 1: automatic product CI keeps native smoke but release qualification is explicit opt-in', async () => {
     const ci = await source('.github/workflows/ci.yml');
     expect(ci).not.toContain('P17_G6_01_HOMEBREW_RECEIPT');
-    expect(ci).toContain('run: just check');
+    expect(ci).toContain('run: just test-terminal');
     expect(ci).toContain('Host-native build and smoke');
     for (const runner of ['ubuntu-24.04-arm', 'macos-15', 'macos-15-intel']) {
       expect(ci).toContain(runner);
