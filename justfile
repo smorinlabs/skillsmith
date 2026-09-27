@@ -45,6 +45,20 @@ generated-check:
 test-terminal:
     bun scripts/run-test-files-serial.ts
 
+# Run one EXPERIMENT A sharded slice of the serial test-file terminal.
+test-shard index total="4":
+    bun scripts/run-test-files-shard.ts --shard-index={{index}} --shard-total={{total}}
+
+# EXPERIMENT A: every canonical check gate except the test terminal (CI shards run the tests).
+check-gates:
+    just secrets
+    bun run lint
+    bun run lint:boundaries
+    bun run typecheck
+    bun scripts/generate-command-reference.ts --check
+    bun run actions-lint
+    just p17-check
+
 # Run the ordered canonical ordinary PR gate exactly once.
 check:
     just secrets

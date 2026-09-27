@@ -130,7 +130,8 @@ const assertAutomaticReleaseBoundary = (
   }
   boundary(
     Object.keys(product.jobs).toSorted().join(',') ===
-      'agent-environments,lint-pr-title,native-receipt,ordinary-check',
+      // EXPERIMENT A: the test terminal moved into test-shard + test-shard-aggregate.
+      'agent-environments,lint-pr-title,native-receipt,ordinary-check,test-shard,test-shard-aggregate',
     'automatic job roster changed',
   );
   boundary(installers.length === 1, 'exactly one ordinary GoReleaser installer required');
@@ -164,7 +165,7 @@ const assertAutomaticReleaseBoundary = (
   const versions = ordinary.findIndex(
     (step) => step.name === 'Check exact release-test tool versions before canonical gate',
   );
-  const canonical = ordinary.findIndex((step) => step.run === 'just check');
+  const canonical = ordinary.findIndex((step) => step.run === 'just check-gates');
   boundary(
     node >= 0 &&
       ordinary[node].uses === 'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020' &&
@@ -247,7 +248,9 @@ describe('EWP-P6-TS06', () => {
     ]);
     expect(justfile).toContain('release-check lane:');
     expect(justfile.match(/scripts\/run-test-files-serial\.ts/gu)).toHaveLength(1);
-    expect(ci).toContain('run: just check');
+    expect(ci).toContain('run: just check-gates');
+    expect(ci).toContain('bun scripts/run-test-files-shard.ts');
+    expect(ci).toContain('bun scripts/aggregate-shard-receipts.ts');
     expect(ci).toContain('just-version: 1.50.0');
     expect(ci).toContain('ubuntu-24.04-arm');
     expect(ci).toContain('macos-15-intel');
@@ -258,7 +261,9 @@ describe('EWP-P6-TS06', () => {
   test('family 1: automatic product CI keeps native smoke but release qualification is explicit opt-in', async () => {
     const ci = await source('.github/workflows/ci.yml');
     expect(ci).not.toContain('P17_G6_01_HOMEBREW_RECEIPT');
-    expect(ci).toContain('run: just check');
+    expect(ci).toContain('run: just check-gates');
+    expect(ci).toContain('bun scripts/run-test-files-shard.ts');
+    expect(ci).toContain('bun scripts/aggregate-shard-receipts.ts');
     expect(ci).toContain('Host-native build and smoke');
     for (const runner of ['ubuntu-24.04-arm', 'macos-15', 'macos-15-intel']) {
       expect(ci).toContain(runner);
