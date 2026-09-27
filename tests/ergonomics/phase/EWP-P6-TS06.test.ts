@@ -130,7 +130,7 @@ const assertAutomaticReleaseBoundary = (
   }
   boundary(
     Object.keys(product.jobs).toSorted().join(',') ===
-      'agent-environments,ci-result,lint-pr-title,native-receipt,ordinary-check,test-shard,test-shard-aggregate',
+      'agent-environments,ci-result,fast-lint,fast-static,fast-typecheck,lint-pr-title,native-receipt,ordinary-check,test-shard,test-shard-aggregate',
     'automatic job roster changed',
   );
   // The sharded test terminal needs the same install-only
@@ -199,7 +199,9 @@ const assertAutomaticReleaseBoundary = (
   const versions = ordinary.findIndex(
     (step) => step.name === 'Check exact release-test tool versions before canonical gate',
   );
-  const canonical = ordinary.findIndex((step) => step.run === 'just check-gates');
+  const retained = ordinary.findIndex(
+    (step) => step.name === 'Retain ordinary agent-tool evidence',
+  );
   boundary(
     node >= 0 &&
       ordinary[node].uses === 'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020' &&
@@ -214,10 +216,10 @@ const assertAutomaticReleaseBoundary = (
     node < npm &&
       npm < versions &&
       ordinary.indexOf(installer.step) < versions &&
-      versions < canonical &&
+      versions < retained &&
       versions >= 0 &&
-      canonical >= 0,
-    'ordinary prerequisites must precede canonical gate',
+      retained >= 0,
+    'ordinary prerequisites must precede evidence retention',
   );
   boundary(
     record(qualification) &&
@@ -282,7 +284,7 @@ describe('EWP-P6-TS06', () => {
     ]);
     expect(justfile).toContain('release-check lane:');
     expect(justfile.match(/scripts\/run-test-files-serial\.ts/gu)).toHaveLength(1);
-    expect(ci).toContain('run: just check-gates');
+    expect(ci).not.toMatch(/run: just (?:check|check-gates|test-terminal)\b/u);
     expect(ci).toContain('bun scripts/run-test-files-shard.ts');
     expect(ci).toContain('bun scripts/aggregate-shard-receipts.ts');
     expect(ci).toContain('just-version: 1.50.0');
@@ -292,10 +294,49 @@ describe('EWP-P6-TS06', () => {
     expect(packageJson).toContain('"test:terminal"');
   });
 
+  test('family 1: fast jobs own each non-test gate once while CI keeps only the sharded terminal', async () => {
+    const ci = Bun.YAML.parse(await source('.github/workflows/ci.yml')) as BoundaryWorkflow;
+    const owners: Record<string, string> = {
+      'just secrets': 'fast-static',
+      'bun run lint': 'fast-lint',
+      'bun run lint:boundaries': 'fast-lint',
+      'bun run typecheck': 'fast-typecheck',
+      'bun scripts/generate-command-reference.ts --check': 'fast-typecheck',
+      'bun run actions-lint': 'fast-static',
+      'just p17-check': 'fast-static',
+    };
+    const local = await source('justfile');
+    const gates = local.split('check-gates:\n')[1].split('\n\n')[0].trim().split('\n');
+    expect(gates.map((line) => line.trim()).toSorted()).toEqual(Object.keys(owners).toSorted());
+    const commands = Object.entries(ci.jobs).flatMap(([job, value]) =>
+      (value.steps ?? []).flatMap((step) =>
+        (step.run ?? '').split('\n').map((command) => ({ job, command: command.trim() })),
+      ),
+    );
+    for (const [command, job] of Object.entries(owners)) {
+      expect(commands.filter((candidate) => candidate.command === command)).toEqual([
+        { job, command },
+      ]);
+    }
+    expect(
+      commands.filter(({ command }) =>
+        /^just (?:check|check-gates|test-terminal)\b/u.test(command),
+      ),
+    ).toEqual([]);
+    expect(
+      commands.filter(({ command }) => command.startsWith('bun scripts/run-test-files-shard.ts ')),
+    ).toHaveLength(1);
+    expect(
+      commands.filter(({ command }) =>
+        command.startsWith('bun scripts/aggregate-shard-receipts.ts '),
+      ),
+    ).toHaveLength(1);
+  });
+
   test('family 1: automatic product CI keeps native smoke but release qualification is explicit opt-in', async () => {
     const ci = await source('.github/workflows/ci.yml');
     expect(ci).not.toContain('P17_G6_01_HOMEBREW_RECEIPT');
-    expect(ci).toContain('run: just check-gates');
+    expect(ci).not.toMatch(/run: just (?:check|check-gates|test-terminal)\b/u);
     expect(ci).toContain('bun scripts/run-test-files-shard.ts');
     expect(ci).toContain('bun scripts/aggregate-shard-receipts.ts');
     expect(ci).toContain('Host-native build and smoke');

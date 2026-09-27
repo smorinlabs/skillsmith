@@ -12,7 +12,76 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Run the seven non-test checks in parallel with the four test shards.
+  fast-lint:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.14
+      - name: Install dependencies without lifecycle scripts
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: Lint with Biome (same command as just check)
+        run: bun run lint
+      - name: Enforce import boundaries (same command as just check)
+        run: bun run lint:boundaries
+
+  fast-typecheck:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.14
+      - name: Install dependencies without lifecycle scripts
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: Typecheck (same command as just check)
+        run: bun run typecheck
+      - name: Check generated references (same command as just check)
+        run: bun scripts/generate-command-reference.ts --check
+
+  fast-static:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.14
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        with:
+          just-version: 1.50.0
+      - name: Install dependencies without lifecycle scripts
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: Install exact actionlint and credential scanners
+        run: |
+          tool_bin="$RUNNER_TEMP/skillsmith-tools"
+          SKILLSMITH_TOOL_BIN_DIR="$tool_bin" ./scripts/install-actionlint.sh
+          SKILLSMITH_TOOL_BIN_DIR="$tool_bin" ./scripts/install-gitleaks.sh
+          SKILLSMITH_TOOL_BIN_DIR="$tool_bin" ./scripts/install-trufflehog.sh
+          echo "$tool_bin" >> "$GITHUB_PATH"
+      - name: Secret scan (same command as just check)
+        run: just secrets
+      - name: Lint workflows (same command as just check)
+        run: bun run actions-lint
+      - name: P17 check (same command as just check)
+        run: just p17-check
+
   ordinary-check:
+    name: Ordinary environment prerequisites
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -161,10 +230,6 @@ jobs:
             ${{ env.ORDINARY_AGENT_REPORT_ROOT }}/children/*/.detection-*/receipt.json
             ${{ runner.temp }}/skillsmith-ordinary-agent-tools/receipt.json
             ${{ runner.temp }}/skillsmith-ordinary-agent-tools/logs
-      # The test terminal runs in the test-shard jobs below; this
-      # job keeps every other canonical gate (`just check` minus `just test-terminal`).
-      - name: Canonical repository gate
-        run: just check-gates
 
   # Shard the test terminal across 4 parallel jobs. Each shard
   # provisions every prerequisite ordinary-check provides before the test
@@ -318,7 +383,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     if: ${{ always() }}
-    needs: [ordinary-check, test-shard, test-shard-aggregate, native-receipt, lint-pr-title, agent-environments]
+    needs: [fast-lint, fast-typecheck, fast-static, ordinary-check, test-shard, test-shard-aggregate, native-receipt, lint-pr-title, agent-environments]
     permissions:
       contents: read
     steps:
@@ -326,7 +391,7 @@ jobs:
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
           EVENT_NAME: ${{ github.event_name }}
-          REQUIRED_JOBS: ordinary-check,test-shard,test-shard-aggregate,native-receipt,lint-pr-title,agent-environments
+          REQUIRED_JOBS: fast-lint,fast-typecheck,fast-static,ordinary-check,test-shard,test-shard-aggregate,native-receipt,lint-pr-title,agent-environments
         run: |
           python3 - <<'PY'
           import json
