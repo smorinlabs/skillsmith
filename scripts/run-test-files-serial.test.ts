@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { devNull, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import {
   ALLOWED_LIVE_E2E_SKIPS,
   ENV_EWP_SKIP_COUNT,
@@ -26,6 +26,7 @@ import {
   PINNED_CAPABILITY_SKIPS,
   buildBunTestCommand,
   captureRepositoryIdentity,
+  childTestEnvironment,
   createRunRoot,
   discoverTestFiles,
   ewpPtyEnabled,
@@ -521,6 +522,23 @@ describe('serial test-file terminal runner', () => {
     expect(open.get(ENV_STRACE_SKIP_FILE)).toBe(0);
     expect(open.get(ENV_NATIVE_SKIP_FILE)).toBe(0);
     expect(open.get(ENV_EWP_SKIP_FILE)).toBe(0);
+  });
+
+  test('child environment drops GIT_* and the git exec path a hook prepends to PATH', () => {
+    const hook = {
+      PATH: ['/git-core', '/usr/bin', '/git-core'].join(delimiter),
+      GIT_EXEC_PATH: '/git-core',
+      GIT_DIR: '/repo/.git',
+      HOME: '/home',
+    };
+    expect(childTestEnvironment(hook)).toEqual({
+      PATH: ['/usr/bin', '/git-core'].join(delimiter),
+      HOME: '/home',
+    });
+    expect(childTestEnvironment({ PATH: ['/a', '/b'].join(delimiter), HOME: '/home' })).toEqual({
+      PATH: ['/a', '/b'].join(delimiter),
+      HOME: '/home',
+    });
   });
 
   test('sharded CI expects the pinned-capability skips, independent of the validating machine', () => {

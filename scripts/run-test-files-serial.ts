@@ -3,13 +3,26 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, statfsSync } from 'node:fs';
 import { devNull, tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { delimiter, join, resolve } from 'node:path';
 
 const repositoryRoot = resolve(import.meta.dir, '..');
 const bunTestFilePattern = /(?:^|\/)[^/]+(?:\.(?:test|spec)|_(?:test|spec))\.(?:js|jsx|ts|tsx)$/;
-const gitEnvironment = Object.fromEntries(
-  Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')),
-);
+// Git hooks (the pre-push gate) set GIT_EXEC_PATH and prepend that directory to PATH. Stripping
+// GIT_* alone leaves the exec path first on PATH, so fixtures that resolve `git` from PATH get
+// the git-core copy, which cannot find its helpers (git-upload-pack) once linked elsewhere.
+export function childTestEnvironment(
+  environment: Readonly<Record<string, string | undefined>>,
+): Record<string, string | undefined> {
+  const child = Object.fromEntries(
+    Object.entries(environment).filter(([key]) => !key.startsWith('GIT_')),
+  );
+  const execPath = environment.GIT_EXEC_PATH;
+  const entries = (child.PATH ?? '').split(delimiter);
+  if (execPath && entries[0] === execPath) child.PATH = entries.slice(1).join(delimiter);
+  return child;
+}
+
+const gitEnvironment = childTestEnvironment(process.env);
 export const EXPECTED_BUN_VERSION = '1.3.14';
 const EXPECTED_ALLOWED_SKIP_FILES = 8;
 const EXPECTED_ALLOWED_SKIPS = 42;
