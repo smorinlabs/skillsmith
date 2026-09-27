@@ -10,8 +10,9 @@ npm/Bun, and Homebrew. The first public release is exactly `v1.0.0`.
 - GoReleaser 2.17.1 and Bun 1.3.14 build four targets: Linux x64/arm64 and macOS x64/arm64.
 - The release workflow signs and notarizes macOS binaries before it creates archives, npm payloads,
   checksums, or the Homebrew cask.
-- `just check` is the ordinary PR gate. It runs every tracked Bun test file exactly once, serially,
-  in a fresh Bun process.
+- Local `just check` runs the ordinary checks and every tracked Bun test file exactly once,
+  serially, in a fresh Bun process. [Product CI](ci.md) distributes the tests across four shards
+  and validates their combined evidence before the overall `CI result` can succeed.
 - `just release-check <lane>` validates a transferred candidate in one common lane, four native
   lanes, and a credential-free aggregate.
 
@@ -21,9 +22,9 @@ Publication and pre-publication execution remain deferred under [#53](https://gi
 The release process below describes the future resumed workflow, not authorization to run it now.
 
 Under the [user-approved Q2.A decision](https://github.com/smorinlabs/skillsmith/issues/51#issuecomment-5689864463),
-`.github/workflows/ci.yml` still runs `just check`,
-PR-title validation, and native build/smoke checks automatically, with the same native runner
-matrix. Homebrew candidate install/upgrade qualification and its dedicated Node/npm/GoReleaser
+`.github/workflows/ci.yml` runs the non-test checks, four test shards with global evidence
+validation, PR-title validation, and native build/smoke checks automatically, with the same native
+runner matrix. Homebrew candidate install/upgrade qualification and its dedicated Node/npm/GoReleaser
 setup are in `.github/workflows/release-qualification.yml`. That workflow has only an explicit
 `workflow_dispatch` trigger and defaults `resume_release_qualification` to false.
 
