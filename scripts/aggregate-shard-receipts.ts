@@ -26,7 +26,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import {
-  ALLOWED_LIVE_E2E_SKIPS,
+  PINNED_CAPABILITY_SKIPS,
   discoverTestFiles,
   manifestDigest,
   parseJUnitSummary,
@@ -179,7 +179,7 @@ export function aggregateShardEvidence(
   if (!Number.isInteger(shardTotal) || shardTotal < 1) fail(`invalid shard total: ${shardTotal}`);
   if (manifest.length === 0) fail('independent manifest is empty');
   if (new Set(manifest).size !== manifest.length) fail('independent manifest has duplicates');
-  const expectedTotalSkips = validateTerminalManifest(manifest);
+  const expectedTotalSkips = validateTerminalManifest(manifest, PINNED_CAPABILITY_SKIPS);
   const digest = manifestDigest(manifest);
   if (evidence.length !== shardTotal) {
     fail(`expected ${shardTotal} shard evidence sets; found ${evidence.length}`);
@@ -270,7 +270,7 @@ export function aggregateShardEvidence(
       ) {
         fail(`${label}: ${entry.file} JUnit evidence disagrees with the receipt`);
       }
-      const expectedSkips = ALLOWED_LIVE_E2E_SKIPS.get(entry.file) ?? 0;
+      const expectedSkips = PINNED_CAPABILITY_SKIPS.get(entry.file) ?? 0;
       if (summary.skipped !== expectedSkips) {
         fail(
           `${label}: ${entry.file} reported ${summary.skipped} skipped tests; expected ${expectedSkips}`,

@@ -90,6 +90,16 @@ export function resolveAllowedSkips(probes: EnvSkipProbes = {}): ReadonlyMap<str
   return resolved;
 }
 
+// Sharded CI pins every environment-gated capability (ci.yml "Pin environment-gated test
+// capabilities"), so shards and the aggregate expect these skips instead of probing the machine
+// that happens to validate them.
+export const PINNED_CAPABILITY_SKIPS: ReadonlyMap<string, number> = new Map([
+  ...ALLOWED_LIVE_E2E_SKIPS,
+  [ENV_STRACE_SKIP_FILE, 0],
+  [ENV_NATIVE_SKIP_FILE, 0],
+  [ENV_EWP_SKIP_FILE, 0],
+]);
+
 export type JUnitSummary = {
   assertions: number;
   failures: number;

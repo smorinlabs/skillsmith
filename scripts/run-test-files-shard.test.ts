@@ -8,7 +8,7 @@ import {
   parseShardReceipt,
   readShardEvidence,
 } from './aggregate-shard-receipts';
-import { ALLOWED_LIVE_E2E_SKIPS, manifestDigest } from './run-test-files-serial';
+import { PINNED_CAPABILITY_SKIPS, manifestDigest } from './run-test-files-serial';
 import {
   SHARD_RECEIPT_SCHEMA_VERSION,
   SHARD_RUNNER,
@@ -32,7 +32,7 @@ function junit(file: string, tests = 1, skipped = 0, assertions = 7, failures = 
 }
 
 const MANIFEST = [
-  ...[...ALLOWED_LIVE_E2E_SKIPS.keys()],
+  ...[...PINNED_CAPABILITY_SKIPS.keys()],
   'packages/core/tests/alpha.test.ts',
   'packages/core/tests/beta.test.ts',
   'scripts/gamma.test.ts',
@@ -47,8 +47,8 @@ function shardEvidence(
     file,
     junitFile: junitFileName(position),
     exitCode: 0,
-    tests: (ALLOWED_LIVE_E2E_SKIPS.get(file) ?? 0) + 1,
-    skipped: ALLOWED_LIVE_E2E_SKIPS.get(file) ?? 0,
+    tests: (PINNED_CAPABILITY_SKIPS.get(file) ?? 0) + 1,
+    skipped: PINNED_CAPABILITY_SKIPS.get(file) ?? 0,
     assertions: 7,
     durationMs: 100 * (position + 1),
   }));
@@ -311,10 +311,10 @@ describe('aggregateShardEvidence', () => {
       'an unexpected skip count',
       (shards) => {
         const shard = shards.find((item) =>
-          item.receipt.files.some((entry) => !ALLOWED_LIVE_E2E_SKIPS.has(entry.file)),
+          item.receipt.files.some((entry) => !PINNED_CAPABILITY_SKIPS.has(entry.file)),
         );
         if (!shard) throw new Error('fixture needs a non-allowlisted file');
-        const entry = shard.receipt.files.find((item) => !ALLOWED_LIVE_E2E_SKIPS.has(item.file));
+        const entry = shard.receipt.files.find((item) => !PINNED_CAPABILITY_SKIPS.has(item.file));
         if (!entry) throw new Error('fixture needs a non-allowlisted file');
         entry.skipped = 1;
         shard.receipt.skipped += 1;
@@ -348,9 +348,9 @@ describe('aggregateShardEvidence', () => {
 
   test('fails closed when the independent manifest lacks an allowlisted live-E2E file', () => {
     const manifest = MANIFEST.filter(
-      (file) => !ALLOWED_LIVE_E2E_SKIPS.has(file) || file.includes('flip'),
+      (file) => !PINNED_CAPABILITY_SKIPS.has(file) || file.includes('flip'),
     );
-    expect(() => aggregateShardEvidence(manifest, 4, [])).toThrow(/missing live-E2E file/);
+    expect(() => aggregateShardEvidence(manifest, 4, [])).toThrow(/missing allowlisted file/);
   });
 });
 

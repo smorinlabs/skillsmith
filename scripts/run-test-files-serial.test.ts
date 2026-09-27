@@ -23,6 +23,7 @@ import {
   EXPECTED_BUN_VERSION,
   type EnvSkipProbes,
   NATIVE_MIN_FREE_BYTES,
+  PINNED_CAPABILITY_SKIPS,
   buildBunTestCommand,
   captureRepositoryIdentity,
   createRunRoot,
@@ -520,6 +521,14 @@ describe('serial test-file terminal runner', () => {
     expect(open.get(ENV_STRACE_SKIP_FILE)).toBe(0);
     expect(open.get(ENV_NATIVE_SKIP_FILE)).toBe(0);
     expect(open.get(ENV_EWP_SKIP_FILE)).toBe(0);
+  });
+
+  test('sharded CI expects the pinned-capability skips, independent of the validating machine', () => {
+    const open = resolveAllowedSkips({ ...straceProbes(true), ...nativeProbes(true) });
+    expect([...PINNED_CAPABILITY_SKIPS]).toEqual([...open]);
+    expect(
+      validateTerminalManifest([...PINNED_CAPABILITY_SKIPS.keys()], PINNED_CAPABILITY_SKIPS),
+    ).toBe([...ALLOWED_LIVE_E2E_SKIPS.values()].reduce((sum, count) => sum + count, 0));
   });
 
   test.each([
