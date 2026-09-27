@@ -134,26 +134,61 @@ const assertAutomaticReleaseBoundary = (
       'agent-environments,lint-pr-title,native-receipt,ordinary-check,test-shard,test-shard-aggregate',
     'automatic job roster changed',
   );
-  boundary(installers.length === 1, 'exactly one ordinary GoReleaser installer required');
-  const installer = installers[0];
+  // EXPERIMENT A: the sharded test terminal needs the same install-only
+  // GoReleaser prerequisite, so exactly one pinned installer is allowed in
+  // ordinary-check and exactly one in the test-shard matrix, nowhere else.
   boundary(
-    installer.job === 'ordinary-check',
+    installers.every(({ job }) => job === 'ordinary-check' || job === 'test-shard'),
     'GoReleaser installer must belong to ordinary-check',
   );
   boundary(
-    installer.step.uses === 'goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94',
-    'ordinary GoReleaser action pin changed',
+    installers.filter(({ job }) => job === 'ordinary-check').length === 1,
+    'exactly one ordinary GoReleaser installer required',
   );
-  boundary(record(installer.step.with), 'ordinary GoReleaser inputs missing');
   boundary(
-    installer.step.with['install-only'] === true,
-    'ordinary GoReleaser install-only must be boolean true',
+    installers.filter(({ job }) => job === 'test-shard').length === 1,
+    'exactly one test-shard GoReleaser installer required',
   );
-  boundary(installer.step.with.version === 'v2.17.1', 'ordinary GoReleaser version changed');
+  for (const candidate of installers) {
+    boundary(
+      candidate.step.uses ===
+        'goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94',
+      'ordinary GoReleaser action pin changed',
+    );
+    boundary(record(candidate.step.with), 'ordinary GoReleaser inputs missing');
+    boundary(
+      candidate.step.with['install-only'] === true,
+      'ordinary GoReleaser install-only must be boolean true',
+    );
+    boundary(candidate.step.with.version === 'v2.17.1', 'ordinary GoReleaser version changed');
+    boundary(
+      Object.keys(candidate.step.with).toSorted().join(',') === 'install-only,version' &&
+        candidate.step.env === undefined,
+      'ordinary GoReleaser has execution inputs',
+    );
+  }
+  const installer = installers.find(({ job }) => job === 'ordinary-check') ?? installers[0];
+  const shardSteps = product.jobs['test-shard'].steps ?? [];
+  const shardStep = (name: string): number => shardSteps.findIndex((step) => step.name === name);
+  const shardRunner = shardSteps.findIndex((step) =>
+    step.run?.startsWith('bun scripts/run-test-files-shard.ts '),
+  );
+  const shardOrder = [
+    shardStep('Install exact actionlint and credential scanners'),
+    shardStep('Set up Node for pinned release-test npm'),
+    shardStep('Install exact ordinary agent tools'),
+    shardStep('Install pinned release-test npm in owned prefix'),
+    shardSteps.findIndex((step) => step.uses?.startsWith('goreleaser/')),
+    shardStep('Check exact release-test tool versions before canonical gate'),
+    shardRunner,
+  ];
   boundary(
-    Object.keys(installer.step.with).toSorted().join(',') === 'install-only,version' &&
-      installer.step.env === undefined,
-    'ordinary GoReleaser has execution inputs',
+    shardOrder.every(
+      (index, position) => index >= 0 && (position === 0 || shardOrder[position - 1] < index),
+    ) &&
+      shardSteps[shardStep('Install pinned release-test npm in owned prefix')]?.run?.trim() ===
+        ORDINARY_NPM_INSTALL,
+    'test-shard prerequisites must precede the shard runner',
   );
   const ordinary = product.jobs['ordinary-check'].steps ?? [];
   const node = ordinary.findIndex(
@@ -325,6 +360,25 @@ describe('EWP-P6-TS06', () => {
           steps(p).push(structuredClone(installer(p)));
         },
         diagnostic: 'exactly one ordinary GoReleaser installer required',
+      },
+      {
+        name: 'duplicate test-shard installer',
+        mutate: (p) => {
+          const shard = p.jobs['test-shard'].steps ?? [];
+          shard.push(structuredClone(installer(p)));
+        },
+        diagnostic: 'exactly one test-shard GoReleaser installer required',
+      },
+      {
+        name: 'test-shard runner before prerequisites',
+        mutate: (p) => {
+          const shard = p.jobs['test-shard'].steps ?? [];
+          const runner = shard.findIndex((step) =>
+            step.run?.startsWith('bun scripts/run-test-files-shard.ts '),
+          );
+          shard.unshift(...shard.splice(runner, 1));
+        },
+        diagnostic: 'test-shard prerequisites must precede the shard runner',
       },
       {
         name: 'moved installer',
