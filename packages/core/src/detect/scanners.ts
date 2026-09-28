@@ -4,10 +4,12 @@ import type { InstallMethod } from './types.ts';
 
 export const wellKnownBinDirs = (env: DetectionPorts): readonly string[] => {
   const home = env.homeDir;
+  // $PATH first, in order, so detection finds the binary the user actually runs; the
+  // fixed Homebrew dirs are fallbacks for GUI/launchd contexts with a minimal $PATH.
   const common = [
+    ...env.executableSearchPath,
     '/opt/homebrew/bin',
     '/usr/local/bin',
-    ...env.executableSearchPath,
     join(home, '.local', 'bin'),
     join(home, '.npm', 'bin'),
     join(home, '.bun', 'install', 'global', 'node_modules', '.bin'),

@@ -50,6 +50,17 @@ describe('classifyInstallMethod', () => {
 });
 
 describe('wellKnownBinDirs', () => {
+  test('lists $PATH entries first, in $PATH order, before the fixed fallbacks', () => {
+    const env = fakeEnv({
+      platform: 'darwin',
+      path: ['/Users/u/.local/share/mise/shims', '/usr/bin'],
+      home: '/Users/u',
+    });
+    const dirs = wellKnownBinDirs(env);
+    expect(dirs.slice(0, 2)).toEqual(['/Users/u/.local/share/mise/shims', '/usr/bin']);
+    expect(dirs.indexOf('/opt/homebrew/bin')).toBeGreaterThan(1);
+  });
+
   test('includes brew dirs + $PATH entries + npm-global + bun global on darwin', () => {
     const env = fakeEnv({
       platform: 'darwin',
@@ -67,6 +78,20 @@ describe('wellKnownBinDirs', () => {
 });
 
 describe('findOnPath', () => {
+  test('prefers the $PATH copy over a Homebrew copy of the same binary', async () => {
+    const env = fakeEnv({
+      platform: 'darwin',
+      path: ['/Users/u/.local/share/mise/installs/node/26/bin', '/opt/homebrew/bin'],
+      home: '/Users/u',
+      existing: new Set([
+        '/Users/u/.local/share/mise/installs/node/26/bin/codex',
+        '/opt/homebrew/bin/codex',
+      ]),
+    });
+    const hits = await findOnPath(env, 'codex');
+    expect(hits[0]).toBe('/Users/u/.local/share/mise/installs/node/26/bin/codex');
+  });
+
   test('returns empty when binary is not in any well-known dir', async () => {
     const env = fakeEnv({ platform: 'linux', path: ['/usr/bin'], home: '/home/u' });
     const hits = await findOnPath(env, 'claude');
