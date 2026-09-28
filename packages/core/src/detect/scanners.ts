@@ -21,6 +21,9 @@ export const classifyInstallMethod = (absPath: string): InstallMethod => {
   // Checked before the /opt/homebrew//usr/local -> brew rule: a symlinked command whose
   // resolved target lands in an npm package (e.g. Homebrew's or a version manager's node
   // installing an npm global) is an npm install, not a Homebrew formula.
+  // Homebrew-managed files first: a formula can itself be a node package
+  // (Cellar/<formula>/<ver>/libexec/lib/node_modules/...), and Homebrew owns it.
+  if (/^(\/opt\/homebrew|\/usr\/local)\/(Cellar|Caskroom)\//u.test(absPath)) return 'brew';
   if (absPath.includes('/lib/node_modules/')) return 'npm-global';
   if (absPath.startsWith('/opt/homebrew/') || absPath.startsWith('/usr/local/')) return 'brew';
   if (absPath.includes('/.bun/install/global/')) return 'bun-global';
