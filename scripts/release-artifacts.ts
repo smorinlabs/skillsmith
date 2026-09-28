@@ -366,7 +366,8 @@ export const deriveProductionCaskFixture = (
   }
   let replacements = 0;
   const transformed = input.cask.replace(
-    /^(\s*)url "https:\/\/github\.com\/smorinlabs\/skillsmith\/releases\/download\/v#\{version\}\/([^"]+)",\n\s*verified: "github\.com\/smorinlabs\/skillsmith\/"$/gmu,
+    // GoReleaser 2.17 adds a `verified:` line after each URL; 2.18 omits it (same host as homepage).
+    /^(\s*)url "https:\/\/github\.com\/smorinlabs\/skillsmith\/releases\/download\/v#\{version\}\/([^"]+)"(?:,\n\s*verified: "github\.com\/smorinlabs\/skillsmith\/")?$/gmu,
     (_match, indentation: string, artifact: string) => {
       replacements += 1;
       const filename = artifact.replaceAll('#{version}', version);

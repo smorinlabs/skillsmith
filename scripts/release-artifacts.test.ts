@@ -225,6 +225,16 @@ describe('standard release artifact adapter', () => {
     expect(fixture).not.toContain('verified:');
     expect(production).toContain('github.com/smorinlabs/skillsmith/releases');
 
+    // GoReleaser 2.18 omits `verified:` because the download host matches the homepage host.
+    const unverifiedBranch = (target: string) =>
+      `  sha256 "${SHA_A}"\n  url "https://github.com/smorinlabs/skillsmith/releases/download/v#{version}/skillsmith-v#{version}-${target}.tar.gz"`;
+    const unverified = `version "1.2.3"\n${['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'].map(unverifiedBranch).join('\n')}`;
+    expect(
+      deriveProductionCaskFixture({ cask: unverified, origin: 'http://127.0.0.1:12345/' }).match(
+        /http:\/\/127\.0\.0\.1:12345/gu,
+      ),
+    ).toHaveLength(4);
+
     const first = `version "0.0.0-g6-fixture.1"\nurl "http://127.0.0.1/one"\nsha256 "${SHA_A}"\n`;
     const second = `version "0.0.0-g6-fixture.2"\nurl "http://127.0.0.1/two"\nsha256 "${SHA_B}"\n`;
     expect(() =>
