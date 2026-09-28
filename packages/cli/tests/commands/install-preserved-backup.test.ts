@@ -48,8 +48,9 @@ setDefaultTimeout(60_000);
 const SKILL = 'factor-scan';
 const TOOL = 'claude-code';
 
-const BUN = Bun.which('bun');
-if (BUN === null) throw new Error('bun must be on PATH to spawn the source CLI');
+// The running bun binary, not `bun` from PATH: a version-manager shim (mise, asdf)
+// cannot resolve its config inside the fixture's isolated HOME.
+const BUN = process.execPath;
 const GIT = Bun.which('git');
 if (GIT === null) throw new Error('git must be on PATH for the fixture-owned tool dir');
 
