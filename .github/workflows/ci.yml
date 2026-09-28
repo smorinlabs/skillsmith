@@ -172,7 +172,7 @@ jobs:
         with:
           version: v2.17.1
           install-only: true
-      - name: Check exact release-test tool versions before canonical gate
+      - name: Check minimum release-test tool versions before canonical gate
         run: |
           bun --eval '
           import { spawnSync } from "node:child_process";
@@ -208,7 +208,7 @@ jobs:
             npm: probe("npm"),
           };
           assertReleaseToolVersions(versions);
-          console.log(JSON.stringify({ status: "EXACT_RELEASE_TEST_TOOL_VERSIONS_CONFIRMED", versions }));
+          console.log(JSON.stringify({ status: "MINIMUM_RELEASE_TEST_TOOL_VERSIONS_CONFIRMED", versions }));
           '
       - name: Retain ordinary agent-tool evidence
         if: ${{ always() && !cancelled() && steps.ordinary_agent_reports.outcome == 'success' }}
@@ -294,7 +294,7 @@ jobs:
         with:
           version: v2.17.1
           install-only: true
-      - name: Check exact release-test tool versions before canonical gate
+      - name: Check minimum release-test tool versions before canonical gate
         run: |
           bun --eval '
           import { spawnSync } from "node:child_process";
@@ -330,7 +330,7 @@ jobs:
             npm: probe("npm"),
           };
           assertReleaseToolVersions(versions);
-          console.log(JSON.stringify({ status: "EXACT_RELEASE_TEST_TOOL_VERSIONS_CONFIRMED", versions }));
+          console.log(JSON.stringify({ status: "MINIMUM_RELEASE_TEST_TOOL_VERSIONS_CONFIRMED", versions }));
           '
       - name: Pin environment-gated test capabilities
         run: |

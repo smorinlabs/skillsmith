@@ -14,9 +14,10 @@ import {
 } from './release-artifacts.ts';
 import { RELEASE_NATIVE_LANES, validateReleaseReceiptSet } from './release-gates.ts';
 import { parseJUnitSummary } from './run-test-files-serial.ts';
+import { isAtLeastVersion } from './tool-versions.ts';
 
 const ROOT = resolve(import.meta.dir, '..');
-const EXPECTED_BUN_VERSION = '1.3.14';
+const MINIMUM_BUN_VERSION = '1.3.14';
 const LANES = ['common', ...RELEASE_NATIVE_LANES, 'aggregate'] as const;
 type Lane = (typeof LANES)[number];
 type UnknownRecord = Record<string, unknown>;
@@ -129,7 +130,9 @@ async function validateCandidate(): Promise<CandidateContext> {
   const tag = text(identity.tag, 'candidate tag');
   const bundleSha256 = text(identity.candidateBundleSha256, 'candidate bundle SHA-256');
   const metadataSha256 = text(identity.candidateMetadataSha256, 'candidate metadata SHA-256');
-  if (Bun.version !== EXPECTED_BUN_VERSION) fail(`Bun ${EXPECTED_BUN_VERSION} is required`);
+  if (!isAtLeastVersion(Bun.version, MINIMUM_BUN_VERSION)) {
+    fail(`Bun ${MINIMUM_BUN_VERSION} or newer is required`);
+  }
   if (sha !== requiredEnvironment('GITHUB_SHA') || sha !== git(['rev-parse', 'HEAD'])) {
     fail('candidate/check-out SHA mismatch');
   }

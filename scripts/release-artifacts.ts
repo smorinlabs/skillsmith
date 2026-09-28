@@ -13,7 +13,9 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { isAtLeastVersion } from './tool-versions';
 
+// Minimum release tool versions; newer releases are accepted. CI installs exactly these.
 export const RELEASE_TOOLCHAIN = Object.freeze({
   bun: '1.3.14',
   goreleaser: '2.17.1',
@@ -146,8 +148,10 @@ export const assertReleaseToolVersions = (
   input: Readonly<Record<'bun' | 'goreleaser' | 'npm', string>>,
 ): void => {
   for (const name of ['bun', 'goreleaser', 'npm'] as const) {
-    if (input[name] !== RELEASE_TOOLCHAIN[name]) {
-      throw new Error(`${name} ${input[name]} does not match ${RELEASE_TOOLCHAIN[name]}`);
+    if (!isAtLeastVersion(input[name], RELEASE_TOOLCHAIN[name])) {
+      throw new Error(
+        `${name} ${input[name]} is older than the minimum ${RELEASE_TOOLCHAIN[name]}`,
+      );
     }
   }
 };

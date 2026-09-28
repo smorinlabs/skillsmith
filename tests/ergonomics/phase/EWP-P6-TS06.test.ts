@@ -178,7 +178,7 @@ const assertAutomaticReleaseBoundary = (
     shardStep('Install exact ordinary agent tools'),
     shardStep('Install pinned release-test npm in owned prefix'),
     shardSteps.findIndex((step) => step.uses?.startsWith('goreleaser/')),
-    shardStep('Check exact release-test tool versions before canonical gate'),
+    shardStep('Check minimum release-test tool versions before canonical gate'),
     shardRunner,
   ];
   boundary(
@@ -197,7 +197,7 @@ const assertAutomaticReleaseBoundary = (
     (step) => step.name === 'Install pinned release-test npm in owned prefix',
   );
   const versions = ordinary.findIndex(
-    (step) => step.name === 'Check exact release-test tool versions before canonical gate',
+    (step) => step.name === 'Check minimum release-test tool versions before canonical gate',
   );
   const retained = ordinary.findIndex(
     (step) => step.name === 'Retain ordinary agent-tool evidence',

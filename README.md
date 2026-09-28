@@ -976,7 +976,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the dev loop, commit format, and boun
 ### Release candidates
 
 Maintainers can build the ignored four-target candidate set with `bun run build:release`. The
-candidate uses pinned GoReleaser to create four direct archives, `SHA256SUMS`, standard internal
+candidate uses GoReleaser 2.17.1 or newer to create four direct archives, `SHA256SUMS`, standard internal
 artifact metadata, five npm tarballs, and a Homebrew cask candidate. Public availability remains
 gated by P17-G6-04, the publication gate. Source checkout remains the only published path;
 the candidate names describe packaging under validation.

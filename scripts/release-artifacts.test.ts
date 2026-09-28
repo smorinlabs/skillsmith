@@ -111,8 +111,11 @@ describe('standard release artifact adapter', () => {
       assertReleaseToolVersions({ bun: '1.3.14', goreleaser: '2.17.1', npm: '12.0.1' }),
     ).not.toThrow();
     expect(() =>
+      assertReleaseToolVersions({ bun: '1.4.2', goreleaser: '2.18.2', npm: '12.0.2' }),
+    ).not.toThrow();
+    expect(() =>
       assertReleaseToolVersions({ bun: '1.3.14', goreleaser: '2.17.0', npm: '12.0.1' }),
-    ).toThrow();
+    ).toThrow('goreleaser 2.17.0 is older than the minimum 2.17.1');
     expect(() => assertSourceRevision('a'.repeat(40))).not.toThrow();
     expect(() => assertSourceRevision('HEAD')).toThrow();
     expect(() =>
