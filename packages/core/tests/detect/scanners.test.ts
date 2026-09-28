@@ -47,6 +47,24 @@ describe('classifyInstallMethod', () => {
   test("falls back to 'unknown' otherwise", () => {
     expect(classifyInstallMethod('/some/random/place/bin/claude')).toBe('unknown');
   });
+
+  test('classifies a real Homebrew Cellar binary as brew', () => {
+    expect(classifyInstallMethod('/opt/homebrew/Cellar/codex/0.5.0/bin/codex')).toBe('brew');
+  });
+
+  test('classifies an npm package under /opt/homebrew/lib/node_modules/ as npm-global', () => {
+    expect(classifyInstallMethod('/opt/homebrew/lib/node_modules/@openai/codex/bin/codex.js')).toBe(
+      'npm-global',
+    );
+  });
+
+  test('classifies an npm package under a mise-style node install as npm-global', () => {
+    expect(
+      classifyInstallMethod(
+        '/home/user/.local/share/mise/installs/node/26.5.0/lib/node_modules/@openai/codex/bin/codex.js',
+      ),
+    ).toBe('npm-global');
+  });
 });
 
 describe('wellKnownBinDirs', () => {

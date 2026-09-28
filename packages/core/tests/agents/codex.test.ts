@@ -40,4 +40,53 @@ describe('codexAgent', () => {
       });
     }
   });
+
+  test('classifies by the resolved realpath, not the link path: an npm-global codex symlinked under /opt/homebrew/bin', async () => {
+    const r = await codexAgent.detect({
+      ...env(['/opt/homebrew/bin/codex']),
+      realpath: async () => '/opt/homebrew/lib/node_modules/@openai/codex/bin/codex.js',
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value[0]).toEqual({
+        path: '/opt/homebrew/bin/codex',
+        version: '0.5.1',
+        installMethod: 'npm-global',
+      });
+    }
+  });
+
+  test('classifies by the resolved realpath: an npm-global codex symlinked under a mise node install reports npm-global instead of unknown', async () => {
+    const r = await codexAgent.detect({
+      ...env(['/Users/u/.local/share/mise/installs/node/26.5.0/bin/codex']),
+      executableSearchPath: ['/Users/u/.local/share/mise/installs/node/26.5.0/bin'],
+      realpath: async () =>
+        '/Users/u/.local/share/mise/installs/node/26.5.0/lib/node_modules/@openai/codex/bin/codex.js',
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value[0]).toEqual({
+        path: '/Users/u/.local/share/mise/installs/node/26.5.0/bin/codex',
+        version: '0.5.1',
+        installMethod: 'npm-global',
+      });
+    }
+  });
+
+  test('falls back to classifying the link path when realpath throws', async () => {
+    const r = await codexAgent.detect({
+      ...env(['/opt/homebrew/bin/codex']),
+      realpath: async () => {
+        throw new Error('ENOENT');
+      },
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value[0]).toEqual({
+        path: '/opt/homebrew/bin/codex',
+        version: '0.5.1',
+        installMethod: 'brew',
+      });
+    }
+  });
 });

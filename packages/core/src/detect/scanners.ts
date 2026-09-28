@@ -18,6 +18,10 @@ export const wellKnownBinDirs = (env: DetectionPorts): readonly string[] => {
 };
 
 export const classifyInstallMethod = (absPath: string): InstallMethod => {
+  // Checked before the /opt/homebrew//usr/local -> brew rule: a symlinked command whose
+  // resolved target lands in an npm package (e.g. Homebrew's or a version manager's node
+  // installing an npm global) is an npm install, not a Homebrew formula.
+  if (absPath.includes('/lib/node_modules/')) return 'npm-global';
   if (absPath.startsWith('/opt/homebrew/') || absPath.startsWith('/usr/local/')) return 'brew';
   if (absPath.includes('/.bun/install/global/')) return 'bun-global';
   if (absPath.includes('/.npm/') || absPath.includes('node_modules/.bin/')) return 'npm-global';
