@@ -203,86 +203,93 @@ describe('EWP-P6-TS03', () => {
     ).toEqual({ stdoutColor: 'on', stderrColor: 'on' });
   });
 
-  test('family 2: applies lossless semantic Chalk styling on a real TTY and never colors observation lines', async () => {
-    if (process.platform !== 'linux')
-      throw new Error('EWP-P6-TS03 current-host PTY characterization requires Linux');
-    const env = { ...withoutColorEnvironment(), TERM: 'xterm-256color' };
-    const tty = Bun.spawnSync(
-      ['script', '-qefc', 'bun run packages/cli/src/index.ts --color auto --help', '/dev/null'],
-      { cwd: ROOT, env, stdout: 'pipe', stderr: 'pipe' },
-    );
-    expect(tty.exitCode).toBe(0);
-    expect(tty.stderr.toString()).toBe('');
-    expect(tty.stdout.toString(), 'human help on an eligible TTY must be styled').toContain(ESCAPE);
+  // Cross-ref: scripts/run-test-files-serial.ts mirrors this gate (ewpPtyEnabled) and the
+  // 1-test magnitude (ENV_EWP_SKIP_COUNT). PTY characterization needs Linux `script(1)`.
+  test.skipIf(process.platform !== 'linux')(
+    'family 2: applies lossless semantic Chalk styling on a real TTY and never colors observation lines',
+    async () => {
+      const env = { ...withoutColorEnvironment(), TERM: 'xterm-256color' };
+      const tty = Bun.spawnSync(
+        ['script', '-qefc', 'bun run packages/cli/src/index.ts --color auto --help', '/dev/null'],
+        { cwd: ROOT, env, stdout: 'pipe', stderr: 'pipe' },
+      );
+      expect(tty.exitCode).toBe(0);
+      expect(tty.stderr.toString()).toBe('');
+      expect(tty.stdout.toString(), 'human help on an eligible TTY must be styled').toContain(
+        ESCAPE,
+      );
 
-    const eagerVersion = Bun.spawnSync(
-      ['script', '-qefc', 'bun run packages/cli/src/index.ts --color auto version', '/dev/null'],
-      { cwd: ROOT, env, stdout: 'pipe', stderr: 'pipe' },
-    );
-    expect(eagerVersion.exitCode).toBe(0);
-    expect(eagerVersion.stderr.toString()).toBe('');
-    expect(eagerVersion.stdout.toString()).toContain(ESCAPE);
-    expect(eagerVersion.stdout.toString().replace(ANSI_SEQUENCE, '').replaceAll('\r', '')).toBe(
-      `${VERSION}\n`,
-    );
+      const eagerVersion = Bun.spawnSync(
+        ['script', '-qefc', 'bun run packages/cli/src/index.ts --color auto version', '/dev/null'],
+        { cwd: ROOT, env, stdout: 'pipe', stderr: 'pipe' },
+      );
+      expect(eagerVersion.exitCode).toBe(0);
+      expect(eagerVersion.stderr.toString()).toBe('');
+      expect(eagerVersion.stdout.toString()).toContain(ESCAPE);
+      expect(eagerVersion.stdout.toString().replace(ANSI_SEQUENCE, '').replaceAll('\r', '')).toBe(
+        `${VERSION}\n`,
+      );
 
-    for (const args of [
-      ['--color', 'always', '--help'],
-      ['--color', 'always', 'version'],
-    ]) {
-      const piped = runCli(args, env);
-      expect(piped.exitCode, args.join(' ')).toBe(0);
-      expect(`${piped.stdout}${piped.stderr}`, args.join(' ')).not.toContain(ESCAPE);
-    }
+      for (const args of [
+        ['--color', 'always', '--help'],
+        ['--color', 'always', 'version'],
+      ]) {
+        const piped = runCli(args, env);
+        expect(piped.exitCode, args.join(' ')).toBe(0);
+        expect(`${piped.stdout}${piped.stderr}`, args.join(' ')).not.toContain(ESCAPE);
+      }
 
-    const presentation = await presentationModule();
-    expect(typeof presentation.presentHumanOutput).toBe('function');
-    const present = presentation.presentHumanOutput;
-    if (present === undefined) throw new Error('presentHumanOutput is absent');
-    const plain = {
-      stdout: '# Tools detected\n0.7.0\n',
-      stderr: 'warning: review this\n',
-    };
-    const styled = present(plain, { stdoutColor: 'on', stderrColor: 'on' }, 'agents');
-    expect(`${styled.stdout}${styled.stderr}`).toContain(ESCAPE);
-    expect(styled.stdout?.replace(ANSI_SEQUENCE, '')).toBe(plain.stdout);
-    expect(styled.stderr?.replace(ANSI_SEQUENCE, '')).toBe(plain.stderr);
-    expect(
-      present(
-        { stderr: 'trace: operation.completed operation=op-1\n' },
-        { stdoutColor: 'on', stderrColor: 'on' },
-        'fixture',
-      ).stderr,
-    ).toBe('trace: operation.completed operation=op-1\n');
+      const presentation = await presentationModule();
+      expect(typeof presentation.presentHumanOutput).toBe('function');
+      const present = presentation.presentHumanOutput;
+      if (present === undefined) throw new Error('presentHumanOutput is absent');
+      const plain = {
+        stdout: '# Tools detected\n0.7.0\n',
+        stderr: 'warning: review this\n',
+      };
+      const styled = present(plain, { stdoutColor: 'on', stderrColor: 'on' }, 'agents');
+      expect(`${styled.stdout}${styled.stderr}`).toContain(ESCAPE);
+      expect(styled.stdout?.replace(ANSI_SEQUENCE, '')).toBe(plain.stdout);
+      expect(styled.stderr?.replace(ANSI_SEQUENCE, '')).toBe(plain.stderr);
+      expect(
+        present(
+          { stderr: 'trace: operation.completed operation=op-1\n' },
+          { stdoutColor: 'on', stderrColor: 'on' },
+          'fixture',
+        ).stderr,
+      ).toBe('trace: operation.completed operation=op-1\n');
 
-    const runtimeMemory = memoryIo(true, true);
-    const runtime = createCliRuntimeAdapter({
-      applications: {
-        fixture: async () =>
-          successOutcome([{ severity: 'warning', code: 'careful', message: 'review this' }]),
-      },
-      renderers: {
-        fixture: {
-          human: () => ({ stdout: '# Result\n', stderr: 'warning: review this\n' }),
-          json: () => '{"kind":"fixture"}\n',
+      const runtimeMemory = memoryIo(true, true);
+      const runtime = createCliRuntimeAdapter({
+        applications: {
+          fixture: async () =>
+            successOutcome([{ severity: 'warning', code: 'careful', message: 'review this' }]),
         },
-      },
-      io: runtimeMemory.io,
-    });
-    await runtime.execute({
-      application: 'fixture',
-      reportKind: 'fixture',
-      request: {},
-      context: {},
-      observation: silentObservation(),
-      format: 'human',
-      presentation: { stdoutColor: 'on', stderrColor: 'on' },
-    });
-    expect(runtimeMemory.stdout.join('')).toContain(ESCAPE);
-    expect(runtimeMemory.stderr.join('')).toContain(ESCAPE);
-    expect(runtimeMemory.stdout.join('').replace(ANSI_SEQUENCE, '')).toBe('# Result\n');
-    expect(runtimeMemory.stderr.join('').replace(ANSI_SEQUENCE, '')).toBe('warning: review this\n');
-  });
+        renderers: {
+          fixture: {
+            human: () => ({ stdout: '# Result\n', stderr: 'warning: review this\n' }),
+            json: () => '{"kind":"fixture"}\n',
+          },
+        },
+        io: runtimeMemory.io,
+      });
+      await runtime.execute({
+        application: 'fixture',
+        reportKind: 'fixture',
+        request: {},
+        context: {},
+        observation: silentObservation(),
+        format: 'human',
+        presentation: { stdoutColor: 'on', stderrColor: 'on' },
+      });
+      expect(runtimeMemory.stdout.join('')).toContain(ESCAPE);
+      expect(runtimeMemory.stderr.join('')).toContain(ESCAPE);
+      expect(runtimeMemory.stdout.join('').replace(ANSI_SEQUENCE, '')).toBe('# Result\n');
+      expect(runtimeMemory.stderr.join('').replace(ANSI_SEQUENCE, '')).toBe(
+        'warning: review this\n',
+      );
+    },
+  );
 
   test('family 3: preserves signed warning, deprecation, failure, cancellation, and JSON quiet semantics', async () => {
     const cases = [
@@ -423,13 +430,12 @@ describe('EWP-P6-TS03', () => {
     expect(usage.stderr).toStartWith('error: ');
     expect(usage.stderr).not.toContain(ESCAPE);
 
+    // util-linux `script` takes `-qefc <command> <file>`; BSD/macOS takes `-qe <file> <argv...>`.
+    const ttyCommand = 'bun run packages/cli/src/index.ts --color always --definitely-unknown';
     const ttyUsage = Bun.spawnSync(
-      [
-        'script',
-        '-qefc',
-        'bun run packages/cli/src/index.ts --color always --definitely-unknown',
-        '/dev/null',
-      ],
+      process.platform === 'linux'
+        ? ['script', '-qefc', ttyCommand, '/dev/null']
+        : ['script', '-qe', '/dev/null', 'sh', '-c', ttyCommand],
       {
         cwd: ROOT,
         env: { ...withoutColorEnvironment(), TERM: 'xterm-256color' },

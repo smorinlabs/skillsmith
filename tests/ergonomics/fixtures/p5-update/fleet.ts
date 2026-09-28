@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CLI_ENTRYPOINT } from '../../../../packages/cli/tests/fixtures/cli.ts';
+import { createDetectionIsolation } from '../../../../packages/cli/tests/fixtures/detection.ts';
 import { hashManifestSemantics } from '../../../../packages/core/src/artifacts/hash.ts';
 import {
   type PortableLockV1,
@@ -50,6 +51,8 @@ export interface UpdateFleet {
     readonly claude: string;
   };
   readonly env: Readonly<Record<string, string | undefined>>;
+  /** Hides machine-installed agents so detection resolves the fixture-owned binaries. */
+  readonly detectionPreload: string;
 }
 
 export interface CreateUpdateFleetOptions {
@@ -268,6 +271,10 @@ export const createUpdateFleet = async (
         { globalConfigPath: join(home, '.gitconfig') },
       ),
     );
+    const { preload: detectionPreload } = await createDetectionIsolation(root, env, [
+      'claude',
+      'codex',
+    ]);
     const bootstraps: readonly Readonly<{
       source: string;
       tools: readonly ('claude-code' | 'codex')[];
@@ -281,6 +288,8 @@ export const createUpdateFleet = async (
       const bootstrap = Bun.spawn(
         [
           process.execPath,
+          '--preload',
+          detectionPreload,
           CLI_ENTRYPOINT,
           'install',
           seed.source,
@@ -317,6 +326,7 @@ export const createUpdateFleet = async (
       remote: Object.freeze({ ...remote, updateHead }),
       live,
       env,
+      detectionPreload,
     });
   } catch (error) {
     await Promise.all([rm(root, { recursive: true, force: true }), destroyRemoteFixture(remote)]);
@@ -335,13 +345,16 @@ export const runUpdateCli = async (
   fleet: UpdateFleet,
   args: readonly string[],
 ): Promise<UpdateCliProduct> => {
-  const child = Bun.spawn([process.execPath, CLI_ENTRYPOINT, ...args], {
-    cwd: fleet.cwd,
-    env: fleet.env,
-    stdin: 'ignore',
-    stdout: 'pipe',
-    stderr: 'pipe',
-  });
+  const child = Bun.spawn(
+    [process.execPath, '--preload', fleet.detectionPreload, CLI_ENTRYPOINT, ...args],
+    {
+      cwd: fleet.cwd,
+      env: fleet.env,
+      stdin: 'ignore',
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+  );
   const [exitCode, stdout, stderr] = await Promise.all([
     child.exited,
     new Response(child.stdout).text(),
@@ -354,13 +367,16 @@ export const runUpdateCliWithSignal = async (
   fleet: UpdateFleet,
   args: readonly string[],
 ): Promise<UpdateCliProduct> => {
-  const child = Bun.spawn([process.execPath, CLI_ENTRYPOINT, ...args], {
-    cwd: fleet.cwd,
-    env: fleet.env,
-    stdin: 'ignore',
-    stdout: 'pipe',
-    stderr: 'pipe',
-  });
+  const child = Bun.spawn(
+    [process.execPath, '--preload', fleet.detectionPreload, CLI_ENTRYPOINT, ...args],
+    {
+      cwd: fleet.cwd,
+      env: fleet.env,
+      stdin: 'ignore',
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+  );
   await Bun.sleep(25);
   child.kill('SIGINT');
   const [exitCode, stdout, stderr] = await Promise.all([

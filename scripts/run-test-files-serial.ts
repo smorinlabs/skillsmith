@@ -1,15 +1,28 @@
 #!/usr/bin/env bun
 
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, statfsSync } from 'node:fs';
 import { devNull, tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { delimiter, join, resolve } from 'node:path';
 
 const repositoryRoot = resolve(import.meta.dir, '..');
 const bunTestFilePattern = /(?:^|\/)[^/]+(?:\.(?:test|spec)|_(?:test|spec))\.(?:js|jsx|ts|tsx)$/;
-const gitEnvironment = Object.fromEntries(
-  Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')),
-);
+// Git hooks (the pre-push gate) set GIT_EXEC_PATH and prepend that directory to PATH. Stripping
+// GIT_* alone leaves the exec path first on PATH, so fixtures that resolve `git` from PATH get
+// the git-core copy, which cannot find its helpers (git-upload-pack) once linked elsewhere.
+export function childTestEnvironment(
+  environment: Readonly<Record<string, string | undefined>>,
+): Record<string, string | undefined> {
+  const child = Object.fromEntries(
+    Object.entries(environment).filter(([key]) => !key.startsWith('GIT_')),
+  );
+  const execPath = environment.GIT_EXEC_PATH;
+  const entries = (child.PATH ?? '').split(delimiter);
+  if (execPath && entries[0] === execPath) child.PATH = entries.slice(1).join(delimiter);
+  return child;
+}
+
+const gitEnvironment = childTestEnvironment(process.env);
 export const EXPECTED_BUN_VERSION = '1.3.14';
 const EXPECTED_ALLOWED_SKIP_FILES = 8;
 const EXPECTED_ALLOWED_SKIPS = 42;
@@ -23,6 +36,81 @@ export const ALLOWED_LIVE_E2E_SKIPS: ReadonlyMap<string, number> = new Map([
   ['packages/cli/tests/commands/install-remote-live.test.ts', 4],
   ['packages/cli/tests/commands/dev-source-live.test.ts', 8],
   ['packages/cli/tests/commands/acquire-journal-guidance.test.ts', 6],
+]);
+
+// Frozen environment-gated skip entries. Unlike the live-E2E allowlist above, these files'
+// skip counts depend on the machine running the gate: each entry contributes its frozen
+// magnitude when its gate is closed (tests skip) and 0 when its gate is open (tests run).
+// The resolved total is therefore 42 + 0..7, computed at startup by resolveAllowedSkips().
+export const ENV_STRACE_SKIP_FILE = 'packages/cli/tests/commands/install-root-permission.test.ts';
+export const ENV_STRACE_SKIP_COUNT = 5;
+export const ENV_NATIVE_SKIP_FILE = 'packages/cli/tests/commands/install-preserved-backup.test.ts';
+export const ENV_NATIVE_SKIP_COUNT = 1;
+export const ENV_EWP_SKIP_FILE = 'tests/ergonomics/phase/EWP-P6-TS03.test.ts';
+export const ENV_EWP_SKIP_COUNT = 1;
+export const NATIVE_MIN_FREE_BYTES = 300 * 1024 * 1024;
+const EXPECTED_ENV_SKIP_FILES = 3;
+
+export type EnvSkipProbes = {
+  platform?: string;
+  which?: (command: string) => string | null;
+  statfs?: (path: string) => { bavail: number; bsize: number };
+  scratchDirectory?: () => string;
+};
+
+// Mirrors `lane2StraceOk` in install-root-permission.test.ts. Duplicated deliberately: no
+// scripts<->tests import precedent exists, and the gate itself is the drift detector — if the
+// test gate changes without this mirror, the per-file skip check fails closed and loud.
+export function straceLaneEnabled(probes: EnvSkipProbes = {}): boolean {
+  try {
+    const platform = probes.platform ?? process.platform;
+    const which = probes.which ?? ((command: string) => Bun.which(command));
+    return platform === 'linux' && which('strace') !== null;
+  } catch {
+    return false;
+  }
+}
+
+// Mirrors `nativeCompileSupported` in install-preserved-backup.test.ts (same duplication
+// rationale). The runner probes its own TMPDIR; children run with TMPDIR set to a runRoot on
+// the same filesystem, so both sides observe the same free-space gate verdict.
+export function nativeCompileEnabled(probes: EnvSkipProbes = {}): boolean {
+  try {
+    const statfs = probes.statfs ?? statfsSync;
+    const directory = probes.scratchDirectory?.() ?? tmpdir();
+    const stats = statfs(directory);
+    return stats.bavail * stats.bsize >= NATIVE_MIN_FREE_BYTES;
+  } catch {
+    return false;
+  }
+}
+
+// Mirrors the `test.skipIf(process.platform !== 'linux')` gate on the family-2 PTY test
+// in EWP-P6-TS03.test.ts (same duplication rationale as above).
+export function ewpPtyEnabled(probes: EnvSkipProbes = {}): boolean {
+  try {
+    return (probes.platform ?? process.platform) === 'linux';
+  } catch {
+    return false;
+  }
+}
+
+export function resolveAllowedSkips(probes: EnvSkipProbes = {}): ReadonlyMap<string, number> {
+  const resolved = new Map(ALLOWED_LIVE_E2E_SKIPS);
+  resolved.set(ENV_STRACE_SKIP_FILE, straceLaneEnabled(probes) ? 0 : ENV_STRACE_SKIP_COUNT);
+  resolved.set(ENV_NATIVE_SKIP_FILE, nativeCompileEnabled(probes) ? 0 : ENV_NATIVE_SKIP_COUNT);
+  resolved.set(ENV_EWP_SKIP_FILE, ewpPtyEnabled(probes) ? 0 : ENV_EWP_SKIP_COUNT);
+  return resolved;
+}
+
+// Sharded CI pins every environment-gated capability (ci.yml "Pin environment-gated test
+// capabilities"), so shards and the aggregate expect these skips instead of probing the machine
+// that happens to validate them.
+export const PINNED_CAPABILITY_SKIPS: ReadonlyMap<string, number> = new Map([
+  ...ALLOWED_LIVE_E2E_SKIPS,
+  [ENV_STRACE_SKIP_FILE, 0],
+  [ENV_NATIVE_SKIP_FILE, 0],
+  [ENV_EWP_SKIP_FILE, 0],
 ]);
 
 export type JUnitSummary = {
@@ -173,31 +261,51 @@ export function parseJUnitSummary(xml: string, expectedFile: string): JUnitSumma
 
 export function validateTerminalManifest(
   files: readonly string[],
-  allowedSkips: ReadonlyMap<string, number> = ALLOWED_LIVE_E2E_SKIPS,
+  allowedSkips: ReadonlyMap<string, number> = resolveAllowedSkips(),
 ): number {
-  if (allowedSkips.size !== EXPECTED_ALLOWED_SKIP_FILES) {
-    fail(
-      `live-E2E skip allowlist has ${allowedSkips.size} files; expected ${EXPECTED_ALLOWED_SKIP_FILES}`,
-    );
+  const expectedFiles = EXPECTED_ALLOWED_SKIP_FILES + EXPECTED_ENV_SKIP_FILES;
+  if (allowedSkips.size !== expectedFiles) {
+    fail(`test-file skip allowlist has ${allowedSkips.size} files; expected ${expectedFiles}`);
+  }
+  const frozenTotal = [...ALLOWED_LIVE_E2E_SKIPS.values()].reduce((sum, count) => sum + count, 0);
+  if (frozenTotal !== EXPECTED_ALLOWED_SKIPS) {
+    fail(`live-E2E skip allowlist totals ${frozenTotal}; expected ${EXPECTED_ALLOWED_SKIPS}`);
+  }
+  for (const [file, count] of ALLOWED_LIVE_E2E_SKIPS) {
+    if (allowedSkips.get(file) !== count) {
+      fail(
+        `live-E2E skip allowlist drifted for ${file}: ${allowedSkips.get(file) ?? 'missing'}; expected ${count}`,
+      );
+    }
+  }
+  for (const [file, count] of [
+    [ENV_STRACE_SKIP_FILE, ENV_STRACE_SKIP_COUNT],
+    [ENV_NATIVE_SKIP_FILE, ENV_NATIVE_SKIP_COUNT],
+    [ENV_EWP_SKIP_FILE, ENV_EWP_SKIP_COUNT],
+  ] as const) {
+    const actual = allowedSkips.get(file);
+    if (actual !== 0 && actual !== count) {
+      fail(
+        `environment-gated skip entry drifted for ${file}: ${actual ?? 'missing'}; expected 0 or ${count}`,
+      );
+    }
   }
   const expectedSkips = [...allowedSkips.values()].reduce((sum, count) => sum + count, 0);
-  if (expectedSkips !== EXPECTED_ALLOWED_SKIPS) {
-    fail(`live-E2E skip allowlist totals ${expectedSkips}; expected ${EXPECTED_ALLOWED_SKIPS}`);
-  }
   const fileSet = new Set(files);
   const missing = [...allowedSkips.keys()].filter((file) => !fileSet.has(file));
-  if (missing.length > 0) fail(`test-file manifest is missing live-E2E file ${missing[0]}`);
+  if (missing.length > 0) fail(`test-file manifest is missing allowlisted file ${missing[0]}`);
   return expectedSkips;
 }
 
 export async function runFilesSerially(
   files: readonly string[],
   runFile: (file: string, index: number, total: number) => Promise<SerialFileOutcome>,
+  allowedSkips: ReadonlyMap<string, number> = resolveAllowedSkips(),
 ): Promise<SerialReceipt> {
   if (files.length === 0) fail('cannot run an empty test-file manifest');
   const duplicate = files.find((file, index) => files.indexOf(file) !== index);
   if (duplicate) fail(`duplicate test file ${duplicate}`);
-  const expectedTotalSkips = validateTerminalManifest(files);
+  const expectedTotalSkips = validateTerminalManifest(files, allowedSkips);
   const seen = new Set<string>();
   let assertions = 0;
   let executed = 0;
@@ -218,7 +326,7 @@ export async function runFilesSerially(
     if (summary.failures !== 0) {
       fail(`${file} reported ${summary.failures} JUnit failures after exit 0`);
     }
-    const expectedSkips = ALLOWED_LIVE_E2E_SKIPS.get(file) ?? 0;
+    const expectedSkips = allowedSkips.get(file) ?? 0;
     if (summary.skipped !== expectedSkips) {
       fail(`${file} reported ${summary.skipped} skipped tests; expected ${expectedSkips}`);
     }
@@ -335,6 +443,12 @@ export function finalizeSuccessfulRun(
   if (errors.length > 0) fail(errors.map(errorMessage).join('\n'));
 }
 
+// Resolve symlinks so children never observe a symlinked TMPDIR: macOS TMPDIR lives
+// under /var (a symlink), and the artifact coordinator rejects symlinked ancestors.
+export function createRunRoot(temporaryBase: string): string {
+  return realpathSync(mkdtempSync(join(temporaryBase, 'skillsmith-serial-tests-')));
+}
+
 export async function main(): Promise<void> {
   if (process.argv.length !== 2) {
     fail('serial test-file terminal runner accepts no arguments');
@@ -348,32 +462,40 @@ export async function main(): Promise<void> {
   const initial = captureRepositoryIdentity(repositoryRoot);
   const testFiles = discoverTestFiles(repositoryRoot);
   const digest = manifestDigest(testFiles);
+  const allowedSkips = resolveAllowedSkips();
   const temporaryBase = resolve(process.env.TMPDIR ?? tmpdir());
-  const runRoot = mkdtempSync(join(temporaryBase, 'skillsmith-serial-tests-'));
+  const runRoot = createRunRoot(temporaryBase);
 
   console.log(
     `serial test-file manifest: ${testFiles.length} files; sha256=${digest}; bun=${Bun.version}`,
+  );
+  console.log(
+    `serial test-file env-gated skips: ${ENV_STRACE_SKIP_FILE}=${allowedSkips.get(ENV_STRACE_SKIP_FILE)} ${ENV_NATIVE_SKIP_FILE}=${allowedSkips.get(ENV_NATIVE_SKIP_FILE)} ${ENV_EWP_SKIP_FILE}=${allowedSkips.get(ENV_EWP_SKIP_FILE)}`,
   );
 
   let receipt: SerialReceipt | undefined;
   const errors: unknown[] = [];
   try {
-    receipt = await runFilesSerially(testFiles, async (file, index, total) => {
-      const reportPath = join(runRoot, `junit-${String(index + 1).padStart(4, '0')}.xml`);
-      const command = buildBunTestCommand(file, reportPath);
-      console.log(`[${index + 1}/${total}] ${file}`);
-      const child = Bun.spawn(command, {
-        cwd: repositoryRoot,
-        env: { ...gitEnvironment, TMPDIR: runRoot },
-        stderr: 'inherit',
-        stdout: 'inherit',
-      });
-      const exitCode = await child.exited;
-      return {
-        exitCode,
-        junit: existsSync(reportPath) ? readFileSync(reportPath, 'utf8') : '',
-      };
-    });
+    receipt = await runFilesSerially(
+      testFiles,
+      async (file, index, total) => {
+        const reportPath = join(runRoot, `junit-${String(index + 1).padStart(4, '0')}.xml`);
+        const command = buildBunTestCommand(file, reportPath);
+        console.log(`[${index + 1}/${total}] ${file}`);
+        const child = Bun.spawn(command, {
+          cwd: repositoryRoot,
+          env: { ...gitEnvironment, TMPDIR: runRoot },
+          stderr: 'inherit',
+          stdout: 'inherit',
+        });
+        const exitCode = await child.exited;
+        return {
+          exitCode,
+          junit: existsSync(reportPath) ? readFileSync(reportPath, 'utf8') : '',
+        };
+      },
+      allowedSkips,
+    );
   } catch (error) {
     errors.push(error);
   }

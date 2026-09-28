@@ -11,19 +11,34 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { devNull, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import {
   ALLOWED_LIVE_E2E_SKIPS,
+  ENV_EWP_SKIP_COUNT,
+  ENV_EWP_SKIP_FILE,
+  ENV_NATIVE_SKIP_COUNT,
+  ENV_NATIVE_SKIP_FILE,
+  ENV_STRACE_SKIP_COUNT,
+  ENV_STRACE_SKIP_FILE,
   EXPECTED_BUN_VERSION,
+  type EnvSkipProbes,
+  NATIVE_MIN_FREE_BYTES,
+  PINNED_CAPABILITY_SKIPS,
   buildBunTestCommand,
   captureRepositoryIdentity,
+  childTestEnvironment,
+  createRunRoot,
   discoverTestFiles,
+  ewpPtyEnabled,
   finalizeSuccessfulRun,
   manifestDigest,
+  nativeCompileEnabled,
   parseJUnitSummary,
   requireCleanRepository,
   requirePinnedBunVersion,
+  resolveAllowedSkips,
   runFilesSerially,
+  straceLaneEnabled,
   validateTerminalManifest,
 } from './run-test-files-serial';
 
@@ -92,8 +107,21 @@ function repositoryFixture(): string {
 }
 
 function terminalFiles(...extra: string[]): string[] {
-  return [...extra, ...ALLOWED_LIVE_E2E_SKIPS.keys()].sort();
+  return [...extra, ...resolveAllowedSkips().keys()].sort();
 }
+
+const straceProbes = (enabled: boolean): EnvSkipProbes =>
+  enabled ? { platform: 'linux', which: () => '/usr/bin/strace' } : { platform: 'darwin' };
+
+const nativeProbes = (enabled: boolean): EnvSkipProbes =>
+  enabled
+    ? { statfs: () => ({ bavail: NATIVE_MIN_FREE_BYTES, bsize: 1 }) }
+    : { statfs: () => ({ bavail: 0, bsize: 4096 }) };
+
+const closedGates: EnvSkipProbes = {
+  ...straceProbes(false),
+  ...nativeProbes(false),
+};
 
 function junit(file: string, tests = 1, skipped = 0): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -155,6 +183,20 @@ async function terminalIntegration(mode: 'commit' | 'pass' | 'fail', poison = 't
       `import { test } from 'bun:test';\n${Array.from({ length: count }, (_, i) => `test.skip('live ${i}', () => {});`).join('\n')}\n`,
     );
   }
+  for (const file of [ENV_STRACE_SKIP_FILE, ENV_NATIVE_SKIP_FILE, ENV_EWP_SKIP_FILE])
+    mkdirSync(join(root, file, '..'), { recursive: true });
+  writeFileSync(
+    join(root, ENV_STRACE_SKIP_FILE),
+    `import { test } from 'bun:test';\nconst lane2StraceOk = process.platform === 'linux' && Bun.which('strace') !== null;\n${Array.from({ length: ENV_STRACE_SKIP_COUNT }, (_, i) => `test.skipIf(!lane2StraceOk)('strace ${i}', () => {});`).join('\n')}\n`,
+  );
+  writeFileSync(
+    join(root, ENV_NATIVE_SKIP_FILE),
+    `import { test } from 'bun:test';\nimport { statfsSync } from 'node:fs';\nimport { tmpdir } from 'node:os';\nconst nativeEnabled = (() => { try { const s = statfsSync(tmpdir()); return s.bavail * s.bsize >= ${NATIVE_MIN_FREE_BYTES}; } catch { return false; } })();\ntest.skipIf(!nativeEnabled)('native control', () => {});\n`,
+  );
+  writeFileSync(
+    join(root, ENV_EWP_SKIP_FILE),
+    `import { test } from 'bun:test';\ntest.skipIf(process.platform !== 'linux')('pty control', () => {});\n`,
+  );
   writeFileSync(
     join(root, 'ordinary.test.ts'),
     `
@@ -230,10 +272,16 @@ test('real terminal child', () => {
     const exitCode = await child.exited;
     expect(independentIdentity(outer)).toEqual(before);
     expect(readdirSync(temporary)).toEqual([]);
+    // The child runner resolves its env-gated skips against its own TMPDIR; mirror that
+    // resolution exactly when computing the expected receipt total.
+    const expectedSkips = [
+      ...resolveAllowedSkips({ scratchDirectory: () => temporary }).values(),
+    ].reduce((sum, count) => sum + count, 0);
     return {
       exitCode,
       stdout: await stdout,
       stderr: await stderr,
+      expectedSkips,
       runnerBefore,
       runnerAfter: independentIdentity(root),
     };
@@ -275,13 +323,16 @@ describe('serial test-file terminal runner', () => {
       const result = await terminalIntegration('pass', poison);
       expect(result.exitCode).toBe(0);
       expect(result.runnerAfter).toEqual(result.runnerBefore);
+      expect(result.stdout).toContain('serial test-file env-gated skips:');
+      expect(result.expectedSkips).toBeGreaterThanOrEqual(42);
+      expect(result.expectedSkips).toBeLessThanOrEqual(49);
       const receipt = result.stdout.match(/SERIAL_TEST_FILE_RECEIPT (.+)/)?.[1];
       expect(receipt).toBeDefined();
       expect(JSON.parse(receipt as string)).toMatchObject({
-        discovered: 9,
-        executed: 9,
-        passed: 9,
-        skipped: 42,
+        discovered: 12,
+        executed: 12,
+        passed: 12,
+        skipped: result.expectedSkips,
       });
     },
     30_000,
@@ -414,79 +465,256 @@ describe('serial test-file terminal runner', () => {
     );
   });
 
-  test('runs every file exactly once in order and freezes the live-E2E skip counts', async () => {
-    const files = terminalFiles('alpha.test.ts', 'omega.test.ts');
-    const calls: string[] = [];
+  test('resolves environment-gated skips from injected probes and fails closed on errors', () => {
+    expect(straceLaneEnabled({ platform: 'linux', which: () => '/usr/bin/strace' })).toBe(true);
+    expect(straceLaneEnabled({ platform: 'darwin', which: () => '/usr/bin/strace' })).toBe(false);
+    expect(straceLaneEnabled({ platform: 'linux', which: () => null })).toBe(false);
+    expect(
+      straceLaneEnabled({
+        platform: 'linux',
+        which: () => {
+          throw new Error('probe boom');
+        },
+      }),
+    ).toBe(false);
 
-    const receipt = await runFilesSerially(files, async (file) => {
-      calls.push(file);
-      const skipped = ALLOWED_LIVE_E2E_SKIPS.get(file) ?? 0;
-      return { exitCode: 0, junit: junit(file, Math.max(1, skipped), skipped) };
-    });
+    expect(
+      nativeCompileEnabled({ statfs: () => ({ bavail: NATIVE_MIN_FREE_BYTES, bsize: 1 }) }),
+    ).toBe(true);
+    expect(
+      nativeCompileEnabled({ statfs: () => ({ bavail: NATIVE_MIN_FREE_BYTES - 1, bsize: 1 }) }),
+    ).toBe(false);
+    expect(
+      nativeCompileEnabled({
+        statfs: () => {
+          throw new Error('probe boom');
+        },
+      }),
+    ).toBe(false);
+    expect(
+      nativeCompileEnabled({
+        scratchDirectory: () => {
+          throw new Error('probe boom');
+        },
+      }),
+    ).toBe(false);
 
-    expect(calls).toEqual(files);
-    expect(ALLOWED_LIVE_E2E_SKIPS.size).toBe(8);
-    expect([...ALLOWED_LIVE_E2E_SKIPS.values()].reduce((sum, count) => sum + count, 0)).toBe(42);
-    expect(receipt).toEqual({
-      assertions: 70,
-      discovered: 10,
-      duplicates: 0,
-      executed: 10,
-      passed: 10,
-      skipped: 42,
-      tests: 44,
+    expect(ewpPtyEnabled({ platform: 'linux' })).toBe(true);
+    expect(ewpPtyEnabled({ platform: 'darwin' })).toBe(false);
+    expect(ewpPtyEnabled({ platform: 'win32' })).toBe(false);
+    expect(
+      ewpPtyEnabled({
+        get platform(): string {
+          throw new Error('probe boom');
+        },
+      }),
+    ).toBe(false);
+
+    const resolved = resolveAllowedSkips(closedGates);
+    expect(resolved.size).toBe(11);
+    expect(resolved.get(ENV_STRACE_SKIP_FILE)).toBe(ENV_STRACE_SKIP_COUNT);
+    expect(resolved.get(ENV_NATIVE_SKIP_FILE)).toBe(ENV_NATIVE_SKIP_COUNT);
+    expect(resolved.get(ENV_EWP_SKIP_FILE)).toBe(ENV_EWP_SKIP_COUNT);
+    const open = resolveAllowedSkips({
+      ...straceProbes(true),
+      ...nativeProbes(true),
     });
+    expect(open.get(ENV_STRACE_SKIP_FILE)).toBe(0);
+    expect(open.get(ENV_NATIVE_SKIP_FILE)).toBe(0);
+    expect(open.get(ENV_EWP_SKIP_FILE)).toBe(0);
+  });
+
+  test('child environment drops GIT_* and the git exec path a hook prepends to PATH', () => {
+    const hook = {
+      PATH: ['/git-core', '/usr/bin', '/git-core'].join(delimiter),
+      GIT_EXEC_PATH: '/git-core',
+      GIT_DIR: '/repo/.git',
+      HOME: '/home',
+    };
+    expect(childTestEnvironment(hook)).toEqual({
+      PATH: ['/usr/bin', '/git-core'].join(delimiter),
+      HOME: '/home',
+    });
+    expect(childTestEnvironment({ PATH: ['/a', '/b'].join(delimiter), HOME: '/home' })).toEqual({
+      PATH: ['/a', '/b'].join(delimiter),
+      HOME: '/home',
+    });
+  });
+
+  test('sharded CI expects the pinned-capability skips, independent of the validating machine', () => {
+    const open = resolveAllowedSkips({ ...straceProbes(true), ...nativeProbes(true) });
+    expect([...PINNED_CAPABILITY_SKIPS]).toEqual([...open]);
+    expect(
+      validateTerminalManifest([...PINNED_CAPABILITY_SKIPS.keys()], PINNED_CAPABILITY_SKIPS),
+    ).toBe([...ALLOWED_LIVE_E2E_SKIPS.values()].reduce((sum, count) => sum + count, 0));
+  });
+
+  test.each([
+    { linux: true, straceFound: true, native: true },
+    { linux: true, straceFound: true, native: false },
+    { linux: true, straceFound: false, native: true },
+    { linux: true, straceFound: false, native: false },
+    { linux: false, straceFound: true, native: true },
+    { linux: false, straceFound: true, native: false },
+    { linux: false, straceFound: false, native: true },
+    { linux: false, straceFound: false, native: false },
+  ])(
+    'runs every file exactly once in order with resolved env skips (linux=$linux straceFound=$straceFound native=$native)',
+    async ({ linux, straceFound, native }) => {
+      const allowed = resolveAllowedSkips({
+        platform: linux ? 'linux' : 'darwin',
+        which: () => (straceFound ? '/usr/bin/strace' : null),
+        ...nativeProbes(native),
+      });
+      const files = terminalFiles('alpha.test.ts', 'omega.test.ts');
+      const calls: string[] = [];
+
+      const receipt = await runFilesSerially(
+        files,
+        async (file) => {
+          calls.push(file);
+          const skipped = allowed.get(file) ?? 0;
+          return { exitCode: 0, junit: junit(file, Math.max(1, skipped), skipped) };
+        },
+        allowed,
+      );
+
+      const straceSkips = linux && straceFound ? 0 : ENV_STRACE_SKIP_COUNT;
+      const nativeSkips = native ? 0 : ENV_NATIVE_SKIP_COUNT;
+      const ewpSkips = linux ? 0 : ENV_EWP_SKIP_COUNT;
+      expect(calls).toEqual(files);
+      expect(allowed.size).toBe(11);
+      expect(ALLOWED_LIVE_E2E_SKIPS.size).toBe(8);
+      expect([...ALLOWED_LIVE_E2E_SKIPS.values()].reduce((sum, count) => sum + count, 0)).toBe(42);
+      expect(ENV_STRACE_SKIP_COUNT).toBe(5);
+      expect(ENV_NATIVE_SKIP_COUNT).toBe(1);
+      expect(ENV_EWP_SKIP_COUNT).toBe(1);
+      expect(receipt).toEqual({
+        assertions: 91,
+        discovered: 13,
+        duplicates: 0,
+        executed: 13,
+        passed: 13,
+        skipped: 42 + straceSkips + nativeSkips + ewpSkips,
+        tests: 44 + Math.max(1, straceSkips) + Math.max(1, nativeSkips) + Math.max(1, ewpSkips),
+      });
+    },
+  );
+
+  test('pins environment-gated test magnitudes to their frozen counts', () => {
+    const root = join(import.meta.dir, '..');
+    const readTracked = (file: string): string => readFileSync(join(root, file), 'utf8');
+
+    // A 6th lane-2 test runs (0 skips) on CI yet reports 6 skips on strace-less
+    // machines, which only reddens macOS post-merge. Pin the gated count at the source.
+    const rootperm = readTracked(ENV_STRACE_SKIP_FILE);
+    expect(rootperm).toContain('lane2StraceOk');
+    const blockStart = rootperm.indexOf('describe.skipIf(!lane2StraceOk)(');
+    const blockEnd = rootperm.indexOf("describe('SC-I60-MF2A lane 3", blockStart);
+    if (blockStart < 0 || blockEnd < 0) throw new Error('lane-2 block markers moved');
+    const lane2Tests = rootperm.slice(blockStart, blockEnd).match(/\n\s*test\(/g) ?? [];
+    expect(lane2Tests).toHaveLength(ENV_STRACE_SKIP_COUNT);
+
+    const backup = readTracked(ENV_NATIVE_SKIP_FILE);
+    expect(backup).toContain('NATIVE_ENABLED');
+    expect(backup.match(/test\.skipIf\(/g) ?? []).toHaveLength(ENV_NATIVE_SKIP_COUNT);
+
+    const ewp = readTracked(ENV_EWP_SKIP_FILE);
+    expect(ewp).toContain("test.skipIf(process.platform !== 'linux')");
+    expect(ewp.match(/test\.skipIf\(/g) ?? []).toHaveLength(ENV_EWP_SKIP_COUNT);
   });
 
   test('fails before starting another file on the first nonzero process', async () => {
     const calls: string[] = [];
-    const files = [
-      'alpha.test.ts',
-      ...ALLOWED_LIVE_E2E_SKIPS.keys(),
-      'broken.test.ts',
-      'never.test.ts',
-    ];
+    const allowed = resolveAllowedSkips(closedGates);
+    const files = ['alpha.test.ts', ...allowed.keys(), 'broken.test.ts', 'never.test.ts'];
 
     await expect(
-      runFilesSerially(files, async (file) => {
-        calls.push(file);
-        const skipped = ALLOWED_LIVE_E2E_SKIPS.get(file) ?? 0;
-        return {
-          exitCode: file === 'broken.test.ts' ? 9 : 0,
-          junit: junit(file, Math.max(1, skipped), skipped),
-        };
-      }),
-    ).rejects.toThrow(`broken.test.ts exited 9 after 10/${files.length} files`);
+      runFilesSerially(
+        files,
+        async (file) => {
+          calls.push(file);
+          const skipped = allowed.get(file) ?? 0;
+          return {
+            exitCode: file === 'broken.test.ts' ? 9 : 0,
+            junit: junit(file, Math.max(1, skipped), skipped),
+          };
+        },
+        allowed,
+      ),
+    ).rejects.toThrow(`broken.test.ts exited 9 after 13/${files.length} files`);
     expect(calls).toEqual(files.slice(0, -1));
   });
 
   test('rejects duplicate files and every unapproved or drifted skip', async () => {
+    const allowed = resolveAllowedSkips(closedGates);
     const duplicateCalls: string[] = [];
     await expect(
-      runFilesSerially(terminalFiles('same.test.ts', 'same.test.ts'), async (file) => {
-        duplicateCalls.push(file);
-        return { exitCode: 0, junit: junit(file) };
-      }),
+      runFilesSerially(
+        terminalFiles('same.test.ts', 'same.test.ts'),
+        async (file) => {
+          duplicateCalls.push(file);
+          return { exitCode: 0, junit: junit(file) };
+        },
+        allowed,
+      ),
     ).rejects.toThrow('duplicate test file same.test.ts');
     expect(duplicateCalls).toEqual([]);
 
     await expect(
-      runFilesSerially(terminalFiles('ordinary.test.ts'), async (file) => {
-        const skipped = file === 'ordinary.test.ts' ? 1 : (ALLOWED_LIVE_E2E_SKIPS.get(file) ?? 0);
-        return { exitCode: 0, junit: junit(file, Math.max(1, skipped), skipped) };
-      }),
+      runFilesSerially(
+        terminalFiles('ordinary.test.ts'),
+        async (file) => {
+          const skipped = file === 'ordinary.test.ts' ? 1 : (allowed.get(file) ?? 0);
+          return { exitCode: 0, junit: junit(file, Math.max(1, skipped), skipped) };
+        },
+        allowed,
+      ),
     ).rejects.toThrow('ordinary.test.ts reported 1 skipped tests; expected 0');
 
     const liveFile = 'packages/core/tests/verify/live-e2e.test.ts';
     await expect(
-      runFilesSerially(terminalFiles(), async (file) => {
-        const skipped = file === liveFile ? 10 : (ALLOWED_LIVE_E2E_SKIPS.get(file) ?? 0);
-        return { exitCode: 0, junit: junit(file, Math.max(1, skipped), skipped) };
-      }),
+      runFilesSerially(
+        terminalFiles(),
+        async (file) => {
+          const skipped = file === liveFile ? 10 : (allowed.get(file) ?? 0);
+          return { exitCode: 0, junit: junit(file, Math.max(1, skipped), skipped) };
+        },
+        allowed,
+      ),
     ).rejects.toThrow(`${liveFile} reported 10 skipped tests; expected 11`);
+
+    await expect(
+      runFilesSerially(
+        terminalFiles(),
+        async (file) => {
+          const skipped =
+            file === ENV_STRACE_SKIP_FILE ? ENV_STRACE_SKIP_COUNT - 1 : (allowed.get(file) ?? 0);
+          return { exitCode: 0, junit: junit(file, Math.max(1, skipped), skipped) };
+        },
+        allowed,
+      ),
+    ).rejects.toThrow(
+      `${ENV_STRACE_SKIP_FILE} reported ${ENV_STRACE_SKIP_COUNT - 1} skipped tests; expected ${ENV_STRACE_SKIP_COUNT}`,
+    );
+
+    await expect(
+      runFilesSerially(
+        terminalFiles(),
+        async (file) => {
+          const skipped =
+            file === ENV_EWP_SKIP_FILE ? ENV_EWP_SKIP_COUNT - 1 : (allowed.get(file) ?? 0);
+          return { exitCode: 0, junit: junit(file, Math.max(1, skipped), skipped) };
+        },
+        allowed,
+      ),
+    ).rejects.toThrow(
+      `${ENV_EWP_SKIP_FILE} reported ${ENV_EWP_SKIP_COUNT - 1} skipped tests; expected ${ENV_EWP_SKIP_COUNT}`,
+    );
   });
 
-  test('fails closed on missing or drifted live-E2E manifest closure', async () => {
+  test('fails closed on missing or drifted allowlist closure', async () => {
+    const allowed = resolveAllowedSkips(closedGates);
     const files = terminalFiles('ordinary.test.ts');
     const missing = files.filter(
       (file) => file !== 'packages/cli/tests/commands/verify-live.test.ts',
@@ -494,27 +722,50 @@ describe('serial test-file terminal runner', () => {
     const calls: string[] = [];
 
     await expect(
-      runFilesSerially(missing, async (file) => {
-        calls.push(file);
-        return { exitCode: 0, junit: junit(file) };
-      }),
-    ).rejects.toThrow('test-file manifest is missing live-E2E file');
+      runFilesSerially(
+        missing,
+        async (file) => {
+          calls.push(file);
+          return { exitCode: 0, junit: junit(file) };
+        },
+        allowed,
+      ),
+    ).rejects.toThrow('test-file manifest is missing allowlisted file');
     expect(calls).toEqual([]);
 
-    expect(() =>
-      validateTerminalManifest(files, new Map([...ALLOWED_LIVE_E2E_SKIPS].slice(1))),
-    ).toThrow('skip allowlist has 7 files; expected 8');
+    expect(() => validateTerminalManifest(files, new Map([...allowed].slice(1)))).toThrow(
+      'skip allowlist has 10 files; expected 11',
+    );
     expect(() =>
       validateTerminalManifest(
         files,
-        new Map(
-          [...ALLOWED_LIVE_E2E_SKIPS].map(([file, count], index) => [
-            file,
-            count - Number(index === 0),
-          ]),
-        ),
+        new Map([...allowed].map(([file, count], index) => [file, count - Number(index === 0)])),
       ),
-    ).toThrow('skip allowlist totals 41; expected 42');
+    ).toThrow(
+      'live-E2E skip allowlist drifted for packages/core/tests/verify/live-e2e.test.ts: 10; expected 11',
+    );
+    const tamperedEnv = new Map(allowed);
+    tamperedEnv.set(ENV_STRACE_SKIP_FILE, ENV_STRACE_SKIP_COUNT - 1);
+    expect(() => validateTerminalManifest(files, tamperedEnv)).toThrow(
+      `environment-gated skip entry drifted for ${ENV_STRACE_SKIP_FILE}: ${ENV_STRACE_SKIP_COUNT - 1}; expected 0 or ${ENV_STRACE_SKIP_COUNT}`,
+    );
+    const tamperedNative = new Map(allowed);
+    tamperedNative.set(ENV_NATIVE_SKIP_FILE, ENV_NATIVE_SKIP_COUNT + 1);
+    expect(() => validateTerminalManifest(files, tamperedNative)).toThrow(
+      `environment-gated skip entry drifted for ${ENV_NATIVE_SKIP_FILE}: ${ENV_NATIVE_SKIP_COUNT + 1}; expected 0 or ${ENV_NATIVE_SKIP_COUNT}`,
+    );
+    const tamperedEwp = new Map(allowed);
+    tamperedEwp.set(ENV_EWP_SKIP_FILE, ENV_EWP_SKIP_COUNT + 1);
+    expect(() => validateTerminalManifest(files, tamperedEwp)).toThrow(
+      `environment-gated skip entry drifted for ${ENV_EWP_SKIP_FILE}: ${ENV_EWP_SKIP_COUNT + 1}; expected 0 or ${ENV_EWP_SKIP_COUNT}`,
+    );
+  });
+
+  test('creates symlink-free run roots for child TMPDIR', () => {
+    const root = createRunRoot(tmpdir());
+    temporaryDirectories.push(root);
+    expect(readdirSync(root)).toEqual([]);
+    expect(realpathSync(root)).toBe(root);
   });
 
   test('enforces the pinned Bun, cleanup, and post-run clean state', () => {

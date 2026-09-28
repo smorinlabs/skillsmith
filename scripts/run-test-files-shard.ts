@@ -8,7 +8,7 @@
  *   same flags (`--timeout=60000 --max-concurrency=1 --no-orphans --retry=0`,
  *   JUnit reporter). No in-process reuse, no intra-shard parallelism.
  * - Per-file JUnit evidence is parsed with the same parser and the per-file
- *   live-E2E skip expectation (ALLOWED_LIVE_E2E_SKIPS) is enforced per file.
+ *   pinned-capability skip expectation (PINNED_CAPABILITY_SKIPS) is enforced per file.
  * - The first failing file stops the shard, like the serial runner.
  * - The global guarantees (full-manifest coverage exactly once,
  *   EXPECTED_ALLOWED_SKIP_FILES, EXPECTED_ALLOWED_SKIPS totals) are NOT
@@ -29,7 +29,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
-  ALLOWED_LIVE_E2E_SKIPS,
+  PINNED_CAPABILITY_SKIPS,
   buildBunTestCommand,
   captureRepositoryIdentity,
   discoverTestFiles,
@@ -184,7 +184,7 @@ export async function main(): Promise<void> {
   requireCleanRepository(repositoryRoot);
   const initial = captureRepositoryIdentity(repositoryRoot);
   const testFiles = discoverTestFiles(repositoryRoot);
-  validateTerminalManifest(testFiles);
+  validateTerminalManifest(testFiles, PINNED_CAPABILITY_SKIPS);
   const digest = manifestDigest(testFiles);
   const assigned = selectShardFiles(testFiles, shardIndex, shardTotal, loadShardWeights());
   if (assigned.length === 0) fail(`shard ${shardIndex}/${shardTotal} was assigned zero files`);
@@ -256,7 +256,7 @@ export async function main(): Promise<void> {
       if (summary.failures !== 0) {
         fail(`${file} reported ${summary.failures} JUnit failures after exit 0`);
       }
-      const expectedSkips = ALLOWED_LIVE_E2E_SKIPS.get(file) ?? 0;
+      const expectedSkips = PINNED_CAPABILITY_SKIPS.get(file) ?? 0;
       if (summary.skipped !== expectedSkips) {
         fail(`${file} reported ${summary.skipped} skipped tests; expected ${expectedSkips}`);
       }
