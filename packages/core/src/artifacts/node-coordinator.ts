@@ -493,8 +493,8 @@ const makeNodePorts = async (
       await physical({ area: 'transaction', step: 'directory-created' });
       const owner = join(path, 'owner');
       const handle = await open(owner, 'wx', 0o600);
-      await physical({ area: 'transaction', step: 'owner-opened' });
       try {
+        await physical({ area: 'transaction', step: 'owner-opened' });
         await handle.writeFile(`${ownershipToken}\n`);
         await physical({ area: 'transaction', step: 'owner-written' });
         await handle.sync();
@@ -514,8 +514,14 @@ const makeNodePorts = async (
     },
     writeBytesExclusive: async (path, bytes, mode) => {
       const handle = await open(path, 'wx', mode & 0o600);
-      await physical({ area: 'stage', step: 'file-opened' });
-      const opened = await handle.stat();
+      let opened: Awaited<ReturnType<typeof handle.stat>>;
+      try {
+        await physical({ area: 'stage', step: 'file-opened' });
+        opened = await handle.stat();
+      } catch (error) {
+        await handle.close();
+        throw error;
+      }
       let failure: unknown = null;
       try {
         const partial = testFaults.failExclusiveWriteAfterBytes;

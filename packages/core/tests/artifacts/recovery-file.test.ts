@@ -189,6 +189,48 @@ describe('private artifact recovery file', () => {
     ]);
   });
 
+  test('closes recovery file handles when a physical-step hook throws right after open', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-recovery-leak-'));
+    roots.push(root);
+    let id = 1;
+    const failingSteps = new Set<string>();
+    const port = createFileArtifactRecoveryPort(join(root, 'records'), {
+      nextCasId: () => (id++).toString(16).padStart(16, '0'),
+      afterPhysicalStep: async ({ area, step }) => {
+        if (failingSteps.has(`${area}:${step}`)) {
+          throw Object.assign(new Error('injected physical-step failure'), { code: 'EIO' });
+        }
+      },
+    });
+
+    // The record file is opened, then the physical-step hook throws
+    // before the handle would otherwise be closed. If the
+    // implementation does not guard that gap, the FileHandle leaks: on
+    // bun >=1.4 a leaked FileHandle raises "A FileHandle object was
+    // closed during garbage collection" the next time the GC runs.
+    failingSteps.add('recovery:record-opened');
+    await expect(port.create(record('/tmp/config.toml'))).rejects.toMatchObject({
+      reason: 'filesystem-failure',
+    });
+    failingSteps.delete('recovery:record-opened');
+
+    const initial = await port.create(record('/tmp/config2.toml'));
+
+    // Same shape, this time for the CAS temp-file write in replace().
+    failingSteps.add('recovery:temp-opened');
+    await expect(
+      port.replace(
+        Object.freeze({ ...initial.record, cursor: 'staging' as const }),
+        initial.revision,
+      ),
+    ).rejects.toMatchObject({ reason: 'filesystem-failure' });
+
+    Bun.gc(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    Bun.gc(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
   test('rejects non-monotonic cursor and committed-fact changes under CAS', async () => {
     const root = await mkdtemp(join(tmpdir(), 'skillsmith-recovery-transition-'));
     roots.push(root);

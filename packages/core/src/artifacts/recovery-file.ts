@@ -943,8 +943,8 @@ export const createFileArtifactRecoveryPort = (
         const bytes = bytesForRecord(record);
         const path = pathForKey(record.key);
         const handle = await open(path, 'wx', 0o600);
-        await physical('record-opened');
         try {
+          await physical('record-opened');
           await handle.writeFile(bytes);
           await physical('record-written');
           await handle.sync();
@@ -976,8 +976,8 @@ export const createFileArtifactRecoveryPort = (
         const tempPath = join(directory, tempName);
         const bytes = bytesForRecord(record);
         const handle = await open(tempPath, 'wx', 0o600);
-        await physical('temp-opened');
         try {
+          await physical('temp-opened');
           await handle.writeFile(bytes);
           await physical('temp-written');
           await handle.sync();
