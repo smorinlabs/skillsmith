@@ -159,7 +159,7 @@ const assertAutomaticReleaseBoundary = (
       candidate.step.with['install-only'] === true,
       'ordinary GoReleaser install-only must be boolean true',
     );
-    boundary(candidate.step.with.version === 'v2.17.1', 'ordinary GoReleaser version changed');
+    boundary(candidate.step.with.version === 'v2.18.2', 'ordinary GoReleaser version changed');
     boundary(
       Object.keys(candidate.step.with).toSorted().join(',') === 'install-only,version' &&
         candidate.step.env === undefined,

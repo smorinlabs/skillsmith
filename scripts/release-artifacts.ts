@@ -15,7 +15,8 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { isAtLeastVersion } from './tool-versions';
 
-// Minimum release tool versions; newer releases are accepted. CI installs exactly these.
+// Minimum release tool versions; newer releases are accepted. Release workflows build with
+// these minimums; per-PR CI tests the newer bun and GoReleaser pinned in ci.yml.
 export const RELEASE_TOOLCHAIN = Object.freeze({
   bun: '1.3.14',
   goreleaser: '2.17.1',

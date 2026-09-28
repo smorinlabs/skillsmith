@@ -7,8 +7,8 @@ npm/Bun, and Homebrew. The first public release is exactly `v1.0.0`.
 
 - Release Please is the only version, changelog, tag, and draft-release authority. The first release
   uses the one-shot `Release-As: 1.0.0` commit footer.
-- GoReleaser 2.17.1 or newer and Bun 1.3.14 or newer build four targets (minimum versions; CI installs
-  exactly these): Linux x64/arm64 and macOS x64/arm64.
+- GoReleaser 2.17.1 or newer and Bun 1.3.14 or newer build four targets (minimum versions; release workflows
+  build with them, and per-PR CI tests the newer Bun and GoReleaser pinned in `ci.yml`): Linux x64/arm64 and macOS x64/arm64.
 - The release workflow signs and notarizes macOS binaries before it creates archives, npm payloads,
   checksums, or the Homebrew cask.
 - Local `just check` runs the ordinary checks and every tracked Bun test file exactly once,
