@@ -17,13 +17,19 @@ export const createBinaryDetect =
     try {
       const paths = await findOnPath(env, binary);
       const records = await Promise.all(
-        paths.map(
-          async (p): Promise<InstallRecord> => ({
+        paths.map(async (p): Promise<InstallRecord> => {
+          let resolved = p;
+          try {
+            resolved = await env.realpath(p);
+          } catch {
+            resolved = p;
+          }
+          return {
             path: p,
             version: await env.runVersion(p, ['--version'], signal, versionEnv),
-            installMethod: classifyInstallMethod(p),
-          }),
-        ),
+            installMethod: classifyInstallMethod(resolved),
+          };
+        }),
       );
       return ok(records);
     } catch (e) {

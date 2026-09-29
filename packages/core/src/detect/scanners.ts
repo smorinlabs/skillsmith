@@ -18,6 +18,13 @@ export const wellKnownBinDirs = (env: DetectionPorts): readonly string[] => {
 };
 
 export const classifyInstallMethod = (absPath: string): InstallMethod => {
+  // `absPath` is the resolved target. Order matters:
+  // 1. Homebrew's Cellar and Caskroom are Homebrew-owned, even when a formula is itself a
+  //    node package (Cellar/<formula>/<ver>/libexec/lib/node_modules/...).
+  // 2. Any other lib/node_modules target is an npm global (Homebrew's or a version
+  //    manager's node), checked before the generic /opt/homebrew and /usr/local brew rule.
+  if (/^(\/opt\/homebrew|\/usr\/local)\/(Cellar|Caskroom)\//u.test(absPath)) return 'brew';
+  if (absPath.includes('/lib/node_modules/')) return 'npm-global';
   if (absPath.startsWith('/opt/homebrew/') || absPath.startsWith('/usr/local/')) return 'brew';
   if (absPath.includes('/.bun/install/global/')) return 'bun-global';
   if (absPath.includes('/.npm/') || absPath.includes('node_modules/.bin/')) return 'npm-global';
