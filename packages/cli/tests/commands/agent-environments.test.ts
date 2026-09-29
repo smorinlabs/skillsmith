@@ -465,11 +465,14 @@ const assertDiscovery = (value: Workspace, report: Agents, missing?: string): vo
     const installation = installations?.[0];
     if (!installation) throw new Error(`missing ${tool.id} installation`);
     expect([value.versions.get(tool.id) ?? '', 'unknown']).toContain(installation.version);
+    // npm-provided agents resolve into the owned prefix's lib/node_modules; native ones do not.
+    const provider =
+      (manifest.tools as ManifestTool[]).find((entry) => entry.id === tool.id)?.provider ?? 'npm';
     expect(installations).toEqual([
       {
         path: join(value.bin, tool.binary),
         version: installation.version,
-        installMethod: 'npm-global',
+        installMethod: provider === 'native' ? 'unknown' : 'npm-global',
       },
     ]);
   }
