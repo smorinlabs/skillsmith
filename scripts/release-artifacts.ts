@@ -13,7 +13,10 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { isAtLeastVersion } from './tool-versions';
 
+// Minimum release tool versions; newer releases are accepted. Release workflows build with
+// these minimums; per-PR CI tests the newer bun and GoReleaser pinned in ci.yml.
 export const RELEASE_TOOLCHAIN = Object.freeze({
   bun: '1.3.14',
   goreleaser: '2.17.1',
@@ -146,8 +149,10 @@ export const assertReleaseToolVersions = (
   input: Readonly<Record<'bun' | 'goreleaser' | 'npm', string>>,
 ): void => {
   for (const name of ['bun', 'goreleaser', 'npm'] as const) {
-    if (input[name] !== RELEASE_TOOLCHAIN[name]) {
-      throw new Error(`${name} ${input[name]} does not match ${RELEASE_TOOLCHAIN[name]}`);
+    if (!isAtLeastVersion(input[name], RELEASE_TOOLCHAIN[name])) {
+      throw new Error(
+        `${name} ${input[name]} does not meet the minimum ${RELEASE_TOOLCHAIN[name]}`,
+      );
     }
   }
 };
@@ -362,7 +367,8 @@ export const deriveProductionCaskFixture = (
   }
   let replacements = 0;
   const transformed = input.cask.replace(
-    /^(\s*)url "https:\/\/github\.com\/smorinlabs\/skillsmith\/releases\/download\/v#\{version\}\/([^"]+)",\n\s*verified: "github\.com\/smorinlabs\/skillsmith\/"$/gmu,
+    // GoReleaser 2.17 adds a `verified:` line after each URL; 2.18 omits it (same host as homepage).
+    /^(\s*)url "https:\/\/github\.com\/smorinlabs\/skillsmith\/releases\/download\/v#\{version\}\/([^"]+)"(?:,\n\s*verified: "github\.com\/smorinlabs\/skillsmith\/")?$/gmu,
     (_match, indentation: string, artifact: string) => {
       replacements += 1;
       const filename = artifact.replaceAll('#{version}', version);

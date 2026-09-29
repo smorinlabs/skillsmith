@@ -159,7 +159,7 @@ const assertAutomaticReleaseBoundary = (
       candidate.step.with['install-only'] === true,
       'ordinary GoReleaser install-only must be boolean true',
     );
-    boundary(candidate.step.with.version === 'v2.17.1', 'ordinary GoReleaser version changed');
+    boundary(candidate.step.with.version === 'v2.18.2', 'ordinary GoReleaser version changed');
     boundary(
       Object.keys(candidate.step.with).toSorted().join(',') === 'install-only,version' &&
         candidate.step.env === undefined,
@@ -178,7 +178,7 @@ const assertAutomaticReleaseBoundary = (
     shardStep('Install exact ordinary agent tools'),
     shardStep('Install pinned release-test npm in owned prefix'),
     shardSteps.findIndex((step) => step.uses?.startsWith('goreleaser/')),
-    shardStep('Check exact release-test tool versions before canonical gate'),
+    shardStep('Check minimum release-test tool versions before canonical gate'),
     shardRunner,
   ];
   boundary(
@@ -197,7 +197,7 @@ const assertAutomaticReleaseBoundary = (
     (step) => step.name === 'Install pinned release-test npm in owned prefix',
   );
   const versions = ordinary.findIndex(
-    (step) => step.name === 'Check exact release-test tool versions before canonical gate',
+    (step) => step.name === 'Check minimum release-test tool versions before canonical gate',
   );
   const retained = ordinary.findIndex(
     (step) => step.name === 'Retain ordinary agent-tool evidence',

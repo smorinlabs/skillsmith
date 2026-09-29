@@ -72,7 +72,7 @@ describe('execCommand', () => {
       );
       expect(r.stdout).toBe('absent\n');
     } finally {
-      if (previous === undefined) process.env.SKILLSMITH_INHERITED = undefined;
+      if (previous === undefined) Reflect.deleteProperty(process.env, 'SKILLSMITH_INHERITED');
       else process.env.SKILLSMITH_INHERITED = previous;
     }
   });

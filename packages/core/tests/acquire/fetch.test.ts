@@ -120,12 +120,14 @@ describe('fetchRepo', () => {
 
       expect(state()).toEqual(before);
     } finally {
-      if (previousDir === undefined) process.env.GIT_DIR = undefined;
+      if (previousDir === undefined) Reflect.deleteProperty(process.env, 'GIT_DIR');
       else process.env.GIT_DIR = previousDir;
-      if (previousIndex === undefined) process.env.GIT_INDEX_FILE = undefined;
+      if (previousIndex === undefined) Reflect.deleteProperty(process.env, 'GIT_INDEX_FILE');
       else process.env.GIT_INDEX_FILE = previousIndex;
       await rm(victim, { recursive: true, force: true });
     }
+    expect<string | undefined>(process.env.GIT_DIR).toBe(previousDir);
+    expect<string | undefined>(process.env.GIT_INDEX_FILE).toBe(previousIndex);
   });
 
   test('HEAD fetch resolves multiHead and stays blobless (no checkout)', async () => {

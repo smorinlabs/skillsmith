@@ -102,6 +102,49 @@ describe('Node artifact coordinator adapter', () => {
     ]);
   });
 
+  test('closes the stage and owner file handles when a physical-step hook throws right after open', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'skillsmith-node-leak-'));
+    roots.push(root);
+    const failingSteps = new Set<string>();
+    const ports = await createTestNodeArtifactCoordinatorPorts(join(root, 'coordination'), {
+      afterPhysicalStep: async ({ area, step }) => {
+        if (failingSteps.has(`${area}:${step}`)) {
+          throw Object.assign(new Error('injected physical-step failure'), { code: 'EIO' });
+        }
+      },
+    });
+
+    // The transaction owner file is opened, then the physical-step hook
+    // throws before the handle would otherwise be closed. If the
+    // implementation does not guard that gap, the FileHandle leaks: on
+    // bun >=1.4 a leaked FileHandle raises "A FileHandle object was
+    // closed during garbage collection" the next time the GC runs.
+    const failedTransaction = join(root, '.skillsmith-artifact-0000000000000001');
+    failingSteps.add('transaction:owner-opened');
+    await expect(
+      ports.createTransactionDirectoryExclusive(failedTransaction, 'a'.repeat(64)),
+    ).rejects.toMatchObject({ code: 'EIO' });
+    failingSteps.delete('transaction:owner-opened');
+
+    const transaction = join(root, '.skillsmith-artifact-0000000000000002');
+    await ports.createTransactionDirectoryExclusive(transaction, 'b'.repeat(64));
+
+    // Same shape, this time for the exclusive stage-file write.
+    failingSteps.add('stage:file-opened');
+    await expect(
+      ports.writeBytesExclusive(
+        join(transaction, 'manifest.stage'),
+        new TextEncoder().encode('version = 1\n'),
+        0o600,
+      ),
+    ).rejects.toMatchObject({ code: 'EIO' });
+
+    Bun.gc(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    Bun.gc(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
   test('holds central and compatibility locks and removes private member markers on release', async () => {
     const root = await mkdtemp(join(tmpdir(), 'skillsmith-node-lock-'));
     roots.push(root);

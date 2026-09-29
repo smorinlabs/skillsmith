@@ -57,11 +57,13 @@ describe('resolveProvenance', () => {
       expect(p.gitSha).toBe(f.headSha);
       expect(p.sourceRelPath).toBe('plugins/fh/skills/alpha');
     } finally {
-      if (previousDir === undefined) process.env.GIT_DIR = undefined;
+      if (previousDir === undefined) Reflect.deleteProperty(process.env, 'GIT_DIR');
       else process.env.GIT_DIR = previousDir;
-      if (previousIndex === undefined) process.env.GIT_INDEX_FILE = undefined;
+      if (previousIndex === undefined) Reflect.deleteProperty(process.env, 'GIT_INDEX_FILE');
       else process.env.GIT_INDEX_FILE = previousIndex;
     }
+    expect<string | undefined>(process.env.GIT_DIR).toBe(previousDir);
+    expect<string | undefined>(process.env.GIT_INDEX_FILE).toBe(previousIndex);
   });
 
   test('dirty git tree → git-dirty with dirtySummary mentioning SKILL.md', async () => {

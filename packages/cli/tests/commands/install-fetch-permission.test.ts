@@ -223,9 +223,9 @@ describe('SC-I60-MF2B git-init permission classification', () => {
         await chmod(fetchRoot, 0o755);
       }
     } finally {
-      if (prevPath === undefined) process.env.PATH = undefined;
+      if (prevPath === undefined) Reflect.deleteProperty(process.env, 'PATH');
       else process.env.PATH = prevPath;
-      if (prevLog === undefined) process.env.MF2B_GIT_LOG = undefined;
+      if (prevLog === undefined) Reflect.deleteProperty(process.env, 'MF2B_GIT_LOG');
       else process.env.MF2B_GIT_LOG = prevLog;
       await rm(scratch, { recursive: true, force: true });
       await rm(owned.root, { recursive: true, force: true });

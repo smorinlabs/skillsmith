@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, statfsSync } from 'node:fs';
 import { devNull, tmpdir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
+import { isAtLeastVersion } from './tool-versions';
 
 const repositoryRoot = resolve(import.meta.dir, '..');
 const bunTestFilePattern = /(?:^|\/)[^/]+(?:\.(?:test|spec)|_(?:test|spec))\.(?:js|jsx|ts|tsx)$/;
@@ -23,7 +24,7 @@ export function childTestEnvironment(
 }
 
 const gitEnvironment = childTestEnvironment(process.env);
-export const EXPECTED_BUN_VERSION = '1.3.14';
+export const MINIMUM_BUN_VERSION = '1.3.14';
 const EXPECTED_ALLOWED_SKIP_FILES = 8;
 const EXPECTED_ALLOWED_SKIPS = 42;
 
@@ -354,10 +355,10 @@ export async function runFilesSerially(
   };
 }
 
-export function requirePinnedBunVersion(actualVersion: string): void {
-  if (actualVersion !== EXPECTED_BUN_VERSION) {
+export function requireMinimumBunVersion(actualVersion: string): void {
+  if (!isAtLeastVersion(actualVersion, MINIMUM_BUN_VERSION)) {
     fail(
-      `serial test-file terminal runner requires Bun ${EXPECTED_BUN_VERSION}; found ${actualVersion}`,
+      `serial test-file terminal runner requires Bun ${MINIMUM_BUN_VERSION} or newer; found ${actualVersion}`,
     );
   }
 }
@@ -457,7 +458,7 @@ export async function main(): Promise<void> {
     fail('serial test-file terminal runner refuses SKILLSMITH_E2E');
   }
 
-  requirePinnedBunVersion(Bun.version);
+  requireMinimumBunVersion(Bun.version);
   requireCleanRepository(repositoryRoot);
   const initial = captureRepositoryIdentity(repositoryRoot);
   const testFiles = discoverTestFiles(repositoryRoot);

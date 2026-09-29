@@ -20,8 +20,8 @@ import {
   ENV_NATIVE_SKIP_FILE,
   ENV_STRACE_SKIP_COUNT,
   ENV_STRACE_SKIP_FILE,
-  EXPECTED_BUN_VERSION,
   type EnvSkipProbes,
+  MINIMUM_BUN_VERSION,
   NATIVE_MIN_FREE_BYTES,
   PINNED_CAPABILITY_SKIPS,
   buildBunTestCommand,
@@ -35,7 +35,7 @@ import {
   nativeCompileEnabled,
   parseJUnitSummary,
   requireCleanRepository,
-  requirePinnedBunVersion,
+  requireMinimumBunVersion,
   resolveAllowedSkips,
   runFilesSerially,
   straceLaneEnabled,
@@ -172,10 +172,9 @@ async function terminalIntegration(mode: 'commit' | 'pass' | 'fail', poison = 't
   for (const path of [join(root, 'scripts'), outer, temporary, home])
     mkdirSync(path, { recursive: true });
   initializeTerminalRepository(outer);
-  copyFileSync(
-    join(import.meta.dir, 'run-test-files-serial.ts'),
-    join(root, 'scripts/run-test-files-serial.ts'),
-  );
+  for (const script of ['run-test-files-serial.ts', 'tool-versions.ts']) {
+    copyFileSync(join(import.meta.dir, script), join(root, 'scripts', script));
+  }
   for (const [file, count] of ALLOWED_LIVE_E2E_SKIPS) {
     mkdirSync(join(root, file, '..'), { recursive: true });
     writeFileSync(
@@ -768,9 +767,13 @@ describe('serial test-file terminal runner', () => {
     expect(realpathSync(root)).toBe(root);
   });
 
-  test('enforces the pinned Bun, cleanup, and post-run clean state', () => {
-    expect(() => requirePinnedBunVersion(EXPECTED_BUN_VERSION)).not.toThrow();
-    expect(() => requirePinnedBunVersion('1.3.15')).toThrow('requires Bun 1.3.14; found 1.3.15');
+  test('enforces the minimum Bun, cleanup, and post-run clean state', () => {
+    expect(() => requireMinimumBunVersion(MINIMUM_BUN_VERSION)).not.toThrow();
+    expect(() => requireMinimumBunVersion('1.3.15')).not.toThrow();
+    expect(() => requireMinimumBunVersion('1.4.2')).not.toThrow();
+    expect(() => requireMinimumBunVersion('1.3.13')).toThrow(
+      'requires Bun 1.3.14 or newer; found 1.3.13',
+    );
 
     const root = repositoryFixture();
     rmSync(join(root, 'untracked.test.ts'));

@@ -113,9 +113,12 @@ const startDeadlineFixture = (launcher: string) => {
   );
   const timer = spyOn(globalThis, 'setTimeout').mockImplementation(controlledSetTimeout);
   try {
+    // Bun 1.4 `bun test --no-orphans` exports this flag; inherited, it makes the Bun launcher
+    // kill its descendant on exit, so the launcher-exits-first topology could never form.
     const exchange = execCommand(process.execPath, ['-e', launcher], {
       jsonRpc: messages,
       timeoutMs: 20000,
+      unsetEnv: ['BUN_FEATURE_FLAG_NO_ORPHANS'],
     });
     if (!expire || deadlines !== 1) throw new Error('transport did not arm exactly one deadline');
     return { exchange, expire };

@@ -37,7 +37,7 @@ import {
   manifestDigest,
   parseJUnitSummary,
   requireCleanRepository,
-  requirePinnedBunVersion,
+  requireMinimumBunVersion,
   validateTerminalManifest,
 } from './run-test-files-serial';
 
@@ -180,7 +180,7 @@ export async function main(): Promise<void> {
   }
   const { shardIndex, shardTotal, outDir, listOnly } = parseShardArguments(process.argv.slice(2));
 
-  requirePinnedBunVersion(Bun.version);
+  requireMinimumBunVersion(Bun.version);
   requireCleanRepository(repositoryRoot);
   const initial = captureRepositoryIdentity(repositoryRoot);
   const testFiles = discoverTestFiles(repositoryRoot);
