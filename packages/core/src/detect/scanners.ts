@@ -18,11 +18,11 @@ export const wellKnownBinDirs = (env: DetectionPorts): readonly string[] => {
 };
 
 export const classifyInstallMethod = (absPath: string): InstallMethod => {
-  // Checked before the /opt/homebrew//usr/local -> brew rule: a symlinked command whose
-  // resolved target lands in an npm package (e.g. Homebrew's or a version manager's node
-  // installing an npm global) is an npm install, not a Homebrew formula.
-  // Homebrew-managed files first: a formula can itself be a node package
-  // (Cellar/<formula>/<ver>/libexec/lib/node_modules/...), and Homebrew owns it.
+  // `absPath` is the resolved target. Order matters:
+  // 1. Homebrew's Cellar and Caskroom are Homebrew-owned, even when a formula is itself a
+  //    node package (Cellar/<formula>/<ver>/libexec/lib/node_modules/...).
+  // 2. Any other lib/node_modules target is an npm global (Homebrew's or a version
+  //    manager's node), checked before the generic /opt/homebrew and /usr/local brew rule.
   if (/^(\/opt\/homebrew|\/usr\/local)\/(Cellar|Caskroom)\//u.test(absPath)) return 'brew';
   if (absPath.includes('/lib/node_modules/')) return 'npm-global';
   if (absPath.startsWith('/opt/homebrew/') || absPath.startsWith('/usr/local/')) return 'brew';
