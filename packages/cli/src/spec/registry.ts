@@ -322,7 +322,7 @@ const EXAMPLES: Readonly<Record<string, readonly string[]>> = {
     'skillsmith verify ./plugin --deep --strict',
   ],
   'skillsmith install': [
-    'skillsmith install smorinlabs/smorinlabs-harness/factor-scan --user',
+    'skillsmith install smorinlabs/smorinlabs-skills/factor-scan --user',
     'skillsmith install acme/skills --skill review',
     'skillsmith install acme/skills --skill review --skills-match-frontmatter',
   ],

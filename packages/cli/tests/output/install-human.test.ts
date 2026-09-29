@@ -17,7 +17,7 @@ import { createCurrentRendererRegistry } from '../../src/runtime/current-rendere
 
 const SHA = `8c1d2e3f4a5b${'0'.repeat(28)}`;
 const STORE_PATH =
-  '/Users/alice/.local/share/skillsmith/store/smorinlabs/smorinlabs-harness@8c1d2e3f4a5b/factor-scan';
+  '/Users/alice/.local/share/skillsmith/store/smorinlabs/smorinlabs-skills@8c1d2e3f4a5b/factor-scan';
 const codexStaticNotice = (_tool: string, skill: string): string =>
   `codex static checks the manifest only — run 'skillsmith verify ${skill} --deep' for a full load check`;
 
@@ -37,7 +37,7 @@ describe('renderInstallHuman', () => {
     const report: InstallReport = {
       dryRun: false,
       requested: {
-        sources: ['smorinlabs/smorinlabs-harness/factor-scan'],
+        sources: ['smorinlabs/smorinlabs-skills/factor-scan'],
         tools: ['claude-code', 'codex'],
         explicitTools: false,
         scope: 'user',
@@ -51,7 +51,7 @@ describe('renderInstallHuman', () => {
       },
       results: [
         {
-          source: 'smorinlabs/smorinlabs-harness/factor-scan',
+          source: 'smorinlabs/smorinlabs-skills/factor-scan',
           skill: 'factor-scan',
           tool: 'claude-code',
           scope: 'user',
@@ -62,7 +62,7 @@ describe('renderInstallHuman', () => {
           store: { path: STORE_PATH, rev: '8c1d2e3f4a5b', gitSha: SHA, reused: false },
           origin: {
             host: 'github.com',
-            repo: 'smorinlabs/smorinlabs-harness',
+            repo: 'smorinlabs/smorinlabs-skills',
             skillPath: 'plugins/factor-harness/skills/factor-scan',
             refRequested: null,
             refResolved: SHA,
@@ -72,7 +72,7 @@ describe('renderInstallHuman', () => {
           candidates: null,
         },
         {
-          source: 'smorinlabs/smorinlabs-harness/factor-scan',
+          source: 'smorinlabs/smorinlabs-skills/factor-scan',
           skill: 'factor-scan',
           tool: 'codex',
           scope: 'user',
@@ -83,7 +83,7 @@ describe('renderInstallHuman', () => {
           store: { path: STORE_PATH, rev: '8c1d2e3f4a5b', gitSha: SHA, reused: true },
           origin: {
             host: 'github.com',
-            repo: 'smorinlabs/smorinlabs-harness',
+            repo: 'smorinlabs/smorinlabs-skills',
             skillPath: 'plugins/factor-harness/skills/factor-scan',
             refRequested: null,
             refResolved: SHA,
@@ -106,7 +106,7 @@ describe('renderInstallHuman', () => {
 
     const out = renderInstallHuman(report, 0, codexStaticNotice);
     expect(out).toContain(
-      'Installing factor-scan  (smorinlabs/smorinlabs-harness @ 8c1d2e3f4a5b, scope: user)',
+      'Installing factor-scan  (smorinlabs/smorinlabs-skills @ 8c1d2e3f4a5b, scope: user)',
     );
     expect(out).toContain('verify   static: pass');
     expect(out).toContain('(reused)');
@@ -275,7 +275,7 @@ describe('renderInstallHuman', () => {
     const report: InstallReport = {
       dryRun: false,
       requested: {
-        sources: ['smorinlabs/smorinlabs-harness/factor-scan'],
+        sources: ['smorinlabs/smorinlabs-skills/factor-scan'],
         tools: ['claude-code'],
         explicitTools: false,
         scope: 'user',
@@ -289,7 +289,7 @@ describe('renderInstallHuman', () => {
       },
       results: [
         {
-          source: 'smorinlabs/smorinlabs-harness/factor-scan',
+          source: 'smorinlabs/smorinlabs-skills/factor-scan',
           skill: 'factor-scan',
           tool: 'claude-code',
           scope: 'user',
@@ -300,7 +300,7 @@ describe('renderInstallHuman', () => {
           store: { path: STORE_PATH, rev: '8c1d2e3f4a5b', gitSha: SHA, reused: true },
           origin: {
             host: 'github.com',
-            repo: 'smorinlabs/smorinlabs-harness',
+            repo: 'smorinlabs/smorinlabs-skills',
             skillPath: 'plugins/factor-harness/skills/factor-scan',
             refRequested: null,
             refResolved: SHA,
@@ -323,7 +323,7 @@ describe('renderInstallHuman', () => {
 
     const out = renderInstallHuman(report, 0);
     expect(out).toContain(
-      'factor-scan is already installed at smorinlabs/smorinlabs-harness@8c1d2e3f4a5b',
+      'factor-scan is already installed at smorinlabs/smorinlabs-skills@8c1d2e3f4a5b',
     );
     expect(out).toContain('(store symlink)');
     expect(out).toContain(

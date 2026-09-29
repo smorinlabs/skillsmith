@@ -10,7 +10,7 @@
           "mode": "pinned",
           "dev": null,
           "pinned": {
-            "storePath": "/Users/alice/.local/share/skillsmith/store/smorinlabs/smorinlabs-harness@3f2a1b9c0d4e/factor-scan",
+            "storePath": "/Users/alice/.local/share/skillsmith/store/smorinlabs/smorinlabs-skills@3f2a1b9c0d4e/factor-scan",
             "rev": "3f2a1b9c0d4e",
             "gitSha": "3f2a1b9c0d4e5f6a7b8c9d0e1f2a3b4c5d6e7f80",
             "dirty": false,
@@ -20,9 +20,9 @@
             "placement": "symlink"
           },
           "origin": {
-            "source": "smorinlabs/smorinlabs-harness/factor-scan",
+            "source": "smorinlabs/smorinlabs-skills/factor-scan",
             "host": "github.com",
-            "repo": "smorinlabs/smorinlabs-harness",
+            "repo": "smorinlabs/smorinlabs-skills",
             "skillPath": "plugins/factor-harness/skills/factor-scan",
             "refRequested": null,
             "refResolved": "3f2a1b9c0d4e5f6a7b8c9d0e1f2a3b4c5d6e7f80",
@@ -44,7 +44,7 @@
               "mode": "pinned",
               "dev": null,
               "pinned": {
-                "storePath": "/Users/alice/.local/share/skillsmith/store/smorinlabs/smorinlabs-harness@3f2a1b9c0d4e/factor-scan",
+                "storePath": "/Users/alice/.local/share/skillsmith/store/smorinlabs/smorinlabs-skills@3f2a1b9c0d4e/factor-scan",
                 "rev": "3f2a1b9c0d4e",
                 "gitSha": "3f2a1b9c0d4e5f6a7b8c9d0e1f2a3b4c5d6e7f80",
                 "dirty": false,
@@ -54,9 +54,9 @@
                 "placement": "copy"
               },
               "origin": {
-                "source": "smorinlabs/smorinlabs-harness/factor-scan",
+                "source": "smorinlabs/smorinlabs-skills/factor-scan",
                 "host": "github.com",
-                "repo": "smorinlabs/smorinlabs-harness",
+                "repo": "smorinlabs/smorinlabs-skills",
                 "skillPath": "plugins/factor-harness/skills/factor-scan",
                 "refRequested": "v1.0.0",
                 "refResolved": "3f2a1b9c0d4e5f6a7b8c9d0e1f2a3b4c5d6e7f80",

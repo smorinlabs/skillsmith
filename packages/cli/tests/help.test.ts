@@ -116,7 +116,7 @@ describe('skillsmith help routing', () => {
         .map((line) => line.trim())
         .filter((line) => line.startsWith('$ skillsmith install ')),
     ).toEqual([
-      '$ skillsmith install smorinlabs/smorinlabs-harness/factor-scan --user',
+      '$ skillsmith install smorinlabs/smorinlabs-skills/factor-scan --user',
       '$ skillsmith install acme/skills --skill review',
       '$ skillsmith install acme/skills --skill review --skills-match-frontmatter',
     ]);

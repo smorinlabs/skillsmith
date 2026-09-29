@@ -31,16 +31,15 @@ const report = {
       reason: null,
       before: {
         mode: 'dev',
-        symlinkTarget:
-          '/Users/alice/c/smorinlabs-harness/plugins/factor-harness/skills/factor-scan',
+        symlinkTarget: '/Users/alice/c/smorinlabs-skills/plugins/factor-harness/skills/factor-scan',
       },
       after: {
         mode: 'pinned',
         storePath:
-          '/Users/alice/.local/share/skillsmith/store/smorinlabs/smorinlabs-harness@3f2a1b9c0d4e/factor-scan',
+          '/Users/alice/.local/share/skillsmith/store/smorinlabs/smorinlabs-skills@3f2a1b9c0d4e/factor-scan',
       },
       store: {
-        path: '/Users/alice/.local/share/skillsmith/store/smorinlabs/smorinlabs-harness@3f2a1b9c0d4e/factor-scan',
+        path: '/Users/alice/.local/share/skillsmith/store/smorinlabs/smorinlabs-skills@3f2a1b9c0d4e/factor-scan',
         rev: '3f2a1b9c0d4e',
         gitSha: '3f2a1b9c0d4e0000000000000000000000000000',
         dirty: false,

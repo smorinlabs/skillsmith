@@ -55,9 +55,9 @@ const CONTRACT_FIXTURES = join(
 const msg = (e: SkillSmithError): string => ('message' in e ? e.message : e.code);
 
 const origin = (): OriginRecord => ({
-  source: 'smorinlabs/smorinlabs-harness/factor-scan',
+  source: 'smorinlabs/smorinlabs-skills/factor-scan',
   host: 'github.com',
-  repo: 'smorinlabs/smorinlabs-harness',
+  repo: 'smorinlabs/smorinlabs-skills',
   skillPath: 'plugins/factor-harness/skills/factor-scan',
   refRequested: null,
   refResolved: '3f2a1b9c0d4e5f6a7b8c9d0e1f2a3b4c5d6e7f80',
@@ -259,7 +259,7 @@ describe('additive schema — golden round trips', () => {
     if (!read.ok) throw new Error(msg(read.error));
     const user = getPairAt(read.value, null, 'factor-scan', 'claude-code');
     expect(user?.pinned?.placement).toBe('symlink');
-    expect(user?.origin?.repo).toBe('smorinlabs/smorinlabs-harness');
+    expect(user?.origin?.repo).toBe('smorinlabs/smorinlabs-skills');
     expect(user?.origin?.skillPath).toBe('plugins/factor-harness/skills/factor-scan');
     expect(user?.origin?.refRequested).toBeNull();
 

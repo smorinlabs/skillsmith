@@ -29,8 +29,7 @@ const v2Report = {
       before: null,
       after: {
         mode: 'dev',
-        symlinkTarget:
-          '/Users/alice/c/smorinlabs-harness/plugins/factor-harness/skills/factor-scan',
+        symlinkTarget: '/Users/alice/c/smorinlabs-skills/plugins/factor-harness/skills/factor-scan',
       },
       store: null,
       verify: { gate: 'passed', verdict: 'pass' },
@@ -43,13 +42,11 @@ const v2Report = {
       reason: null,
       before: {
         mode: 'dev',
-        symlinkTarget:
-          '/Users/alice/c/smorinlabs-harness/plugins/factor-harness/skills/factor-scan',
+        symlinkTarget: '/Users/alice/c/smorinlabs-skills/plugins/factor-harness/skills/factor-scan',
       },
       after: {
         mode: 'dev',
-        symlinkTarget:
-          '/Users/alice/c/smorinlabs-harness/plugins/factor-harness/skills/factor-scan',
+        symlinkTarget: '/Users/alice/c/smorinlabs-skills/plugins/factor-harness/skills/factor-scan',
       },
       store: null,
       verify: { gate: 'passed', verdict: 'pass' },

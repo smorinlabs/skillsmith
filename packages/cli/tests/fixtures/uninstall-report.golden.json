@@ -21,10 +21,10 @@
       "before": {
         "mode": "pinned",
         "placement": "symlink",
-        "storePath": "/Users/alice/.local/share/skillsmith/store/smorinlabs/smorinlabs-harness@8c1d2e3f4a5b/factor-scan",
+        "storePath": "/Users/alice/.local/share/skillsmith/store/smorinlabs/smorinlabs-skills@8c1d2e3f4a5b/factor-scan",
         "symlinkTarget": null
       },
-      "storeRetained": "/Users/alice/.local/share/skillsmith/store/smorinlabs/smorinlabs-harness@8c1d2e3f4a5b/factor-scan",
+      "storeRetained": "/Users/alice/.local/share/skillsmith/store/smorinlabs/smorinlabs-skills@8c1d2e3f4a5b/factor-scan",
       "backupKept": null
     }
   ],
