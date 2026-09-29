@@ -469,7 +469,7 @@ const assertDiscovery = (value: Workspace, report: Agents, missing?: string): vo
       {
         path: join(value.bin, tool.binary),
         version: installation.version,
-        installMethod: 'unknown',
+        installMethod: 'npm-global',
       },
     ]);
   }
