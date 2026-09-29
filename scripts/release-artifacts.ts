@@ -151,7 +151,7 @@ export const assertReleaseToolVersions = (
   for (const name of ['bun', 'goreleaser', 'npm'] as const) {
     if (!isAtLeastVersion(input[name], RELEASE_TOOLCHAIN[name])) {
       throw new Error(
-        `${name} ${input[name]} is older than the minimum ${RELEASE_TOOLCHAIN[name]}`,
+        `${name} ${input[name]} does not meet the minimum ${RELEASE_TOOLCHAIN[name]}`,
       );
     }
   }

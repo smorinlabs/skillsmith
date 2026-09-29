@@ -3,7 +3,7 @@
 The ordinary test owner `packages/cli/tests/commands/agent-environments.test.ts` runs three cases:
 five-tool discovery, Claude installation prerequisites, and Codex installation prerequisites.
 It defaults to deliberate absence and adds no skips. CI runs that owner and the eight P4A fixture
-cases separately in both the `present` and `absent` environments, using Bun 1.3.14 on Ubuntu 24.04.
+cases separately in both the `present` and `absent` environments, using Bun 1.4.2 on Ubuntu 24.04.
 
 The baseline in `.github/ci-agent-tools.json` is:
 
