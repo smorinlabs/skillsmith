@@ -1,8 +1,10 @@
 import { basename, join } from 'node:path';
+import { isArtifactMutationError } from '../artifacts/file-state.ts';
 import { normalizeSourceIdentity, validateManifestName } from '../artifacts/identity.ts';
 import {
   type SkillSmithError,
   cancelledError,
+  flipFailedError,
   genericError,
   permissionDeniedError,
   safeErrorCode,
@@ -46,6 +48,11 @@ const SKILLSMITH_ERROR_CODES = new Set<SkillSmithError['code']>([
 ]);
 
 export const safeError = (error: unknown): SkillSmithError => {
+  // Only frozen errors minted by artifactMutationError() pass this WeakSet brand check, which
+  // never enters a Proxy handler; their reason and message are trusted own data properties.
+  if (isArtifactMutationError(error) && error.reason === 'lock-contention') {
+    return flipFailedError(`another skillsmith operation is running: ${error.message}`);
+  }
   const redacted = redactSensitiveValue(error);
   if (
     redacted !== null &&
