@@ -72,16 +72,19 @@ Scopes are **cosmetic** in this repo's release-please setup (single package + `e
 
 `main` uses merge commits, so release-please parses the branch's individual commits — every commit must be Conventional, not just the title. The `commit-msg` lefthook hook validates locally and the `commitlint (humans)` CI job enforces it on every PR commit. The merge commit's own subject is deliberately left non-conventional (`merge_commit_title=MERGE_MESSAGE`, i.e. `Merge pull request #N from …`) so release-please skips it and counts each change exactly once; `lint-pr-title` still validates the PR title for review legibility.
 
-## Pushing: bypass the pre-push hook (issue #17)
+## Pushing: keep the pre-push hook enabled
 
-The lefthook pre-push hook runs `bun test`, which leaks test-fixture commits onto
-real branches via a `GIT_DIR` environment leak (issue #17, corrupted a real branch
-once). Until fixed:
+Issue #17 (fixture commits leaking into the real repo through an inherited `GIT_DIR`) was
+fixed by P16; push normally, with hooks enabled. `pre-push` runs `tsc --noEmit`, the full
+serial test gate (`scripts/run-test-files-serial.ts`), gitleaks on the pushed commits,
+`bun audit`, and eslint-security.
 
-1. Run the full check manually first: `bun run check`
-2. Push with the hook disabled: `git push --no-verify`
-
-Never push with the hook enabled from a checkout with real work on it.
+- The serial gate takes about 30 minutes on macOS. Run long pushes in the background.
+- The gate verifies repository identity before and after the run. Creating branches or
+  worktrees in this clone (from any session) while it runs aborts the push with
+  `repository identity changed`; retry once the clone is quiet.
+- Never use `git push --no-verify`: it silently skips the credential scan too. For a genuine
+  emergency, use the explicit `LEFTHOOK=0` bypass described in CONTRIBUTING.md.
 
 ## CLI stdout drain (#46)
 
