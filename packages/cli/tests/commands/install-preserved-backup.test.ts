@@ -35,6 +35,10 @@ import {
   buildFixtureFleet,
   destroyFixtureFleet,
 } from '../../../core/tests/fixtures/place/fleet.ts';
+import {
+  TEST_COORDINATION_PRELOAD,
+  TEST_COORDINATION_ROOT_ENV,
+} from '../../../core/tests/fixtures/test-coordination.ts';
 import { InstallJsonSchema } from '../../src/output/install-json.ts';
 import { CLI_ENTRYPOINT } from '../fixtures/cli.ts';
 
@@ -160,7 +164,7 @@ beforeEach(async () => {
   skillsRoot = join(f.home, '.claude', 'skills');
   liveDir = join(skillsRoot, SKILL);
   liveSkillFile = join(liveDir, 'SKILL.md');
-  sourceExe = [BUN, CLI_ENTRYPOINT];
+  sourceExe = [BUN, '--preload', TEST_COORDINATION_PRELOAD, CLI_ENTRYPOINT];
 
   // Fixture-owned global Git config: the accepted fixture-only HTTPS origins rewrite to owned
   // local bare repositories, with file transport permitted only in this owned config. Production
@@ -204,6 +208,7 @@ beforeEach(async () => {
       XDG_CACHE_HOME: join(f.home, '.cache'),
       SKILLSMITH_HOME: f.data,
       PATH: bin,
+      [TEST_COORDINATION_ROOT_ENV]: join(f.base, 'artifact-coordination'),
     },
   };
 });

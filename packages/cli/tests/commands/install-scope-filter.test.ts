@@ -1,6 +1,9 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { join } from 'node:path';
 import type { InstallDeps, InstallRecord, SkillSmithError, VerifyReport } from '@skillsmith/core';
 import { VERIFIED_AGAINST, ok, resolveRuntimeConfiguration, runInstall } from '@skillsmith/core';
+import type { ArtifactCoordinatorPorts } from '../../../core/src/artifacts/coordinator-types.ts';
+import { createTestNodeArtifactCoordinatorPorts } from '../../../core/src/artifacts/node-coordinator.ts';
 import {
   type RemoteFixture,
   buildRemoteFixture,
@@ -47,6 +50,7 @@ const installDeps = (): InstallDeps => ({
   now: () => NOW,
   newTxId: () => (0x20000000 + txN++).toString(16).slice(-8),
   transport: fixture.transport,
+  artifactCoordinator,
 });
 
 let fixture: RemoteFixture;
@@ -59,8 +63,12 @@ afterAll(async () => {
 
 let f: FixtureFleet;
 let fsSource: string;
+let artifactCoordinator: ArtifactCoordinatorPorts;
 beforeEach(async () => {
   f = await buildFixtureFleet();
+  artifactCoordinator = await createTestNodeArtifactCoordinatorPorts(
+    join(f.base, 'artifact-coordination'),
+  );
   fsSource = `${fixture.multiSource}//plugins/fh/skills/factor-scan`;
 });
 afterEach(async () => {

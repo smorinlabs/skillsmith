@@ -23,6 +23,10 @@ import {
   destroyRemoteFixture,
 } from '../../../../packages/core/tests/fixtures/acquire/remote.ts';
 import { hermeticGitEnv, runGit } from '../../../../packages/core/tests/fixtures/git-env.ts';
+import {
+  TEST_COORDINATION_PRELOAD,
+  TEST_COORDINATION_ROOT_ENV,
+} from '../../../../packages/core/tests/fixtures/test-coordination.ts';
 import { codexAppServerFixtureDispatch } from '../codex-app-server.ts';
 
 export const UPDATE_SECRET_CANARIES = Object.freeze([
@@ -267,6 +271,7 @@ export const createUpdateFleet = async (
           P17_UPDATE_TEST_CANARY: UPDATE_SECRET_CANARIES[0],
           CI: '1',
           NO_COLOR: '1',
+          [TEST_COORDINATION_ROOT_ENV]: join(root, 'artifact-coordination'),
         },
         { globalConfigPath: join(home, '.gitconfig') },
       ),
@@ -290,6 +295,8 @@ export const createUpdateFleet = async (
           process.execPath,
           '--preload',
           detectionPreload,
+          '--preload',
+          TEST_COORDINATION_PRELOAD,
           CLI_ENTRYPOINT,
           'install',
           seed.source,
@@ -346,7 +353,15 @@ export const runUpdateCli = async (
   args: readonly string[],
 ): Promise<UpdateCliProduct> => {
   const child = Bun.spawn(
-    [process.execPath, '--preload', fleet.detectionPreload, CLI_ENTRYPOINT, ...args],
+    [
+      process.execPath,
+      '--preload',
+      fleet.detectionPreload,
+      '--preload',
+      TEST_COORDINATION_PRELOAD,
+      CLI_ENTRYPOINT,
+      ...args,
+    ],
     {
       cwd: fleet.cwd,
       env: fleet.env,
@@ -368,7 +383,15 @@ export const runUpdateCliWithSignal = async (
   args: readonly string[],
 ): Promise<UpdateCliProduct> => {
   const child = Bun.spawn(
-    [process.execPath, '--preload', fleet.detectionPreload, CLI_ENTRYPOINT, ...args],
+    [
+      process.execPath,
+      '--preload',
+      fleet.detectionPreload,
+      '--preload',
+      TEST_COORDINATION_PRELOAD,
+      CLI_ENTRYPOINT,
+      ...args,
+    ],
     {
       cwd: fleet.cwd,
       env: fleet.env,

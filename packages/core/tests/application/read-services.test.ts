@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, describe, expect, test } from 'bun:test';
+import { mkdtempSync } from 'node:fs';
 import { access, chmod, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -34,6 +35,14 @@ import {
   noopObserver,
 } from '../../src/observation/index.ts';
 import { runtimePorts } from '../fixtures/runtime-ports.ts';
+import { confineArtifactCoordination } from '../fixtures/test-coordination.ts';
+
+// `config set` saves through the production coordinator factory; confine it to this file.
+const coordinationRoot = mkdtempSync(join(tmpdir(), 'skillsmith-read-services-coordination-'));
+confineArtifactCoordination(coordinationRoot);
+afterAll(async () => {
+  await rm(coordinationRoot, { recursive: true, force: true });
+});
 
 const temporaryRoots: string[] = [];
 

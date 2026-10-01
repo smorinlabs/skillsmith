@@ -181,6 +181,7 @@ const installDeps = (): InstallDeps => {
     transport: fixture.transport,
     now: () => NOW,
     newTxId: () => (0x10000000 + start * 1000 + n++).toString(16).slice(-8),
+    artifactCoordinator: desiredStateArtifactCoordinator,
   };
 };
 
@@ -191,6 +192,7 @@ const uninstallDeps = (): UninstallDeps => {
   return {
     now: () => NOW,
     newTxId: () => (0x40000000 + start * 1000 + n++).toString(16).slice(-8),
+    artifactCoordinator: desiredStateArtifactCoordinator,
   };
 };
 

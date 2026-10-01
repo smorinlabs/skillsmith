@@ -11,6 +11,10 @@ import {
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { hermeticGitEnv } from '../../../core/tests/fixtures/git-env.ts';
+import {
+  TEST_COORDINATION_PRELOAD,
+  TEST_COORDINATION_ROOT_ENV,
+} from '../../../core/tests/fixtures/test-coordination.ts';
 
 // SC-I60-R6 redprove (PLAN_ACCEPTED_NOT_RELEASED): unmanaged same-name directory with
 // NONMATCHING bytes, no force — compare preview action vs actual install outcome.
@@ -124,6 +128,7 @@ const buildR6Fixture = (): R6Fixture => {
     XDG_CACHE_HOME: xdgCache,
     SKILLSMITH_HOME: data,
     PATH: `${binDir}:/usr/local/bin:/usr/bin:/bin`,
+    [TEST_COORDINATION_ROOT_ENV]: join(root, 'artifact-coordination'),
   };
 
   return {
@@ -151,13 +156,16 @@ interface CliResult {
 }
 
 const runCli = async (fixture: R6Fixture, args: string[]): Promise<CliResult> => {
-  const proc = Bun.spawn([BUN_EXE, CLI_ENTRYPOINT, ...args], {
-    cwd: fixture.cwdDir,
-    env: hermeticGitEnv(fixture.envOverrides, { globalConfigPath: fixture.gitConfig }),
-    stdin: 'ignore',
-    stdout: 'pipe',
-    stderr: 'pipe',
-  });
+  const proc = Bun.spawn(
+    [BUN_EXE, '--preload', TEST_COORDINATION_PRELOAD, CLI_ENTRYPOINT, ...args],
+    {
+      cwd: fixture.cwdDir,
+      env: hermeticGitEnv(fixture.envOverrides, { globalConfigPath: fixture.gitConfig }),
+      stdin: 'ignore',
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+  );
   const [code, stdout, stderr] = await Promise.all([
     proc.exited,
     new Response(proc.stdout).text(),

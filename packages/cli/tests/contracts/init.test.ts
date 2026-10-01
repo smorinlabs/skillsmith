@@ -38,6 +38,10 @@ import {
 import { createOperationPlan } from '../../../core/src/planning/create.ts';
 import { defaultRuntimePorts } from '../../../core/src/ports/default.ts';
 import { hermeticGitEnv } from '../../../core/tests/fixtures/git-env.ts';
+import {
+  TEST_COORDINATION_PRELOAD,
+  TEST_COORDINATION_ROOT_ENV,
+} from '../../../core/tests/fixtures/test-coordination.ts';
 import { exitCodeForClass } from '../../src/runtime/adapter.ts';
 import { CLI_ENTRYPOINT } from '../fixtures/cli.ts';
 import { createDetectionIsolation } from '../fixtures/detection.ts';
@@ -110,25 +114,37 @@ const runCli = async (
   args: readonly string[],
   cwd = value.cwd,
 ): Promise<CliProduct> => {
-  const child = Bun.spawn(['bun', '--preload', value.detectionPreload, CLI_ENTRYPOINT, ...args], {
-    cwd,
-    env: hermeticGitEnv({
-      ...processEnvWithoutConfig(),
-      HOME: value.home,
-      XDG_CONFIG_HOME: value.config,
-      XDG_DATA_HOME: value.data,
-      XDG_CACHE_HOME: value.cache,
-      SKILLSMITH_HOME: join(value.data, 'skillsmith'),
-      CLAUDE_CONFIG_DIR: join(value.home, '.claude'),
-      CODEX_HOME: join(value.home, '.codex'),
-      PATH: value.bin,
-      CI: '1',
-      NO_COLOR: '1',
-    }),
-    stdin: 'ignore',
-    stdout: 'pipe',
-    stderr: 'pipe',
-  });
+  const child = Bun.spawn(
+    [
+      'bun',
+      '--preload',
+      value.detectionPreload,
+      '--preload',
+      TEST_COORDINATION_PRELOAD,
+      CLI_ENTRYPOINT,
+      ...args,
+    ],
+    {
+      cwd,
+      env: hermeticGitEnv({
+        ...processEnvWithoutConfig(),
+        HOME: value.home,
+        XDG_CONFIG_HOME: value.config,
+        XDG_DATA_HOME: value.data,
+        XDG_CACHE_HOME: value.cache,
+        SKILLSMITH_HOME: join(value.data, 'skillsmith'),
+        CLAUDE_CONFIG_DIR: join(value.home, '.claude'),
+        CODEX_HOME: join(value.home, '.codex'),
+        PATH: value.bin,
+        CI: '1',
+        NO_COLOR: '1',
+        [TEST_COORDINATION_ROOT_ENV]: join(value.root, 'coordination'),
+      }),
+      stdin: 'ignore',
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+  );
   const exitCode = await child.exited;
   return {
     exitCode,

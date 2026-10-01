@@ -12,6 +12,10 @@ import {
   readManifestSource,
 } from '../../../../packages/core/src/artifacts/manifest.ts';
 import { hermeticGitEnv } from '../../../../packages/core/tests/fixtures/git-env.ts';
+import {
+  TEST_COORDINATION_PRELOAD,
+  TEST_COORDINATION_ROOT_ENV,
+} from '../../../../packages/core/tests/fixtures/test-coordination.ts';
 
 export const PLAN_SELECTORS = Object.freeze([
   'EWP-CMD-PLAN-TS01',
@@ -188,6 +192,7 @@ export const createPlanFixture = async (
       CODEX_HOME: join(home, '.codex'),
       CI: '1',
       NO_COLOR: '1',
+      [TEST_COORDINATION_ROOT_ENV]: join(root, 'artifact-coordination'),
     }),
   };
 };
@@ -200,13 +205,16 @@ export const runPlanCli = async (
   fixture: PlanFixture,
   args: readonly string[],
 ): Promise<CliProduct> => {
-  const child = Bun.spawn(['bun', CLI_ENTRYPOINT, ...args], {
-    cwd: fixture.cwd,
-    env: fixture.env,
-    stdin: 'ignore',
-    stdout: 'pipe',
-    stderr: 'pipe',
-  });
+  const child = Bun.spawn(
+    ['bun', '--preload', TEST_COORDINATION_PRELOAD, CLI_ENTRYPOINT, ...args],
+    {
+      cwd: fixture.cwd,
+      env: fixture.env,
+      stdin: 'ignore',
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+  );
   const exitCode = await child.exited;
   return {
     exitCode,

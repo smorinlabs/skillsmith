@@ -37,6 +37,10 @@ import {
   buildFixtureFleet,
   destroyFixtureFleet,
 } from '../../../core/tests/fixtures/place/fleet.ts';
+import {
+  TEST_COORDINATION_PRELOAD,
+  TEST_COORDINATION_ROOT_ENV,
+} from '../../../core/tests/fixtures/test-coordination.ts';
 import { CURRENT_COMMAND_SPECS } from '../../src/spec/index.ts';
 import { CLI_ENTRYPOINT } from '../fixtures/cli.ts';
 
@@ -186,6 +190,7 @@ const cliEnv = (): Record<string, string | undefined> => ({
   CODEX_HOME: join(fleet.home, '.codex'),
   CI: '1',
   NO_COLOR: '1',
+  [TEST_COORDINATION_ROOT_ENV]: join(fleet.base, 'artifact-coordination'),
 });
 
 const gitConfigPath = (): string => join(fleet.base, 'export-gitconfig');
@@ -208,16 +213,19 @@ const writeGitConfig = (): Promise<void> =>
 
 const runCli = async (args: readonly string[], cwd = fleet.base): Promise<CliProduct> => {
   await writeGitConfig();
-  const process = Bun.spawn(['bun', CLI_ENTRYPOINT, ...args], {
-    cwd,
-    env: hermeticGitEnv(
-      { ...cliEnv(), GIT_ALLOW_PROTOCOL: 'file:https' },
-      { globalConfigPath: gitConfigPath() },
-    ),
-    stdin: 'ignore',
-    stdout: 'pipe',
-    stderr: 'pipe',
-  });
+  const process = Bun.spawn(
+    ['bun', '--preload', TEST_COORDINATION_PRELOAD, CLI_ENTRYPOINT, ...args],
+    {
+      cwd,
+      env: hermeticGitEnv(
+        { ...cliEnv(), GIT_ALLOW_PROTOCOL: 'file:https' },
+        { globalConfigPath: gitConfigPath() },
+      ),
+      stdin: 'ignore',
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+  );
   const exitCode = await process.exited;
   return {
     exitCode,
@@ -610,16 +618,25 @@ describe('G4A-02 export command contract', () => {
     const cancelledPaths = exportPaths('cancelled');
     let cancelledProduct: CliProduct | null = null;
     await fleet.env.withFileLock(ledgerPathOf(fleet.data), async () => {
-      const child = Bun.spawn(['bun', CLI_ENTRYPOINT, ...exportArgs(cancelledPaths)], {
-        cwd: fleet.base,
-        env: hermeticGitEnv(
-          { ...cliEnv(), GIT_ALLOW_PROTOCOL: 'file:https' },
-          { globalConfigPath: gitConfigPath() },
-        ),
-        stdin: 'ignore',
-        stdout: 'pipe',
-        stderr: 'pipe',
-      });
+      const child = Bun.spawn(
+        [
+          'bun',
+          '--preload',
+          TEST_COORDINATION_PRELOAD,
+          CLI_ENTRYPOINT,
+          ...exportArgs(cancelledPaths),
+        ],
+        {
+          cwd: fleet.base,
+          env: hermeticGitEnv(
+            { ...cliEnv(), GIT_ALLOW_PROTOCOL: 'file:https' },
+            { globalConfigPath: gitConfigPath() },
+          ),
+          stdin: 'ignore',
+          stdout: 'pipe',
+          stderr: 'pipe',
+        },
+      );
       let exited = false;
       try {
         const compatibilityLocks = [

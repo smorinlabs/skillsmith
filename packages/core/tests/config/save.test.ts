@@ -1,4 +1,5 @@
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
+import { mkdtempSync } from 'node:fs';
 import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -6,6 +7,14 @@ import type { ArtifactCoordinatorPorts } from '../../src/artifacts/coordinator-t
 import { createTestNodeArtifactCoordinatorPorts } from '../../src/artifacts/node-coordinator.ts';
 import { saveConfig } from '../../src/config/save.ts';
 import { defaultRuntimePorts } from '../../src/ports/default.ts';
+import { confineArtifactCoordination } from '../fixtures/test-coordination.ts';
+
+// Calls without an injected coordinator use the production factory; confine it to this file.
+const coordinationRoot = mkdtempSync(join(tmpdir(), 'skillsmith-save-coordination-'));
+confineArtifactCoordination(coordinationRoot);
+afterAll(async () => {
+  await rm(coordinationRoot, { recursive: true, force: true });
+});
 
 const saveConfigWithCoordinator = saveConfig as unknown as (
   ports: Parameters<typeof saveConfig>[0],

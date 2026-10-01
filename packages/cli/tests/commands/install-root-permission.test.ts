@@ -44,6 +44,10 @@ import {
   buildFixtureFleet,
   destroyFixtureFleet,
 } from '../../../core/tests/fixtures/place/fleet.ts';
+import {
+  TEST_COORDINATION_PRELOAD,
+  TEST_COORDINATION_ROOT_ENV,
+} from '../../../core/tests/fixtures/test-coordination.ts';
 import { acquireExitCode } from '../../src/util/acquire-exit.ts';
 
 setDefaultTimeout(120_000);
@@ -232,6 +236,7 @@ const buildCliWorld = async (): Promise<CliWorld> => {
   for (const key of Object.keys(rawEnv)) {
     if (key.startsWith('SKILLSMITH_') && key !== 'SKILLSMITH_HOME') delete rawEnv[key];
   }
+  rawEnv[TEST_COORDINATION_ROOT_ENV] = join(f.base, 'artifact-coordination');
   const fsSource = `${fixture.multiSource}//plugins/fh/skills/factor-scan`;
   return { fixture, f, fsSource, home, root, tmp, env: rawEnv, gitconfig };
 };
@@ -248,7 +253,7 @@ interface CliResult {
 }
 
 const runCli = async (w: CliWorld, args: string[]): Promise<CliResult> => {
-  const proc = Bun.spawn(['bun', BIN, ...args], {
+  const proc = Bun.spawn(['bun', '--preload', TEST_COORDINATION_PRELOAD, BIN, ...args], {
     cwd: REPO_ROOT,
     env: hermeticGitEnv(w.env, { globalConfigPath: w.gitconfig }),
     stdout: 'pipe',
@@ -281,6 +286,8 @@ const runCliUnderFault = async (
       '-o',
       sidecar,
       'bun',
+      '--preload',
+      TEST_COORDINATION_PRELOAD,
       BIN,
       ...args,
     ],

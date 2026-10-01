@@ -23,6 +23,7 @@ import {
   destroyRemoteFixture,
 } from '../../../core/tests/fixtures/acquire/remote.ts';
 import { hermeticGitEnv } from '../../../core/tests/fixtures/git-env.ts';
+import { TEST_COORDINATION_PRELOAD } from '../../../core/tests/fixtures/test-coordination.ts';
 import { CLI_ENTRYPOINT } from '../fixtures/cli.ts';
 
 setDefaultTimeout(120_000);
@@ -118,13 +119,16 @@ const runApplyWithSignal = async (
   fixture: PlanFixture,
   args: readonly string[],
 ): Promise<CliProduct> => {
-  const child = Bun.spawn(['bun', CLI_ENTRYPOINT, 'apply', ...args], {
-    cwd: fixture.cwd,
-    env: hermeticGitEnv(fixture.env),
-    stdin: 'ignore',
-    stdout: 'pipe',
-    stderr: 'pipe',
-  });
+  const child = Bun.spawn(
+    ['bun', '--preload', TEST_COORDINATION_PRELOAD, CLI_ENTRYPOINT, 'apply', ...args],
+    {
+      cwd: fixture.cwd,
+      env: hermeticGitEnv(fixture.env),
+      stdin: 'ignore',
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+  );
   await Bun.sleep(25);
   child.kill('SIGINT');
   const exitCode = await child.exited;

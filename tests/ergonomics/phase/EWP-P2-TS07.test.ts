@@ -736,8 +736,14 @@ describe('EWP-P2-TS07', () => {
     const fleetModule = await import('../../../packages/core/tests/fixtures/place/fleet.ts');
     const ledgerModule = await import('../../../packages/core/src/place/ledger.ts');
     const pathsModule = await import('../../../packages/core/src/place/paths.ts');
+    const coordinatorModule = await import(
+      '../../../packages/core/src/artifacts/node-coordinator.ts'
+    );
     const remote = await remoteModule.buildRemoteFixture();
     const fleet = await fleetModule.buildFixtureFleet();
+    const artifactCoordinator = await coordinatorModule.createTestNodeArtifactCoordinatorPorts(
+      join(fleet.base, 'artifact-coordination'),
+    );
     const canary = 'ghp_P17_PUBLIC_BOUNDARY_123456789';
     const source = `${remote.multiSource}//plugins/fh/skills/factor-scan`;
     const baseInstallOptions = {
@@ -773,6 +779,7 @@ describe('EWP-P2-TS07', () => {
       transport: remote.transport,
       now: () => '2026-07-13T00:00:00Z',
       newTxId: () => (0x72000000 + transaction++).toString(16).slice(-8),
+      artifactCoordinator,
       ...overrides,
     });
     const expectFailure = (
