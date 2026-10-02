@@ -73,6 +73,43 @@ describe('codexAgent', () => {
     }
   });
 
+  test('classifies by the resolved realpath on Linux: a native Linuxbrew formula symlinked under /home/linuxbrew/.linuxbrew/bin reports brew instead of unknown', async () => {
+    const r = await codexAgent.detect({
+      ...env(['/home/linuxbrew/.linuxbrew/bin/codex']),
+      homeDir: '/home/u',
+      platform: 'linux',
+      executableSearchPath: ['/home/linuxbrew/.linuxbrew/bin'],
+      realpath: async () => '/home/linuxbrew/.linuxbrew/Cellar/codex/0.5.0/bin/codex',
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value[0]).toEqual({
+        path: '/home/linuxbrew/.linuxbrew/bin/codex',
+        version: '0.5.1',
+        installMethod: 'brew',
+      });
+    }
+  });
+
+  test('classifies by the resolved realpath on Linux: a node-based Linuxbrew formula (Cellar/.../libexec/lib/node_modules) reports brew instead of npm-global', async () => {
+    const r = await codexAgent.detect({
+      ...env(['/home/linuxbrew/.linuxbrew/bin/codex']),
+      homeDir: '/home/u',
+      platform: 'linux',
+      executableSearchPath: ['/home/linuxbrew/.linuxbrew/bin'],
+      realpath: async () =>
+        '/home/linuxbrew/.linuxbrew/Cellar/codex/0.5.0/libexec/lib/node_modules/@openai/codex/bin/codex.js',
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value[0]).toEqual({
+        path: '/home/linuxbrew/.linuxbrew/bin/codex',
+        version: '0.5.1',
+        installMethod: 'brew',
+      });
+    }
+  });
+
   test('falls back to classifying the link path when realpath throws', async () => {
     const r = await codexAgent.detect({
       ...env(['/opt/homebrew/bin/codex']),
