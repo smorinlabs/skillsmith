@@ -317,7 +317,7 @@ Minimal invocation: `skillsmith install <source>`
 
 #### Common workflows
 
-- **Start here** (changes-state): Install factor-scan into user scope. — `skillsmith install smorinlabs/smorinlabs-harness/factor-scan --user`
+- **Start here** (changes-state): Install factor-scan into user scope. — `skillsmith install smorinlabs/smorinlabs-skills/factor-scan --user`
 - **Focused workflow** (changes-state): Select directory review, falling back to frontmatter only when no directory matches. — `skillsmith install acme/skills --skill review`
 - **Advanced workflow** (changes-state): Select only the declared frontmatter name review, even when directory review exists. — `skillsmith install acme/skills --skill review --skills-match-frontmatter`
 

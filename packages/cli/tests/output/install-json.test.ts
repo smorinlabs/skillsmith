@@ -38,14 +38,14 @@ const uninstallGoldenText = readFileSync(UNINSTALL_GOLDEN, 'utf8');
 
 const SHA = `8c1d2e3f4a5b${'0'.repeat(28)}`;
 const STORE_PATH =
-  '/Users/alice/.local/share/skillsmith/store/smorinlabs/smorinlabs-harness@8c1d2e3f4a5b/factor-scan';
+  '/Users/alice/.local/share/skillsmith/store/smorinlabs/smorinlabs-skills@8c1d2e3f4a5b/factor-scan';
 
 // Matches the task-9 brief's install JSON contract example, filled with concrete values, minus
 // `kind`/`schemaVersion` (renderInstallJson adds those) and minus `error` (core-only).
 const installReport: InstallReport = {
   dryRun: false,
   requested: {
-    sources: ['smorinlabs/smorinlabs-harness/factor-scan'],
+    sources: ['smorinlabs/smorinlabs-skills/factor-scan'],
     tools: ['claude-code', 'codex'],
     explicitTools: false,
     scope: 'user',
@@ -59,7 +59,7 @@ const installReport: InstallReport = {
   },
   results: [
     {
-      source: 'smorinlabs/smorinlabs-harness/factor-scan',
+      source: 'smorinlabs/smorinlabs-skills/factor-scan',
       skill: 'factor-scan',
       tool: 'claude-code',
       scope: 'user',
@@ -70,7 +70,7 @@ const installReport: InstallReport = {
       store: { path: STORE_PATH, rev: '8c1d2e3f4a5b', gitSha: SHA, reused: false },
       origin: {
         host: 'github.com',
-        repo: 'smorinlabs/smorinlabs-harness',
+        repo: 'smorinlabs/smorinlabs-skills',
         skillPath: 'plugins/factor-harness/skills/factor-scan',
         refRequested: null,
         refResolved: SHA,
@@ -80,7 +80,7 @@ const installReport: InstallReport = {
       candidates: null,
     },
     {
-      source: 'smorinlabs/smorinlabs-harness/factor-scan',
+      source: 'smorinlabs/smorinlabs-skills/factor-scan',
       skill: 'factor-scan',
       tool: 'codex',
       scope: 'user',
@@ -91,7 +91,7 @@ const installReport: InstallReport = {
       store: { path: STORE_PATH, rev: '8c1d2e3f4a5b', gitSha: SHA, reused: true },
       origin: {
         host: 'github.com',
-        repo: 'smorinlabs/smorinlabs-harness',
+        repo: 'smorinlabs/smorinlabs-skills',
         skillPath: 'plugins/factor-harness/skills/factor-scan',
         refRequested: null,
         refResolved: SHA,

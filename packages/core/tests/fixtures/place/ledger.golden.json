@@ -9,15 +9,15 @@
           "placementPath": "/Users/alice/.claude/skills/factor-scan",
           "mode": "pinned",
           "dev": {
-            "sourcePath": "/Users/alice/c/smorinlabs-harness/plugins/factor-harness/skills/factor-scan",
-            "resolvedPath": "/Users/alice/c/smorinlabs-harness/plugins/factor-harness/skills/factor-scan",
-            "repoRoot": "/Users/alice/c/smorinlabs-harness",
+            "sourcePath": "/Users/alice/c/smorinlabs-skills/plugins/factor-harness/skills/factor-scan",
+            "resolvedPath": "/Users/alice/c/smorinlabs-skills/plugins/factor-harness/skills/factor-scan",
+            "repoRoot": "/Users/alice/c/smorinlabs-skills",
             "sourceRelPath": "plugins/factor-harness/skills/factor-scan",
-            "remote": "smorinlabs/smorinlabs-harness",
+            "remote": "smorinlabs/smorinlabs-skills",
             "recordedAt": "2026-07-07T18:20:11Z"
           },
           "pinned": {
-            "storePath": "/Users/alice/.local/share/skillsmith/store/smorinlabs/smorinlabs-harness@3f2a1b9c0d4e/factor-scan",
+            "storePath": "/Users/alice/.local/share/skillsmith/store/smorinlabs/smorinlabs-skills@3f2a1b9c0d4e/factor-scan",
             "rev": "3f2a1b9c0d4e",
             "gitSha": "3f2a1b9c0d4e5f6a7b8c9d0e1f2a3b4c5d6e7f80",
             "dirty": false,

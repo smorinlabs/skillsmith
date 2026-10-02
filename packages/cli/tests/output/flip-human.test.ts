@@ -4,7 +4,7 @@ import { renderFlipHuman } from '../../src/output/flip-human.ts';
 import { renderFlipLifecycleStderr } from '../../src/runtime/current-renderers.ts';
 
 const STORE_PATH =
-  '/Users/alice/.local/share/skillsmith/store/smorinlabs/smorinlabs-harness@3f2a1b9c0d4e/factor-scan';
+  '/Users/alice/.local/share/skillsmith/store/smorinlabs/smorinlabs-skills@3f2a1b9c0d4e/factor-scan';
 
 const planningFields = (
   command: 'dev' | 'promote',
@@ -94,8 +94,8 @@ describe('renderFlipHuman', () => {
     const out = renderFlipHuman(report, 0);
     expect(out).toContain('Promoting factor-scan');
     expect(out).toContain('tools: claude-code, codex');
-    expect(out).toContain('snapshot smorinlabs/smorinlabs-harness@3f2a1b9c0d4e  (reused)');
-    expect(out).toContain('snapshot smorinlabs/smorinlabs-harness@3f2a1b9c0d4e  (new store entry)');
+    expect(out).toContain('snapshot smorinlabs/smorinlabs-skills@3f2a1b9c0d4e  (reused)');
+    expect(out).toContain('snapshot smorinlabs/smorinlabs-skills@3f2a1b9c0d4e  (new store entry)');
     expect(out).toContain('swap');
     expect(out).toContain('2 flipped.  Exit code: 0');
   });
@@ -146,7 +146,7 @@ describe('renderFlipHuman', () => {
     const out = renderFlipHuman(report, 0);
     expect(out).toContain('Flipping factor-scan to dev mode');
     expect(out).toContain('swap');
-    expect(out).toContain('pin retained: smorinlabs/smorinlabs-harness@3f2a1b9c0d4e');
+    expect(out).toContain('pin retained: smorinlabs/smorinlabs-skills@3f2a1b9c0d4e');
     expect(out).toContain('1 flipped.  Exit code: 0');
   });
 

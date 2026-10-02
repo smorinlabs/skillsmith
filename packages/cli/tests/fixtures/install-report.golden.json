@@ -3,7 +3,7 @@
   "kind": "skillsmith.install",
   "dryRun": false,
   "requested": {
-    "sources": ["smorinlabs/smorinlabs-harness/factor-scan"],
+    "sources": ["smorinlabs/smorinlabs-skills/factor-scan"],
     "tools": ["claude-code", "codex"],
     "explicitTools": false,
     "scope": "user",
@@ -17,7 +17,7 @@
   },
   "results": [
     {
-      "source": "smorinlabs/smorinlabs-harness/factor-scan",
+      "source": "smorinlabs/smorinlabs-skills/factor-scan",
       "skill": "factor-scan",
       "tool": "claude-code",
       "scope": "user",
@@ -26,14 +26,14 @@
       "reason": null,
       "placement": "symlink",
       "store": {
-        "path": "/Users/alice/.local/share/skillsmith/store/smorinlabs/smorinlabs-harness@8c1d2e3f4a5b/factor-scan",
+        "path": "/Users/alice/.local/share/skillsmith/store/smorinlabs/smorinlabs-skills@8c1d2e3f4a5b/factor-scan",
         "rev": "8c1d2e3f4a5b",
         "gitSha": "8c1d2e3f4a5b0000000000000000000000000000",
         "reused": false
       },
       "origin": {
         "host": "github.com",
-        "repo": "smorinlabs/smorinlabs-harness",
+        "repo": "smorinlabs/smorinlabs-skills",
         "skillPath": "plugins/factor-harness/skills/factor-scan",
         "refRequested": null,
         "refResolved": "8c1d2e3f4a5b0000000000000000000000000000",
@@ -43,7 +43,7 @@
       "candidates": null
     },
     {
-      "source": "smorinlabs/smorinlabs-harness/factor-scan",
+      "source": "smorinlabs/smorinlabs-skills/factor-scan",
       "skill": "factor-scan",
       "tool": "codex",
       "scope": "user",
@@ -52,14 +52,14 @@
       "reason": null,
       "placement": "symlink",
       "store": {
-        "path": "/Users/alice/.local/share/skillsmith/store/smorinlabs/smorinlabs-harness@8c1d2e3f4a5b/factor-scan",
+        "path": "/Users/alice/.local/share/skillsmith/store/smorinlabs/smorinlabs-skills@8c1d2e3f4a5b/factor-scan",
         "rev": "8c1d2e3f4a5b",
         "gitSha": "8c1d2e3f4a5b0000000000000000000000000000",
         "reused": true
       },
       "origin": {
         "host": "github.com",
-        "repo": "smorinlabs/smorinlabs-harness",
+        "repo": "smorinlabs/smorinlabs-skills",
         "skillPath": "plugins/factor-harness/skills/factor-scan",
         "refRequested": null,
         "refResolved": "8c1d2e3f4a5b0000000000000000000000000000",

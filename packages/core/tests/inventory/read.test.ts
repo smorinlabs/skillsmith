@@ -184,7 +184,7 @@ describe('skill inventory projection', () => {
                   : 'absent',
         realpath: async (candidate) =>
           candidate === path
-            ? `${home}/.local/share/skillsmith/store/smorinlabs/smorinlabs-harness@3f2a1b9c0d4e/factor-scan`
+            ? `${home}/.local/share/skillsmith/store/smorinlabs/smorinlabs-skills@3f2a1b9c0d4e/factor-scan`
             : candidate,
         listDir: async (candidate) => (candidate === root ? ['factor-scan'] : []),
         readText: async () => '---\ndescription: Factor scanner\n---\n',
@@ -213,7 +213,7 @@ describe('skill inventory projection', () => {
         name: 'factor-scan',
         mode: 'pinned',
         placement: 'symlink',
-        source: 'smorinlabs/smorinlabs-harness',
+        source: 'smorinlabs/smorinlabs-skills',
         revision: '3f2a1b9c0d4e5f6a7b8c9d0e1f2a3b4c5d6e7f80',
         verification: 'passed',
       }),

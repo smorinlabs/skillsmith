@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { hermeticGitEnv, runGit } from '../../../core/tests/fixtures/git-env.ts';
 
-// Env-gated NETWORK e2e against the real `smorinlabs/smorinlabs-harness` repo — the PRD §10 live
+// Env-gated NETWORK e2e against the real `smorinlabs/smorinlabs-skills` repo — the PRD §10 live
 // acceptance. CI never sets SKILLSMITH_E2E, so this suite reports as skipped and `bun run check`
 // stays green. This is the one suite in the P09 acceptance set that needs an actual workstation
 // with network access; the SIGKILL/journal-barrier suite (install-live.test.ts) is fully hermetic
@@ -14,7 +14,7 @@ const E2E = process.env.SKILLSMITH_E2E === '1';
 
 const REPO_ROOT = join(import.meta.dir, '..', '..', '..', '..');
 const BIN = 'packages/cli/src/index.ts';
-const HARNESS_REPO = 'smorinlabs/smorinlabs-harness';
+const HARNESS_REPO = 'smorinlabs/smorinlabs-skills';
 const SKILL_PATH = 'plugins/factor-harness/skills/factor-scan';
 const SKILL_NAME = 'factor-scan';
 
@@ -75,7 +75,7 @@ const destroyScratch = (s: Scratch): void => {
 };
 
 describe.skipIf(!E2E)(
-  'skillsmith install live e2e (real network, smorinlabs/smorinlabs-harness)',
+  'skillsmith install live e2e (real network, smorinlabs/smorinlabs-skills)',
   () => {
     test('bare form (ambiguous) -> harvested //path re-run line, name form, and explicit //path form all resolve to the same store entry; --json parses', async () => {
       const s = makeScratch();
