@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import {
   type ShardEvidence,
   aggregateShardEvidence,
@@ -391,6 +391,14 @@ describe('readShardEvidence', () => {
     return directory;
   }
 
+  // actions/download-artifact extracts a lone pattern match directly into
+  // `path`, with no per-artifact directory (download-artifact.ts, artifacts.length === 1).
+  function writeFlatEvidence(root: string, shard: ReturnType<typeof shardEvidence>): void {
+    mkdirSync(join(root, 'junit'), { recursive: true });
+    writeFileSync(join(root, 'shard-receipt.json'), JSON.stringify(shard.receipt));
+    for (const [name, xml] of shard.junit) writeFileSync(join(root, 'junit', name), xml);
+  }
+
   test('round-trips uploaded evidence into a passing aggregate', () => {
     const directory = root();
     writeEvidence(directory, fourShards());
@@ -412,6 +420,35 @@ describe('readShardEvidence', () => {
     writeEvidence(stray, fourShards());
     writeFileSync(join(stray, 'stray.json'), '{}');
     expect(() => readShardEvidence(stray)).toThrow(/non-directory evidence entry/);
+  });
+
+  test('reads a single artifact extracted flat into the root as one evidence set', () => {
+    const flat = root();
+    writeFlatEvidence(flat, shardEvidence(1, 1));
+    const evidence = readShardEvidence(flat);
+    expect(evidence).toHaveLength(1);
+    expect(evidence[0].label).toBe(basename(flat));
+    expect(aggregateShardEvidence(MANIFEST, 1, evidence).executed).toBe(MANIFEST.length);
+  });
+
+  test('a flat single shard fails the aggregate for the missing shards, not the layout', () => {
+    const flat = root();
+    writeFlatEvidence(flat, shardEvidence(2, 4));
+    expect(() => aggregate(readShardEvidence(flat))).toThrow(
+      /expected 4 shard evidence sets; found 1/,
+    );
+  });
+
+  test('a flat layout fails closed on a missing JUnit directory or a stray entry', () => {
+    const noJunit = root();
+    writeFlatEvidence(noJunit, shardEvidence(1, 1));
+    rmSync(join(noJunit, 'junit'), { recursive: true });
+    expect(() => readShardEvidence(noJunit)).toThrow(/missing JUnit directory/);
+
+    const stray = root();
+    writeFlatEvidence(stray, shardEvidence(1, 1));
+    writeFileSync(join(stray, 'notes.txt'), 'x');
+    expect(() => readShardEvidence(stray)).toThrow(/unexpected flat evidence entry notes.txt/);
   });
 });
 
