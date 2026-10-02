@@ -1,5 +1,7 @@
-import { describe, expect, test } from 'bun:test';
-import { readFile, readdir } from 'node:fs/promises';
+import { afterAll, describe, expect, test } from 'bun:test';
+import { mkdtempSync } from 'node:fs';
+import { readFile, readdir, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseCompletionGraph } from '../../../packages/cli/src/completion/adapter.ts';
@@ -12,7 +14,15 @@ import { CURRENT_COMMAND_SPECS } from '../../../packages/cli/src/spec/index.ts';
 import type { CommandSpec } from '../../../packages/cli/src/spec/types.ts';
 import { CLI_ENTRYPOINT } from '../../../packages/cli/tests/fixtures/cli.ts';
 import { hermeticGitEnv } from '../../../packages/core/tests/fixtures/git-env.ts';
+import { confineArtifactCoordination } from '../../../packages/core/tests/fixtures/test-coordination.ts';
 
+// In-process command dispatch builds the runtime context's artifact coordinator; keep it out of
+// the real account's `~/.skillsmith`.
+const coordinationRoot = mkdtempSync(join(tmpdir(), 'skillsmith-p1-ts07-coordination-'));
+confineArtifactCoordination(coordinationRoot);
+afterAll(async () => {
+  await rm(coordinationRoot, { recursive: true, force: true });
+});
 const ROOT = resolve(import.meta.dir, '../../..');
 const COMMANDS_ROOT = join(ROOT, 'packages/cli/src/commands');
 const PROGRAM = join(ROOT, 'packages/cli/src/program.ts');

@@ -1,7 +1,6 @@
-import { mock } from 'bun:test';
 import { mkdirSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
-import * as nodeCoordinator from '../../src/artifacts/node-coordinator.ts';
+import { confineTrappedCoordinator } from './coordination-trap.ts';
 
 /**
  * Production artifact coordination deliberately ignores HOME/XDG and locks the real account's
@@ -19,10 +18,5 @@ export const confineArtifactCoordination = (root: string): void => {
     mkdirSync(join(root, directory), { recursive: true, mode: 0o700 });
   }
   // The coordinator rejects symlinked ancestors such as macOS /var -> /private/var.
-  const resolved = realpathSync(root);
-  mock.module('../../src/artifacts/node-coordinator.ts', () => ({
-    ...nodeCoordinator,
-    createNodeArtifactCoordinatorPorts: () =>
-      nodeCoordinator.createTestNodeArtifactCoordinatorPorts(resolved),
-  }));
+  confineTrappedCoordinator(realpathSync(root));
 };
