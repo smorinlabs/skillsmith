@@ -429,3 +429,68 @@ describe('justfile gate split', () => {
     expect(recipe('check-gates')).toEqual(check.slice(0, -1));
   });
 });
+
+describe('ci.yml shard evidence contract (#128)', () => {
+  type Step = { name?: string; uses?: string; run?: string; with?: Record<string, unknown> };
+  type Workflow = {
+    jobs: Record<string, { steps?: Step[]; strategy?: { matrix?: { shard?: number[] } } }>;
+  };
+  const workflow = Bun.YAML.parse(
+    readFileSync(join(import.meta.dir, '..', '.github', 'workflows', 'ci.yml'), 'utf8'),
+  ) as Workflow;
+  const step = (job: string, name: string): Step => {
+    const found = workflow.jobs[job]?.steps?.find((candidate) => candidate.name === name);
+    if (found === undefined) throw new Error(`${job} step ${name} is missing`);
+    return found;
+  };
+  const upload = step('test-shard', 'Retain shard evidence');
+  const download = step('test-shard-aggregate', 'Download shard evidence');
+  const RUN_ID = '36439943396';
+  // Render the workflow expressions before matching: Bun.Glob treats `{{ }}` as braces.
+  const render = (value: unknown, shard: number): string =>
+    String(value)
+      .replaceAll('${{ matrix.shard }}', String(shard))
+      .replaceAll('${{ github.run_id }}', RUN_ID);
+
+  test('shard artifacts are named per shard and run, never per attempt, and re-runs overwrite', () => {
+    expect(upload.uses?.startsWith('actions/upload-artifact@')).toBe(true);
+    expect(upload.with?.name).toBe('test-shard-${{ matrix.shard }}-${{ github.run_id }}');
+    expect(upload.with?.overwrite).toBe(true);
+    expect(upload.with?.['if-no-files-found']).toBe('error');
+    expect(download.uses?.startsWith('actions/download-artifact@')).toBe(true);
+    expect(download.with?.pattern).toBe('test-shard-*-${{ github.run_id }}');
+    expect(download.with?.['merge-multiple']).toBeUndefined();
+    expect(download.with?.path).toBe('${{ runner.temp }}/shard-evidence');
+    for (const value of [upload.with?.name, download.with?.pattern]) {
+      expect(String(value)).not.toContain('run_attempt');
+    }
+  });
+
+  test('every matrix shard name matches the aggregate download pattern once rendered', () => {
+    const shards = workflow.jobs['test-shard']?.strategy?.matrix?.shard ?? [];
+    expect(shards).toEqual([1, 2, 3, 4]);
+    expect(step('test-shard-aggregate', 'Validate shard union').run).toBe(
+      `bun scripts/aggregate-shard-receipts.ts --receipts="$RUNNER_TEMP/shard-evidence" --shard-total=${shards.length}`,
+    );
+    for (const shard of shards) {
+      const name = render(upload.with?.name, shard);
+      const pattern = render(download.with?.pattern, shard);
+      expect(name).toBe(`test-shard-${shard}-${RUN_ID}`);
+      expect(pattern).not.toContain('${{');
+      expect(new Bun.Glob(pattern).match(name)).toBe(true);
+      // An attempt-suffixed stale name must not satisfy the pattern.
+      expect(new Bun.Glob(pattern).match(`${name}-2`)).toBe(false);
+    }
+  });
+
+  test('the aggregate requires every shard to succeed before it downloads evidence', () => {
+    const names = (workflow.jobs['test-shard-aggregate']?.steps ?? []).map((entry) => entry.name);
+    const order = [
+      'Require every shard to succeed',
+      'Download shard evidence',
+      'Validate shard union',
+    ].map((name) => names.indexOf(name));
+    expect(order.every((index) => index >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((left, right) => left - right));
+  });
+});
