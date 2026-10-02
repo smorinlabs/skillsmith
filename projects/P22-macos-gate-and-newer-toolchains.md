@@ -8,7 +8,7 @@
 - **Tracking:** [PR #126: accept tool releases at or above the minimums; CI tests bun 1.4](https://github.com/smorinlabs/skillsmith/pull/126)
 - **Tracking:** [Issue #127: classify Linuxbrew installs as brew (deferred)](https://github.com/smorinlabs/skillsmith/issues/127)
 - **Tracking:** [Issue #128: "re-run failed jobs" cannot pass the shard aggregate](https://github.com/smorinlabs/skillsmith/issues/128)
-- **Prior art:** [Handoff that started this work](../docs/handoffs/2026-09-22-runner-env-skips.md) (untracked, owner's checkout)
+- **Prior art:** Handoff that started this work, `docs/handoffs/2026-09-22-runner-env-skips.md` (kept untracked in the owner's checkout, not in the repository)
 
 **Status:** Completed 2026-09-29. Recorded after the fact by owner request (loose-ends sweep, 2026-09-30).
 

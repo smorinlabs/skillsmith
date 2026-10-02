@@ -80,9 +80,11 @@ serial test gate (`scripts/run-test-files-serial.ts`), gitleaks on the pushed co
 `bun audit`, and eslint-security.
 
 - The serial gate takes about 30 minutes on macOS. Run long pushes in the background.
-- The gate verifies repository identity before and after the run. Creating branches or
-  worktrees in this clone (from any session) while it runs aborts the push with
-  `repository identity changed`; retry once the clone is quiet.
+- The gate snapshots this checkout's HEAD and index and the clone's shared `.git/config`
+  before and after the run. Anything that rewrites the shared config meanwhile, from any
+  session, aborts the push with `repository identity changed: config`: for example creating
+  or deleting a branch that tracks a remote (`git worktree add -b <branch> origin/main`,
+  `git branch -d <branch>`) or a `git config` write. Retry once the clone is quiet.
 - Never use `git push --no-verify`: it silently skips the credential scan too. For a genuine
   emergency, use the explicit `LEFTHOOK=0` bypass described in CONTRIBUTING.md.
 
