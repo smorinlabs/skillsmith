@@ -10,6 +10,10 @@ import { deriveLedgerProjectRegistrations } from '../../../../packages/core/src/
 import { emptyLedgerModel, writeLedger } from '../../../../packages/core/src/place/ledger.ts';
 import { defaultRuntimePorts } from '../../../../packages/core/src/ports/default.ts';
 import { hermeticGitEnv, runGit } from '../../../../packages/core/tests/fixtures/git-env.ts';
+import {
+  TEST_COORDINATION_PRELOAD,
+  TEST_COORDINATION_ROOT_ENV,
+} from '../../../../packages/core/tests/fixtures/test-coordination.ts';
 
 export const SYNC_SECRET_CANARIES = Object.freeze([
   'P17_SECRET_CANARY_SYNC_ENV',
@@ -280,6 +284,7 @@ export const createSyncFleet = async (): Promise<SyncFleet> => {
         P17_SYNC_TEST_CANARY: SYNC_SECRET_CANARIES[0],
         CI: '1',
         NO_COLOR: '1',
+        [TEST_COORDINATION_ROOT_ENV]: join(root, 'artifact-coordination'),
       }),
     ),
   });
@@ -293,13 +298,16 @@ export const runSyncCli = async (
   fleet: SyncFleet,
   args: readonly string[],
 ): Promise<SyncCliProduct> => {
-  const child = Bun.spawn([process.execPath, CLI_ENTRYPOINT, ...args], {
-    cwd: fleet.cwd,
-    env: fleet.env,
-    stdin: 'ignore',
-    stdout: 'pipe',
-    stderr: 'pipe',
-  });
+  const child = Bun.spawn(
+    [process.execPath, '--preload', TEST_COORDINATION_PRELOAD, CLI_ENTRYPOINT, ...args],
+    {
+      cwd: fleet.cwd,
+      env: fleet.env,
+      stdin: 'ignore',
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+  );
   const [exitCode, stdout, stderr] = await Promise.all([
     child.exited,
     new Response(child.stdout).text(),

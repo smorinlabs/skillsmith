@@ -12,6 +12,8 @@ import { join } from 'node:path';
 import { runInstall } from '../../src/acquire/run.ts';
 import type { InstallDeps, InstallOptions } from '../../src/acquire/types.ts';
 import type { InstallRecord } from '../../src/agents/types.ts';
+import type { ArtifactCoordinatorPorts } from '../../src/artifacts/coordinator-types.ts';
+import { createTestNodeArtifactCoordinatorPorts } from '../../src/artifacts/node-coordinator.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
 import { readLedger } from '../../src/place/ledger.ts';
 import { ledgerPathOf } from '../../src/place/paths.ts';
@@ -95,9 +97,11 @@ const makeDeps = (verify: InstallDeps['verify']): InstallDeps => ({
   transport: fixture.transport,
   now: () => NOW,
   newTxId: () => (0x10000000 + txN++).toString(16).slice(-8),
+  artifactCoordinator,
 });
 
 let fixture: RemoteFixture;
+let artifactCoordinator: ArtifactCoordinatorPorts;
 
 beforeAll(async () => {
   fixture = await buildRemoteFixture();
@@ -113,6 +117,9 @@ describe('runInstall — verify gate matrix', () => {
 
   beforeEach(async () => {
     f = await buildFixtureFleet();
+    artifactCoordinator = await createTestNodeArtifactCoordinatorPorts(
+      join(f.base, 'artifact-coordination'),
+    );
     source = `${fixture.multiSource}//plugins/fh/skills/factor-scan`;
     baseOpts = {
       sources: [source],

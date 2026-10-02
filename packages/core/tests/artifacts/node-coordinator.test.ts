@@ -12,10 +12,8 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import {
-  createNodeArtifactCoordinatorPorts,
-  createTestNodeArtifactCoordinatorPorts,
-} from '../../src/artifacts/node-coordinator.ts';
+import { createTestNodeArtifactCoordinatorPorts } from '../../src/artifacts/node-coordinator.ts';
+import { productionArtifactCoordinatorPorts } from '../fixtures/coordination-trap.ts';
 
 const roots: string[] = [];
 const deferred = () => {
@@ -313,10 +311,10 @@ describe('Node artifact coordinator adapter', () => {
     const saved = new Map(names.map((name) => [name, process.env[name]]));
     try {
       for (const name of names) process.env[name] = join(root, 'first', name);
-      const first = await createNodeArtifactCoordinatorPorts();
+      const first = await productionArtifactCoordinatorPorts();
       expect(process.env.HOME).toBe(join(root, 'first', 'HOME'));
       for (const name of names) process.env[name] = join(root, 'second', name);
-      const second = await createNodeArtifactCoordinatorPorts();
+      const second = await productionArtifactCoordinatorPorts();
       expect(process.env.HOME).toBe(join(root, 'second', 'HOME'));
       expect(first.coordinationRoot).toBe(second.coordinationRoot);
       expect(first.coordinationRoot.startsWith(root)).toBeFalse();

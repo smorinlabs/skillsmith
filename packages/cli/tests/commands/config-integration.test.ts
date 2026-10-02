@@ -1,13 +1,23 @@
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
+import { mkdtempSync } from 'node:fs';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { hermeticGitEnv } from '../../../core/tests/fixtures/git-env.ts';
+import {
+  TEST_COORDINATION_PRELOAD,
+  TEST_COORDINATION_ROOT_ENV,
+} from '../../../core/tests/fixtures/test-coordination.ts';
 import { CLI_ENTRYPOINT } from '../fixtures/cli.ts';
+const coordinationRoot = mkdtempSync(join(tmpdir(), 'skillsmith-config-coordination-'));
+afterAll(async () => {
+  await rm(coordinationRoot, { recursive: true, force: true });
+});
 const run = async (args: string[], env: Record<string, string> = {}) => {
-  const proc = Bun.spawn(['bun', 'run', CLI_ENTRYPOINT, ...args], {
+  const proc = Bun.spawn(['bun', '--preload', TEST_COORDINATION_PRELOAD, CLI_ENTRYPOINT, ...args], {
     stdout: 'pipe',
     stderr: 'pipe',
-    env: hermeticGitEnv(env),
+    env: hermeticGitEnv({ [TEST_COORDINATION_ROOT_ENV]: coordinationRoot, ...env }),
   });
   const code = await proc.exited;
   return {

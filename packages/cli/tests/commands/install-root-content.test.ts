@@ -45,6 +45,10 @@ import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { lockV1Codec } from '../../../core/src/artifacts/lock-codec.ts';
 import { runGit } from '../../../core/tests/fixtures/git-env.ts';
+import {
+  TEST_COORDINATION_PRELOAD,
+  TEST_COORDINATION_ROOT_ENV,
+} from '../../../core/tests/fixtures/test-coordination.ts';
 import { InstallJsonSchema, UninstallJsonSchema } from '../../src/output/install-json.ts';
 import { CLI_ENTRYPOINT } from '../fixtures/cli.ts';
 import { createDetectionIsolation } from '../fixtures/detection.ts';
@@ -375,6 +379,7 @@ const makeWorkspace = async (
     R5_GIT_TRACE: gitTrace,
     R5_GIT_ARCHIVE: gitArchive,
     R5_OWNED_ROOT: data,
+    [TEST_COORDINATION_ROOT_ENV]: join(root, 'artifact-coordination'),
   };
   const isolation = await createDetectionIsolation(root, env);
   if (!isolation.blockedPaths.includes(join('/usr/local/bin', 'claude'))) {
@@ -417,7 +422,15 @@ const runCli = async (
   args: string[],
   timeoutMs = 120_000,
 ): Promise<CliResult> => {
-  const argv = [process.execPath, '--preload', ws.preload, CLI_ENTRYPOINT, ...args];
+  const argv = [
+    process.execPath,
+    '--preload',
+    ws.preload,
+    '--preload',
+    TEST_COORDINATION_PRELOAD,
+    CLI_ENTRYPOINT,
+    ...args,
+  ];
   const startedAt = Date.now();
   const child = spawn(argv[0] as string, argv.slice(1), {
     cwd: ws.cwd,

@@ -14,6 +14,10 @@ import {
 import { tmpdir } from 'node:os';
 import { basename, join, relative, resolve } from 'node:path';
 import { hermeticGitEnv } from '../../../../packages/core/tests/fixtures/git-env.ts';
+import {
+  TEST_COORDINATION_PRELOAD,
+  TEST_COORDINATION_ROOT_ENV,
+} from '../../../../packages/core/tests/fixtures/test-coordination.ts';
 import { codexAppServerFixtureDispatch } from '../codex-app-server.ts';
 
 const CLI_ENTRYPOINT = join(
@@ -239,6 +243,7 @@ export const createUndoFleet = async (): Promise<UndoFleet> => {
       CI: '1',
       NO_COLOR: '1',
       P17_UNDO_TEST_CANARY: UNDO_SECRET_CANARIES[0],
+      [TEST_COORDINATION_ROOT_ENV]: join(root, 'artifact-coordination'),
     }),
     paths: Object.freeze({
       userClaude: join(home, '.claude', 'skills', 'review'),
@@ -260,7 +265,7 @@ export const spawnUndoCli = (
   args: readonly string[],
   extraEnv: Readonly<Record<string, string | undefined>> = {},
 ) =>
-  Bun.spawn([process.execPath, CLI_ENTRYPOINT, ...args], {
+  Bun.spawn([process.execPath, '--preload', TEST_COORDINATION_PRELOAD, CLI_ENTRYPOINT, ...args], {
     cwd: fleet.cwd,
     env:
       fleet.env.GIT_CONFIG_GLOBAL === undefined

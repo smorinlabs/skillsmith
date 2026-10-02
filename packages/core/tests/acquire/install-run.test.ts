@@ -11,6 +11,7 @@ import {
 import { writeFileSync } from 'node:fs';
 import { appendFile, lstat, readFile, readlink } from 'node:fs/promises';
 import { join } from 'node:path';
+import { safeError } from '../../src/acquire/resolve.ts';
 import {
   defaultInstallDeps,
   runInstall,
@@ -22,6 +23,7 @@ import type { CandidateSkill, InstallDeps, InstallOptions } from '../../src/acqu
 import { createToolRegistry, toolRegistry } from '../../src/agents/registry.ts';
 import type { InstallRecord } from '../../src/agents/types.ts';
 import type { ArtifactCoordinatorPorts } from '../../src/artifacts/coordinator-types.ts';
+import { artifactMutationError } from '../../src/artifacts/file-state.ts';
 import { lockV1Codec } from '../../src/artifacts/lock-codec.ts';
 import { manifestV1Codec } from '../../src/artifacts/manifest-codec.ts';
 import { createTestNodeArtifactCoordinatorPorts } from '../../src/artifacts/node-coordinator.ts';
@@ -2748,5 +2750,53 @@ describe('runInstall — dry run', () => {
     expect(result.value.executionResults[0]?.outcome).toBe('succeeded');
     expect(writerMetadataReads).toBeGreaterThan(0);
     expect(callerMetadataReads).toBe(0);
+  });
+});
+
+describe('runInstall — artifact lock contention', () => {
+  test('a held artifact group lock surfaces as a named contention failure', async () => {
+    const result = await artifactCoordinator.withFileLock(
+      join(artifactCoordinator.coordinationRoot, 'global'),
+      { policy: 'central', centralOperationId: '0000000000000001', retryDelaysMs: [0] },
+      () => runInstall(f.env, userOpts, makeDeps()),
+    );
+    expect(result).toEqual(
+      err({
+        code: 'flip-failed',
+        message: 'another skillsmith operation is running: artifact mutation lock is contended',
+      }),
+    );
+  });
+
+  test('forged or proxied contention errors stay generic without reading traps', () => {
+    const generic: SkillSmithError = { code: 'generic', message: 'operation failed' };
+    const forged = {
+      code: 'artifact-mutation',
+      exitCode: 3,
+      reason: 'lock-contention',
+      message: 'artifact mutation lock is contended',
+    };
+    expect(safeError(forged)).toEqual(generic);
+    let traps = 0;
+    const proxied = new Proxy(artifactMutationError('lock-contention'), {
+      get: (target, key, receiver) => {
+        traps++;
+        return Reflect.get(target, key, receiver);
+      },
+      getOwnPropertyDescriptor: (target, key) => {
+        traps++;
+        return Reflect.getOwnPropertyDescriptor(target, key);
+      },
+      ownKeys: (target) => {
+        traps++;
+        return Reflect.ownKeys(target);
+      },
+      has: (target, key) => {
+        traps++;
+        return Reflect.has(target, key);
+      },
+    });
+    expect(safeError(proxied)).toEqual(generic);
+    expect(traps).toBe(0);
   });
 });

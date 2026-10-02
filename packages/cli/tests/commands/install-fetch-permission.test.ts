@@ -27,6 +27,10 @@ import {
   buildFixtureFleet,
   destroyFixtureFleet,
 } from '../../../core/tests/fixtures/place/fleet.ts';
+import {
+  TEST_COORDINATION_PRELOAD,
+  TEST_COORDINATION_ROOT_ENV,
+} from '../../../core/tests/fixtures/test-coordination.ts';
 import { CLI_ENTRYPOINT } from '../fixtures/cli.ts';
 import {
   MF2B_REAL_GIT,
@@ -109,6 +113,7 @@ const cliEnvFor = (fleet: FixtureFleet, owned: Mf2bOwnedRoot): Record<string, st
       XDG_CACHE_HOME: join(owned.xdg, 'cache'),
       TMPDIR: owned.tmpOwned,
       SKILLSMITH_HOME: fleet.data,
+      [TEST_COORDINATION_ROOT_ENV]: join(owned.root, 'artifact-coordination'),
       PATH: `${join(owned.root, 'obsbin')}:${owned.fixBin}:${process.env.PATH}`,
       MF2B_GIT_LOG: owned.logPath,
       CI: '1',
@@ -122,19 +127,22 @@ const runCli = async (
   env: Record<string, string | undefined>,
   cwd: string,
 ): Promise<{ code: number; stdout: string; stderr: string }> => {
-  const proc = Bun.spawn([process.execPath, CLI_ENTRYPOINT, ...args], {
-    cwd,
-    // cliEnvFor already returns hermeticGitEnv(...); the idempotent re-wrap
-    // satisfies the hermetic-test-spawn gate at the literal call site while
-    // preserving the fixture globalConfigPath passthrough.
-    env: hermeticGitEnv(
-      env,
-      env.GIT_CONFIG_GLOBAL === undefined ? {} : { globalConfigPath: env.GIT_CONFIG_GLOBAL },
-    ),
-    stdin: 'ignore',
-    stdout: 'pipe',
-    stderr: 'pipe',
-  });
+  const proc = Bun.spawn(
+    [process.execPath, '--preload', TEST_COORDINATION_PRELOAD, CLI_ENTRYPOINT, ...args],
+    {
+      cwd,
+      // cliEnvFor already returns hermeticGitEnv(...); the idempotent re-wrap
+      // satisfies the hermetic-test-spawn gate at the literal call site while
+      // preserving the fixture globalConfigPath passthrough.
+      env: hermeticGitEnv(
+        env,
+        env.GIT_CONFIG_GLOBAL === undefined ? {} : { globalConfigPath: env.GIT_CONFIG_GLOBAL },
+      ),
+      stdin: 'ignore',
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+  );
   const code = await proc.exited;
   const stdout = await new Response(proc.stdout).text();
   const stderr = await new Response(proc.stderr).text();

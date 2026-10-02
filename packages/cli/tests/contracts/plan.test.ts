@@ -1,5 +1,7 @@
-import { afterEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
-import { chmod, mkdir, readFile, readdir, stat, symlink, writeFile } from 'node:fs/promises';
+import { afterAll, afterEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
+import { mkdtempSync } from 'node:fs';
+import { chmod, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { PlanV1Dto } from '@skillsmith/core/contracts/v1';
 import {
@@ -28,9 +30,17 @@ import {
   REDACTION_CANARIES,
   SYNTHETIC_OPERATION_ROWS,
 } from '../../../../tests/ergonomics/fixtures/p4b-plan/goldens.ts';
+import { confineArtifactCoordination } from '../../../core/tests/fixtures/test-coordination.ts';
 import { renderPlanHuman } from '../../src/output/plan-human.ts';
 import { buildProgram } from '../../src/program.ts';
 
+// In-process command dispatch builds the runtime context's artifact coordinator; keep it out of
+// the real account's `~/.skillsmith`.
+const coordinationRoot = mkdtempSync(join(tmpdir(), 'skillsmith-plan-coordination-'));
+confineArtifactCoordination(coordinationRoot);
+afterAll(async () => {
+  await rm(coordinationRoot, { recursive: true, force: true });
+});
 setDefaultTimeout(60_000);
 
 type UnknownRecord = Record<string, unknown>;

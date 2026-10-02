@@ -72,6 +72,7 @@ import {
   buildFixtureFleet,
   destroyFixtureFleet,
 } from '../../../core/tests/fixtures/place/fleet.ts';
+import { TEST_COORDINATION_PRELOAD } from '../../../core/tests/fixtures/test-coordination.ts';
 import { exitCodeForClass } from '../../src/runtime/adapter.ts';
 import { CLI_ENTRYPOINT } from '../fixtures/cli.ts';
 
@@ -204,13 +205,16 @@ const spawnedSyncProduct = async (
   args: readonly string[],
   afterPrepared: (child: ReturnType<typeof Bun.spawn>) => Promise<void>,
 ): Promise<Readonly<{ exitCode: number; stdout: string; stderr: string }>> => {
-  const child = Bun.spawn([process.execPath, CLI_ENTRYPOINT, ...args], {
-    cwd: selected.cwd,
-    env: hermeticGitEnv(selected.env),
-    stdin: 'ignore',
-    stdout: 'pipe',
-    stderr: 'pipe',
-  });
+  const child = Bun.spawn(
+    [process.execPath, '--preload', TEST_COORDINATION_PRELOAD, CLI_ENTRYPOINT, ...args],
+    {
+      cwd: selected.cwd,
+      env: hermeticGitEnv(selected.env),
+      stdin: 'ignore',
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+  );
   await waitForOpenTransaction(selected);
   await afterPrepared(child);
   const [exitCode, stdout, stderr] = await Promise.all([

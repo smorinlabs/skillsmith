@@ -23,6 +23,10 @@ import {
   buildFixtureFleet,
   destroyFixtureFleet,
 } from '../../../packages/core/tests/fixtures/place/fleet.ts';
+import {
+  TEST_COORDINATION_PRELOAD,
+  TEST_COORDINATION_ROOT_ENV,
+} from '../../../packages/core/tests/fixtures/test-coordination.ts';
 
 setDefaultTimeout(120_000);
 
@@ -144,27 +148,31 @@ const runCli = async (fleet: FixtureFleet, args: readonly string[]): Promise<Cli
       '',
     ].join('\n'),
   );
-  const process = Bun.spawn(['bun', CLI_ENTRYPOINT, ...args], {
-    cwd: fleet.base,
-    env: hermeticGitEnv(
-      {
-        HOME: fleet.home,
-        XDG_CONFIG_HOME: fleet.env.xdg.config,
-        XDG_DATA_HOME: fleet.env.xdg.data,
-        XDG_CACHE_HOME: fleet.env.xdg.cache,
-        SKILLSMITH_HOME: fleet.data,
-        CLAUDE_CONFIG_DIR: join(fleet.home, '.claude'),
-        CODEX_HOME: join(fleet.home, '.codex'),
-        CI: '1',
-        NO_COLOR: '1',
-        GIT_ALLOW_PROTOCOL: 'file:https',
-      },
-      { globalConfigPath: gitConfig },
-    ),
-    stdin: 'ignore',
-    stdout: 'pipe',
-    stderr: 'pipe',
-  });
+  const process = Bun.spawn(
+    ['bun', '--preload', TEST_COORDINATION_PRELOAD, CLI_ENTRYPOINT, ...args],
+    {
+      cwd: fleet.base,
+      env: hermeticGitEnv(
+        {
+          HOME: fleet.home,
+          XDG_CONFIG_HOME: fleet.env.xdg.config,
+          XDG_DATA_HOME: fleet.env.xdg.data,
+          XDG_CACHE_HOME: fleet.env.xdg.cache,
+          SKILLSMITH_HOME: fleet.data,
+          CLAUDE_CONFIG_DIR: join(fleet.home, '.claude'),
+          CODEX_HOME: join(fleet.home, '.codex'),
+          CI: '1',
+          NO_COLOR: '1',
+          GIT_ALLOW_PROTOCOL: 'file:https',
+          [TEST_COORDINATION_ROOT_ENV]: join(fleet.base, 'artifact-coordination'),
+        },
+        { globalConfigPath: gitConfig },
+      ),
+      stdin: 'ignore',
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+  );
   const exitCode = await process.exited;
   return {
     exitCode,

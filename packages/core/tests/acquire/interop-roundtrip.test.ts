@@ -12,6 +12,8 @@ import { join, resolve } from 'node:path';
 import { runInstall, runUninstall } from '../../src/acquire/run.ts';
 import type { InstallDeps, InstallOptions } from '../../src/acquire/types.ts';
 import type { InstallRecord } from '../../src/agents/types.ts';
+import type { ArtifactCoordinatorPorts } from '../../src/artifacts/coordinator-types.ts';
+import { createTestNodeArtifactCoordinatorPorts } from '../../src/artifacts/node-coordinator.ts';
 import type { SkillSmithError } from '../../src/errors.ts';
 import { getPairAt, readLedger, readLedgerState } from '../../src/place/ledger.ts';
 import { ledgerPathOf } from '../../src/place/paths.ts';
@@ -93,6 +95,7 @@ const installDeps = (): InstallDeps => ({
   transport: fixture.transport,
   now: () => NOW,
   newTxId: () => (0x10000000 + installN++).toString(16).slice(-8),
+  artifactCoordinator,
 });
 
 let flipN = 0;
@@ -110,6 +113,7 @@ let uninstallN = 0;
 const uninstallDeps = () => ({
   now: () => NOW,
   newTxId: () => (0x40000000 + uninstallN++).toString(16).slice(-8),
+  artifactCoordinator,
 });
 
 const runGit = (cwd: string, args: string[]): void => {
@@ -157,8 +161,12 @@ afterAll(async () => {
 
 let f: FixtureFleet;
 let fsSource: string;
+let artifactCoordinator: ArtifactCoordinatorPorts;
 beforeEach(async () => {
   f = await buildFixtureFleet();
+  artifactCoordinator = await createTestNodeArtifactCoordinatorPorts(
+    join(f.base, 'artifact-coordination'),
+  );
   fsSource = `${fixture.multiSource}//plugins/fh/skills/factor-scan`;
 });
 afterEach(async () => {

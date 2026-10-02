@@ -11,6 +11,10 @@ import {
   destroyRemoteFixture,
 } from '../../../packages/core/tests/fixtures/acquire/remote.ts';
 import { hermeticGitEnv, runGit } from '../../../packages/core/tests/fixtures/git-env.ts';
+import {
+  TEST_COORDINATION_PRELOAD,
+  TEST_COORDINATION_ROOT_ENV,
+} from '../../../packages/core/tests/fixtures/test-coordination.ts';
 
 const unwrap = <T>(result: { ok: true; value: T } | { ok: false; error: unknown }): T => {
   if (!result.ok) throw new Error(`unexpected context failure: ${JSON.stringify(result.error)}`);
@@ -26,7 +30,7 @@ const runCli = async (
   if (env.GIT_CONFIG_GLOBAL !== undefined) {
     childEnv.GIT_CONFIG_GLOBAL = env.GIT_CONFIG_GLOBAL;
   }
-  const proc = Bun.spawn(['bun', CLI_ENTRYPOINT, ...args], {
+  const proc = Bun.spawn(['bun', '--preload', TEST_COORDINATION_PRELOAD, CLI_ENTRYPOINT, ...args], {
     cwd,
     env: childEnv,
     stdout: 'pipe',
@@ -109,6 +113,7 @@ const createOwnershipWorkspace = async (label: string): Promise<OwnershipWorkspa
       SKILLSMITH_HOME: data,
       GIT_CONFIG_GLOBAL: gitConfig,
       GIT_ALLOW_PROTOCOL: 'file:https',
+      [TEST_COORDINATION_ROOT_ENV]: join(root, 'artifact-coordination'),
     },
   };
 };
@@ -210,6 +215,7 @@ describe('EWP-WF14', () => {
       XDG_CONFIG_HOME: join(sandbox, 'config'),
       XDG_DATA_HOME: join(sandbox, 'data'),
       XDG_CACHE_HOME: join(sandbox, 'cache'),
+      [TEST_COORDINATION_ROOT_ENV]: join(sandbox, 'artifact-coordination'),
     };
     const global = ['-C', nested, '--config', './team.toml'] as const;
 

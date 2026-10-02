@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, describe, expect, test } from 'bun:test';
+import { mkdtempSync } from 'node:fs';
 import {
   chmod,
   mkdir,
@@ -39,11 +40,22 @@ import {
 import { defaultRuntimePorts } from '../../../core/src/ports/default.ts';
 import type { RuntimePorts } from '../../../core/src/ports/types.ts';
 import { hermeticGitEnv, runGit } from '../../../core/tests/fixtures/git-env.ts';
+import {
+  TEST_COORDINATION_PRELOAD,
+  TEST_COORDINATION_ROOT_ENV,
+  confineArtifactCoordination,
+} from '../../../core/tests/fixtures/test-coordination.ts';
 import { exitCodeForClass } from '../../src/runtime/adapter.ts';
 import { createCurrentRendererRegistry } from '../../src/runtime/current-renderers.ts';
 import { CLI_ENTRYPOINT } from '../fixtures/cli.ts';
 
 const temporaryRoots: string[] = [];
+// Outside every sandbox root: several tests assert that a root holds no unexpected entries.
+const coordinationRoot = mkdtempSync(join(tmpdir(), 'skillsmith-config-coordination-'));
+confineArtifactCoordination(coordinationRoot);
+afterAll(async () => {
+  await rm(coordinationRoot, { recursive: true, force: true });
+});
 
 afterEach(async () => {
   await Promise.all(
@@ -66,6 +78,7 @@ const cliEnv = (root: string): Record<string, string | undefined> => ({
   SKILLSMITH_TOOL: undefined,
   SKILLSMITH_SCOPE: undefined,
   SKILLSMITH_PATH: undefined,
+  [TEST_COORDINATION_ROOT_ENV]: coordinationRoot,
 });
 
 const runCli = async (
@@ -73,12 +86,15 @@ const runCli = async (
   cwd: string,
   env: Record<string, string | undefined>,
 ) => {
-  const child = Bun.spawn(['bun', CLI_ENTRYPOINT, ...args], {
-    cwd,
-    env: hermeticGitEnv({ ...env, CI: '1', NO_COLOR: '1' }),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  });
+  const child = Bun.spawn(
+    ['bun', '--preload', TEST_COORDINATION_PRELOAD, CLI_ENTRYPOINT, ...args],
+    {
+      cwd,
+      env: hermeticGitEnv({ ...env, CI: '1', NO_COLOR: '1' }),
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+  );
   const exitCode = await child.exited;
   return {
     exitCode,

@@ -27,6 +27,10 @@ import {
   destroyCm2Fixture,
 } from '../../../core/tests/fixtures/acquire/cm2-leading-dash.ts';
 import { hermeticGitEnv } from '../../../core/tests/fixtures/git-env.ts';
+import {
+  TEST_COORDINATION_PRELOAD,
+  TEST_COORDINATION_ROOT_ENV,
+} from '../../../core/tests/fixtures/test-coordination.ts';
 
 setDefaultTimeout(60_000);
 
@@ -113,6 +117,7 @@ const buildCm2CliFixture = async (): Promise<Cm2CliFixture> => {
     XDG_CACHE_HOME: xdgCache,
     SKILLSMITH_HOME: data,
     PATH: `${binDir}:/usr/local/bin:/usr/bin:/bin`,
+    [TEST_COORDINATION_ROOT_ENV]: join(root, 'artifact-coordination'),
   };
 
   return {
@@ -144,13 +149,16 @@ interface CliResult {
 }
 
 const runCli = async (fixture: Cm2CliFixture, args: string[]): Promise<CliResult> => {
-  const proc = Bun.spawn([BUN_EXE, CLI_ENTRYPOINT, ...args], {
-    cwd: fixture.cwdDir,
-    env: hermeticGitEnv(fixture.envOverrides, { globalConfigPath: fixture.gitConfig }),
-    stdin: 'ignore',
-    stdout: 'pipe',
-    stderr: 'pipe',
-  });
+  const proc = Bun.spawn(
+    [BUN_EXE, '--preload', TEST_COORDINATION_PRELOAD, CLI_ENTRYPOINT, ...args],
+    {
+      cwd: fixture.cwdDir,
+      env: hermeticGitEnv(fixture.envOverrides, { globalConfigPath: fixture.gitConfig }),
+      stdin: 'ignore',
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+  );
   const [code, stdout, stderr] = await Promise.all([
     proc.exited,
     new Response(proc.stdout).text(),

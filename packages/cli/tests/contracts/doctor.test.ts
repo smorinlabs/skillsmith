@@ -33,6 +33,10 @@ import {
 import { defaultRuntimePorts } from '../../../core/src/ports/default.ts';
 import { hermeticGitEnv } from '../../../core/tests/fixtures/git-env.ts';
 import { runtimePorts } from '../../../core/tests/fixtures/runtime-ports.ts';
+import {
+  TEST_COORDINATION_PRELOAD,
+  TEST_COORDINATION_ROOT_ENV,
+} from '../../../core/tests/fixtures/test-coordination.ts';
 import * as doctorCommandModule from '../../src/commands/doctor.ts';
 import { createCliRuntimeAdapter } from '../../src/runtime/adapter.ts';
 import type { CliRuntimeIo } from '../../src/runtime/io.ts';
@@ -249,6 +253,7 @@ const runBoundedProcess = async (
       SKILLSMITH_SCOPE: undefined,
       SKILLSMITH_PATH: undefined,
       CODEX_HOME: undefined,
+      [TEST_COORDINATION_ROOT_ENV]: join(root, 'artifact-coordination'),
       ...environment,
     }),
     stdout: 'pipe',
@@ -335,7 +340,15 @@ const runCli = async (
   });
   const result = await runBoundedProcess(
     root,
-    ['bun', '--preload', isolation.preload, CLI_ENTRYPOINT, ...args],
+    [
+      'bun',
+      '--preload',
+      isolation.preload,
+      '--preload',
+      TEST_COORDINATION_PRELOAD,
+      CLI_ENTRYPOINT,
+      ...args,
+    ],
     environment,
   );
   return { ...result, detectionTrace: isolation.trace };

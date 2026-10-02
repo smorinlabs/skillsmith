@@ -37,6 +37,10 @@ import {
   buildFixtureFleet,
   destroyFixtureFleet,
 } from '../../../core/tests/fixtures/place/fleet.ts';
+import {
+  TEST_COORDINATION_PRELOAD,
+  TEST_COORDINATION_ROOT_ENV,
+} from '../../../core/tests/fixtures/test-coordination.ts';
 import { CLI_ENTRYPOINT } from '../fixtures/cli.ts';
 import { createDetectionIsolation } from '../fixtures/detection.ts';
 
@@ -68,6 +72,7 @@ const fixtureEnv = (
         XDG_CACHE_HOME: join(selected.home, '.cache'),
         SKILLSMITH_HOME: selected.data,
         PATH: join(selected.base, 'bin'),
+        [TEST_COORDINATION_ROOT_ENV]: join(selected.base, 'artifact-coordination'),
       }),
   CI: '1',
   NO_COLOR: '1',
@@ -90,7 +95,9 @@ const spawnCli = (
   }
   const command = [
     process.execPath,
-    ...(detectionPreload === undefined ? [] : ['--preload', detectionPreload]),
+    ...(detectionPreload === undefined
+      ? []
+      : ['--preload', detectionPreload, '--preload', TEST_COORDINATION_PRELOAD]),
     CLI_ENTRYPOINT,
     ...args,
   ];

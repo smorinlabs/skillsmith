@@ -24,6 +24,10 @@ import {
 } from '../../../packages/core/src/observation/index.ts';
 import { ok } from '../../../packages/core/src/result.ts';
 import { hermeticGitEnv } from '../../../packages/core/tests/fixtures/git-env.ts';
+import {
+  TEST_COORDINATION_PRELOAD,
+  TEST_COORDINATION_ROOT_ENV,
+} from '../../../packages/core/tests/fixtures/test-coordination.ts';
 
 setDefaultTimeout(30_000);
 
@@ -34,13 +38,16 @@ const runCli = async (
   env: Record<string, string | undefined>,
   args: readonly string[],
 ): Promise<{ readonly exitCode: number; readonly stdout: string; readonly stderr: string }> => {
-  const process = Bun.spawn(['bun', CLI_ENTRYPOINT, ...args], {
-    cwd,
-    env: hermeticGitEnv(env),
-    stdin: 'ignore',
-    stdout: 'pipe',
-    stderr: 'pipe',
-  });
+  const process = Bun.spawn(
+    ['bun', '--preload', TEST_COORDINATION_PRELOAD, CLI_ENTRYPOINT, ...args],
+    {
+      cwd,
+      env: hermeticGitEnv(env),
+      stdin: 'ignore',
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+  );
   const exitCode = await process.exited;
   return {
     exitCode,
@@ -139,6 +146,7 @@ describe('EWP-P4A-TS04', () => {
       CODEX_HOME: join(home, '.codex'),
       CI: '1',
       NO_COLOR: '1',
+      [TEST_COORDINATION_ROOT_ENV]: join(root, 'artifact-coordination'),
     };
     const args = ['init', '--file', manifest, '--tool', 'codex', '--json'] as const;
 
@@ -187,6 +195,7 @@ describe('EWP-P4A-TS04', () => {
       CODEX_HOME: join(home, '.codex'),
       CI: '1',
       NO_COLOR: '1',
+      [TEST_COORDINATION_ROOT_ENV]: join(root, 'artifact-coordination'),
     };
     const lock = join(cwd, 'skillsmith.lock');
     const live = join(cwd, 'live.canary');

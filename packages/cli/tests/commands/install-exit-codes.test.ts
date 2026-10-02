@@ -25,6 +25,8 @@ import {
   runUninstall,
 } from '@skillsmith/core';
 import type { VerifyReport } from '@skillsmith/core';
+import type { ArtifactCoordinatorPorts } from '../../../core/src/artifacts/coordinator-types.ts';
+import { createTestNodeArtifactCoordinatorPorts } from '../../../core/src/artifacts/node-coordinator.ts';
 import {
   readLedgerState,
   withoutLedgerPairAt,
@@ -124,12 +126,14 @@ const installDeps = (
   now: () => NOW,
   newTxId: () => (0x10000000 + txN++).toString(16).slice(-8),
   transport: fixture.transport,
+  artifactCoordinator,
 });
 
 let unTxN = 0;
 const uninstallDeps = () => ({
   now: () => NOW,
   newTxId: () => (0x40000000 + unTxN++).toString(16).slice(-8),
+  artifactCoordinator,
 });
 
 // F-fetch elision (run.ts's tryElide) trusts an existing store entry without re-hashing it against
@@ -155,8 +159,12 @@ afterAll(async () => {
 
 let f: FixtureFleet;
 let fsSource: string;
+let artifactCoordinator: ArtifactCoordinatorPorts;
 beforeEach(async () => {
   f = await buildFixtureFleet();
+  artifactCoordinator = await createTestNodeArtifactCoordinatorPorts(
+    join(f.base, 'artifact-coordination'),
+  );
   fsSource = `${fixture.multiSource}//plugins/fh/skills/factor-scan`;
 });
 afterEach(async () => {

@@ -23,11 +23,13 @@ import { parseSource } from '../../../core/src/acquire/source.ts';
 import {
   ARTIFACT_CENTRAL_LOCK_HEARTBEAT_MS,
   ARTIFACT_CENTRAL_LOCK_STALE_MS,
+  type ArtifactCoordinatorPorts,
 } from '../../../core/src/artifacts/coordinator-types.ts';
 import {
   normalizeManifestDocument,
   readManifestSource,
 } from '../../../core/src/artifacts/manifest.ts';
+import { createTestNodeArtifactCoordinatorPorts } from '../../../core/src/artifacts/node-coordinator.ts';
 import { sourceUnresolvableError } from '../../../core/src/errors.ts';
 import {
   getLedgerPairAt,
@@ -47,6 +49,10 @@ import {
   buildFixtureFleet,
   destroyFixtureFleet,
 } from '../../../core/tests/fixtures/place/fleet.ts';
+import {
+  TEST_COORDINATION_PRELOAD,
+  TEST_COORDINATION_ROOT_ENV,
+} from '../../../core/tests/fixtures/test-coordination.ts';
 import { renderInstallHuman } from '../../src/output/install-human.ts';
 import { renderInstallJson } from '../../src/output/install-json.ts';
 import { CURRENT_COMMAND_SPECS } from '../../src/spec/index.ts';
@@ -180,6 +186,7 @@ let remote: RemoteFixture;
 let fleet: FixtureFleet;
 let env: RuntimePorts;
 let source: string;
+let artifactCoordinator: ArtifactCoordinatorPorts;
 let txSequence = 0;
 
 const makeDeps = (overrides: Partial<InstallDeps> = {}): InstallDeps => {
@@ -191,6 +198,7 @@ const makeDeps = (overrides: Partial<InstallDeps> = {}): InstallDeps => {
     transport: remote.transport,
     now: () => NOW,
     newTxId: () => (0x20000000 + sequence * 1000 + transaction++).toString(16).slice(-8),
+    artifactCoordinator,
     ...overrides,
   };
 };
@@ -270,6 +278,7 @@ const cliEnvironment = (
   SKILLSMITH_HOME: fixture.data,
   CI: '1',
   NO_COLOR: '1',
+  [TEST_COORDINATION_ROOT_ENV]: join(fixture.base, 'artifact-coordination'),
   ...overrides,
 });
 
@@ -312,11 +321,13 @@ const spawnCli = (
 ) => {
   const command =
     overrides.GIT_CONFIG_GLOBAL === undefined
-      ? [process.execPath, CLI_ENTRYPOINT, ...args]
+      ? [process.execPath, '--preload', TEST_COORDINATION_PRELOAD, CLI_ENTRYPOINT, ...args]
       : [
           'env',
           `GIT_CONFIG_GLOBAL=${overrides.GIT_CONFIG_GLOBAL}`,
           process.execPath,
+          '--preload',
+          TEST_COORDINATION_PRELOAD,
           CLI_ENTRYPOINT,
           ...args,
         ];
@@ -422,6 +433,9 @@ afterAll(async () => {
 
 beforeEach(async () => {
   fleet = await buildFixtureFleet();
+  artifactCoordinator = await createTestNodeArtifactCoordinatorPorts(
+    join(fleet.base, 'artifact-coordination'),
+  );
   env = scopedEnv(fleet);
   source = `${remote.multiSource}//plugins/fh/skills/factor-scan`;
 });

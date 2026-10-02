@@ -19,6 +19,10 @@ import {
   destroyRemoteFixture,
 } from '../../../packages/core/tests/fixtures/acquire/remote.ts';
 import { hermeticGitEnv, runGit } from '../../../packages/core/tests/fixtures/git-env.ts';
+import {
+  TEST_COORDINATION_PRELOAD,
+  TEST_COORDINATION_ROOT_ENV,
+} from '../../../packages/core/tests/fixtures/test-coordination.ts';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -64,11 +68,24 @@ const runCli = async (workspace: Workspace, args: readonly string[]): Promise<Cl
   const gitConfig = workspace.env.GIT_CONFIG_GLOBAL;
   if (gitConfig === undefined) throw new Error('workspace is missing its isolated Git config');
   const env = hermeticGitEnv(
-    { ...workspace.env, CI: '1', NO_COLOR: '1' },
+    {
+      ...workspace.env,
+      CI: '1',
+      NO_COLOR: '1',
+      [TEST_COORDINATION_ROOT_ENV]: join(workspace.root, 'artifact-coordination'),
+    },
     { globalConfigPath: gitConfig },
   );
   const proc = Bun.spawn(
-    [process.execPath, '--preload', workspace.detectionIsolation.preload, CLI_ENTRYPOINT, ...args],
+    [
+      process.execPath,
+      '--preload',
+      workspace.detectionIsolation.preload,
+      '--preload',
+      TEST_COORDINATION_PRELOAD,
+      CLI_ENTRYPOINT,
+      ...args,
+    ],
     {
       cwd: workspace.cwd,
       env,

@@ -8,6 +8,7 @@ import {
   syncV1Codec,
 } from '../../../packages/core/src/contracts/v1/sync.ts';
 import { hermeticGitEnv } from '../../../packages/core/tests/fixtures/git-env.ts';
+import { TEST_COORDINATION_PRELOAD } from '../../../packages/core/tests/fixtures/test-coordination.ts';
 import {
   SYNC_SECRET_CANARIES,
   type SyncFleet,
@@ -113,13 +114,24 @@ const executePartialWorkflow = async (): Promise<void> => {
       throw new Error('workflow partial fixture lacks its second scheduled source');
     }
 
-    const child = Bun.spawn([process.execPath, CLI_ENTRYPOINT, ...args, '--yes', '--json'], {
-      cwd: fleet.cwd,
-      env: hermeticGitEnv(fleet.env),
-      stdin: 'ignore',
-      stdout: 'pipe',
-      stderr: 'pipe',
-    });
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        '--preload',
+        TEST_COORDINATION_PRELOAD,
+        CLI_ENTRYPOINT,
+        ...args,
+        '--yes',
+        '--json',
+      ],
+      {
+        cwd: fleet.cwd,
+        env: hermeticGitEnv(fleet.env),
+        stdin: 'ignore',
+        stdout: 'pipe',
+        stderr: 'pipe',
+      },
+    );
     await waitForPreparedTransaction(fleet);
     await rm(sourceRoots[secondSkill] as string, { recursive: true });
     const [exitCode, stdout, stderr] = await Promise.all([
