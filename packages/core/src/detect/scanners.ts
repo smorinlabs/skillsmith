@@ -17,15 +17,24 @@ export const wellKnownBinDirs = (env: DetectionPorts): readonly string[] => {
   return Array.from(new Set(common));
 };
 
+// Homebrew's documented default prefixes: Apple Silicon macOS, Intel macOS, Linux
+// (https://docs.brew.sh/Installation, https://docs.brew.sh/Support-Tiers#custom-prefixes).
+// A custom prefix (`--path` / `HOMEBREW_PREFIX`) is not recognisable from a path alone.
+const homebrewPrefixes = ['/opt/homebrew', '/usr/local', '/home/linuxbrew/.linuxbrew'];
+
 export const classifyInstallMethod = (absPath: string): InstallMethod => {
   // `absPath` is the resolved target. Order matters:
   // 1. Homebrew's Cellar and Caskroom are Homebrew-owned, even when a formula is itself a
   //    node package (Cellar/<formula>/<ver>/libexec/lib/node_modules/...).
   // 2. Any other lib/node_modules target is an npm global (Homebrew's or a version
-  //    manager's node), checked before the generic /opt/homebrew and /usr/local brew rule.
-  if (/^(\/opt\/homebrew|\/usr\/local)\/(Cellar|Caskroom)\//u.test(absPath)) return 'brew';
+  //    manager's node), checked before the generic Homebrew-prefix brew rule.
+  const brewPrefix = homebrewPrefixes.find((prefix) => absPath.startsWith(`${prefix}/`));
+  if (brewPrefix !== undefined) {
+    const rest = absPath.slice(brewPrefix.length);
+    if (rest.startsWith('/Cellar/') || rest.startsWith('/Caskroom/')) return 'brew';
+  }
   if (absPath.includes('/lib/node_modules/')) return 'npm-global';
-  if (absPath.startsWith('/opt/homebrew/') || absPath.startsWith('/usr/local/')) return 'brew';
+  if (brewPrefix !== undefined) return 'brew';
   if (absPath.includes('/.bun/install/global/')) return 'bun-global';
   if (absPath.includes('/.npm/') || absPath.includes('node_modules/.bin/')) return 'npm-global';
   if (absPath.includes('.app/Contents/')) return 'app-bundle';

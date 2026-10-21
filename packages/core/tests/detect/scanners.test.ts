@@ -75,6 +75,40 @@ describe('classifyInstallMethod', () => {
       ),
     ).toBe('npm-global');
   });
+
+  describe('Linuxbrew default prefix (/home/linuxbrew/.linuxbrew)', () => {
+    test("classifies a native Linuxbrew Cellar binary as 'brew'", () => {
+      expect(classifyInstallMethod('/home/linuxbrew/.linuxbrew/Cellar/codex/0.5.0/bin/codex')).toBe(
+        'brew',
+      );
+    });
+    test("classifies a node-based Linuxbrew formula (Cellar/.../libexec/lib/node_modules) as 'brew'", () => {
+      expect(
+        classifyInstallMethod(
+          '/home/linuxbrew/.linuxbrew/Cellar/typescript-language-server/6.0.0/libexec/lib/node_modules/typescript-language-server/lib/cli.mjs',
+        ),
+      ).toBe('brew');
+    });
+    test("classifies the Linuxbrew bin link path as 'brew' (the realpath-fallback case)", () => {
+      expect(classifyInstallMethod('/home/linuxbrew/.linuxbrew/bin/codex')).toBe('brew');
+    });
+    test("classifies an npm global under Linuxbrew's node (lib/node_modules) as 'npm-global'", () => {
+      expect(
+        classifyInstallMethod(
+          '/home/linuxbrew/.linuxbrew/lib/node_modules/@openai/codex/bin/codex.js',
+        ),
+      ).toBe('npm-global');
+    });
+    test("leaves a sibling directory of the Linuxbrew prefix as 'unknown'", () => {
+      expect(classifyInstallMethod('/home/linuxbrew/.linuxbrew-extra/bin/codex')).toBe('unknown');
+    });
+    test("leaves a non-Homebrew path under /home/linuxbrew as 'unknown'", () => {
+      expect(classifyInstallMethod('/home/linuxbrew/.local/bin/claude')).toBe('unknown');
+    });
+    test("leaves an ordinary /home path as 'unknown'", () => {
+      expect(classifyInstallMethod('/home/user/.local/bin/claude')).toBe('unknown');
+    });
+  });
 });
 
 describe('wellKnownBinDirs', () => {
