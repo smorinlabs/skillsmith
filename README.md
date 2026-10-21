@@ -151,7 +151,7 @@ See [Defaults, concepts, and files](#defaults-concepts-and-files) for fallback p
 <!-- skillsmith-capability-matrix:start -->
 ## Capability and version matrix
 
-Generated from the live tool registry for Skillsmith 0.8.0. A scope list means the operation is supported in those scopes; “yes” means the operation is supported without a scope; “—” means it is not supported.
+Generated from the live tool registry for Skillsmith 1.0.0. A scope list means the operation is supported in those scopes; “yes” means the operation is supported without a scope; “—” means it is not supported.
 
 | Tool | Capability contract | Verifier baseline |
 |---|---|---|
