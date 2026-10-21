@@ -21,10 +21,13 @@
  *
  * Layout: --receipts=<dir> contains one subdirectory per shard, each with
  * `shard-receipt.json` and `junit/*.xml` as written by run-test-files-shard.ts.
+ * When actions/download-artifact matches exactly one artifact it extracts it
+ * directly into <dir>; that flat layout is read as a single evidence set so the
+ * count check reports the missing shards instead of a layout error.
  */
 
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import {
   PINNED_CAPABILITY_SKIPS,
   discoverTestFiles,
@@ -332,35 +335,45 @@ function usage(): string {
   return 'usage: aggregate-shard-receipts.ts --receipts=<dir> --shard-total=<N>';
 }
 
+function readOneShardEvidence(directory: string, label: string): ShardEvidence {
+  const receiptPath = join(directory, 'shard-receipt.json');
+  const junitRoot = join(directory, 'junit');
+  if (!existsSync(receiptPath)) fail(`missing shard receipt: ${receiptPath}`);
+  if (!existsSync(junitRoot) || !statSync(junitRoot).isDirectory()) {
+    fail(`missing JUnit directory: ${junitRoot}`);
+  }
+  let receipt: unknown;
+  try {
+    receipt = JSON.parse(readFileSync(receiptPath, 'utf8'));
+  } catch (error) {
+    fail(
+      `malformed shard receipt ${receiptPath}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  const junit = new Map<string, string>();
+  for (const file of readdirSync(junitRoot, { withFileTypes: true })) {
+    if (!file.isFile()) fail(`unexpected JUnit entry ${join(junitRoot, file.name)}`);
+    junit.set(file.name, readFileSync(join(junitRoot, file.name), 'utf8'));
+  }
+  return { label, receipt, junit };
+}
+
 export function readShardEvidence(root: string): ShardEvidence[] {
+  if (existsSync(join(root, 'shard-receipt.json'))) {
+    // A lone download-artifact match was extracted flat into the root.
+    const extra = readdirSync(root)
+      .filter((name) => name !== 'shard-receipt.json' && name !== 'junit')
+      .sort();
+    if (extra.length > 0) fail(`unexpected flat evidence entry ${extra[0]}`);
+    return [readOneShardEvidence(root, basename(root))];
+  }
   const entries = readdirSync(root, { withFileTypes: true });
   const foreign = entries.filter((entry) => !entry.isDirectory()).map((entry) => entry.name);
   if (foreign.length > 0) fail(`unexpected non-directory evidence entry ${foreign.sort()[0]}`);
   return entries
     .map((entry) => entry.name)
     .sort()
-    .map((name) => {
-      const receiptPath = join(root, name, 'shard-receipt.json');
-      const junitRoot = join(root, name, 'junit');
-      if (!existsSync(receiptPath)) fail(`missing shard receipt: ${receiptPath}`);
-      if (!existsSync(junitRoot) || !statSync(junitRoot).isDirectory()) {
-        fail(`missing JUnit directory: ${junitRoot}`);
-      }
-      let receipt: unknown;
-      try {
-        receipt = JSON.parse(readFileSync(receiptPath, 'utf8'));
-      } catch (error) {
-        fail(
-          `malformed shard receipt ${receiptPath}: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
-      const junit = new Map<string, string>();
-      for (const file of readdirSync(junitRoot, { withFileTypes: true })) {
-        if (!file.isFile()) fail(`unexpected JUnit entry ${join(junitRoot, file.name)}`);
-        junit.set(file.name, readFileSync(join(junitRoot, file.name), 'utf8'));
-      }
-      return { label: name, receipt, junit };
-    });
+    .map((name) => readOneShardEvidence(join(root, name), name));
 }
 
 export async function main(): Promise<void> {

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import {
   type ShardEvidence,
   aggregateShardEvidence,
@@ -391,6 +391,14 @@ describe('readShardEvidence', () => {
     return directory;
   }
 
+  // actions/download-artifact extracts a lone pattern match directly into
+  // `path`, with no per-artifact directory (download-artifact.ts, artifacts.length === 1).
+  function writeFlatEvidence(root: string, shard: ReturnType<typeof shardEvidence>): void {
+    mkdirSync(join(root, 'junit'), { recursive: true });
+    writeFileSync(join(root, 'shard-receipt.json'), JSON.stringify(shard.receipt));
+    for (const [name, xml] of shard.junit) writeFileSync(join(root, 'junit', name), xml);
+  }
+
   test('round-trips uploaded evidence into a passing aggregate', () => {
     const directory = root();
     writeEvidence(directory, fourShards());
@@ -413,6 +421,35 @@ describe('readShardEvidence', () => {
     writeFileSync(join(stray, 'stray.json'), '{}');
     expect(() => readShardEvidence(stray)).toThrow(/non-directory evidence entry/);
   });
+
+  test('reads a single artifact extracted flat into the root as one evidence set', () => {
+    const flat = root();
+    writeFlatEvidence(flat, shardEvidence(1, 1));
+    const evidence = readShardEvidence(flat);
+    expect(evidence).toHaveLength(1);
+    expect(evidence[0].label).toBe(basename(flat));
+    expect(aggregateShardEvidence(MANIFEST, 1, evidence).executed).toBe(MANIFEST.length);
+  });
+
+  test('a flat single shard fails the aggregate for the missing shards, not the layout', () => {
+    const flat = root();
+    writeFlatEvidence(flat, shardEvidence(2, 4));
+    expect(() => aggregate(readShardEvidence(flat))).toThrow(
+      /expected 4 shard evidence sets; found 1/,
+    );
+  });
+
+  test('a flat layout fails closed on a missing JUnit directory or a stray entry', () => {
+    const noJunit = root();
+    writeFlatEvidence(noJunit, shardEvidence(1, 1));
+    rmSync(join(noJunit, 'junit'), { recursive: true });
+    expect(() => readShardEvidence(noJunit)).toThrow(/missing JUnit directory/);
+
+    const stray = root();
+    writeFlatEvidence(stray, shardEvidence(1, 1));
+    writeFileSync(join(stray, 'notes.txt'), 'x');
+    expect(() => readShardEvidence(stray)).toThrow(/unexpected flat evidence entry notes.txt/);
+  });
 });
 
 describe('justfile gate split', () => {
@@ -427,5 +464,70 @@ describe('justfile gate split', () => {
     expect(check.at(-1)).toBe('    just test-terminal');
     expect(check.filter((line) => line.includes('test-terminal'))).toHaveLength(1);
     expect(recipe('check-gates')).toEqual(check.slice(0, -1));
+  });
+});
+
+describe('ci.yml shard evidence contract (#128)', () => {
+  type Step = { name?: string; uses?: string; run?: string; with?: Record<string, unknown> };
+  type Workflow = {
+    jobs: Record<string, { steps?: Step[]; strategy?: { matrix?: { shard?: number[] } } }>;
+  };
+  const workflow = Bun.YAML.parse(
+    readFileSync(join(import.meta.dir, '..', '.github', 'workflows', 'ci.yml'), 'utf8'),
+  ) as Workflow;
+  const step = (job: string, name: string): Step => {
+    const found = workflow.jobs[job]?.steps?.find((candidate) => candidate.name === name);
+    if (found === undefined) throw new Error(`${job} step ${name} is missing`);
+    return found;
+  };
+  const upload = step('test-shard', 'Retain shard evidence');
+  const download = step('test-shard-aggregate', 'Download shard evidence');
+  const RUN_ID = '36439943396';
+  // Render the workflow expressions before matching: Bun.Glob treats `{{ }}` as braces.
+  const render = (value: unknown, shard: number): string =>
+    String(value)
+      .replaceAll('${{ matrix.shard }}', String(shard))
+      .replaceAll('${{ github.run_id }}', RUN_ID);
+
+  test('shard artifacts are named per shard and run, never per attempt, and re-runs overwrite', () => {
+    expect(upload.uses?.startsWith('actions/upload-artifact@')).toBe(true);
+    expect(upload.with?.name).toBe('test-shard-${{ matrix.shard }}-${{ github.run_id }}');
+    expect(upload.with?.overwrite).toBe(true);
+    expect(upload.with?.['if-no-files-found']).toBe('error');
+    expect(download.uses?.startsWith('actions/download-artifact@')).toBe(true);
+    expect(download.with?.pattern).toBe('test-shard-*-${{ github.run_id }}');
+    expect(download.with?.['merge-multiple']).toBeUndefined();
+    expect(download.with?.path).toBe('${{ runner.temp }}/shard-evidence');
+    for (const value of [upload.with?.name, download.with?.pattern]) {
+      expect(String(value)).not.toContain('run_attempt');
+    }
+  });
+
+  test('every matrix shard name matches the aggregate download pattern once rendered', () => {
+    const shards = workflow.jobs['test-shard']?.strategy?.matrix?.shard ?? [];
+    expect(shards).toEqual([1, 2, 3, 4]);
+    expect(step('test-shard-aggregate', 'Validate shard union').run).toBe(
+      `bun scripts/aggregate-shard-receipts.ts --receipts="$RUNNER_TEMP/shard-evidence" --shard-total=${shards.length}`,
+    );
+    for (const shard of shards) {
+      const name = render(upload.with?.name, shard);
+      const pattern = render(download.with?.pattern, shard);
+      expect(name).toBe(`test-shard-${shard}-${RUN_ID}`);
+      expect(pattern).not.toContain('${{');
+      expect(new Bun.Glob(pattern).match(name)).toBe(true);
+      // An attempt-suffixed stale name must not satisfy the pattern.
+      expect(new Bun.Glob(pattern).match(`${name}-2`)).toBe(false);
+    }
+  });
+
+  test('the aggregate requires every shard to succeed before it downloads evidence', () => {
+    const names = (workflow.jobs['test-shard-aggregate']?.steps ?? []).map((entry) => entry.name);
+    const order = [
+      'Require every shard to succeed',
+      'Download shard evidence',
+      'Validate shard union',
+    ].map((name) => names.indexOf(name));
+    expect(order.every((index) => index >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((left, right) => left - right));
   });
 });

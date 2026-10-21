@@ -33,10 +33,14 @@ or run a second test terminal. `just check-gates` remains available locally.
 
 ## Rerunning CI
 
-Use **Re-run all jobs**, not **Re-run failed jobs**. Shard artifacts include both
-the workflow run ID and attempt number. Aggregation intentionally refuses to
-combine evidence from different attempts. A cancelled run cannot produce a
-successful overall result; start a complete new attempt.
+**Re-run failed jobs** works (#128). Each shard uploads its evidence as
+`test-shard-<shard>-<run id>` with `overwrite: true`, so a re-run shard replaces
+only its own earlier artifact. `Test shard aggregate` downloads
+`test-shard-*-<run id>`: the latest evidence of all four shards, from whichever
+attempt produced each. Every attempt of a run checks out the same commit
+(`GITHUB_SHA` does not change on re-run), and the aggregate still fails closed
+when a receipt's manifest digest disagrees with its own discovery. A cancelled
+run cannot produce a successful overall result; start a new attempt.
 
 ## Required-check rollout
 
