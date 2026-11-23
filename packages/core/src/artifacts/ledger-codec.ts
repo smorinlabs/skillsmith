@@ -155,7 +155,7 @@ const PairSchema = z
     pendingReplacement: PendingReplacementSchema.nullable().optional(),
   })
   .strict();
-const ToolsV1Schema = z.record(z.enum(FLIP_TOOLS), PairSchema);
+const ToolsV1Schema = z.partialRecord(z.enum(FLIP_TOOLS), PairSchema);
 const SkillsV1Schema = z.record(string, z.object({ tools: ToolsV1Schema }).strict());
 const ToolsV2Schema = z.record(z.string().regex(/^[a-z][a-z0-9-]*$/u), PairSchema);
 const SkillsV2Schema = z.record(string, z.object({ tools: ToolsV2Schema }).strict());
@@ -192,7 +192,8 @@ const LedgerV2Schema = z
   })
   .strict();
 
-const firstZodPath = (error: z.ZodError): Path => error.issues[0]?.path ?? [];
+const firstZodPath = (error: z.ZodError): Path =>
+  (error.issues[0]?.path ?? []).map((key) => (typeof key === 'symbol' ? String(key) : key));
 const deepFreeze = <T>(value: T, seen = new Set<object>()): T => {
   if (value === null || typeof value !== 'object' || seen.has(value)) return value;
   seen.add(value);

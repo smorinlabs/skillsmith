@@ -31,7 +31,7 @@ const settingsPathForInstallation = (
 
 const SettingsSchema = z
   .object({
-    enabledPlugins: z.record(z.boolean()).optional(),
+    enabledPlugins: z.record(z.string(), z.boolean()).optional(),
   })
   .passthrough();
 

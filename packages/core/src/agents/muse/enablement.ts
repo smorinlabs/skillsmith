@@ -10,7 +10,7 @@ import type { StandaloneActivationResolver } from '../adapter-types.ts';
 const SettingsSchema = z
   .object({
     skills: z
-      .object({ activation: z.record(z.unknown()).optional() })
+      .object({ activation: z.record(z.string(), z.unknown()).optional() })
       .passthrough()
       .optional(),
   })

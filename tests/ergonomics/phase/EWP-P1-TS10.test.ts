@@ -21,6 +21,7 @@ import {
   MigratingVersion2Schema,
   MixedObjectUnionSchema,
   NestedDefaultPassthroughSchema,
+  NestedNonOptionalPassthroughSchema,
   NestedPassthroughSchema,
   ObservableStateTransformSchema,
   OptionalInheritedSchema,
@@ -860,6 +861,7 @@ describe('EWP-P1-TS10', () => {
     ).toThrow(/unknown|strict|reject/i);
     for (const [id, schema] of [
       ['fixture-default-passthrough', NestedDefaultPassthroughSchema],
+      ['fixture-nonoptional-passthrough', NestedNonOptionalPassthroughSchema],
       ['fixture-catchall', CatchallSchema],
     ] as const) {
       expect(() =>

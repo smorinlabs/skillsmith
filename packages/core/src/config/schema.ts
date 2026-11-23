@@ -19,9 +19,7 @@ import {
 
 const encoder = new TextEncoder();
 
-const RegistrySchema = z
-  .object({ default: z.string().min(1).optional() })
-  .strict('registry: unknown key');
+const RegistrySchema = z.object({ default: z.string().min(1).optional() }).strict();
 
 const FlatConfigSchema = z
   .object({
@@ -30,7 +28,7 @@ const FlatConfigSchema = z
     path: z.string().optional(),
     registry: RegistrySchema.optional(),
   })
-  .strict('unknown top-level key');
+  .strict();
 
 const parsedToml = (text: string): Result<unknown, SkillSmithError> => {
   try {
@@ -43,7 +41,7 @@ const parsedToml = (text: string): Result<unknown, SkillSmithError> => {
 
 const schemaError = (
   label: string,
-  issue: { readonly path: readonly (string | number)[]; readonly message: string } | undefined,
+  issue: { readonly path: readonly PropertyKey[]; readonly message: string } | undefined,
 ): SkillSmithError => {
   const safeSegments = new Set(['tool', 'scope', 'path', 'registry', 'default']);
   const segments = issue?.path.filter(

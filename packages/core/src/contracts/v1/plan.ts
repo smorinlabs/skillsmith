@@ -182,7 +182,7 @@ const ReversibilitySchema: z.ZodType<ReversibilityV1> = z.discriminatedUnion('ki
   z
     .object({
       kind: z.enum(['reversible', 'conditional']),
-      retentionResourceIds: z.array(IdSchema).nonempty(),
+      retentionResourceIds: z.tuple([IdSchema], IdSchema),
     })
     .strict(),
 ]);
@@ -247,7 +247,7 @@ const OperationSchema: z.ZodType<PlanOperationV1> = z
 const CheckCommon = {
   checkId: IdSchema,
   blocking: z.literal(true),
-  operationIds: z.array(IdSchema).nonempty(),
+  operationIds: z.tuple([IdSchema], IdSchema),
 };
 const CheckSchema: z.ZodType<PlanCheckV1> = z.discriminatedUnion('kind', [
   z
@@ -277,7 +277,7 @@ const CheckSchema: z.ZodType<PlanCheckV1> = z.discriminatedUnion('kind', [
     .object({
       ...CheckCommon,
       kind: z.literal('precondition-validation'),
-      preconditionIds: z.array(IdSchema).nonempty(),
+      preconditionIds: z.tuple([IdSchema], IdSchema),
     })
     .strict(),
 ]);

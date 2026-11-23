@@ -15,7 +15,7 @@ const InstallationEntrySchema = z.object({
 
 const FileSchema = z.object({
   version: z.number().optional(),
-  plugins: z.record(z.array(InstallationEntrySchema)),
+  plugins: z.record(z.string(), z.array(InstallationEntrySchema)),
 });
 
 export const getInstalledPluginsPath = (env: Pick<PlatformPaths, 'homeDir'>): string =>

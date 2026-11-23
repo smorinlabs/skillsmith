@@ -26,18 +26,21 @@ const freezeError = (
     message,
   });
 
-const issuePath = (issue: z.ZodIssue): readonly (string | number)[] => {
-  if (issue.code === z.ZodIssueCode.unrecognized_keys) {
-    return [...issue.path, ...(issue.keys[0] === undefined ? [] : [issue.keys[0]])];
+const wirePath = (path: readonly PropertyKey[]): readonly (string | number)[] =>
+  path.map((key) => (typeof key === 'symbol' ? String(key) : key));
+
+const issuePath = (issue: z.core.$ZodIssue): readonly (string | number)[] => {
+  if (issue.code === 'unrecognized_keys') {
+    return wirePath([...issue.path, ...(issue.keys[0] === undefined ? [] : [issue.keys[0]])]);
   }
-  if (issue.code === z.ZodIssueCode.invalid_union) {
-    const nested = issue.unionErrors.flatMap((error) => error.issues);
-    const mostSpecific = nested.find(
-      (candidate) => candidate.code === z.ZodIssueCode.unrecognized_keys,
-    );
-    return mostSpecific === undefined ? issue.path : issuePath(mostSpecific);
+  if (issue.code === 'invalid_union') {
+    const nested = issue.errors.flat();
+    const mostSpecific = nested.find((candidate) => candidate.code === 'unrecognized_keys');
+    return mostSpecific === undefined
+      ? wirePath(issue.path)
+      : wirePath([...issue.path, ...issuePath(mostSpecific)]);
   }
-  return issue.path;
+  return wirePath(issue.path);
 };
 
 interface PrototypeSnapshot {
@@ -305,29 +308,29 @@ const ownMigrationHandlers = (
   return handlers;
 };
 
-const objectBranches = (schema: z.ZodTypeAny): readonly z.AnyZodObject[] | undefined => {
+const objectBranches = (schema: z.core.$ZodType): readonly z.ZodObject[] | undefined => {
   if (schema instanceof z.ZodObject) return [schema];
   if (schema instanceof z.ZodUnion) {
-    const options = schema.options as readonly z.ZodTypeAny[];
+    const options = schema.options as readonly z.core.$ZodType[];
     const branchSets = options.map((option) => objectBranches(option));
     if (branchSets.some((branches) => branches === undefined)) return undefined;
     return branchSets.flatMap((branches) => branches ?? []);
   }
-  if (schema instanceof z.ZodEffects) return objectBranches(schema.innerType());
+  if (schema instanceof z.ZodPipe) return objectBranches(schema.in);
   return undefined;
 };
 
 const assertRecursiveUnknownFieldRejection = (
-  schema: z.ZodTypeAny,
-  seen = new Set<z.ZodTypeAny>(),
+  schema: z.core.$ZodType,
+  seen = new Set<z.core.$ZodType>(),
 ): void => {
   if (seen.has(schema)) return;
   seen.add(schema);
   if (schema instanceof z.ZodObject) {
-    if (schema._def.unknownKeys !== 'strict' || !(schema._def.catchall instanceof z.ZodNever)) {
+    if (!(schema._zod.def.catchall instanceof z.ZodNever)) {
       throw new Error('wire codec schema objects must recursively reject unknown fields');
     }
-    for (const nested of Object.values(schema.shape) as z.ZodTypeAny[]) {
+    for (const nested of Object.values(schema.shape) as z.core.$ZodType[]) {
       assertRecursiveUnknownFieldRejection(nested, seen);
     }
     return;
@@ -336,60 +339,46 @@ const assertRecursiveUnknownFieldRejection = (
     assertRecursiveUnknownFieldRejection(schema.element, seen);
     return;
   }
-  if (schema instanceof z.ZodUnion) {
-    for (const option of schema.options) assertRecursiveUnknownFieldRejection(option, seen);
-    return;
-  }
-  if (schema instanceof z.ZodDiscriminatedUnion) {
-    for (const option of schema.options.values())
+  if (schema instanceof z.ZodUnion || schema instanceof z.ZodDiscriminatedUnion) {
+    for (const option of schema.options as readonly z.core.$ZodType[])
       assertRecursiveUnknownFieldRejection(option, seen);
     return;
   }
-  if (schema instanceof z.ZodOptional || schema instanceof z.ZodNullable) {
+  if (
+    schema instanceof z.ZodOptional ||
+    schema instanceof z.ZodNullable ||
+    schema instanceof z.ZodNonOptional ||
+    schema instanceof z.ZodPrefault ||
+    schema instanceof z.ZodDefault ||
+    schema instanceof z.ZodCatch ||
+    schema instanceof z.ZodReadonly ||
+    schema instanceof z.ZodLazy
+  ) {
     assertRecursiveUnknownFieldRejection(schema.unwrap(), seen);
-    return;
-  }
-  if (schema instanceof z.ZodDefault) {
-    assertRecursiveUnknownFieldRejection(schema.removeDefault(), seen);
-    return;
-  }
-  if (schema instanceof z.ZodCatch) {
-    assertRecursiveUnknownFieldRejection(schema.removeCatch(), seen);
-    return;
-  }
-  if (schema instanceof z.ZodBranded || schema instanceof z.ZodReadonly) {
-    assertRecursiveUnknownFieldRejection(schema.unwrap(), seen);
-    return;
-  }
-  if (schema instanceof z.ZodEffects) {
-    assertRecursiveUnknownFieldRejection(schema.innerType(), seen);
     return;
   }
   if (schema instanceof z.ZodRecord) {
-    assertRecursiveUnknownFieldRejection(schema.valueSchema, seen);
+    assertRecursiveUnknownFieldRejection(schema.valueType, seen);
     return;
   }
   if (schema instanceof z.ZodTuple) {
-    for (const item of schema.items) assertRecursiveUnknownFieldRejection(item, seen);
-    if (schema._def.rest !== null) assertRecursiveUnknownFieldRejection(schema._def.rest, seen);
+    for (const item of schema._zod.def.items) assertRecursiveUnknownFieldRejection(item, seen);
+    if (schema._zod.def.rest !== null)
+      assertRecursiveUnknownFieldRejection(schema._zod.def.rest, seen);
     return;
   }
   if (schema instanceof z.ZodIntersection) {
-    assertRecursiveUnknownFieldRejection(schema._def.left, seen);
-    assertRecursiveUnknownFieldRejection(schema._def.right, seen);
+    assertRecursiveUnknownFieldRejection(schema._zod.def.left, seen);
+    assertRecursiveUnknownFieldRejection(schema._zod.def.right, seen);
     return;
   }
-  if (schema instanceof z.ZodLazy) {
-    assertRecursiveUnknownFieldRejection(schema.schema, seen);
-    return;
-  }
-  if (schema instanceof z.ZodPipeline) {
-    assertRecursiveUnknownFieldRejection(schema._def.in, seen);
-    assertRecursiveUnknownFieldRejection(schema._def.out, seen);
+  if (schema instanceof z.ZodPipe) {
+    assertRecursiveUnknownFieldRejection(schema.in, seen);
+    assertRecursiveUnknownFieldRejection(schema.out, seen);
   }
 };
 
-const assertSchemaDescriptor = (descriptor: WireCodecDescriptor, schema: z.ZodTypeAny): void => {
+const assertSchemaDescriptor = (descriptor: WireCodecDescriptor, schema: z.core.$ZodType): void => {
   const branches = objectBranches(schema);
   if (branches === undefined || branches.length === 0) {
     throw new Error('wire codec schema must expose object-shaped wire branches');
@@ -419,7 +408,7 @@ const assertSchemaDescriptor = (descriptor: WireCodecDescriptor, schema: z.ZodTy
 export const createJsonWireCodec = <
   const Id extends string,
   const Version extends number,
-  Schema extends z.ZodTypeAny,
+  Schema extends z.ZodType,
 >(
   sourceDescriptor: WireCodecDescriptor<Id, Version>,
   schema: Schema,
