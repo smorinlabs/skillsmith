@@ -347,6 +347,8 @@ const assertRecursiveUnknownFieldRejection = (
   if (
     schema instanceof z.ZodOptional ||
     schema instanceof z.ZodNullable ||
+    schema instanceof z.ZodNonOptional ||
+    schema instanceof z.ZodPrefault ||
     schema instanceof z.ZodDefault ||
     schema instanceof z.ZodCatch ||
     schema instanceof z.ZodReadonly ||

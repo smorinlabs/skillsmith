@@ -36,6 +36,14 @@ export const NestedDefaultPassthroughSchema = z
   })
   .strict();
 
+export const NestedNonOptionalPassthroughSchema = z
+  .object({
+    schemaVersion: z.literal(2),
+    nested: z.object({ value: z.string() }).passthrough().optional(),
+  })
+  .strict()
+  .required({ nested: true });
+
 export const CatchallSchema = z
   .object({ schemaVersion: z.literal(2) })
   .strict()
