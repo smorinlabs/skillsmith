@@ -286,7 +286,8 @@ const JournalSchema = z
   })
   .strict();
 
-const firstZodPath = (error: z.ZodError): Path => error.issues[0]?.path ?? [];
+const firstZodPath = (error: z.ZodError): Path =>
+  (error.issues[0]?.path ?? []).map((key) => (typeof key === 'symbol' ? String(key) : key));
 const resourceKey = (value: JournalResourceActualV1Dto): string =>
   `${value.resourceId}\0${value.role}`;
 const retainedKey = (value: JournalRetainedV1Dto): string => `${value.resourceId}\0${value.role}`;

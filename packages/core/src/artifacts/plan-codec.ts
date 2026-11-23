@@ -200,9 +200,9 @@ const tool = z.enum(SUPPORTED_TOOLS);
 const scope = z.enum(['user', 'project']);
 const selectionSource = z.enum(['explicit-targets', 'explicit-all', 'bounded-default']);
 const unique = <T>(values: readonly T[]): boolean => new Set(values).size === values.length;
-type KindUnionOption = z.ZodDiscriminatedUnionOption<'kind'>;
-type ClassUnionOption = z.ZodDiscriminatedUnionOption<'class'>;
-const strictSchema = (shape: z.ZodRawShape): z.AnyZodObject => z.object(shape).strict();
+type KindUnionOption = z.core.$ZodTypeDiscriminable;
+type ClassUnionOption = z.core.$ZodTypeDiscriminable;
+const strictSchema = <Shape extends z.ZodRawShape>(shape: Shape) => z.object(shape).strict();
 const kindUnion = (options: readonly z.ZodTypeAny[]): z.ZodTypeAny =>
   z.discriminatedUnion(
     'kind',
@@ -1364,10 +1364,11 @@ export const validatePlanOperationIntentV1 = (
 
 const firstZodPath = (error: z.ZodError): Path => {
   const issue = error.issues[0];
+  const path = (issue?.path ?? []).map((key) => (typeof key === 'symbol' ? String(key) : key));
   if (issue?.code === 'unrecognized_keys' && issue.keys[0] !== undefined) {
-    return [...issue.path, issue.keys[0]];
+    return [...path, issue.keys[0]];
   }
-  return issue?.path ?? [];
+  return path;
 };
 
 export const ownArtifactDto = (
