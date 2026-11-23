@@ -35,6 +35,7 @@
 
 ## Project index
 
+- [~] **P23** — [CI wall-clock: six weight-balanced test shards](projects/P23-ci-six-test-shards.md)
 - [x] **P22** — [macOS serial gate, PATH-first detection, and newer toolchains](projects/P22-macos-gate-and-newer-toolchains.md)
 - [ ] **P21** — [Skillsmith v2 (Rust) architecture, tracked in skillsmith-rs](projects/P21-skillsmith-v2-rust-architecture.md)
 - [ ] **P20** — [Git adapter permission classification for bounded reads](projects/P20-git-adapter-permission-classification.md)

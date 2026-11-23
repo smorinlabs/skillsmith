@@ -46,7 +46,7 @@ test-terminal:
     bun scripts/run-test-files-serial.ts
 
 # Run one sharded slice of the serial test-file terminal.
-test-shard index total="4":
+test-shard index total="6":
     bun scripts/run-test-files-shard.ts --shard-index={{index}} --shard-total={{total}}
 
 # Every canonical check gate except the test terminal (CI shards run the tests).

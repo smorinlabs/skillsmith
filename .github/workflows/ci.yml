@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Run the seven non-test checks in parallel with the four test shards.
+  # Run the seven non-test checks in parallel with the six test shards.
   fast-lint:
     runs-on: ubuntu-24.04
     permissions:
@@ -231,13 +231,13 @@ jobs:
             ${{ runner.temp }}/skillsmith-ordinary-agent-tools/receipt.json
             ${{ runner.temp }}/skillsmith-ordinary-agent-tools/logs
 
-  # Shard the test terminal across 4 parallel jobs. Each shard
+  # Shard the test terminal across 6 parallel jobs. Each shard
   # provisions every prerequisite ordinary-check provides before the test
   # terminal: scanners, the exact ordinary agent tools on PATH (EWP-WF02/WF14
   # install through a detected claude-code), Node 24, pinned npm 12.0.1, and
   # install-only GoReleaser v2.18.2 (EWP-P6-TS01 candidate builds).
   test-shard:
-    name: Test shard (${{ matrix.shard }}/4)
+    name: Test shard (${{ matrix.shard }}/6)
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
@@ -245,7 +245,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -347,7 +347,7 @@ jobs:
           console.log(JSON.stringify({ envCapabilitiesPinned: true, strace, scratchBase: base, freeBytes: free }));
           '
       - name: Run test shard
-        run: bun scripts/run-test-files-shard.ts --shard-index=${{ matrix.shard }} --shard-total=4 --out-dir="$RUNNER_TEMP/test-shard-${{ matrix.shard }}"
+        run: bun scripts/run-test-files-shard.ts --shard-index=${{ matrix.shard }} --shard-total=6 --out-dir="$RUNNER_TEMP/test-shard-${{ matrix.shard }}"
       - name: Retain shard evidence
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4
@@ -389,12 +389,12 @@ jobs:
       - name: Download shard evidence
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          # The latest evidence of all four shards, from whichever attempt
+          # The latest evidence of all six shards, from whichever attempt
           # produced each; every attempt of a run checks out the same GITHUB_SHA.
           pattern: test-shard-*-${{ github.run_id }}
           path: ${{ runner.temp }}/shard-evidence
       - name: Validate shard union
-        run: bun scripts/aggregate-shard-receipts.ts --receipts="$RUNNER_TEMP/shard-evidence" --shard-total=4
+        run: bun scripts/aggregate-shard-receipts.ts --receipts="$RUNNER_TEMP/shard-evidence" --shard-total=6
 
   # One stable required check for all product CI jobs. No checkout or network
   # is needed to report failures, including failed or skipped dependencies.
