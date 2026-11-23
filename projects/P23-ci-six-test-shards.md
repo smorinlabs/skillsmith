@@ -4,7 +4,7 @@
 - **Trunk:** [PROJECTS.md](../PROJECTS.md)
 - **Prior art:** `docs/ci.md` (sharded test terminal), `scripts/run-test-files-shard.ts`
 
-**Status:** In progress.
+**Status:** CI green on #138; awaiting review and merge.
 
 ## Goal
 
@@ -36,8 +36,10 @@ path is four test shards at 7.9–9.0 min each, whose `Run test shard` step take
       `tests/ergonomics/phase/EWP-P6-TS06.test.ts` pass; actionlint is clean
 - [x] [P23-TS03] The union of `--list-only` over the six shards is 415 files with no duplicates,
       identical to the file set the four-shard baseline ran (run 39553325607)
-- [ ] [P23-TS02] PR CI green: `Test shard aggregate` validates six receipts covering the full
-      manifest once, with the same file, test, and skip totals as the 4-shard baseline
+- [x] [P23-TS02] PR CI green (#138, CI run 45119466668): `Test shard aggregate` validated six
+      receipts covering 415 files once; 4099 tests and 42 skips, identical to the 4-shard
+      baseline (run 39553325607). Measured: workflow 6.7 min (baseline 9.9 min average; #137's
+      4-shard run 9.3 min); shard jobs 261-370 s (baseline 7.9-9.0 min); 36.7 job-minutes.
 
 ### Automated Verification
 - `Test shard aggregate` passes with `--shard-total=6`.
