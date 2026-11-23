@@ -115,7 +115,7 @@ describe('selectShardFiles', () => {
   test('the committed weights partition the tracked manifest completely and disjointly', () => {
     const weights = loadShardWeights();
     const files = [...weights.seconds.keys(), 'new/unweighted.test.ts'].sort();
-    const shards = [1, 2, 3, 4].map((index) => selectShardFiles(files, index, 4, weights));
+    const shards = [1, 2, 3, 4, 5, 6].map((index) => selectShardFiles(files, index, 6, weights));
     expect(shards.flat().toSorted()).toEqual(files);
     for (const shard of shards) expect(shard.length).toBeGreaterThan(0);
   });
@@ -505,7 +505,7 @@ describe('ci.yml shard evidence contract (#128)', () => {
 
   test('every matrix shard name matches the aggregate download pattern once rendered', () => {
     const shards = workflow.jobs['test-shard']?.strategy?.matrix?.shard ?? [];
-    expect(shards).toEqual([1, 2, 3, 4]);
+    expect(shards).toEqual([1, 2, 3, 4, 5, 6]);
     expect(step('test-shard-aggregate', 'Validate shard union').run).toBe(
       `bun scripts/aggregate-shard-receipts.ts --receipts="$RUNNER_TEMP/shard-evidence" --shard-total=${shards.length}`,
     );

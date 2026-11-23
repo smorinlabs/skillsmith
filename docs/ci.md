@@ -1,12 +1,12 @@
 # CI checks and sharded tests
 
-Product CI runs the test terminal in four jobs. Each test file still runs in a
+Product CI runs the test terminal in six jobs. Each test file still runs in a
 fresh Bun process with the serial runner's flags, timeout, and skip policy.
 `scripts/test-shard-weights.json` assigns files deterministically using recorded
 durations; new files receive the default weight. Weights affect scheduling only.
 
 `Test shard aggregate` independently discovers the test manifest and verifies all
-four receipts and their JUnit reports. Every file must appear exactly once, and
+six receipts and their JUnit reports. Every file must appear exactly once, and
 the global allowlist must still contain 42 skips across eight files. Missing,
 duplicate, failed, or inconsistent evidence fails the check.
 
@@ -19,7 +19,7 @@ not prevent it from reporting failure. It requires no checkout or network call.
 
 Local `just check` retains the serial test terminal and the same seven non-test
 checks. CI runs those same seven commands exactly once across three parallel
-jobs, alongside the four test shards:
+jobs, alongside the six test shards:
 
 | CI job | Commands |
 |---|---|
@@ -36,7 +36,7 @@ or run a second test terminal. `just check-gates` remains available locally.
 **Re-run failed jobs** works (#128). Each shard uploads its evidence as
 `test-shard-<shard>-<run id>` with `overwrite: true`, so a re-run shard replaces
 only its own earlier artifact. `Test shard aggregate` downloads
-`test-shard-*-<run id>`: the latest evidence of all four shards, from whichever
+`test-shard-*-<run id>`: the latest evidence of all six shards, from whichever
 attempt produced each. Every attempt of a run checks out the same commit
 (`GITHUB_SHA` does not change on re-run), and the aggregate still fails closed
 when a receipt's manifest digest disagrees with its own discovery. A cancelled
