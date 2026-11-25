@@ -42,21 +42,27 @@ export const ALLOWED_LIVE_E2E_SKIPS: ReadonlyMap<string, number> = new Map([
 // Frozen environment-gated skip entries. Unlike the live-E2E allowlist above, these files'
 // skip counts depend on the machine running the gate: each entry contributes its frozen
 // magnitude when its gate is closed (tests skip) and 0 when its gate is open (tests run).
-// The resolved total is therefore 42 + 0..7, computed at startup by resolveAllowedSkips().
+// The resolved total is therefore 42 + 0..12, computed at startup by resolveAllowedSkips().
 export const ENV_STRACE_SKIP_FILE = 'packages/cli/tests/commands/install-root-permission.test.ts';
 export const ENV_STRACE_SKIP_COUNT = 5;
 export const ENV_NATIVE_SKIP_FILE = 'packages/cli/tests/commands/install-preserved-backup.test.ts';
 export const ENV_NATIVE_SKIP_COUNT = 1;
 export const ENV_EWP_SKIP_FILE = 'tests/ergonomics/phase/EWP-P6-TS03.test.ts';
 export const ENV_EWP_SKIP_COUNT = 1;
+export const ENV_GORELEASER_SKIP_FILE = 'tests/ergonomics/phase/EWP-P6-TS01.test.ts';
+export const ENV_GORELEASER_SKIP_COUNT = 5;
+// CI sets this so a missing goreleaser fails the candidate-build families instead of skipping.
+export const REQUIRE_GORELEASER_ENV = 'SKILLSMITH_REQUIRE_GORELEASER';
 export const NATIVE_MIN_FREE_BYTES = 300 * 1024 * 1024;
-const EXPECTED_ENV_SKIP_FILES = 3;
+const EXPECTED_ENV_SKIP_FILES = 4;
 
 export type EnvSkipProbes = {
   platform?: string;
   which?: (command: string) => string | null;
   statfs?: (path: string) => { bavail: number; bsize: number };
   scratchDirectory?: () => string;
+  goreleaser?: () => string | null;
+  env?: Readonly<Record<string, string | undefined>>;
 };
 
 // Mirrors `lane2StraceOk` in install-root-permission.test.ts. Duplicated deliberately: no
@@ -96,11 +102,29 @@ export function ewpPtyEnabled(probes: EnvSkipProbes = {}): boolean {
   }
 }
 
+// Mirrors `CANDIDATE_BUILD_ENABLED` in EWP-P6-TS01.test.ts (same duplication rationale). The
+// families run when goreleaser is on PATH, or when CI requires it; a required but missing
+// goreleaser makes them run and fail rather than skip.
+export function goreleaserCandidateBuildEnabled(probes: EnvSkipProbes = {}): boolean {
+  const env = probes.env ?? process.env;
+  if (env[REQUIRE_GORELEASER_ENV] === '1') return true;
+  try {
+    const which = probes.goreleaser ?? (() => Bun.which('goreleaser'));
+    return which() !== null;
+  } catch {
+    return false;
+  }
+}
+
 export function resolveAllowedSkips(probes: EnvSkipProbes = {}): ReadonlyMap<string, number> {
   const resolved = new Map(ALLOWED_LIVE_E2E_SKIPS);
   resolved.set(ENV_STRACE_SKIP_FILE, straceLaneEnabled(probes) ? 0 : ENV_STRACE_SKIP_COUNT);
   resolved.set(ENV_NATIVE_SKIP_FILE, nativeCompileEnabled(probes) ? 0 : ENV_NATIVE_SKIP_COUNT);
   resolved.set(ENV_EWP_SKIP_FILE, ewpPtyEnabled(probes) ? 0 : ENV_EWP_SKIP_COUNT);
+  resolved.set(
+    ENV_GORELEASER_SKIP_FILE,
+    goreleaserCandidateBuildEnabled(probes) ? 0 : ENV_GORELEASER_SKIP_COUNT,
+  );
   return resolved;
 }
 
@@ -112,6 +136,7 @@ export const PINNED_CAPABILITY_SKIPS: ReadonlyMap<string, number> = new Map([
   [ENV_STRACE_SKIP_FILE, 0],
   [ENV_NATIVE_SKIP_FILE, 0],
   [ENV_EWP_SKIP_FILE, 0],
+  [ENV_GORELEASER_SKIP_FILE, 0],
 ]);
 
 export type JUnitSummary = {
@@ -283,6 +308,7 @@ export function validateTerminalManifest(
     [ENV_STRACE_SKIP_FILE, ENV_STRACE_SKIP_COUNT],
     [ENV_NATIVE_SKIP_FILE, ENV_NATIVE_SKIP_COUNT],
     [ENV_EWP_SKIP_FILE, ENV_EWP_SKIP_COUNT],
+    [ENV_GORELEASER_SKIP_FILE, ENV_GORELEASER_SKIP_COUNT],
   ] as const) {
     const actual = allowedSkips.get(file);
     if (actual !== 0 && actual !== count) {
@@ -471,7 +497,7 @@ export async function main(): Promise<void> {
     `serial test-file manifest: ${testFiles.length} files; sha256=${digest}; bun=${Bun.version}`,
   );
   console.log(
-    `serial test-file env-gated skips: ${ENV_STRACE_SKIP_FILE}=${allowedSkips.get(ENV_STRACE_SKIP_FILE)} ${ENV_NATIVE_SKIP_FILE}=${allowedSkips.get(ENV_NATIVE_SKIP_FILE)} ${ENV_EWP_SKIP_FILE}=${allowedSkips.get(ENV_EWP_SKIP_FILE)}`,
+    `serial test-file env-gated skips: ${ENV_STRACE_SKIP_FILE}=${allowedSkips.get(ENV_STRACE_SKIP_FILE)} ${ENV_NATIVE_SKIP_FILE}=${allowedSkips.get(ENV_NATIVE_SKIP_FILE)} ${ENV_EWP_SKIP_FILE}=${allowedSkips.get(ENV_EWP_SKIP_FILE)} ${ENV_GORELEASER_SKIP_FILE}=${allowedSkips.get(ENV_GORELEASER_SKIP_FILE)}`,
   );
 
   let receipt: SerialReceipt | undefined;

@@ -229,7 +229,9 @@ const runSourcedBash = async (
     await writeFile(wordsPath, Buffer.from(`${words.join('\0')}\0`, 'utf8'));
     const harness = [
       'set -u',
-      'mapfile -d "" -t COMP_WORDS < "$WORDS_PATH"',
+      // macOS ships bash 3.2, which has no mapfile/readarray; read NUL-separated words.
+      'COMP_WORDS=()',
+      'while IFS= read -r -d "" word; do COMP_WORDS+=("$word"); done < "$WORDS_PATH"',
       'COMP_CWORD="$CURRENT_WORD"',
       '_get_comp_words_by_ref() {',
       '  cur="${COMP_WORDS[COMP_CWORD]-}"',
