@@ -102,5 +102,25 @@ describe('ownOrdinaryData', () => {
       ok: false,
       error: { code: 'ordinary-data', reason: 'rejected-property', path: '$.token' },
     });
+
+    const observedSegments: (readonly (string | number)[])[] = [];
+    const nested = ownOrdinaryData(
+      { skills: { 'repo-secrets': { items: [{ label: 'ok' }] } } },
+      () => true,
+      {
+        acceptProperty: (_propertyPath, _key, _parent, _keys, parentSegments) => {
+          expect(Object.isFrozen(parentSegments)).toBeTrue();
+          observedSegments.push(parentSegments);
+          return true;
+        },
+      },
+    );
+    expect(nested.ok).toBeTrue();
+    expect(observedSegments).toEqual([
+      [],
+      ['skills'],
+      ['skills', 'repo-secrets'],
+      ['skills', 'repo-secrets', 'items', 0],
+    ]);
   });
 });

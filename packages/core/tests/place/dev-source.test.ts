@@ -624,4 +624,31 @@ describe('dev --source — idempotency, dry-run, ledger-shape legality (P13 PRD)
       expect(pair?.journal ?? null).toBeNull();
     }
   });
+
+  test('regression: dev-linking a skill named repo-secrets keeps the placement ledger readable for later commands', async () => {
+    const repoSecretsSource = await makeSkillSource(f.base, 'repo-secrets');
+    const first = await runDev(
+      f.env,
+      opts({ targets: ['repo-secrets'], tools: ['claude-code'], source: repoSecretsSource }),
+      passFlipDeps(),
+    );
+    if (!first.ok) throw new Error(msg(first.error));
+    expect(actionV2(first.value.results[0])).toBe('created');
+
+    const second = await runDev(
+      f.env,
+      opts({ targets: ['beta'], tools: ['claude-code'], source: resolve(f.betaSrc) }),
+      passFlipDeps(),
+    );
+    if (!second.ok) throw new Error(msg(second.error));
+    expect(actionV2(second.value.results[0])).toBe('created');
+
+    const repeat = await runDev(
+      f.env,
+      opts({ targets: ['repo-secrets'], tools: ['claude-code'], source: repoSecretsSource }),
+      passFlipDeps(),
+    );
+    if (!repeat.ok) throw new Error(msg(repeat.error));
+    expect(actionV2(repeat.value.results[0])).toBe('noop');
+  });
 });
