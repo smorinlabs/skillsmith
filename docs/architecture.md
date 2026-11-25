@@ -13,7 +13,7 @@ packages/
       acquire/       install/uninstall orchestration
       search/        read-only remote catalog requests, deadlines, and provider validation
       application/   public CommandOutcome and application-service boundary
-      agents/        per-tool adapters (claude-code, codex, kilo-code, opencode, muse) + registry
+      agents/        per-tool adapters (claude-code, codex, kilo-code, opencode, muse, antigravity) + registry
       commands/      installed slash-command domain types
       config/        config discovery, parsing, precedence, and persistence
       context/       project-context resolution
@@ -169,7 +169,7 @@ planner and executor; a narrow update-only authority binds the approved artifact
 prepared sources to that same plan. Check and dry-run paths never acquire mutation authority.
 Multi-declaration approval happens after the immutable plan is prepared but before verification, so
 refusal or cancellation runs no verifier and writes nothing. Adapter policy selects Claude Code's
-static gate and Codex's static-plus-deep gate. Human output and strict `update@1` JSON are two views
+and Antigravity's static gate and Codex's and Muse's static-plus-deep gate. Human output and strict `update@1` JSON are two views
 of the same report.
 
 `runGcApplication` owns bounded local store reclamation. It inventories only the configured store,
@@ -286,9 +286,9 @@ adaptation bundles. The public `Agent`, `registry`, `SUPPORTED_TOOLS`, `VERIFY_T
 └────────────────────────┘
 ```
 
-Currently supported tools: **Claude Code, Codex, Kilo Code, opencode, Muse**. All five support
-inventory and diagnostics; Claude Code and Codex additionally own verification and placement
-bundles. See
+Currently supported tools: **Claude Code, Codex, Kilo Code, opencode, Muse, Antigravity**. All six support
+inventory and diagnostics; Claude Code, Codex, Muse, and Antigravity additionally own verification and placement
+bundles (Muse and Antigravity in `user` and `custom` scopes). See
 [ADR 0007](adr/0007-tool-adapter-registry.md) for the exact operation/scope matrix and validation
 rules.
 

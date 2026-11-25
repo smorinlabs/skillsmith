@@ -2326,7 +2326,7 @@ const runUninstallInternal = async (
         if (reducedHandoffShape && currentDeclaration !== undefined) {
           const declaration: NormalizedManifestDeclaration = Object.freeze({
             ...currentDeclaration,
-            tools: Object.freeze([...currentDeclaration.tools, ...reducedSelectedTools]),
+            tools: Object.freeze([...currentDeclaration.tools, ...reducedSelectedTools].sort()),
           });
           const declarationIndex = selectedManifest.skills.indexOf(currentDeclaration);
           const reconstructedSkills = [...selectedManifest.skills];

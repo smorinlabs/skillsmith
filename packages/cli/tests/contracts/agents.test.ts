@@ -14,28 +14,28 @@ const FAMILY_ALLOCATION = Object.freeze({
 
 const FIXTURE_MANIFEST = Object.freeze({
   'agents-base-v2.golden.json': Object.freeze({
-    bytes: 17_088,
-    sha256: '21741364aa4268cae5df9c36588eb112c8dbd12f3cf045d3e515881f77bf95b3',
+    bytes: 20_395,
+    sha256: '3c6a4b252740971b20de40bd58fafb6a96ed5ebb1d71fbd251dbfd6ff00a08ad',
   }),
   'agents-capabilities-v2.golden.json': Object.freeze({
-    bytes: 17_088,
-    sha256: '21741364aa4268cae5df9c36588eb112c8dbd12f3cf045d3e515881f77bf95b3',
+    bytes: 20_395,
+    sha256: '3c6a4b252740971b20de40bd58fafb6a96ed5ebb1d71fbd251dbfd6ff00a08ad',
   }),
   'agents-capabilities.golden.txt': Object.freeze({
-    bytes: 5_547,
-    sha256: '1ccecb9d2e0922fcf82b769dc84f79c2b4484ff3ef74956bcc3b79ae42193b12',
+    bytes: 6_498,
+    sha256: '6d6664daa79089aa2bb3d92e47e51b2753188aacf01c0c3ff0888e823a616f60',
   }),
   'agents-default.golden.txt': Object.freeze({
-    bytes: 558,
-    sha256: '51ce7d774d17b8f3a234c5d103c1d047fc79751bc7b75edc818f5c4b73a990bb',
+    bytes: 591,
+    sha256: '703a2ec90cd3c85d2c6d7127323b971dc8d52207c62518a3e68eedad9896715f',
   }),
   'agents-detected-only.golden.txt': Object.freeze({
     bytes: 499,
     sha256: '904245c432c2c5f9ac9b694213ac212b9544b302de580cd7b27cb58f3f5eb4f1',
   }),
   'agents-fleet.json': Object.freeze({
-    bytes: 14_416,
-    sha256: '3d2fbbe829ed6e665d0576679abb2267510abcca3aa9749de8f1a2ad8dfb760d',
+    bytes: 17_077,
+    sha256: '0e82c431da2e56beda95d7d48a559e840a8fdbfc2a621c8140a490d244afe5ee',
   }),
 });
 
@@ -169,9 +169,10 @@ beforeAll(async () => {
     'kilo-code',
     'opencode',
     'muse',
+    'antigravity',
   ]);
   expect(fleet.tools.flatMap((tool) => tool.installations)).toHaveLength(5);
-  expect(operationCount(fleet.capabilities)).toBe(80);
+  expect(operationCount(fleet.capabilities)).toBe(96);
   expect(baseV2Golden).toBe(capabilitiesV2Golden);
   expect(baseV2Golden).toBe(`${JSON.stringify(JSON.parse(baseV2Golden), null, 2)}\n`);
   expect(JSON.parse(baseV2Golden)).toMatchObject({
@@ -261,7 +262,7 @@ describe('EWP-CMD-AGENTS-TS01', () => {
       tool: expect.objectContaining({
         short: '-t',
         repeatable: true,
-        allowedValues: ['claude-code', 'codex', 'kilo-code', 'opencode', 'muse'],
+        allowedValues: ['claude-code', 'codex', 'kilo-code', 'opencode', 'muse', 'antigravity'],
       }),
       json: expect.objectContaining({
         valueShape: 'boolean',
@@ -325,7 +326,7 @@ describe('EWP-CMD-AGENTS-TS01', () => {
     }).toEqual({
       all: {
         exit: 'success',
-        tools: ['claude-code', 'codex', 'kilo-code', 'opencode', 'muse'],
+        tools: ['claude-code', 'codex', 'kilo-code', 'opencode', 'muse', 'antigravity'],
       },
       subset: { exit: 'success', tools: ['claude-code', 'kilo-code'] },
       unknown: { exit: 'usage', touched: [] },
@@ -460,7 +461,7 @@ describe('EWP-CMD-AGENTS-TS03', () => {
     });
   });
 
-  test('family 32: all 80 capability facts derive from registry scopes and remediation', () => {
+  test('family 32: all 96 capability facts derive from registry scopes and remediation', () => {
     const adapters = toolRegistry.adapters as readonly ReadonlyUnknownRecord[];
     const snapshot = toCapabilitySnapshotV1Dto({ adapters });
     const tools = snapshot.tools as readonly ReadonlyUnknownRecord[];
@@ -484,12 +485,12 @@ describe('EWP-CMD-AGENTS-TS03', () => {
       json: renderAgentsJson(fixtureMap()),
     }).toEqual({
       snapshot: fleet.capabilities,
-      order: ['claude-code', 'codex', 'kilo-code', 'opencode', 'muse'],
-      operationCount: 80,
+      order: ['claude-code', 'codex', 'kilo-code', 'opencode', 'muse', 'antigravity'],
+      operationCount: 96,
       kiloInstall: {
         supported: false,
         scopes: [],
-        remediation: 'kilo-code is read-only; choose claude-code, codex, or muse',
+        remediation: 'kilo-code is read-only; choose claude-code, codex, muse, or antigravity',
       },
       opencodeApply: {
         supported: false,

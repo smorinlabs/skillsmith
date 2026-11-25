@@ -117,7 +117,7 @@ describe('install scope filter', () => {
     expect(acquireExitCode(r.value)).toBe(2);
   });
 
-  test('default tools in user scope still include muse', async () => {
+  test('default tools in user scope still include muse and antigravity', async () => {
     const r = await runInstall(
       f.env,
       {
@@ -129,12 +129,35 @@ describe('install scope filter', () => {
       installDeps(),
     );
     if (!r.ok) throw new Error(msg(r.error));
-    expect(r.value.summary.installed).toBe(3);
+    expect(r.value.summary.installed).toBe(4);
     expect(r.value.results.map((result) => result.tool).sort()).toEqual([
+      'antigravity',
       'claude-code',
       'codex',
       'muse',
     ]);
     expect(acquireExitCode(r.value)).toBe(0);
+  });
+
+  test('explicit antigravity in project scope refuses per source', async () => {
+    const r = await runInstall(
+      f.env,
+      {
+        sources: [fsSource],
+        scope: 'project',
+        cwd: f.project,
+        tools: ['antigravity'],
+        configuration: resolveRuntimeConfiguration(f.envVars),
+      },
+      installDeps(),
+    );
+    if (!r.ok) throw new Error(msg(r.error));
+    expect(r.value.summary.installed).toBe(0);
+    expect(r.value.summary.refused).toBe(1);
+    expect(r.value.results).toHaveLength(1);
+    expect(r.value.results[0]?.tool).toBe('antigravity');
+    expect(r.value.results[0]?.action).toBe('refused');
+    expect(r.value.results[0]?.reason).toBe('antigravity does not manage project scope');
+    expect(acquireExitCode(r.value)).toBe(2);
   });
 });

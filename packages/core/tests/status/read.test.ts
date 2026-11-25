@@ -1741,7 +1741,7 @@ describe('G3A-01 focused status reader', () => {
     controller.abort();
     const selectedUnbounded = await readStatus(readPorts(), {
       ...request(),
-      tools: ['claude-code', 'codex', 'kilo-code', 'opencode', 'muse'],
+      tools: ['claude-code', 'codex', 'kilo-code', 'opencode', 'muse', 'antigravity'],
       toolSelectionSource: 'unbounded-default',
       scopes: ['system', 'user', 'project', 'managed'],
       scopeSelectionSource: 'unbounded-default',
@@ -1762,7 +1762,7 @@ describe('G3A-01 focused status reader', () => {
         lockPath: join(HOME, '.config', 'skillsmith', 'skillsmith.lock'),
         lockSource: 'sibling',
       },
-      tools: ['claude-code', 'codex', 'kilo-code', 'opencode', 'muse'],
+      tools: ['claude-code', 'codex', 'kilo-code', 'opencode', 'muse', 'antigravity'],
       toolSelectionSource: 'unbounded-default',
       scopes: ['system', 'user', 'managed'],
       scopeSelectionSource: 'unbounded-default',
@@ -1886,7 +1886,7 @@ describe('G3A-01 focused status reader', () => {
         ...request(selected('user-default', userManifest, userLock)),
         projectContext: outsideContext,
         projectPlacement: { state: 'unselected' },
-        tools: ['claude-code', 'codex', 'kilo-code', 'opencode', 'muse'],
+        tools: ['claude-code', 'codex', 'kilo-code', 'opencode', 'muse', 'antigravity'],
         toolSelectionSource: 'unbounded-default',
         scopes: ['system', 'user', 'managed'],
         scopeSelectionSource: 'unbounded-default',
@@ -3097,7 +3097,14 @@ describe('G3A-01 focused status reader', () => {
         'future-legacy': { tools: { [unknownTool]: legacyPair } },
       },
     });
-    const allKnownTools = ['claude-code', 'codex', 'kilo-code', 'opencode', 'muse'] as const;
+    const allKnownTools = [
+      'claude-code',
+      'codex',
+      'kilo-code',
+      'opencode',
+      'muse',
+      'antigravity',
+    ] as const;
 
     for (const source of ['explicit', 'effective-config'] as const) {
       const filtered = unwrapJoin(

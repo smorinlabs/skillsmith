@@ -61,6 +61,7 @@ describe('EWP-P0A-TS02', () => {
         'kilo-code',
         'opencode',
         'muse',
+        'antigravity',
       ]);
     }
     const scopes = Object.fromEntries(

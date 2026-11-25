@@ -4,7 +4,13 @@ import type { ArtifactDigest } from './hash.ts';
 export type PlanIdV1 = string;
 export type PlanCodeV1 = string;
 export type PlanDigestV1 = ArtifactDigest;
-export type PlanToolV1 = 'claude-code' | 'codex' | 'kilo-code' | 'opencode' | 'muse';
+export type PlanToolV1 =
+  | 'claude-code'
+  | 'codex'
+  | 'kilo-code'
+  | 'opencode'
+  | 'muse'
+  | 'antigravity';
 export type PlanScopeV1 = 'user' | 'project';
 export type PlanSelectionSourceV1 = 'explicit-targets' | 'explicit-all' | 'bounded-default';
 

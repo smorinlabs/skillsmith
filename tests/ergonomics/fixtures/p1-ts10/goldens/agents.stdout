@@ -354,27 +354,27 @@
           "install": {
             "supported": false,
             "scopes": [],
-            "remediation": "kilo-code is read-only; choose claude-code, codex, or muse"
+            "remediation": "kilo-code is read-only; choose claude-code, codex, muse, or antigravity"
           },
           "uninstall": {
             "supported": false,
             "scopes": [],
-            "remediation": "kilo-code is read-only; choose claude-code, codex, or muse"
+            "remediation": "kilo-code is read-only; choose claude-code, codex, muse, or antigravity"
           },
           "dev": {
             "supported": false,
             "scopes": [],
-            "remediation": "kilo-code is read-only; choose claude-code, codex, or muse"
+            "remediation": "kilo-code is read-only; choose claude-code, codex, muse, or antigravity"
           },
           "promote": {
             "supported": false,
             "scopes": [],
-            "remediation": "kilo-code is read-only; choose claude-code, codex, or muse"
+            "remediation": "kilo-code is read-only; choose claude-code, codex, muse, or antigravity"
           },
           "undo": {
             "supported": false,
             "scopes": [],
-            "remediation": "kilo-code is read-only; choose claude-code, codex, or muse"
+            "remediation": "kilo-code is read-only; choose claude-code, codex, muse, or antigravity"
           },
           "verify-static": {
             "supported": false,
@@ -456,27 +456,27 @@
           "install": {
             "supported": false,
             "scopes": [],
-            "remediation": "opencode is read-only; choose claude-code, codex, or muse"
+            "remediation": "opencode is read-only; choose claude-code, codex, muse, or antigravity"
           },
           "uninstall": {
             "supported": false,
             "scopes": [],
-            "remediation": "opencode is read-only; choose claude-code, codex, or muse"
+            "remediation": "opencode is read-only; choose claude-code, codex, muse, or antigravity"
           },
           "dev": {
             "supported": false,
             "scopes": [],
-            "remediation": "opencode is read-only; choose claude-code, codex, or muse"
+            "remediation": "opencode is read-only; choose claude-code, codex, muse, or antigravity"
           },
           "promote": {
             "supported": false,
             "scopes": [],
-            "remediation": "opencode is read-only; choose claude-code, codex, or muse"
+            "remediation": "opencode is read-only; choose claude-code, codex, muse, or antigravity"
           },
           "undo": {
             "supported": false,
             "scopes": [],
-            "remediation": "opencode is read-only; choose claude-code, codex, or muse"
+            "remediation": "opencode is read-only; choose claude-code, codex, muse, or antigravity"
           },
           "verify-static": {
             "supported": false,
@@ -645,6 +645,139 @@
             "supported": false,
             "scopes": [],
             "remediation": "muse adaptation is not available"
+          }
+        }
+      },
+      {
+        "id": "antigravity",
+        "order": 60,
+        "capabilityVersion": 2,
+        "operations": {
+          "detect": {
+            "supported": true,
+            "scopes": [],
+            "remediation": null
+          },
+          "inventory-skills": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "project",
+              "system",
+              "managed"
+            ],
+            "remediation": null
+          },
+          "inventory-commands": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "project",
+              "system",
+              "managed"
+            ],
+            "remediation": null
+          },
+          "diagnostics": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "project",
+              "system",
+              "managed"
+            ],
+            "remediation": null
+          },
+          "install": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "custom"
+            ],
+            "remediation": null
+          },
+          "uninstall": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "custom"
+            ],
+            "remediation": null
+          },
+          "dev": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "custom"
+            ],
+            "remediation": null
+          },
+          "promote": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "custom"
+            ],
+            "remediation": null
+          },
+          "undo": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "custom"
+            ],
+            "remediation": null
+          },
+          "verify-static": {
+            "supported": true,
+            "scopes": [
+              "artifact"
+            ],
+            "remediation": null
+          },
+          "verify-deep": {
+            "supported": true,
+            "scopes": [
+              "artifact"
+            ],
+            "remediation": null
+          },
+          "plan": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "custom"
+            ],
+            "remediation": null
+          },
+          "apply": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "custom"
+            ],
+            "remediation": null
+          },
+          "sync": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "custom"
+            ],
+            "remediation": null
+          },
+          "update": {
+            "supported": true,
+            "scopes": [
+              "user",
+              "custom"
+            ],
+            "remediation": null
+          },
+          "adapt": {
+            "supported": false,
+            "scopes": [],
+            "remediation": "antigravity adaptation is not available"
           }
         }
       }

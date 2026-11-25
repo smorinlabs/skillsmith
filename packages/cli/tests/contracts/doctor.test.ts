@@ -839,7 +839,13 @@ describe('EWP-CMD-DOCTOR-TS01', () => {
     };
 
     expect(missingTools(detected)).toEqual([]);
-    expect(missingTools(all)).toEqual(['claude-code', 'kilo-code', 'muse', 'opencode']);
+    expect(missingTools(all)).toEqual([
+      'antigravity',
+      'claude-code',
+      'kilo-code',
+      'muse',
+      'opencode',
+    ]);
   });
 
   test('an explicit tool remains bounded and does not diagnose unselected adapters', async () => {
@@ -865,7 +871,14 @@ describe('EWP-CMD-DOCTOR-TS01', () => {
   });
 
   test('every known adapter advertises the diagnostics capability used by doctor', () => {
-    expect(toolRegistry.ids).toEqual(['claude-code', 'codex', 'kilo-code', 'opencode', 'muse']);
+    expect(toolRegistry.ids).toEqual([
+      'claude-code',
+      'codex',
+      'kilo-code',
+      'opencode',
+      'muse',
+      'antigravity',
+    ]);
     expect(toolRegistry.toolsFor('diagnostics')).toEqual(toolRegistry.ids);
     for (const tool of toolRegistry.ids) {
       const capability = toolRegistry.capability(tool, 'diagnostics');

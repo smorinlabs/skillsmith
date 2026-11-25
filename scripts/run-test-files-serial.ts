@@ -26,10 +26,10 @@ export function childTestEnvironment(
 const gitEnvironment = childTestEnvironment(process.env);
 export const MINIMUM_BUN_VERSION = '1.3.14';
 const EXPECTED_ALLOWED_SKIP_FILES = 8;
-const EXPECTED_ALLOWED_SKIPS = 42;
+const EXPECTED_ALLOWED_SKIPS = 46;
 
 export const ALLOWED_LIVE_E2E_SKIPS: ReadonlyMap<string, number> = new Map([
-  ['packages/core/tests/verify/live-e2e.test.ts', 11],
+  ['packages/core/tests/verify/live-e2e.test.ts', 15],
   ['packages/core/tests/acquire/copy-replacement-recovery.test.ts', 5],
   ['packages/cli/tests/commands/install-live.test.ts', 3],
   ['packages/cli/tests/commands/verify-live.test.ts', 3],
@@ -42,7 +42,7 @@ export const ALLOWED_LIVE_E2E_SKIPS: ReadonlyMap<string, number> = new Map([
 // Frozen environment-gated skip entries. Unlike the live-E2E allowlist above, these files'
 // skip counts depend on the machine running the gate: each entry contributes its frozen
 // magnitude when its gate is closed (tests skip) and 0 when its gate is open (tests run).
-// The resolved total is therefore 42 + 0..12, computed at startup by resolveAllowedSkips().
+// The resolved total is therefore 46 + 0..12, computed at startup by resolveAllowedSkips().
 export const ENV_STRACE_SKIP_FILE = 'packages/cli/tests/commands/install-root-permission.test.ts';
 export const ENV_STRACE_SKIP_COUNT = 5;
 export const ENV_NATIVE_SKIP_FILE = 'packages/cli/tests/commands/install-preserved-backup.test.ts';

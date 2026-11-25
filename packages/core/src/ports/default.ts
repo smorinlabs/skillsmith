@@ -22,7 +22,14 @@ import {
 import { homedir, platform as osPlatform } from 'node:os';
 import { delimiter, join } from 'node:path';
 import lockfile from 'proper-lockfile';
-import type { ExecOptions, ExecResult, PathKind, Platform, XdgDirs } from '../env/types.ts';
+import type {
+  ExecOptions,
+  ExecResult,
+  JsonRpcNotificationMatch,
+  PathKind,
+  Platform,
+  XdgDirs,
+} from '../env/types.ts';
 import type { SearchPorts } from '../search/types.ts';
 import { isPortError, toPortError } from './errors.ts';
 import { type GitInitProbeFs, createGitInitProbe } from './git-init-probe.ts';
@@ -460,6 +467,39 @@ const STDOUT_LIMIT = 1024 * 1024;
 const STDERR_LIMIT = 16 * 1024;
 const CLEANUP_GRACE_MS = 250;
 
+const validNotificationMatch = (matcher: JsonRpcNotificationMatch | undefined): boolean => {
+  if (matcher === undefined) return true;
+  if (typeof matcher.method !== 'string' || matcher.method.length === 0) return false;
+  if (matcher.path === undefined) return matcher.equals === undefined;
+  return (
+    Array.isArray(matcher.path) &&
+    matcher.path.length > 0 &&
+    matcher.path.every((segment) => typeof segment === 'string' && segment.length > 0) &&
+    typeof matcher.equals === 'string'
+  );
+};
+
+const matchesNotification = (
+  message: Record<string, unknown>,
+  matcher: JsonRpcNotificationMatch,
+): boolean => {
+  if (Object.hasOwn(message, 'id') || message.method !== matcher.method) return false;
+  if (matcher.path === undefined) return true;
+  let cursor: unknown = message;
+  for (const segment of matcher.path) {
+    if (
+      cursor === null ||
+      typeof cursor !== 'object' ||
+      Array.isArray(cursor) ||
+      !Object.hasOwn(cursor, segment)
+    ) {
+      return false;
+    }
+    cursor = (cursor as Record<string, unknown>)[segment];
+  }
+  return cursor === matcher.equals;
+};
+
 /** A finite request/response exchange; no model/tool methods are supplied by this transport. */
 const execJsonRpcCommand = async (
   command: string,
@@ -468,6 +508,7 @@ const execJsonRpcCommand = async (
   env: Record<string, string | undefined>,
 ): Promise<ExecResult> => {
   const messages = options.jsonRpc ?? [];
+  const untilNotification = options.jsonRpcUntilNotification;
   const deadline = options.timeoutMs ?? 20_000;
   if (options.signal?.aborted) {
     return { code: -1, stdout: '', stderr: '', timedOut: false, protocolError: 'cancelled' };
@@ -476,6 +517,7 @@ const execJsonRpcCommand = async (
     options.input !== undefined ||
     messages.length === 0 ||
     messages.at(-1)?.id === undefined ||
+    !validNotificationMatch(untilNotification) ||
     !Number.isFinite(deadline) ||
     deadline <= 0
   ) {
@@ -493,6 +535,8 @@ const execJsonRpcCommand = async (
   let stdout = '';
   let stderr = '';
   let complete = false;
+  let waitingNotification = false;
+  let matchedNotification = false;
   let next = 0;
   let waitingId: number | undefined;
   let pending = '';
@@ -560,6 +604,10 @@ const execJsonRpcCommand = async (
           return;
         }
       }
+      if (untilNotification !== undefined && !matchedNotification) {
+        waitingNotification = true;
+        return;
+      }
       complete = true;
       proc.stdin.end();
     };
@@ -581,7 +629,17 @@ const execJsonRpcCommand = async (
           fail('malformed JSON response');
           return;
         }
-        if (!Object.hasOwn(message, 'id') && typeof message.method === 'string') continue;
+        if (!Object.hasOwn(message, 'id') && typeof message.method === 'string') {
+          if (untilNotification !== undefined && matchesNotification(message, untilNotification)) {
+            matchedNotification = true;
+            if (waitingNotification) {
+              complete = true;
+              proc.stdin.end();
+              return;
+            }
+          }
+          continue;
+        }
         if (message.id !== waitingId || typeof message.method === 'string') {
           fail('unexpected response id');
           return;

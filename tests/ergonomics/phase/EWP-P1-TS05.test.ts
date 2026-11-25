@@ -72,7 +72,7 @@ describe('EWP-P1-TS05', () => {
 
   test('current tool capabilities, check gating, and inherited context flags are explicit', async () => {
     const readme = await readRepo('README.md');
-    for (const tool of ['claude-code', 'codex', 'kilo-code', 'opencode', 'muse']) {
+    for (const tool of ['claude-code', 'codex', 'kilo-code', 'opencode', 'muse', 'antigravity']) {
       expect(readme).toContain(`\`${tool}\``);
     }
     expect(readme).toMatch(/(?:write|mutat)[^\n]*Claude Code[^\n]*Codex/i);
@@ -80,6 +80,7 @@ describe('EWP-P1-TS05', () => {
     expect(readme).toMatch(/Kilo Code[^\n]*(?:read-only|detection)/i);
     expect(readme).toMatch(/opencode[^\n]*(?:read-only|detection)/i);
     expect(readme).toMatch(/Muse[^\n]*user and custom scopes/i);
+    expect(readme).toMatch(/Antigravity[^\n]*user and custom scopes/i);
     expect(readme).toMatch(/check[^\n]*fail[^\n]*default/i);
     expect(readme).toContain('--report-only');
     expect(readme).toContain('-C');

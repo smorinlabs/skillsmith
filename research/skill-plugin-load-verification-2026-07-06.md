@@ -275,11 +275,31 @@ staged one), and the bare non-JSON `skills list` table (no diagnostics, no paths
 3. **Remember the leniency:** bad YAML is `valid:true` — if well-formedness matters, lint the
    frontmatter yourself; muse only promises loadability.
 
+### Antigravity (`agy`)
+1. **Primary gate: `agy plugin validate [--strict] --json <dir>`** — static, completely offline and
+   auth-free, exit `0` (clean or non-strict warning/note) / `1` (error, or warning under `--strict`).
+   Emits structured JSON `findings[]` (`severity`: `error` | `warning` | `note`, `file`, `message`)
+   and `components.skills`. Catches invalid plugin manifests, missing/invalid YAML frontmatter
+   (`error`), missing `description` (`warning`), and folder/name mismatch (`warning`). Non-Antigravity
+   plugin repositories containing `skills/*/SKILL.md` can be validated by staging an ephemeral
+   `.antigravity-plugin/plugin.json` wrapper and filtering non-error advisory notes (e.g. `no logo`)
+   on the synthetic manifest.
+2. **Load confirmation (presence-only): `agy acp --disable-telemetry`** over stdio JSON-RPC
+   (`initialize` → `authenticate({ methodId: "gemini-api-key" })` with a synthetic `GEMINI_API_KEY` →
+   `session/new({ cwd, mcpServers: [] })`) completes offline in ~100–200ms with zero network/tokens
+   and emits `session/update` (`sessionUpdate: "available_commands_update"`) listing loaded skill
+   names (keyed by frontmatter `name`, falling back to folder basename). Note `agy -p` blocks on
+   Google OAuth when unauthenticated and is unsuitable for offline verification.
+3. **Presence-only deep semantics:** like Claude Code, `agy acp` drops malformed skills silently
+   without emitting parse-error text, so static validation carries diagnostic fidelity while deep
+   mode confirms runtime loading (`gatePolicy`: static for install/promote/update, `--deep` opt-in).
+
 ### Cross-tool
 - **Normalize severity per tool** — the same skill can pass Claude (warning) and fail Codex (error).
 - Deterministic, **no model call:** `claude plugin validate`, `codex plugin add`, `codex plugin list --json`,
-  `codex app-server skills/list`, `muse skills validate --json`, `muse skills list --json`. **Needs a session:** Claude init-event enumeration, Codex `exec` stderr.
-- Claude = single static command; Codex = stitch two surfaces (install for manifests, session-stderr for skills); Muse = single static command + two scoped list legs.
+  `codex app-server skills/list`, `muse skills validate --json`, `muse skills list --json`,
+  `agy plugin validate --json`, `agy acp --disable-telemetry`. **Needs a session:** Claude init-event enumeration, Codex `exec` stderr.
+- Claude = single static command; Codex = stitch two surfaces (install for manifests, session-stderr for skills); Muse = single static command + two scoped list legs; Antigravity = single static command (`agy plugin validate --json`) + ACP JSON-RPC load probe (`agy acp --disable-telemetry`).
 
 ---
 
@@ -396,3 +416,22 @@ The Claude verifier baseline is now `2.1.278`, owned by
 value. Baseline-dependent tests and the generated README version table track it. Historical output
 fixtures retain their original versions and messages. Release workflow/toolchain pins remain at
 their existing versions, including Claude `2.1.202`, whose static compatibility was rechecked above.
+
+## Addendum (2026-11-24 UTC): Antigravity (`agy` 1.5.16) verification baseline
+
+**Verified against:** native Antigravity CLI `1.5.16` (macOS arm64, `~/.local/bin/agy`).
+
+- **Static (`agy plugin validate [--strict] --json <dir>`):** runs completely offline under an
+  isolated `HOME`/`XDG_*` with Google auth env vars unset. On `dummytest` wrapped with a synthetic
+  `.antigravity-plugin/plugin.json`, reports `bad-noframe` (error: missing frontmatter), `bad-yaml`
+  (error: invalid YAML), `bad-nodesc` (warning: missing description), and `good-skill` (clean).
+  Non-error advisory notes on synthesized wrappers (`no logo`) are filtered. On `antigravity-warn`
+  (`name: mismatched-name` in `skills/warn-skill/SKILL.md`), reports a warning (exit `0` normally,
+  exit `1` under `--strict`).
+- **Deep (`agy acp --disable-telemetry`):** runs over bounded stdio JSON-RPC (`initialize` →
+  `authenticate(gemini-api-key)` → `session/new(cwd)`) with `GEMINI_API_KEY=skillsmith-offline-probe`
+  and waits for the post-response `session/update` (`available_commands_update`) notification before
+  closing stdin. Loads `good-skill` and `bad-nodesc` and omits `bad-yaml` and `bad-noframe`, matching
+  expected runtime command names by frontmatter `name` (falling back to folder basename).
+- The Antigravity verifier baseline is `1.5.16`, owned by
+  `packages/core/src/agents/antigravity/descriptor.ts`.

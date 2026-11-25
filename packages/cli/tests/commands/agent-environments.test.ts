@@ -191,7 +191,17 @@ interface ManifestTool {
   package: string;
   version: string;
   provider?: 'npm' | 'native';
-  artifacts?: Record<string, { url: string; sha256: string; bytes: number }>;
+  artifacts?: Record<
+    string,
+    {
+      url: string;
+      sha256: string;
+      bytes: number;
+      archive?: 'tar.gz';
+      archiveMember?: string;
+      binarySha256?: string;
+    }
+  >;
 }
 
 interface PackageReceiptBase {
@@ -286,7 +296,7 @@ const validatePrefix = async (): Promise<PackageReceipt[]> => {
       expect(native.artifactSha256).toBe(pinned.sha256);
       expect(native.artifactBytes).toBe(pinned.bytes);
       expect(native.artifactPlatform).toBe(hostPlatform);
-      expect(item.sha256).toBe(pinned.sha256);
+      expect(item.sha256).toBe(pinned.binarySha256 ?? pinned.sha256);
     } else {
       const npm = item as NpmPackageReceipt;
       const packageJson = join(prefix, 'lib/node_modules', tool.package, 'package.json');
@@ -310,7 +320,7 @@ beforeAll(async () => {
     throw new Error(`invalid agent environment mode: ${mode}`);
   expect(manifest.schemaVersion).toBe(2);
   expect(manifest.tools.map((tool) => tool.id).sort()).toEqual([...toolRegistry.ids].sort());
-  expect(new Set(manifest.tools.map((tool) => tool.binary)).size).toBe(5);
+  expect(new Set(manifest.tools.map((tool) => tool.binary)).size).toBe(6);
   if (reportPath !== undefined) {
     if (
       !isAbsolute(reportPath) ||
@@ -451,10 +461,10 @@ const assertDiscovery = (value: Workspace, report: Agents, missing?: string): vo
     expect(capabilities?.operations.detect.supported).toBe(true);
     expect(capabilities?.operations['inventory-skills'].supported).toBe(true);
     expect(capabilities?.operations.install.supported).toBe(
-      ['claude-code', 'codex', 'muse'].includes(tool.id),
+      ['claude-code', 'codex', 'muse', 'antigravity'].includes(tool.id),
     );
     expect(capabilities?.operations['verify-static'].supported).toBe(
-      ['claude-code', 'codex', 'muse'].includes(tool.id),
+      ['claude-code', 'codex', 'muse', 'antigravity'].includes(tool.id),
     );
     const installations = report.detections.find((row) => row.tool === tool.id)?.installations;
     if (mode !== 'present' || missing === tool.id) {
@@ -478,7 +488,7 @@ const assertDiscovery = (value: Workspace, report: Agents, missing?: string): vo
   }
 };
 
-test('CI-T01: five supported agents obey the owned executable environment', async () => {
+test('CI-T01: six supported agents obey the owned executable environment', async () => {
   const value = await workspace('discovery');
   const discover = async (label: string): Promise<Agents> => {
     const result = await product(value, label, ['agents', '--json'], true);

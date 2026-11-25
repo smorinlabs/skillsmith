@@ -24,6 +24,8 @@
 
 ## muse — not detected
 
+## antigravity — not detected
+
 # Capabilities
 
 ## claude-code
@@ -76,11 +78,11 @@
 | inventory-skills | yes | user, project, system, managed | — |
 | inventory-commands | yes | user, project, system, managed | — |
 | diagnostics | yes | user, project, system, managed | — |
-| install | no | — | kilo-code is read-only; choose claude-code, codex, or muse |
-| uninstall | no | — | kilo-code is read-only; choose claude-code, codex, or muse |
-| dev | no | — | kilo-code is read-only; choose claude-code, codex, or muse |
-| promote | no | — | kilo-code is read-only; choose claude-code, codex, or muse |
-| undo | no | — | kilo-code is read-only; choose claude-code, codex, or muse |
+| install | no | — | kilo-code is read-only; choose claude-code, codex, muse, or antigravity |
+| uninstall | no | — | kilo-code is read-only; choose claude-code, codex, muse, or antigravity |
+| dev | no | — | kilo-code is read-only; choose claude-code, codex, muse, or antigravity |
+| promote | no | — | kilo-code is read-only; choose claude-code, codex, muse, or antigravity |
+| undo | no | — | kilo-code is read-only; choose claude-code, codex, muse, or antigravity |
 | verify-static | no | — | kilo-code has no registered static verifier |
 | verify-deep | no | — | kilo-code has no registered deep verifier |
 | plan | no | — | kilo-code cannot participate in desired-state mutations |
@@ -97,11 +99,11 @@
 | inventory-skills | yes | user, project, system, managed | — |
 | inventory-commands | yes | user, project, system, managed | — |
 | diagnostics | yes | user, project, system, managed | — |
-| install | no | — | opencode is read-only; choose claude-code, codex, or muse |
-| uninstall | no | — | opencode is read-only; choose claude-code, codex, or muse |
-| dev | no | — | opencode is read-only; choose claude-code, codex, or muse |
-| promote | no | — | opencode is read-only; choose claude-code, codex, or muse |
-| undo | no | — | opencode is read-only; choose claude-code, codex, or muse |
+| install | no | — | opencode is read-only; choose claude-code, codex, muse, or antigravity |
+| uninstall | no | — | opencode is read-only; choose claude-code, codex, muse, or antigravity |
+| dev | no | — | opencode is read-only; choose claude-code, codex, muse, or antigravity |
+| promote | no | — | opencode is read-only; choose claude-code, codex, muse, or antigravity |
+| undo | no | — | opencode is read-only; choose claude-code, codex, muse, or antigravity |
 | verify-static | no | — | opencode has no registered static verifier |
 | verify-deep | no | — | opencode has no registered deep verifier |
 | plan | no | — | opencode cannot participate in desired-state mutations |
@@ -130,3 +132,24 @@
 | sync | yes | user, custom | — |
 | update | yes | user, custom | — |
 | adapt | no | — | muse adaptation is not available |
+
+## antigravity
+
+| Operation | Supported | Scopes | Remediation |
+|---|---|---|---|
+| detect | yes | — | — |
+| inventory-skills | yes | user, project, system, managed | — |
+| inventory-commands | yes | user, project, system, managed | — |
+| diagnostics | yes | user, project, system, managed | — |
+| install | yes | user, custom | — |
+| uninstall | yes | user, custom | — |
+| dev | yes | user, custom | — |
+| promote | yes | user, custom | — |
+| undo | yes | user, custom | — |
+| verify-static | yes | artifact | — |
+| verify-deep | yes | artifact | — |
+| plan | yes | user, custom | — |
+| apply | yes | user, custom | — |
+| sync | yes | user, custom | — |
+| update | yes | user, custom | — |
+| adapt | no | — | antigravity adaptation is not available |

@@ -167,7 +167,7 @@ describe('aggregateShardEvidence', () => {
     expect(result.manifestSize).toBe(MANIFEST.length);
     expect(result.executed).toBe(MANIFEST.length);
     expect(result.passed).toBe(MANIFEST.length);
-    expect(result.skipped).toBe(42);
+    expect(result.skipped).toBe(46);
     expect(result.timing.map((shard) => shard.shardIndex)).toEqual([1, 2, 3, 4]);
   });
 

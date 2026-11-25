@@ -164,7 +164,9 @@ export const runInitApplication: ApplicationService<
   }
   if (toolsOption.some((tool) => !writable.has(tool))) {
     return fail(
-      capabilityFailure('init supports writable Claude Code, Codex, and Muse manifests only'),
+      capabilityFailure(
+        'init supports writable Claude Code, Codex, Muse, and Antigravity manifests only',
+      ),
     );
   }
 

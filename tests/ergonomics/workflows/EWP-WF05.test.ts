@@ -261,4 +261,101 @@ describe('EWP-WF05', () => {
       await destroyUndoFleet(fleet);
     }
   });
+
+  test('EWP-WF05 — antigravity user-scope lifecycle runs the stubbed static+deep gates', async () => {
+    requireUndoBoundary();
+    const fleet = await createUndoFleet();
+    try {
+      const agents = jsonReport(await runUndoCli(fleet, ['agents', '--json']));
+      expect(JSON.stringify(agents)).toContain('antigravity');
+
+      const dev = jsonReport(
+        await runUndoCli(fleet, [
+          'dev',
+          'review',
+          '--source',
+          fleet.source,
+          '--scope',
+          'user',
+          '--tool',
+          'antigravity',
+          '--no-verify',
+          '--json',
+        ]),
+      );
+      expect(dev).toMatchObject({ kind: 'skillsmith.flip', op: 'dev' });
+
+      const verified = jsonReport(
+        await runUndoCli(fleet, [
+          'verify',
+          fleet.source,
+          '--deep',
+          '--strict',
+          '--tool',
+          'antigravity',
+          '--json',
+        ]),
+      );
+      expect(verified).toMatchObject({
+        kind: 'skillsmith.verify',
+        summary: { verdict: 'pass' },
+      });
+
+      const status = jsonReport(
+        await runUndoCli(fleet, ['status', 'review', '--scope', 'user', '--json']),
+      );
+      expect(status).toMatchObject({ kind: 'skillsmith.status' });
+      expect(JSON.stringify(status)).toContain(fleet.paths.userAntigravity);
+
+      const promoted = jsonReport(
+        await runUndoCli(fleet, [
+          'promote',
+          'review',
+          '--scope',
+          'user',
+          '--tool',
+          'antigravity',
+          '--strict',
+          '--json',
+        ]),
+      );
+      expect(promoted).toMatchObject({ kind: 'skillsmith.flip', op: 'promote' });
+
+      const undoPreview = jsonReport(
+        await runUndoCli(fleet, ['undo', 'review', '--scope', 'user', '--dry-run', '--json']),
+      );
+      expect(undoPreview).toMatchObject({
+        schemaVersion: 1,
+        kind: 'skillsmith.undo',
+        command: 'undo',
+        mode: 'dry-run',
+        summary: { selected: 1, actionable: 1, planned: 1 },
+        groups: [
+          {
+            skill: 'review',
+            scope: 'user',
+            outcome: 'planned',
+            pairs: [{ tool: 'antigravity', outcome: 'planned' }],
+          },
+        ],
+      });
+      const undone = jsonReport(
+        await runUndoCli(fleet, ['undo', 'review', '--scope', 'user', '--yes', '--json']),
+      );
+      expect(undone).toMatchObject({
+        kind: 'skillsmith.undo',
+        summary: { selected: 1, actionable: 1, succeeded: 1, failed: 0 },
+        groups: [
+          {
+            skill: 'review',
+            scope: 'user',
+            outcome: 'succeeded',
+            pairs: [{ tool: 'antigravity', outcome: 'succeeded' }],
+          },
+        ],
+      });
+    } finally {
+      await destroyUndoFleet(fleet);
+    }
+  });
 });

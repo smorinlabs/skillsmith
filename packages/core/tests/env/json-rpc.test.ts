@@ -282,4 +282,104 @@ describe('bounded JSON-RPC process exchange', () => {
       clearTimeout(timer);
     }
   });
+
+  test('waits for a matching post-response notification before closing stdin', async () => {
+    const notifyServer = `
+import {createInterface} from 'node:readline';
+createInterface({input:process.stdin}).on('line', line => {
+  const message = JSON.parse(line);
+  if (message.method === 'initialize') {
+    console.log(JSON.stringify({jsonrpc:'2.0',id:1,result:{}}));
+  } else if (message.method === 'session/new') {
+    console.log(JSON.stringify({jsonrpc:'2.0',id:2,result:{sessionId:'s1'}}));
+    setTimeout(() => {
+      console.log(JSON.stringify({jsonrpc:'2.0',method:'session/update',params:{update:{sessionUpdate:'usage_update'}}}));
+    }, 10);
+    setTimeout(() => {
+      console.log(JSON.stringify({jsonrpc:'2.0',method:'session/update',params:{update:{sessionUpdate:'available_commands_update',availableCommands:[{name:'demo'}]}}}));
+    }, 25);
+  }
+});
+`;
+    const result = await execCommand(process.execPath, ['-e', notifyServer], {
+      jsonRpc: [
+        { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+        { jsonrpc: '2.0', id: 2, method: 'session/new', params: {} },
+      ],
+      jsonRpcUntilNotification: {
+        method: 'session/update',
+        path: ['params', 'update', 'sessionUpdate'],
+        equals: 'available_commands_update',
+      },
+      timeoutMs: 2000,
+    });
+    expect(result.code).toBe(0);
+    expect(result.timedOut).toBe(false);
+    expect(result.protocolError).toBeUndefined();
+    const parsed = result.stdout
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+    expect(
+      parsed.some((m) => m.params?.update?.sessionUpdate === 'available_commands_update'),
+    ).toBe(true);
+  });
+
+  test('closes immediately after final response if matching notification arrived earlier', async () => {
+    const earlyNotifyServer = `
+import {createInterface} from 'node:readline';
+createInterface({input:process.stdin}).on('line', line => {
+  const message = JSON.parse(line);
+  if (message.method === 'initialize') {
+    console.log(JSON.stringify({jsonrpc:'2.0',method:'session/update',params:{update:{sessionUpdate:'available_commands_update',availableCommands:[]}}}));
+    console.log(JSON.stringify({jsonrpc:'2.0',id:1,result:{}}));
+  }
+});
+`;
+    const result = await execCommand(process.execPath, ['-e', earlyNotifyServer], {
+      jsonRpc: [{ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }],
+      jsonRpcUntilNotification: {
+        method: 'session/update',
+        path: ['params', 'update', 'sessionUpdate'],
+        equals: 'available_commands_update',
+      },
+      timeoutMs: 2000,
+    });
+    expect(result.code).toBe(0);
+    expect(result.timedOut).toBe(false);
+    expect(result.protocolError).toBeUndefined();
+  });
+
+  test('fails as incomplete if server exits before expected notification arrives', async () => {
+    const earlyExitServer = `
+import {createInterface} from 'node:readline';
+const rl = createInterface({input:process.stdin});
+rl.on('line', line => {
+  const message = JSON.parse(line);
+  if (message.id === 1) {
+    console.log(JSON.stringify({jsonrpc:'2.0',id:1,result:{}}));
+    rl.close();
+  }
+});
+`;
+    const result = await execCommand(process.execPath, ['-e', earlyExitServer], {
+      jsonRpc: [{ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }],
+      jsonRpcUntilNotification: {
+        method: 'session/update',
+        path: ['params', 'update', 'sessionUpdate'],
+        equals: 'available_commands_update',
+      },
+      timeoutMs: 2000,
+    });
+    expect(result.protocolError).toContain('incomplete');
+  });
+
+  test('rejects invalid notification matcher options', async () => {
+    const result = await execCommand(process.execPath, ['-e', 'void 0'], {
+      jsonRpc: [{ id: 1, method: 'initialize', params: {} }],
+      jsonRpcUntilNotification: { method: 'session/update', path: ['params'] },
+      timeoutMs: 1000,
+    });
+    expect(result.protocolError).toBe('invalid exchange options');
+  });
 });

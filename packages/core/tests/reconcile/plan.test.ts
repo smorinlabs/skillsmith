@@ -976,6 +976,37 @@ describe('desired/current plan reconciliation', () => {
     ]);
   });
 
+  test('refuses an antigravity project declaration the adapter does not manage', async () => {
+    const state = await fixture();
+    const base = declaration('codex');
+    const antigravityProject: NormalizedManifestDeclaration = {
+      ...base,
+      name: 'delta',
+      source: { ...base.source, path: 'skills/delta' },
+      tools: ['antigravity'],
+      scope: 'project',
+    };
+    const rows: ResolvedPlanDeclaration[] = [
+      {
+        declaration: antigravityProject,
+        tool: 'antigravity',
+        lock: pinFor(antigravityProject, digest('f')),
+      },
+    ];
+    const result = await reconcile(productInput(state.root, rows), state);
+    expect(result.ok).toBeTrue();
+    if (!result.ok) throw new Error(result.error.message);
+    expect(result.value.plan.operations).toEqual([]);
+    expect(result.value.plan.diagnostics).toMatchObject([
+      {
+        kind: 'refuse',
+        refusalClass: 'capability',
+        affected: { tool: 'antigravity', path: null },
+        reason: { code: 'plan-placement-scope-unsupported' },
+      },
+    ]);
+  });
+
   test('prunes only a lock-owned managed placement with matching observed content', async () => {
     const state = await fixture();
     const live = join(state.ports.homeDir, '.agents', 'skills', 'orphan');

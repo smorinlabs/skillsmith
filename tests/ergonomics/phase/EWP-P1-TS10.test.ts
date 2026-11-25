@@ -1802,8 +1802,15 @@ describe('EWP-P1-TS10', () => {
       ['value'],
     );
 
-    const currentConfigTools = ['claude-code', 'codex', 'kilo-code', 'opencode', 'muse'] as const;
-    const currentLifecycleTools = ['claude-code', 'codex', 'muse'] as const;
+    const currentConfigTools = [
+      'claude-code',
+      'codex',
+      'kilo-code',
+      'opencode',
+      'muse',
+      'antigravity',
+    ] as const;
+    const currentLifecycleTools = ['claude-code', 'codex', 'muse', 'antigravity'] as const;
     expect(toolRegistry.ids).toEqual([...currentConfigTools]);
     expect(toolRegistry.toolsFor('install')).toEqual([...currentLifecycleTools]);
     expect(SCOPES).toEqual(['system', 'user', 'project', 'managed']);
