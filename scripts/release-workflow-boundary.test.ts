@@ -187,6 +187,110 @@ function assertCommonLaneParity(ci: Workflow, release: Workflow): void {
   );
 }
 
+// The GitHub-only v1.0.0 graph (P24). npm-preflight, homebrew-preflight, npm-publish and
+// homebrew-publish were deleted, not disabled; ADR 0011 links their last form for restoration.
+const GITHUB_ONLY_GRAPH: Record<
+  string,
+  { needs: string[]; permissions: string; environment?: string }
+> = {
+  guard: { needs: [], permissions: '{"contents":"read"}' },
+  'release-lookup': { needs: ['guard'], permissions: '{"contents":"write"}' },
+  candidate: {
+    needs: ['guard', 'release-lookup'],
+    permissions: '{"contents":"read"}',
+    environment: 'release-candidate',
+  },
+  'retained-candidate': {
+    needs: ['guard', 'release-lookup'],
+    permissions: '{"actions":"read","contents":"read"}',
+  },
+  'candidate-source': {
+    needs: ['guard', 'release-lookup', 'candidate', 'retained-candidate'],
+    permissions: '{"actions":"read","contents":"read"}',
+  },
+  common: {
+    needs: ['guard', 'candidate-source'],
+    permissions: '{"actions":"read","contents":"read"}',
+  },
+  native: {
+    needs: ['guard', 'candidate-source'],
+    permissions: '{"actions":"read","contents":"read"}',
+  },
+  'validation-aggregate': {
+    needs: ['guard', 'common', 'native'],
+    permissions: '{"actions":"read","contents":"read"}',
+  },
+  'github-preflight': {
+    needs: ['guard', 'release-lookup', 'candidate-source', 'validation-aggregate'],
+    permissions: '{"actions":"read","attestations":"read","contents":"write"}',
+    environment: 'github-release',
+  },
+  'publication-ready': {
+    needs: ['guard', 'candidate-source', 'validation-aggregate', 'github-preflight'],
+    permissions: '{"actions":"read","contents":"read"}',
+  },
+  'github-publish': {
+    needs: ['guard', 'release-lookup', 'candidate-source', 'publication-ready'],
+    permissions: '{"actions":"read","attestations":"write","contents":"write","id-token":"write"}',
+    environment: 'github-release',
+  },
+  'public-validation': {
+    needs: ['guard', 'candidate-source', 'github-publish'],
+    permissions: '{"actions":"read","attestations":"read","contents":"read"}',
+  },
+  'public-aggregate': {
+    needs: ['guard', 'public-validation'],
+    permissions: '{"actions":"read","contents":"read"}',
+  },
+};
+const ATTESTATION_VARS = [
+  'BILLING_READY_SHA',
+  'ENVIRONMENTS_READY_SHA',
+  'PUBLIC_AUDIT_APPROVED_SHA',
+  'PUBLIC_VISIBILITY_AUTHORIZED_SHA',
+  'RUNNER_MATRIX_READY_SHA',
+];
+
+function assertGithubOnlyGraph(workflow: Workflow, text: string): void {
+  const names = Object.keys(workflow.jobs).toSorted();
+  boundary(
+    names.join(',') === Object.keys(GITHUB_ONLY_GRAPH).toSorted().join(','),
+    `release job roster changed: ${names.join(',')}`,
+  );
+  for (const [name, expected] of Object.entries(GITHUB_ONLY_GRAPH)) {
+    const actual = job(workflow, name);
+    boundary(
+      needs(actual).toSorted().join(',') === expected.needs.toSorted().join(','),
+      `${name} needs changed`,
+    );
+    boundary(permissions(actual) === expected.permissions, `${name} permissions changed`);
+    boundary(actual.environment === expected.environment, `${name} environment changed`);
+    const conditions = [
+      actual.if,
+      ...(actual.steps ?? []).map((step) => (step as { if?: unknown }).if),
+    ];
+    boundary(
+      !conditions.some(
+        (condition) =>
+          condition === false || /^\s*(?:\$\{\{\s*)?false\b/u.test(String(condition ?? '')),
+      ),
+      `${name} is disabled instead of deleted`,
+    );
+  }
+  boundary(!/\$\{\{[^}]*\bsecrets(?:\.|\[)/u.test(text), 'the GitHub-only release uses no secrets');
+  const vars = [...new Set([...text.matchAll(/\bvars\.([A-Z0-9_]+)/gu)].map((match) => match[1]))];
+  boundary(
+    vars.toSorted().join(',') === ATTESTATION_VARS.join(','),
+    `attestation variables changed: ${vars.join(',')}`,
+  );
+  boundary(!/\bnpm\s+publish\b/u.test(text), 'npm publication is deferred');
+  boundary(!/\bbrew\s+(?:install|upgrade|uninstall)\b/u.test(text), 'Homebrew is deferred');
+  boundary(
+    !/environment:\s*(?:npm|homebrew)\b/u.test(text),
+    'npm and Homebrew environments are deferred',
+  );
+}
+
 describe('release workflow boundary', () => {
   test('the draft release is resolved once by ID, by a job that cannot run code or mutate', async () => {
     const text = await source('.github/workflows/release.yml');
@@ -313,5 +417,53 @@ describe('release workflow boundary', () => {
       if (step.env?.SKILLSMITH_REQUIRE_GORELEASER)
         step.env.SKILLSMITH_REQUIRE_GORELEASER = undefined;
     expect(() => assertCommonLaneParity(ci, optional)).toThrow('require goreleaser');
+  });
+
+  test('the job graph is exactly the GitHub-only release, with deferred jobs deleted', async () => {
+    const text = await source('.github/workflows/release.yml');
+    const workflow = parse(text);
+    expect(() => assertGithubOnlyGraph(workflow, text)).not.toThrow();
+    const mutations: [string, (copy: Workflow) => string | undefined][] = [
+      [
+        'release job roster changed',
+        (copy) => {
+          copy.jobs['npm-publish'] = { needs: ['github-publish'], steps: [{ run: 'true' }] };
+          return undefined;
+        },
+      ],
+      [
+        'public-validation needs changed',
+        (copy) => {
+          job(copy, 'public-validation').needs = ['guard', 'candidate-source'];
+          return undefined;
+        },
+      ],
+      [
+        'github-preflight is disabled instead of deleted',
+        (copy) => {
+          job(copy, 'github-preflight').if = 'false';
+          return undefined;
+        },
+      ],
+      [
+        'the GitHub-only release uses no secrets',
+        () => `${text}\n# \${{ secrets.MACOS_SIGN_P12 }}`,
+      ],
+      ['attestation variables changed', () => `${text}\n# \${{ vars.TAP_CASK_CI_READY_SHA }}`],
+      ['npm publication is deferred', () => `${text}\n# npm publish --access public`],
+      ['npm and Homebrew environments are deferred', () => `${text}\n# environment: npm`],
+      [
+        'github-publish permissions changed',
+        (copy) => {
+          job(copy, 'github-publish').permissions = { contents: 'write' };
+          return undefined;
+        },
+      ],
+    ];
+    for (const [diagnostic, mutate] of mutations) {
+      const copy = clone(workflow);
+      const mutatedText = mutate(copy) ?? text;
+      expect(() => assertGithubOnlyGraph(copy, mutatedText), diagnostic).toThrow(diagnostic);
+    }
   });
 });

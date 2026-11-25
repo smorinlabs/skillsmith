@@ -654,37 +654,50 @@ describe('EWP-P6-TS06', () => {
     expect(workflow).toContain('requiredSkips');
   });
 
+  // P24 (decision D6): v1.0.0 is a GitHub Release only. npm-preflight, homebrew-preflight,
+  // npm-publish and homebrew-publish were deleted from release.yml (ADR 0011 links their last
+  // form). Families 7 and 8 now assert the GitHub-only graph; the all-channel validators stay.
+  // Previous family 7: https://github.com/smorinlabs/skillsmith/blob/1161d1e87f77aa861ad0f6e73096767096aaf9da/tests/ergonomics/phase/EWP-P6-TS06.test.ts#L639-L663
   test('family 7: all authority preflights succeed before the sole publication-ready aggregate', async () => {
     const workflow = await source('.github/workflows/release.yml');
-    for (const job of [
-      'github-preflight:',
-      'npm-preflight:',
-      'homebrew-preflight:',
-      'publication-ready:',
-    ]) {
+    for (const job of ['github-preflight:', 'publication-ready:']) {
       expect(workflow, job).toContain(job);
     }
+    for (const job of ['npm-preflight:', 'homebrew-preflight:']) {
+      expect(workflow, job).not.toContain(job);
+    }
     expect(workflow).toContain('environment: github-release');
-    expect(workflow).toContain('environment: npm');
-    expect(workflow).toContain('environment: homebrew');
+    expect(workflow).not.toMatch(/environment:\s*(?:npm|homebrew)\b/u);
     expect(workflow).toMatch(/needs:.*publication-ready/u);
     expect(workflow).toContain('PUBLIC_AUDIT_APPROVED_SHA');
     expect(workflow).toContain('PUBLIC_VISIBILITY_AUTHORIZED_SHA');
-    expect(workflow).toContain('ACTIONS_ID_TOKEN_REQUEST_URL');
-    expect(workflow).toContain('npm ping');
-    expect(workflow).toContain('validatePublicationReadiness');
-    expect(workflow).toContain('git rev-list --count');
+    expect(workflow).toContain('validateGithubOnlyPublicationReadiness');
     expect(workflow).toContain('candidateMetadataSha256');
-    const githubPreflight = jobBlock(workflow, 'github-preflight', 'npm-preflight');
+    const githubPreflight = jobBlock(workflow, 'github-preflight', 'publication-ready');
     // P24 (decision D5): contents:write is the only scope that lists a draft release. The
     // preflight may still not mutate; scripts/release-workflow-boundary.test.ts enforces that.
-    // Previous form: https://github.com/smorinlabs/skillsmith/blob/1161d1e87f77aa861ad0f6e73096767096aaf9da/tests/ergonomics/phase/EWP-P6-TS06.test.ts#L660-L662
     expect(githubPreflight).toContain('contents: write');
     expect(githubPreflight).not.toMatch(/gh release (?:upload|edit|delete|create)/u);
     expect(githubPreflight).not.toContain('attestations: write');
     expect(githubPreflight).not.toContain('id-token: write');
+    const ready = requireGate(await loadGates(), 'validateGithubOnlyPublicationReadiness');
+    expect(() =>
+      ready({
+        candidateRetained: true,
+        external: {
+          audit: true,
+          billing: true,
+          environments: ['release-please', 'release-candidate', 'github-release'],
+          immutableReleases: true,
+          runnerLabels: ['ubuntu-24.04', 'ubuntu-24.04-arm', 'macos-15', 'macos-15-intel'],
+          visibilityAuthorized: true,
+        },
+        preflights: [],
+      }),
+    ).toThrow();
   });
 
+  // Previous family 8: https://github.com/smorinlabs/skillsmith/blob/1161d1e87f77aa861ad0f6e73096767096aaf9da/tests/ergonomics/phase/EWP-P6-TS06.test.ts#L665-L695
   test('family 8: publication recovery closes GitHub, five npm packages, and tap merged state', async () => {
     const classify = requireGate(await loadGates(), 'classifyPublicationState');
     expect(
@@ -697,62 +710,37 @@ describe('EWP-P6-TS06', () => {
     ).toEqual({ mode: 'complete', complete: true });
     expect(() =>
       classify({
-        candidateRetained: false,
-        github: 'public-exact',
-        npm: Array.from({ length: 5 }, () => 'exact'),
-        tap: 'open-exact',
-      }),
-    ).toThrow();
-    const workflow = await source('.github/workflows/release.yml');
-    expect(workflow).toContain('gh attestation verify');
-    expect(workflow).toContain('npm registry state is unavailable');
-    expect(workflow).toContain('occupied Homebrew cask mismatches the candidate');
-    expect(() =>
-      classify({
         candidateRetained: true,
         github: 'public-exact',
         npm: ['exact', 'exact', 'mismatch', 'missing', 'missing'],
         tap: 'absent',
       }),
     ).toThrow();
+    const githubOnly = requireGate(await loadGates(), 'classifyGithubOnlyPublicationState');
+    expect(githubOnly({ candidateRetained: true, github: 'draft-exact' })).toEqual({
+      complete: false,
+      mode: 'initial',
+    });
+    expect(githubOnly({ candidateRetained: true, github: 'public-exact' })).toEqual({
+      complete: true,
+      mode: 'complete',
+    });
+    expect(() => githubOnly({ candidateRetained: false, github: 'public-exact' })).toThrow();
+    const workflow = await source('.github/workflows/release.yml');
+    expect(workflow).toContain('gh attestation verify');
+    expect(workflow).not.toMatch(/\bnpm\s+publish\b/u);
+    expect(workflow).not.toContain('npm registry state is unavailable');
+    expect(workflow).not.toContain('occupied Homebrew cask mismatches the candidate');
   });
 
+  // The Homebrew public-validation block, and the cask post-uninstall assertion this family
+  // exercised, were deleted with Homebrew publication (restoration tracked in #58).
+  // Previous form: https://github.com/smorinlabs/skillsmith/blob/1161d1e87f77aa861ad0f6e73096767096aaf9da/tests/ergonomics/phase/EWP-P6-TS06.test.ts#L697-L733
   test('family 8: post-uninstall assertion stops when the cask remains registered', async () => {
     const workflow = await source('.github/workflows/release.yml');
-    const assertion = workflow.match(
-      /test ! -e "\$brew_binary"\n([\s\S]*?)\n\s*channels='\["direct","npm","bun","homebrew"\]'/u,
-    )?.[1];
-    expect(assertion, 'exercise the actual workflow assertion, not a copied repair').toBeDefined();
-    if (assertion === undefined) throw new Error('post-uninstall assertion is absent');
-
-    for (const status of [0, 1]) {
-      // A shell function intercepts the only command under test; no Homebrew is run.
-      const child = Bun.spawnSync(
-        [
-          'bash',
-          '--noprofile',
-          '--norc',
-          '-e',
-          '-o',
-          'pipefail',
-          '-c',
-          `brew() {
-            if [[ "$#" != 3 || "$1" != list || "$2" != --cask || "$3" != skillsmith ]]; then
-              exit 97
-            fi
-            return ${status}
-          }
-          ${assertion}
-          echo assertion-completed`,
-        ],
-        { env: { PATH: process.env.PATH ?? '/usr/bin:/bin' }, timeout: 2_000 },
-      );
-      expect(child.exitCode, `brew list status ${status}`).toBe(status === 0 ? 1 : 0);
-      expect(child.stdout.toString()).toBe(status === 0 ? '' : 'assertion-completed\n');
-      expect(child.stderr.toString()).toBe(
-        status === 0 ? 'skillsmith cask remains installed after uninstall\n' : '',
-      );
-    }
+    expect(workflow).not.toMatch(/\bbrew\s+(?:install|upgrade|uninstall)\b/u);
+    expect(workflow).not.toContain('channels=\'["direct","npm","bun","homebrew"]\'');
+    expect(workflow).toContain('channels=\'["direct"]\'');
   });
 
   test('family 9: executable external readiness refuses every missing authority or public audit', async () => {
