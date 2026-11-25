@@ -84,10 +84,13 @@ jobs:
       - name: Regenerate lockfile and command references
         run: |
           bun install --ignore-scripts
+          version="$(jq -r '.["."]' .release-please-manifest.json)"
+          bun scripts/release-identity.ts --sync-lock "$version"
           bun scripts/generate-command-reference.ts --write
           unexpected="$(git diff --name-only | grep -Ev '^(bun\.lock|README\.md|docs/commands\.md)$' || true)"
           test -z "$unexpected"
           bun scripts/generate-command-reference.ts --check
+          bun scripts/release-identity.ts --check "$version"
       - name: Commit deterministic derived files
         run: |
           if git diff --quiet -- bun.lock README.md docs/commands.md; then

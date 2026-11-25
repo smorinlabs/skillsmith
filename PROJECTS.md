@@ -35,6 +35,7 @@
 
 ## Project index
 
+- [~] **P24** — [Ship v1.0.0 as a GitHub Release only (unsigned macOS)](projects/P24-v1-github-release-only.md)
 - [~] **P23** — [CI wall-clock: six weight-balanced test shards](projects/P23-ci-six-test-shards.md)
 - [x] **P22** — [macOS serial gate, PATH-first detection, and newer toolchains](projects/P22-macos-gate-and-newer-toolchains.md)
 - [ ] **P21** — [Skillsmith v2 (Rust) architecture, tracked in skillsmith-rs](projects/P21-skillsmith-v2-rust-architecture.md)

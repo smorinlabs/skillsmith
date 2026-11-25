@@ -225,8 +225,18 @@ describe('credential scanner boundaries', () => {
     git(cwd, 'update-ref', 'refs/remotes/origin/retained', head);
     git(cwd, 'reset', '--hard', base);
     const result = scan(cwd, 'history');
-    expect(findingFiles(result.stdout, 'trufflehog')).toContain('research/removed.txt');
-    expect(findingFiles(result.stdout, 'gitleaks')).toContain('research/removed.txt');
+    // A fail-closed scanner error and a genuine miss of the fetched ref both leave no finding
+    // rows, so report the exit status and the scanner's own summary lines with any failure.
+    // Finding rows are already redacted; assertRedacted proves nothing secret reaches them.
+    assertRedacted(result.stdout + result.stderr);
+    const diagnostic = [
+      `exit ${result.status}`,
+      ...result.stdout.split('\n').filter((line) => line && !line.startsWith('{')),
+      result.stderr.trim(),
+    ].join('\n');
+    expect(result.status, diagnostic).toBe(1);
+    expect(findingFiles(result.stdout, 'trufflehog'), diagnostic).toContain('research/removed.txt');
+    expect(findingFiles(result.stdout, 'gitleaks'), diagnostic).toContain('research/removed.txt');
   }, 300_000);
 
   test('Gitleaks covers merge-only additions and historical configuration contents', () => {

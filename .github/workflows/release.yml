@@ -43,8 +43,6 @@ jobs:
     permissions:
       contents: read
     outputs:
-      candidate-mode: ${{ steps.guard.outputs.candidate_mode }}
-      release-id: ${{ steps.guard.outputs.release_id }}
       sha: ${{ steps.guard.outputs.sha }}
       tag: ${{ steps.guard.outputs.tag }}
     steps:
@@ -56,14 +54,8 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.3.14
-      - name: Bind exact tag, source, versions, generated state, and recovery mode
+      - name: Bind exact tag, source, versions, and generated state
         id: guard
-        env:
-          CANDIDATE_ARTIFACT_DIGEST: ${{ inputs.candidate_artifact_digest }}
-          CANDIDATE_ARTIFACT_ID: ${{ inputs.candidate_artifact_id }}
-          CANDIDATE_BUNDLE_SHA256: ${{ inputs.candidate_bundle_sha256 }}
-          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -eu
           test "$RELEASE_TAG" = 'v1.0.0'
@@ -74,21 +66,64 @@ jobs:
           git merge-base --is-ancestor "$sha" refs/remotes/origin/main
           test "$(git status --porcelain)" = ''
 
-          test "$(jq -r '.["."]' .release-please-manifest.json)" = "$RELEASE_VERSION"
-          for manifest in package.json packages/cli/package.json packages/core/package.json; do
-            test "$(jq -r .version "$manifest")" = "$RELEASE_VERSION"
-          done
-          test "$(jq -r '.workspaces["packages/cli"].version' bun.lock)" = "$RELEASE_VERSION"
-          test "$(jq -r '.workspaces["packages/core"].version' bun.lock)" = "$RELEASE_VERSION"
+          bun scripts/release-identity.ts --check "$RELEASE_VERSION"
           grep -Fq "Current version: \`$RELEASE_VERSION\`" docs/commands.md
           bun scripts/generate-command-reference.ts --check
+          {
+            echo "sha=$sha"
+            echo "tag=$RELEASE_TAG"
+          } >> "$GITHUB_OUTPUT"
 
-          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > "$RUNNER_TEMP/release.json"
+  # GitHub lists draft releases only to tokens with push access, and the get-by-tag endpoint
+  # returns published releases only. This job holds contents:write solely to read the draft:
+  # it checks out nothing, runs no repository code, and issues only GET requests.
+  release-lookup:
+    needs: guard
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      candidate-mode: ${{ steps.lookup.outputs.candidate_mode }}
+      release-id: ${{ steps.lookup.outputs.release_id }}
+    steps:
+      - name: Resolve the exact release by ID and bind the recovery mode
+        id: lookup
+        env:
+          CANDIDATE_ARTIFACT_DIGEST: ${{ inputs.candidate_artifact_digest }}
+          CANDIDATE_ARTIFACT_ID: ${{ inputs.candidate_artifact_id }}
+          CANDIDATE_BUNDLE_SHA256: ${{ inputs.candidate_bundle_sha256 }}
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ needs.guard.outputs.sha }}
+        run: |
+          set -eu
+          # release-please creates the tag before the draft, so the draft can lag the tag push.
+          attempt=1
+          while :; do
+            gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+              | jq -r --arg tag "$RELEASE_TAG" '.[] | select(.tag_name == $tag) | .id' > "$RUNNER_TEMP/release-ids.txt"
+            count="$(grep -c . "$RUNNER_TEMP/release-ids.txt" || true)"
+            if [ "$count" = '1' ]; then break; fi
+            if [ "$count" != '0' ]; then
+              echo "expected exactly one release for $RELEASE_TAG; found $count" >&2
+              exit 1
+            fi
+            if [ "$attempt" -ge 6 ]; then
+              echo "no release for $RELEASE_TAG after $attempt attempts" >&2
+              exit 1
+            fi
+            attempt=$((attempt + 1))
+            sleep 10
+          done
+          release_id="$(cat "$RUNNER_TEMP/release-ids.txt")"
+          case "$release_id" in *[!0-9]*|'') exit 1 ;; esac
+          gh api "repos/$GITHUB_REPOSITORY/releases/$release_id" > "$RUNNER_TEMP/release.json"
+          test "$(jq -r .tag_name "$RUNNER_TEMP/release.json")" = "$RELEASE_TAG"
           test "$(jq -r .prerelease "$RUNNER_TEMP/release.json")" = 'false'
           target="$(jq -r .target_commitish "$RUNNER_TEMP/release.json")"
-          if [ "$target" != "$sha" ]; then
-            target="$(git rev-parse "$target^{commit}")"
-            test "$target" = "$sha"
+          if [ "$target" != "$RELEASE_SHA" ]; then
+            target="$(gh api "repos/$GITHUB_REPOSITORY/commits/$target" --jq .sha)"
+            test "$target" = "$RELEASE_SHA"
           fi
 
           supplied=0
@@ -112,14 +147,12 @@ jobs:
           fi
           {
             echo "candidate_mode=$candidate_mode"
-            echo "release_id=$(jq -r .id "$RUNNER_TEMP/release.json")"
-            echo "sha=$sha"
-            echo "tag=$RELEASE_TAG"
+            echo "release_id=$release_id"
           } >> "$GITHUB_OUTPUT"
 
   candidate:
-    needs: guard
-    if: needs.guard.outputs.candidate-mode == 'build'
+    needs: [guard, release-lookup]
+    if: needs.release-lookup.outputs.candidate-mode == 'build'
     runs-on: ubuntu-24.04
     environment: release-candidate
     permissions:
@@ -198,8 +231,8 @@ jobs:
           retention-days: 90
 
   retained-candidate:
-    needs: guard
-    if: needs.guard.outputs.candidate-mode == 'retained'
+    needs: [guard, release-lookup]
+    if: needs.release-lookup.outputs.candidate-mode == 'retained'
     runs-on: ubuntu-24.04
     permissions:
       actions: read
@@ -264,7 +297,7 @@ jobs:
           compression-level: 0
 
   candidate-source:
-    needs: [guard, candidate, retained-candidate]
+    needs: [guard, release-lookup, candidate, retained-candidate]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     permissions:
@@ -281,7 +314,7 @@ jobs:
       - name: Require exactly one successful candidate source
         env:
           BUILD_RESULT: ${{ needs.candidate.result }}
-          EXPECTED_MODE: ${{ needs.guard.outputs.candidate-mode }}
+          EXPECTED_MODE: ${{ needs.release-lookup.outputs.candidate-mode }}
           RETAINED_RESULT: ${{ needs.retained-candidate.result }}
         run: |
           case "$EXPECTED_MODE:$BUILD_RESULT:$RETAINED_RESULT" in
@@ -360,20 +393,94 @@ jobs:
         with:
           artifact-ids: ${{ needs.candidate-source.outputs.artifact-id }}
           path: transferred
-      - name: Install exact repository and real-tool dependencies
+      - name: Install dependencies without lifecycle scripts
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: Install exact actionlint and credential scanners
         run: |
-          npm_prefix="$RUNNER_TEMP/npm-12.0.1"
-          npm install --global --prefix "$npm_prefix" npm@12.0.1
-          echo "$npm_prefix/bin" >> "$GITHUB_PATH"
-          tool_prefix="$RUNNER_TEMP/real-tools"
-          npm install --global --prefix "$tool_prefix" @anthropic-ai/claude-code@2.1.202 @openai/codex@0.142.5
-          echo "$tool_prefix/bin" >> "$GITHUB_PATH"
-          bun install --frozen-lockfile --ignore-scripts
-          tool_bin="$RUNNER_TEMP/release-tools"
+          tool_bin="$RUNNER_TEMP/skillsmith-tools"
           SKILLSMITH_TOOL_BIN_DIR="$tool_bin" ./scripts/install-actionlint.sh
           SKILLSMITH_TOOL_BIN_DIR="$tool_bin" ./scripts/install-gitleaks.sh
           SKILLSMITH_TOOL_BIN_DIR="$tool_bin" ./scripts/install-trufflehog.sh
           echo "$tool_bin" >> "$GITHUB_PATH"
+      - name: Install exact ordinary agent tools
+        run: |
+          agent_root="$RUNNER_TEMP/skillsmith-ordinary-agent-tools"
+          bun scripts/install-ci-agent-tools.ts --root "$agent_root"
+          echo "ORDINARY_AGENT_PREFIX=$agent_root/prefix" >> "$GITHUB_ENV"
+          echo "$agent_root/prefix/bin" >> "$GITHUB_PATH"
+      - name: Check ordinary agent command bindings
+        run: |
+          for name in claude codex kilo opencode muse; do
+            expected="$ORDINARY_AGENT_PREFIX/bin/$name"
+            actual=$(command -v "$name" || true)
+            if [ "$actual" != "$expected" ]; then
+              echo "expected $name at $expected, found $actual" >&2
+              exit 1
+            fi
+            timeout --signal=TERM --kill-after=5s 30s "$actual" --version
+          done
+      - name: Install pinned release-test npm in owned prefix
+        run: |
+          npm_prefix="$RUNNER_TEMP/skillsmith-ordinary-npm-12.0.1"
+          npm install --global --prefix "$npm_prefix" --engine-strict --ignore-scripts --no-audit --no-fund npm@12.0.1
+          echo "$npm_prefix/bin" >> "$GITHUB_PATH"
+      - name: Install pinned release-test GoReleaser
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94
+        with:
+          version: v2.18.2
+          install-only: true
+      - name: Check minimum release-test tool versions before canonical gate
+        run: |
+          bun --eval '
+          import { spawnSync } from "node:child_process";
+          import { assertReleaseToolVersions } from "./scripts/release-artifacts.ts";
+
+          const probe = (name) => {
+            const executable = Bun.which(name);
+            if (executable === null) throw new Error("required release-test tool missing from PATH: " + name);
+            const result = spawnSync(executable, ["--version"], {
+              cwd: process.cwd(),
+              env: process.env,
+              encoding: "utf8",
+              timeout: 30000,
+              maxBuffer: 1024 * 1024,
+            });
+            console.log(JSON.stringify({
+              tool: name,
+              executable,
+              status: result.status,
+              signal: result.signal,
+              stdout: result.stdout,
+              stderr: result.stderr,
+              error: result.error?.message ?? null,
+            }));
+            if (result.error || result.signal !== null || result.status !== 0) {
+              throw new Error("native version probe failed: " + name);
+            }
+            return result.stdout.trim();
+          };
+          const versions = {
+            bun: probe("bun"),
+            goreleaser: probe("goreleaser").match(/GitVersion:\s*v?([^\s]+)/u)?.[1] ?? "",
+            npm: probe("npm"),
+          };
+          assertReleaseToolVersions(versions);
+          console.log(JSON.stringify({ status: "MINIMUM_RELEASE_TEST_TOOL_VERSIONS_CONFIRMED", versions }));
+          '
+      - name: Pin environment-gated test capabilities
+        run: |
+          bun --eval '
+          import { statfsSync } from "node:fs";
+          import { tmpdir } from "node:os";
+          import { resolve } from "node:path";
+          const strace = Bun.which("strace");
+          if (strace === null) throw new Error("serial gate requires strace on Linux (lane-2 fault injection); install it or expect lane-2 skips");
+          const base = resolve(process.env.TMPDIR ?? tmpdir());
+          const stats = statfsSync(base);
+          const free = stats.bavail * stats.bsize;
+          if (free < 300 * 1024 * 1024) throw new Error("serial gate requires 300MB free under " + base + "; found " + free + " bytes");
+          console.log(JSON.stringify({ envCapabilitiesPinned: true, strace, scratchBase: base, freeBytes: free }));
+          '
       - name: Run canonical and real Claude/Codex release-candidate compatibility gates
         env:
           GITHUB_REF_NAME: ${{ needs.guard.outputs.tag }}
@@ -384,6 +491,7 @@ jobs:
           SKILLSMITH_RELEASE_CANDIDATE_ROOT: ${{ github.workspace }}/dist/release
           SKILLSMITH_RELEASE_RECEIPT_PATH: ${{ github.workspace }}/receipt-common.json
           SKILLSMITH_E2E: '1'
+          SKILLSMITH_REQUIRE_GORELEASER: '1'
         run: |
           tar -xf transferred/candidate-bundle.tar
           just release-check common
@@ -519,15 +627,28 @@ jobs:
           name: release-validation-${{ github.run_id }}
           path: validation-aggregate.json
           if-no-files-found: error
+      - name: Record the public command roster for post-publication validation
+        run: |
+          bun - <<'BUN'
+          import { writeFile } from 'node:fs/promises';
+          import { PUBLIC_COMMAND_ORDER } from './scripts/release-gates.ts';
+          await writeFile('public-command-roster.json', `${JSON.stringify(PUBLIC_COMMAND_ORDER)}\n`);
+          BUN
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: public-command-roster-${{ github.run_id }}
+          path: public-command-roster.json
+          if-no-files-found: error
 
+  # contents:write only reads the draft release (see release-lookup); no mutation, no code.
   github-preflight:
-    needs: [guard, candidate-source, validation-aggregate]
+    needs: [guard, release-lookup, candidate-source, validation-aggregate]
     runs-on: ubuntu-24.04
     environment: github-release
     permissions:
       actions: read
       attestations: read
-      contents: read
+      contents: write
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -537,18 +658,18 @@ jobs:
         with:
           artifact-ids: ${{ needs.candidate-source.outputs.artifact-id }}
           path: transferred
-      - name: Preflight exact draft/public release and immutable-release policy
+      - name: Preflight exact draft/public release
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ needs.release-lookup.outputs.release-id }}
         run: |
           set -eu
           test -s validation/validation-aggregate.json
           test -s transferred/candidate-identity.json
           tar -xf transferred/candidate-bundle.tar
-          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > release.json
+          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" > release.json
+          test "$(jq -r .tag_name release.json)" = "$RELEASE_TAG"
           test "$(jq -r .prerelease release.json)" = 'false'
-          immutable="$(gh api "repos/$GITHUB_REPOSITORY/immutable-releases" -H 'X-GitHub-Api-Version: 2026-03-10' --jq .enabled)"
-          test "$immutable" = 'true'
           find dist/release -maxdepth 1 -type f \( -name 'skillsmith-v1.0.0-*.tar.gz' -o -name SHA256SUMS \) -printf '%f\n' | sort > expected-assets.txt
           test "$(wc -l < expected-assets.txt | tr -d ' ')" = '5'
           jq -r '.assets[].name' release.json | sort > current-assets.txt
@@ -806,7 +927,7 @@ jobs:
           if-no-files-found: error
 
   github-publish:
-    needs: [guard, candidate-source, publication-ready]
+    needs: [guard, release-lookup, candidate-source, publication-ready]
     runs-on: ubuntu-24.04
     environment: github-release
     permissions:
@@ -826,6 +947,7 @@ jobs:
       - name: Upload only missing exact assets and reject occupied mismatches
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ needs.release-lookup.outputs.release-id }}
         run: |
           set -eu
           test -s ready/publication-ready.json
@@ -837,7 +959,8 @@ jobs:
             .sha == $identity[0].sha and .tag == $identity[0].tag and .version == $identity[0].version
           ' ready/publication-ready.json >/dev/null
           tar -xf transferred/candidate-bundle.tar
-          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > release.json
+          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" > release.json
+          test "$(jq -r .tag_name release.json)" = "$RELEASE_TAG"
           find dist/release -maxdepth 1 -type f \( -name 'skillsmith-v1.0.0-*.tar.gz' -o -name SHA256SUMS \) -printf '%f\n' | sort > expected-assets.txt
           jq -r '.assets[].name' release.json | sort > occupied-assets.txt
           while IFS= read -r name; do
@@ -853,7 +976,7 @@ jobs:
               gh release upload "$RELEASE_TAG" "$asset"
             fi
           done
-          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > release-after-upload.json
+          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" > release-after-upload.json
           jq -r '.assets[].name' release-after-upload.json | sort > uploaded-assets.txt
           cmp expected-assets.txt uploaded-assets.txt
           while IFS= read -r name; do
@@ -870,6 +993,7 @@ jobs:
       - name: Publish the complete draft release
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ needs.release-lookup.outputs.release-id }}
         run: |
           set -eu
           for asset in dist/release/skillsmith-v1.0.0-*.tar.gz dist/release/SHA256SUMS; do
@@ -879,12 +1003,20 @@ jobs:
               --source-digest '${{ needs.guard.outputs.sha }}' \
               --source-ref "refs/tags/$RELEASE_TAG"
           done
-          if [ "$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" --jq .draft)" = 'true' ]; then
+          if [ "$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --jq .draft)" = 'true' ]; then
             gh release edit "$RELEASE_TAG" --draft=false --latest
           fi
-          test "$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" --jq .draft)" = 'false'
-          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" --jq '.assets[].name' | sort > public-assets.txt
+          test "$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --jq .draft)" = 'false'
+          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --jq '.assets[].name' | sort > public-assets.txt
           cmp expected-assets.txt public-assets.txt
+          # Before publication, immutability rests on the owner's ENVIRONMENTS_READY_SHA
+          # attestation; the repository setting is readable only with Administration access.
+          if [ "$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --jq .immutable)" = 'true' ]; then
+            echo "published release $RELEASE_ID is immutable"
+          else
+            echo "::error::published release $RELEASE_ID is NOT immutable; enable immutable releases and record the incident" >&2
+            exit 1
+          fi
 
   npm-publish:
     needs: [guard, candidate-source, publication-ready, github-publish]
@@ -1056,6 +1188,7 @@ jobs:
             target: darwin-x64
     runs-on: ${{ matrix.runner }}
     permissions:
+      actions: read
       attestations: read
       contents: read
     steps:
@@ -1067,6 +1200,10 @@ jobs:
           node-version: '24'
       - name: Install exact npm
         run: npm install --global npm@12.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: public-command-roster-${{ github.run_id }}
+          path: roster
       - name: Prove public direct, npm, Bun, and macOS Homebrew lifecycle and orientation
         env:
           CANDIDATE_ARTIFACT_ID: ${{ needs.candidate-source.outputs.candidate-artifact-id }}
@@ -1077,6 +1214,8 @@ jobs:
           TARGET: ${{ matrix.target }}
         run: |
           set -eu
+          roster="$GITHUB_WORKSPACE/roster/public-command-roster.json"
+          jq -e 'type == "array" and length > 0 and all(type == "string")' "$roster" >/dev/null
           root="$RUNNER_TEMP/public-skillsmith"
           archive="skillsmith-v1.0.0-$TARGET.tar.gz"
           mkdir -p "$root/release" "$root/direct" "$root/npm" "$root/bun" "$root/owned"
@@ -1132,9 +1271,9 @@ jobs:
             command -v zsh >/dev/null
             zsh -n "$root/_skillsmith"
             awk '/^  [a-z][a-z|]*/ { command=$1; sub(/\|.*/, "", command); print command }' "$root/help.txt" > "$root/commands.txt"
-            printf '%s\n' agents list commands status install uninstall update undo dev verify promote init export plan apply sync doctor check gc config completion version help > "$root/expected-commands.txt"
+            jq -r '.[]' "$roster" > "$root/expected-commands.txt"
             cmp "$root/expected-commands.txt" "$root/commands.txt"
-            test "$(sort "$root/commands.txt" | uniq | wc -l | tr -d ' ')" = '23'
+            test "$(sort "$root/commands.txt" | uniq | wc -l | tr -d ' ')" = "$(jq length "$roster")"
             grep -Fq 'list|ls [options]' "$root/help.txt"
             grep -Fq 'install|i [options]' "$root/help.txt"
             grep -Fq 'uninstall|remove|rm [options]' "$root/help.txt"
@@ -1298,7 +1437,7 @@ jobs:
           for owned_path in "$root/owned" "$root/release" "$root/fleet-home"; do
             case "$owned_path" in "$root"/*) ;; *) exit 1 ;; esac
           done
-          commands='["agents","list","commands","status","install","uninstall","update","undo","dev","verify","promote","init","export","plan","apply","sync","doctor","check","gc","config","completion","version","help"]'
+          commands="$(jq -c . "$roster")"
           jq -n \
             --arg artifactId "$CANDIDATE_ARTIFACT_ID" \
             --arg digest "$CANDIDATE_BUNDLE_SHA256" \

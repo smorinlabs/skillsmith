@@ -12,7 +12,11 @@ import {
   uninstallDirectArchive,
   validateGoreleaserInventory,
 } from './release-artifacts.ts';
-import { RELEASE_NATIVE_LANES, validateReleaseReceiptSet } from './release-gates.ts';
+import {
+  RELEASE_NATIVE_LANES,
+  assertPublicCommandRoster,
+  validateReleaseReceiptSet,
+} from './release-gates.ts';
 import { parseJUnitSummary } from './run-test-files-serial.ts';
 import { isAtLeastVersion } from './tool-versions.ts';
 
@@ -177,6 +181,7 @@ async function runBinary(
   await chmod(path, 0o755);
   for (const arguments_ of [
     ['version'],
+    ['help'],
     ['agents', '--capabilities', '--format', 'json'],
     ['doctor', '--json'],
     ['completion', 'zsh'],
@@ -196,6 +201,7 @@ async function runBinary(
     if (arguments_[0] === 'version' && result.stdout.toString().trim() !== candidate.version) {
       fail('candidate executable version mismatch');
     }
+    if (arguments_[0] === 'help') assertPublicCommandRoster(result.stdout.toString());
     if (arguments_[0] === 'completion' && result.stdout.byteLength === 0) {
       fail('candidate zsh completion is empty');
     }
