@@ -1862,9 +1862,9 @@ const runInstallInternal = async (
       ) {
         throw new Error('install artifact group lacks a portable source');
       }
-      const tools = registry.ids.filter((tool) =>
-        group.intents.some(({ intent }) => intent.tool === tool),
-      ) as NormalizedManifestDeclaration['tools'];
+      const tools = registry.ids
+        .filter((tool) => group.intents.some(({ intent }) => intent.tool === tool))
+        .sort() as NormalizedManifestDeclaration['tools'];
       const desired: NormalizedManifestDeclaration = Object.freeze({
         name: first.intent.skill,
         source: first.intent.source.identity,
