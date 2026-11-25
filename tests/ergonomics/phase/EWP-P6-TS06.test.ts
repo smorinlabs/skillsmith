@@ -658,8 +658,13 @@ describe('EWP-P6-TS06', () => {
     expect(workflow).toContain('git rev-list --count');
     expect(workflow).toContain('candidateMetadataSha256');
     const githubPreflight = jobBlock(workflow, 'github-preflight', 'npm-preflight');
-    expect(githubPreflight).not.toContain('contents: write');
+    // P24 (decision D5): contents:write is the only scope that lists a draft release. The
+    // preflight may still not mutate; scripts/release-workflow-boundary.test.ts enforces that.
+    // Previous form: https://github.com/smorinlabs/skillsmith/blob/1161d1e87f77aa861ad0f6e73096767096aaf9da/tests/ergonomics/phase/EWP-P6-TS06.test.ts#L660-L662
+    expect(githubPreflight).toContain('contents: write');
+    expect(githubPreflight).not.toMatch(/gh release (?:upload|edit|delete|create)/u);
     expect(githubPreflight).not.toContain('attestations: write');
+    expect(githubPreflight).not.toContain('id-token: write');
   });
 
   test('family 8: publication recovery closes GitHub, five npm packages, and tap merged state', async () => {
