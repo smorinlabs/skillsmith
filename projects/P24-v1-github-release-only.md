@@ -6,7 +6,7 @@
 - **Depends on:** [P19](P19-product-bug-closeout-and-publication-deferral.md) (publication deferral; P19 itself does not authorize publication)
 - **Prior art:** `docs/adr/0010-release-validation-and-publication.md`, `.github/workflows/release.yml`
 
-**Status:** PR-1 (make the pipeline executable) in progress.
+**Status:** PR-1 (#143) and PR-2 (#145) merged; docs in this PR; PR-3 (#144, `force-tag-creation`) is a draft that merges last, immediately before the release PR #139. The rehearsal and owner setup remain.
 
 ## Goal
 
@@ -32,30 +32,30 @@ its first tagged run must pass, because the workflow is frozen at the tagged com
 Task numbers follow the plan's `GR-nn` IDs (`GR-07` is `P24-T07`).
 
 - [x] [P24-T00] Owner decision recorded on #53 (D1–D7 approved)
-- [ ] [P24-T01] Resolve the draft release by ID with a bounded retry; draft-read privilege only
-      where needed (D5)
-- [ ] [P24-T02] Read `bun.lock` with a tested parser that accepts trailing commas; refresh the
-      workspace versions to `1.0.0`; post-condition in `sync-derived-files`
-- [ ] [P24-T03] One public command roster derived from the registry, checked before publication
-- [ ] [P24-T04] `common` release lane installs the same prerequisites as the CI test shards
-- [ ] [P24-T05] Replace the admin-only immutable-releases probe with a post-publication assertion
-- [ ] [P24-T06] Triage the red `scripts/secret-scan.test.ts` shard on `main`
-- [ ] [P24-T07] Remove `npm-preflight`, `homebrew-preflight`, `npm-publish`, `homebrew-publish`
-- [ ] [P24-T08] Explicit `--macos-signing none` mode with a Bun >= 1.4.1 floor
-- [ ] [P24-T09] GitHub-only gate variants
-- [ ] [P24-T10] Structural boundary test for `release.yml`
-- [ ] [P24-T11] `force-tag-creation` in `release-please-config.json` (last PR to merge)
-- [ ] [P24-T12] Remove the duplicate `## [1.0.0]` block from `CHANGELOG.md`
-- [ ] [P24-T13] ADR amending ADR-0010 for v1.0.0
-- [ ] [P24-T14] Rewrite `docs/releases.md` for this flow
-- [ ] [P24-T15] Dated pointer from P19 to P24
+- [x] [P24-T01] Resolve the draft release by ID with a bounded retry; draft-read privilege only
+      where needed (D5) (#143)
+- [x] [P24-T02] Read `bun.lock` with a tested parser that accepts trailing commas; refresh the
+      workspace versions to `1.0.0`; post-condition in `sync-derived-files` (#143)
+- [x] [P24-T03] One public command roster derived from the registry, checked before publication (#143)
+- [x] [P24-T04] `common` release lane installs the same prerequisites as the CI test shards (#143)
+- [x] [P24-T05] Replace the admin-only immutable-releases probe with a post-publication assertion (#143)
+- [~] [P24-T06] Triage the red `scripts/secret-scan.test.ts` shard on `main` (#143 adds a status diagnostic; the failure did not recur on #143's Ubuntu run)
+- [x] [P24-T07] Remove `npm-preflight`, `homebrew-preflight`, `npm-publish`, `homebrew-publish` (#145)
+- [x] [P24-T08] Explicit `--macos-signing none` mode with a Bun >= 1.4.1 floor (#145)
+- [x] [P24-T09] GitHub-only gate variants (#145)
+- [x] [P24-T10] Structural boundary test for `release.yml` (#145)
+- [ ] [P24-T11] `force-tag-creation` in `release-please-config.json` (last PR to merge) (#144, draft)
+- [ ] [P24-T12] Remove the duplicate `## [1.0.0]` block from `CHANGELOG.md` (#144, draft)
+- [x] [P24-T13] ADR amending ADR-0010 for v1.0.0 (this PR)
+- [x] [P24-T14] Rewrite `docs/releases.md` for this flow (this PR)
+- [x] [P24-T15] Dated pointer from P19 to P24 (this PR)
 - [ ] [P24-T16] Rehearse the run in a scratch public repository (owner approval required)
 - [ ] [P24-T17] Owner setup: environments, immutable releases, stray drafts
 - [ ] [P24-T18] Merge the release PR, set the five variables, approve, monitor
 - [ ] [P24-T19] After publication: README availability row, PUB issue evidence, generalize the guard
-- [ ] [P24-TS01] `scripts/release-workflow-boundary.test.ts` passes and its mutation controls fail
-- [ ] [P24-TS02] `scripts/release-identity.test.ts` passes against the committed `bun.lock`
-- [ ] [P24-TS03] The roster test agrees with the registry, `help`, and `PUBLIC_COMMAND_ORDER`
+- [x] [P24-TS01] `scripts/release-workflow-boundary.test.ts` passes and its mutation controls fail
+- [x] [P24-TS02] `scripts/release-identity.test.ts` passes against the committed `bun.lock`
+- [x] [P24-TS03] The roster test agrees with the registry, `help`, and `PUBLIC_COMMAND_ORDER`
 
 ### Automated Verification
 - `just check-gates` and the six CI test shards pass.
