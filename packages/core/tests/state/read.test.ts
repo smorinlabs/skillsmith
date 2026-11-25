@@ -8,7 +8,7 @@ import {
   toCapabilityPreconditionsV1,
 } from '../../src/agents/capabilities.ts';
 import { type ToolRegistry, createToolRegistry, toolRegistry } from '../../src/agents/registry.ts';
-import { ledgerSemanticRevision } from '../../src/artifacts/ledger-codec.ts';
+import { fromLedgerV2Dto, ledgerSemanticRevision } from '../../src/artifacts/ledger-codec.ts';
 import { toCapabilitySnapshotV1Dto } from '../../src/contracts/v1/capability-snapshot.ts';
 import { emptyLedgerModel } from '../../src/place/ledger.ts';
 import { defaultRuntimePorts } from '../../src/ports/default.ts';
@@ -1144,5 +1144,227 @@ describe('state revisions and snapshot reads', () => {
 
     expect(result).toEqual({ ok: false, error: { code: 'snapshot-invalid-request' } });
     expect(accesses).toBe(0);
+  });
+
+  test('observes ledger data-valued map keys matching sensitive-name patterns while rejecting credential fields', async () => {
+    const projectValue = Object.freeze({
+      invocationCwd: '/fixture',
+      effectiveCwd: '/fixture',
+      projectRoot: '/fixture',
+      projectIdentity: '/fixture',
+      projectKind: 'git' as const,
+      discoveredConfigPath: null,
+      explicitConfigPath: null,
+    });
+    const capabilitiesValue = Object.freeze({
+      schemaVersion: 1 as const,
+      kind: 'skillsmith.capabilities' as const,
+      tools: Object.freeze([]),
+    });
+    const pair = {
+      placementPath: '/fixture/.claude/skills/repo-secrets',
+      mode: 'dev' as const,
+      dev: {
+        sourcePath: '/fixture/src/repo-secrets',
+        resolvedPath: '/fixture/src/repo-secrets',
+        repoRoot: '/fixture',
+        sourceRelPath: 'src/repo-secrets',
+        remote: null,
+        recordedAt: '2026-07-16T00:00:00.000Z',
+      },
+    };
+    const projectPath = '/fixture/work/repo-secrets';
+    const ledgerModel = unwrap(
+      fromLedgerV2Dto({
+        schemaVersion: 2,
+        kind: 'skillsmith.placements',
+        updatedAt: '2026-07-16T00:00:00.000Z',
+        skills: {
+          'repo-secrets': { tools: { 'claude-code': pair } },
+          token: { tools: { codex: pair } },
+        },
+        projects: {
+          [projectPath]: {
+            skills: {
+              'ssh-key': { tools: { 'claude-code': pair } },
+            },
+          },
+        },
+        projectRegistrations: {
+          [projectPath]: {
+            consumers: [
+              {
+                skill: 'ssh-key',
+                tool: 'claude-code',
+                placementPath: pair.placementPath,
+                store: null,
+              },
+            ],
+          },
+        },
+        transactions: {},
+        history: [],
+      }),
+    );
+    const ledgerRevision = unwrap(
+      createExpectedRevisionV1({
+        schemaVersion: 1,
+        domain: 'ledger',
+        resourceId: 'ledger:user',
+        state: 'present',
+        targetIdentity: '/fixture/data/placements.json',
+        targetKind: 'file',
+        targetMetadataIdentity: `metadata:v1:${HEX.a}`,
+        parentIdentity: '/fixture/data',
+        parentKind: 'directory',
+        parentMetadataIdentity: `metadata:v1:${HEX.b}`,
+        byteRevision: `sha256:${HEX.c}`,
+        semanticRevision: unwrap(ledgerSemanticRevision(ledgerModel)),
+      }),
+    );
+
+    const project = semanticComponent('project', 'project:/fixture', projectValue);
+    const manifest = component(
+      absent(
+        'manifest',
+        'manifest:/fixture/skillsmith.toml',
+        '/fixture/skillsmith.toml',
+        '/fixture',
+      ),
+      null,
+    );
+    const lock = component(
+      absent(
+        'lock',
+        'lock:/fixture/skillsmith.lock',
+        '/fixture/skillsmith.lock',
+        '/fixture',
+        HEX.b,
+      ),
+      null,
+    );
+    const capabilities = semanticComponent(
+      'capabilities',
+      'capabilities:fixture',
+      capabilitiesValue,
+    );
+    const okResult = <T>(value: T): Result<T, StateRepositoryError> => ({ ok: true, value });
+    const single = (observation: ObservedComponentV1<unknown>) => ({
+      observe: async () => okResult(observation),
+      observeRevision: async () => okResult(observation.revision),
+      stage: stageLogicalRepositoryEditV1,
+    });
+    const request = Object.freeze({
+      schemaVersion: 1 as const,
+      projectResourceId: project.revision.resourceId,
+      manifestResourceId: manifest.revision.resourceId,
+      lockResourceId: lock.revision.resourceId,
+      ledgerResourceId: ledgerRevision.resourceId,
+      liveResourceIds: Object.freeze([]),
+      storeResourceIds: Object.freeze([]),
+      capabilitiesResourceId: capabilities.revision.resourceId,
+    });
+    const makeRepos = (ledgerObs: ObservedComponentV1<unknown>) =>
+      ({
+        project: single(project),
+        manifest: single(manifest),
+        lock: single(lock),
+        ledger: single(ledgerObs),
+        live: {
+          observe: async () => {
+            throw new Error('unexpected live observe');
+          },
+          observeRevision: async () => {
+            throw new Error('unexpected live observeRevision');
+          },
+          stage: stageLogicalRepositoryEditV1,
+        },
+        store: {
+          observe: async () => {
+            throw new Error('unexpected store observe');
+          },
+          observeRevision: async () => {
+            throw new Error('unexpected store observeRevision');
+          },
+          stage: stageLogicalRepositoryEditV1,
+        },
+        capabilities: single(capabilities),
+      }) as unknown as ObservedStateRepositoriesV1;
+
+    const observed = await readObservedStateSnapshotV1(
+      request,
+      makeRepos(component(ledgerRevision, ledgerModel)),
+    );
+    expect(observed.ok).toBeTrue();
+    if (observed.ok) {
+      expect(Object.keys(observed.value.ledger.value?.skills ?? {})).toEqual([
+        'repo-secrets',
+        'token',
+      ]);
+      expect(Object.keys(observed.value.ledger.value?.projects ?? {})).toEqual([projectPath]);
+      expect(Object.keys(observed.value.ledger.value?.projectRegistrations ?? {})).toEqual([
+        projectPath,
+      ]);
+    }
+
+    const poisonedPair = {
+      ...ledgerModel,
+      skills: {
+        'repo-secrets': {
+          tools: {
+            'claude-code': {
+              ...pair,
+              token: 'opaque-credential-value',
+            },
+          },
+        },
+      },
+    };
+    const poisonedSkillWrapper = {
+      ...ledgerModel,
+      skills: {
+        'repo-secrets': {
+          tools: { 'claude-code': pair },
+          secret: 'opaque-secret-value',
+        },
+      },
+    };
+    const poisonedProjectWrapper = {
+      ...ledgerModel,
+      projects: {
+        [projectPath]: {
+          skills: { 'ssh-key': { tools: { 'claude-code': pair } } },
+          apiKey: 'opaque-api-key',
+        },
+      },
+    };
+    const secretInMapKey = {
+      ...ledgerModel,
+      skills: {
+        'authorization=Bearer synthetic-sensitive-marker': {
+          tools: { 'claude-code': pair },
+        },
+      },
+    };
+    for (const invalidModel of [
+      poisonedPair,
+      poisonedSkillWrapper,
+      poisonedProjectWrapper,
+      secretInMapKey,
+    ]) {
+      expect(
+        await readObservedStateSnapshotV1(
+          request,
+          makeRepos(component(ledgerRevision, invalidModel)),
+        ),
+      ).toEqual({
+        ok: false,
+        error: {
+          code: 'snapshot-invalid-observation',
+          domain: 'ledger',
+          resourceId: 'ledger:user',
+        },
+      });
+    }
   });
 });
