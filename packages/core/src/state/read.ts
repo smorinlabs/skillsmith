@@ -119,8 +119,69 @@ const repositoryFor = <CapabilityModel>(
 const acceptsSnapshotString = (_path: string, value: string): boolean =>
   !containsSensitiveMaterial(value) || redactSensitiveString(value) === value;
 
-const acceptsSnapshotProperty = (_path: string, key: string): boolean =>
-  !isSensitivePropertyName(key);
+/**
+ * Ledger models contain maps whose property keys are data identifiers (skill names, tool IDs,
+ * project paths, transaction IDs) rather than fixed schema field names. Exempt those map-key
+ * positions from `isSensitivePropertyName` so legitimate names like `repo-secrets` or `ssh-key`
+ * remain readable while credential-like fields elsewhere are still rejected.
+ */
+const isLedgerDataKeyPosition = (segments: readonly (string | number)[]): boolean => {
+  if (segments[0] !== 'value') return false;
+  if (segments.length === 2) {
+    return (
+      segments[1] === 'skills' ||
+      segments[1] === 'projects' ||
+      segments[1] === 'projectRegistrations' ||
+      segments[1] === 'transactions'
+    );
+  }
+  if (segments.length === 4) {
+    return (
+      (segments[1] === 'skills' && typeof segments[2] === 'string' && segments[3] === 'tools') ||
+      (segments[1] === 'projects' && typeof segments[2] === 'string' && segments[3] === 'skills')
+    );
+  }
+  return (
+    segments.length === 6 &&
+    segments[1] === 'projects' &&
+    typeof segments[2] === 'string' &&
+    segments[3] === 'skills' &&
+    typeof segments[4] === 'string' &&
+    segments[5] === 'tools'
+  );
+};
+
+const isLedgerJournalPosition = (segments: readonly (string | number)[]): boolean =>
+  segments[0] === 'value' &&
+  segments.length >= 3 &&
+  ((segments[1] === 'transactions' && typeof segments[2] === 'string') ||
+    (segments[1] === 'history' && typeof segments[2] === 'number'));
+
+const isPortableLocationToken = (
+  key: string,
+  parent: Readonly<Record<string, unknown>>,
+  keys: readonly string[],
+): boolean => {
+  if (key !== 'token' || keys.length !== 2 || !Object.hasOwn(parent, 'token')) return false;
+  const kind = Object.getOwnPropertyDescriptor(parent, 'kind');
+  return kind !== undefined && 'value' in kind && kind.value === 'portable';
+};
+
+const acceptsSnapshotProperty =
+  (domain: StateDomainV1) =>
+  (
+    propertyPath: string,
+    key: string,
+    parent: Readonly<Record<string, unknown>>,
+    keys: readonly string[],
+    parentSegments: readonly (string | number)[],
+  ): boolean => {
+    if (!acceptsSnapshotString(propertyPath, key)) return false;
+    if (!isSensitivePropertyName(key)) return true;
+    if (domain !== 'ledger') return false;
+    if (isLedgerDataKeyPosition(parentSegments)) return true;
+    return isLedgerJournalPosition(parentSegments) && isPortableLocationToken(key, parent, keys);
+  };
 
 const exactKeys = (value: Readonly<Record<string, unknown>>, keys: readonly string[]): boolean => {
   const actual = Object.keys(value).sort();
@@ -254,7 +315,7 @@ const ownObservation = <Model>(
   const owned = ownOrdinaryData(input, acceptsSnapshotString, {
     rootPath: `$observation.${descriptor.domain}.${descriptor.resourceId}`,
     objectPrototype: 'null',
-    acceptProperty: acceptsSnapshotProperty,
+    acceptProperty: acceptsSnapshotProperty(descriptor.domain),
   });
   if (!owned.ok || typeof owned.value !== 'object' || owned.value === null) {
     return err(invalidObservation(descriptor.domain, descriptor.resourceId));

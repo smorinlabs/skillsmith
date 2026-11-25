@@ -30,6 +30,7 @@ export type OrdinaryPropertyPolicy = (
   key: string,
   parent: Readonly<Record<string, unknown>>,
   keys: readonly string[],
+  parentSegments: readonly (string | number)[],
 ) => boolean;
 
 export interface OrdinaryDataOwnershipOptions {
@@ -55,6 +56,7 @@ const ownValue = (
   input: unknown,
   acceptString: OrdinaryStringPolicy,
   path: string,
+  segments: (string | number)[],
   active: Set<object>,
   budget: OwnershipBudget,
   depth: number,
@@ -105,15 +107,22 @@ const ownValue = (
         if (!descriptor.enumerable) {
           return err(ownershipError('non-enumerable', `${path}[${index}]`));
         }
-        const owned = ownValue(
-          descriptor.value,
-          acceptString,
-          `${path}[${index}]`,
-          active,
-          budget,
-          depth + 1,
-          options,
-        );
+        segments.push(index);
+        let owned: Result<unknown, OrdinaryDataError>;
+        try {
+          owned = ownValue(
+            descriptor.value,
+            acceptString,
+            `${path}[${index}]`,
+            segments,
+            active,
+            budget,
+            depth + 1,
+            options,
+          );
+        } finally {
+          segments.pop();
+        }
         if (!owned.ok) return owned;
         output.push(owned.value);
       }
@@ -148,6 +157,7 @@ const ownValue = (
               key,
               input as Readonly<Record<string, unknown>>,
               keys,
+              Object.freeze([...segments]),
             )
           ) {
             return err(ownershipError('rejected-property', propertyPath));
@@ -156,15 +166,22 @@ const ownValue = (
           return err(ownershipError('rejected-property', propertyPath));
         }
       }
-      const owned = ownValue(
-        descriptor.value,
-        acceptString,
-        propertyPath,
-        active,
-        budget,
-        depth + 1,
-        options,
-      );
+      segments.push(key);
+      let owned: Result<unknown, OrdinaryDataError>;
+      try {
+        owned = ownValue(
+          descriptor.value,
+          acceptString,
+          propertyPath,
+          segments,
+          active,
+          budget,
+          depth + 1,
+          options,
+        );
+      } finally {
+        segments.pop();
+      }
       if (!owned.ok) return owned;
       Object.defineProperty(output, key, {
         value: owned.value,
@@ -188,5 +205,5 @@ export const ownOrdinaryData = (
 ): Result<unknown, OrdinaryDataError> => {
   const rootPath = options.rootPath ?? '$';
   if (typeof acceptString !== 'function') return err(ownershipError('unsupported', rootPath));
-  return ownValue(input, acceptString, rootPath, new Set<object>(), { nodes: 0 }, 0, options);
+  return ownValue(input, acceptString, rootPath, [], new Set<object>(), { nodes: 0 }, 0, options);
 };
