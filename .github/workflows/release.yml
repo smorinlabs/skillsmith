@@ -74,12 +74,7 @@ jobs:
           git merge-base --is-ancestor "$sha" refs/remotes/origin/main
           test "$(git status --porcelain)" = ''
 
-          test "$(jq -r '.["."]' .release-please-manifest.json)" = "$RELEASE_VERSION"
-          for manifest in package.json packages/cli/package.json packages/core/package.json; do
-            test "$(jq -r .version "$manifest")" = "$RELEASE_VERSION"
-          done
-          test "$(jq -r '.workspaces["packages/cli"].version' bun.lock)" = "$RELEASE_VERSION"
-          test "$(jq -r '.workspaces["packages/core"].version' bun.lock)" = "$RELEASE_VERSION"
+          bun scripts/release-identity.ts --check "$RELEASE_VERSION"
           grep -Fq "Current version: \`$RELEASE_VERSION\`" docs/commands.md
           bun scripts/generate-command-reference.ts --check
 

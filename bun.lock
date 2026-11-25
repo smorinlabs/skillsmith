@@ -22,7 +22,7 @@
     },
     "packages/cli": {
       "name": "skillsmith",
-      "version": "0.8.0",
+      "version": "1.0.0",
       "bin": {
         "skillsmith": "./src/index.ts",
       },
@@ -36,7 +36,7 @@
     },
     "packages/core": {
       "name": "@skillsmith/core",
-      "version": "0.8.0",
+      "version": "1.0.0",
       "dependencies": {
         "gray-matter": "4.0.3",
         "js-yaml": "3.15.2",
