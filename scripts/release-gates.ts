@@ -25,6 +25,14 @@ export const RELEASE_ENVIRONMENTS = [
   'homebrew',
 ] as const;
 
+// GitHub-only v1.0.0 (P24, ADR 0011): npm and Homebrew start at the first signed release.
+export const GITHUB_ONLY_RELEASE_ENVIRONMENTS = [
+  'release-please',
+  'release-candidate',
+  'github-release',
+] as const;
+const DEFERRED_READINESS_KEYS = ['apple', 'tapCi', 'npmTrusts'] as const;
+
 export const PUBLIC_COMMAND_ORDER = [
   'search',
   'agents',
@@ -545,12 +553,19 @@ type PublicReceipt = Readonly<{
   runner: string;
   sha: string;
   tag: 'v1.0.0';
-  upgradeUninstall: true;
+  upgradeUninstall?: true;
+  directUninstall?: true;
   version: '1.0.0';
   writesWithinRoots: true;
 }>;
 
-function publicReceipt(value: unknown, label: string): PublicReceipt {
+type LifecycleKey = 'upgradeUninstall' | 'directUninstall';
+
+function publicReceipt(
+  value: unknown,
+  label: string,
+  lifecycle: LifecycleKey = 'upgradeUninstall',
+): PublicReceipt {
   const receipt = record(value, label);
   if (string(receipt.tag, `${label} tag`) !== P17_TAG) fail(`${label} tag is not v1.0.0`);
   if (string(receipt.version, `${label} version`) !== P17_VERSION) {
@@ -570,7 +585,10 @@ function publicReceipt(value: unknown, label: string): PublicReceipt {
     ['capabilityOrientation', 'capability orientation'],
     ['directChecksumVerified', 'direct archive checksum'],
     ['noToolDiagnosis', 'no-tool diagnosis'],
-    ['upgradeUninstall', 'upgrade/uninstall lifecycle'],
+    [
+      lifecycle,
+      lifecycle === 'upgradeUninstall' ? 'upgrade/uninstall lifecycle' : 'direct uninstall',
+    ],
     ['writesWithinRoots', 'write-root confinement'],
   ] as const) {
     if (!boolean(receipt[key], `${label} ${description}`)) fail(`${label} failed ${description}`);
@@ -626,7 +644,7 @@ function publicReceipt(value: unknown, label: string): PublicReceipt {
     runner: string(receipt.runner, `${label} runner`),
     sha: requireSha(receipt.sha, SHA_1, `${label} SHA`),
     tag: P17_TAG,
-    upgradeUninstall: true,
+    [lifecycle]: true,
     version: P17_VERSION,
     writesWithinRoots: true,
   };
@@ -665,6 +683,108 @@ export function validatePublicWorkflowReceipts(input: unknown): {
       macOS ? ['direct', 'npm', 'bun', 'homebrew'] : ['direct', 'npm', 'bun'],
       `${receipt.runner} public channels`,
     );
+  }
+  return { receiptCount: 4, version: P17_VERSION };
+}
+
+// GitHub-only variants (P24, ADR 0011). They accept only the GitHub channel and reject any
+// deferred npm or Homebrew authority, so a deferred channel cannot slip into v1.0.0.
+
+function rejectDeferredKeys(value: UnknownRecord, keys: readonly string[], label: string): void {
+  for (const key of keys) {
+    if (key in value) fail(`${label} names deferred ${key}; npm and Homebrew are deferred`);
+  }
+}
+
+export function validateGithubOnlyExternalReadiness(input: unknown): { ready: true } {
+  const value = record(input, 'external readiness');
+  rejectDeferredKeys(value, DEFERRED_READINESS_KEYS, 'external readiness');
+  for (const key of ['audit', 'billing', 'immutableReleases', 'visibilityAuthorized'] as const) {
+    if (!boolean(value[key], key)) fail(`${key} readiness is absent`);
+  }
+  requireExactSet(
+    strings(value.environments, 'release environments'),
+    GITHUB_ONLY_RELEASE_ENVIRONMENTS,
+    'release environments',
+  );
+  requireExactSet(
+    strings(value.runnerLabels, 'runner labels'),
+    RELEASE_RUNNER_LABELS,
+    'runner labels',
+  );
+  return { ready: true };
+}
+
+export function classifyGithubOnlyPublicationState(input: unknown): {
+  complete: boolean;
+  mode: 'initial' | 'complete';
+} {
+  const value = record(input, 'publication state');
+  rejectDeferredKeys(value, ['npm', 'tap'], 'publication state');
+  const candidateRetained = boolean(value.candidateRetained, 'candidate retention');
+  const github = string(value.github, 'GitHub publication') as GitHubPublicationState;
+  if (github === 'draft-exact') return { complete: false, mode: 'initial' };
+  if (github === 'public-exact') {
+    if (!candidateRetained) fail('a public release cannot be verified without the candidate');
+    return { complete: true, mode: 'complete' };
+  }
+  if (github === 'mismatch') fail('occupied GitHub release mismatches the candidate');
+  fail('unknown GitHub publication state');
+}
+
+export function validateGithubOnlyPublicationReadiness(input: unknown): PublicationIdentity & {
+  complete: boolean;
+  mode: 'initial' | 'complete';
+  status: 'passed';
+} {
+  const value = record(input, 'publication readiness');
+  validateGithubOnlyExternalReadiness(value.external);
+  if (!Array.isArray(value.preflights) || value.preflights.length !== 1) {
+    fail('GitHub-only publication requires exactly one preflight');
+  }
+  const receipt = record(value.preflights[0], 'GitHub preflight');
+  if (string(receipt.channel, 'GitHub preflight channel') !== 'github') {
+    fail('the only publication preflight must be the GitHub channel');
+  }
+  if (string(receipt.status, 'GitHub preflight status') !== 'passed') {
+    fail('GitHub preflight did not pass');
+  }
+  const identity = publicationIdentity(receipt, 'GitHub preflight');
+  const classification = classifyGithubOnlyPublicationState({
+    candidateRetained: boolean(value.candidateRetained, 'candidate retention'),
+    github: string(receipt.state, 'GitHub preflight state'),
+  });
+  return { ...identity, ...classification, status: 'passed' };
+}
+
+export function validateGithubOnlyPublicReceipts(input: unknown): {
+  receiptCount: 4;
+  version: '1.0.0';
+} {
+  const value = record(input, 'public workflow receipts');
+  if (!Array.isArray(value.receipts)) fail('public receipts must be an array');
+  const receipts = value.receipts.map((receipt, index) =>
+    publicReceipt(receipt, `public receipt ${index + 1}`, 'directUninstall'),
+  );
+  requireExactSet(
+    receipts.map((receipt) => receipt.runner),
+    RELEASE_RUNNER_LABELS,
+    'public runner receipts',
+  );
+  const reference = receipts[0];
+  if (reference === undefined) fail('public receipt set is empty');
+  for (const receipt of receipts) {
+    if (
+      receipt.candidateBundleSha256 !== reference.candidateBundleSha256 ||
+      receipt.candidateArtifactId !== reference.candidateArtifactId ||
+      receipt.candidateMetadataSha256 !== reference.candidateMetadataSha256 ||
+      receipt.sha !== reference.sha ||
+      receipt.tag !== reference.tag ||
+      receipt.version !== reference.version
+    ) {
+      fail(`${receipt.runner} public receipt has identity drift`);
+    }
+    requireExactSet(receipt.channels, ['direct'], `${receipt.runner} public channels`);
   }
   return { receiptCount: 4, version: P17_VERSION };
 }

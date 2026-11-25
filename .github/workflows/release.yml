@@ -53,7 +53,7 @@ jobs:
           persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          bun-version: 1.3.14
+          bun-version: 1.4.2
       - name: Bind exact tag, source, versions, and generated state
         id: guard
         run: |
@@ -168,14 +168,14 @@ jobs:
           persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          bun-version: 1.3.14
+          bun-version: 1.4.2
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: '24'
           registry-url: https://registry.npmjs.org
       - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
-          version: v2.17.1
+          version: v2.18.2
           install-only: true
       - name: Install exact npm and candidate dependencies
         run: |
@@ -186,15 +186,10 @@ jobs:
           tool_bin="$RUNNER_TEMP/release-tools"
           SKILLSMITH_TOOL_BIN_DIR="$tool_bin" ./scripts/install-gitleaks.sh
           echo "$tool_bin" >> "$GITHUB_PATH"
-      - name: Build, sign, notarize, scan, and bundle the candidate
-        env:
-          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
-          MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
-          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
-          MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
-          MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+      # v1.0.0 ships ad-hoc signed macOS binaries (ADR 0011); no Apple values are present.
+      - name: Build, scan, and bundle the unsigned-macOS candidate
         run: |
-          bun scripts/build-release.ts --target all --mode release --output dist/release
+          bun scripts/build-release.ts --target all --mode release --macos-signing none --output dist/release
           tar --format=posix -cf candidate-bundle.tar dist/release
           sha256sum candidate-bundle.tar > candidate-bundle.tar.sha256
       - name: Retain the private candidate for recovery
@@ -221,7 +216,7 @@ jobs:
             --arg sha '${{ needs.guard.outputs.sha }}' \
             --arg tag "$RELEASE_TAG" \
             --arg version "$RELEASE_VERSION" \
-            '{candidateArtifactDigest:$candidateArtifactDigest,candidateArtifactId:$candidateArtifactId,candidateBundleSha256:$candidateBundleSha256,candidateMetadataSha256:$candidateMetadataSha256,runId:$runId,sha:$sha,tag:$tag,version:$version}' \
+            '{candidateArtifactDigest:$candidateArtifactDigest,candidateArtifactId:$candidateArtifactId,candidateBundleSha256:$candidateBundleSha256,candidateMetadataSha256:$candidateMetadataSha256,macosSigning:"none",runId:$runId,sha:$sha,tag:$tag,version:$version}' \
             > candidate-identity.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -284,7 +279,7 @@ jobs:
             --arg sha '${{ needs.guard.outputs.sha }}' \
             --arg tag "$RELEASE_TAG" \
             --arg version "$RELEASE_VERSION" \
-            '{candidateArtifactDigest:$candidateArtifactDigest,candidateArtifactId:$candidateArtifactId,candidateBundleSha256:$candidateBundleSha256,candidateMetadataSha256:$candidateMetadataSha256,runId:$runId,sha:$sha,tag:$tag,version:$version}' \
+            '{candidateArtifactDigest:$candidateArtifactDigest,candidateArtifactId:$candidateArtifactId,candidateBundleSha256:$candidateBundleSha256,candidateMetadataSha256:$candidateMetadataSha256,macosSigning:"none",runId:$runId,sha:$sha,tag:$tag,version:$version}' \
             > candidate-identity.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -382,7 +377,7 @@ jobs:
           persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          bun-version: 1.3.14
+          bun-version: 1.4.2
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: '24'
@@ -539,7 +534,7 @@ jobs:
           persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          bun-version: 1.3.14
+          bun-version: 1.4.2
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: '24'
@@ -556,7 +551,7 @@ jobs:
           npm install --global --prefix "$npm_prefix" npm@12.0.1
           echo "$npm_prefix/bin" >> "$GITHUB_PATH"
           bun install --frozen-lockfile --ignore-scripts
-      - name: Run the matching raw/direct/npm/Bun/cask lane
+      - name: Run the matching native candidate lane
         env:
           GITHUB_REF_NAME: ${{ needs.guard.outputs.tag }}
           GITHUB_SHA: ${{ needs.guard.outputs.sha }}
@@ -606,7 +601,7 @@ jobs:
           persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          bun-version: 1.3.14
+          bun-version: 1.4.2
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
         with:
           just-version: 1.50.0
@@ -699,164 +694,8 @@ jobs:
           path: github-preflight.json
           if-no-files-found: error
 
-  npm-preflight:
-    needs: [guard, candidate-source, validation-aggregate]
-    runs-on: ubuntu-24.04
-    environment: npm
-    permissions:
-      actions: read
-      contents: read
-      id-token: write
-    steps:
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: '24'
-          registry-url: https://registry.npmjs.org
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          artifact-ids: ${{ needs.validation-aggregate.outputs.artifact-id }}
-          path: validation
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          artifact-ids: ${{ needs.candidate-source.outputs.artifact-id }}
-          path: transferred
-      - name: Preflight public provenance and all five trusted publishers
-        env:
-          NPM_TRUSTED_PUBLISHERS_READY_SHA: ${{ vars.NPM_TRUSTED_PUBLISHERS_READY_SHA }}
-        run: |
-          set -eu
-          test -s validation/validation-aggregate.json
-          test -s transferred/candidate-identity.json
-          test "$NPM_TRUSTED_PUBLISHERS_READY_SHA" = '${{ needs.guard.outputs.sha }}'
-          test '${{ github.event.repository.private }}' = 'false'
-          npm_prefix="$RUNNER_TEMP/npm-12.0.1"
-          npm install --global --prefix "$npm_prefix" npm@12.0.1
-          npm="$npm_prefix/bin/npm"
-          PATH="$npm_prefix/bin:$PATH" npm ping --registry https://registry.npmjs.org
-          oidc_response="$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=npm:registry.npmjs.org")"
-          id_token="$(printf '%s' "$oidc_response" | jq -er .value)"
-          ID_TOKEN="$id_token" node - <<'NODE'
-          const payload = process.env.ID_TOKEN?.split('.')[1];
-          if (!payload) throw new Error('GitHub OIDC token is malformed');
-          const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-          const expected = {
-            aud: 'npm:registry.npmjs.org',
-            sub: 'repo:smorinlabs/skillsmith:environment:npm',
-            repository: 'smorinlabs/skillsmith',
-            repository_visibility: 'public',
-            ref: 'refs/tags/v1.0.0',
-            sha: process.env.GITHUB_SHA,
-          };
-          for (const [key, value] of Object.entries(expected)) {
-            if (claims[key] !== value) throw new Error(`GitHub OIDC ${key} mismatch`);
-          }
-          if (!String(claims.workflow_ref).includes('smorinlabs/skillsmith/.github/workflows/release.yml@refs/tags/v1.0.0')) {
-            throw new Error('GitHub OIDC workflow_ref mismatch');
-          }
-          NODE
-          tar -xf transferred/candidate-bundle.tar
-          : > npm-states.jsonl
-          for tarball in dist/release/npm/*.tgz; do
-            package="$(tar -xOzf "$tarball" package/package.json | jq -er .name)"
-            local_integrity="sha512-$(openssl dgst -sha512 -binary "$tarball" | openssl base64 -A)"
-            if "$npm" view "$package@$RELEASE_VERSION" dist.integrity --json > "$RUNNER_TEMP/npm-view.json" 2> "$RUNNER_TEMP/npm-view.err"; then
-              remote_integrity="$(jq -er . "$RUNNER_TEMP/npm-view.json")"
-              test "$remote_integrity" = "$local_integrity" || { echo "occupied npm package mismatches the candidate: $package" >&2; exit 1; }
-              state=exact
-            elif grep -Fq 'E404' "$RUNNER_TEMP/npm-view.err"; then
-              state=missing
-            else
-              echo "npm registry state is unavailable for $package" >&2
-              cat "$RUNNER_TEMP/npm-view.err" >&2
-              exit 1
-            fi
-            jq -cn --arg package "$package" --arg state "$state" --arg integrity "$local_integrity" '{package:$package,state:$state,integrity:$integrity}' >> npm-states.jsonl
-          done
-          jq -s 'sort_by(.package)' npm-states.jsonl > npm-packages.json
-          test "$(jq length npm-packages.json)" = '5'
-          jq --arg channel npm --slurpfile packages npm-packages.json '. + {channel:$channel,states:($packages[0] | map(.state)),packages:$packages[0],status:"passed"}' transferred/candidate-identity.json > npm-preflight.json
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: authority-preflight-npm-${{ github.run_id }}
-          path: npm-preflight.json
-          if-no-files-found: error
-
-  homebrew-preflight:
-    needs: [guard, candidate-source, validation-aggregate]
-    runs-on: ubuntu-24.04
-    environment: homebrew
-    permissions:
-      actions: read
-      contents: read
-    steps:
-      - name: Mint short-lived tap App token
-        id: tap-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
-        with:
-          app-id: ${{ vars.HOMEBREW_APP_ID }}
-          private-key: ${{ secrets.HOMEBREW_APP_PRIVATE_KEY }}
-          owner: smorinlabs
-          repositories: homebrew-tap
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          artifact-ids: ${{ needs.validation-aggregate.outputs.artifact-id }}
-          path: validation
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          artifact-ids: ${{ needs.candidate-source.outputs.artifact-id }}
-          path: transferred
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          repository: smorinlabs/homebrew-tap
-          ref: main
-          fetch-depth: 0
-          path: tap
-          token: ${{ steps.tap-token.outputs.token }}
-          persist-credentials: false
-      - name: Preflight reviewed cask infrastructure and tap App access
-        env:
-          GH_TOKEN: ${{ steps.tap-token.outputs.token }}
-          TAP_CASK_CI_READY_SHA: ${{ vars.TAP_CASK_CI_READY_SHA }}
-        run: |
-          set -eu
-          test -s validation/validation-aggregate.json
-          test -s transferred/candidate-identity.json
-          test "$TAP_CASK_CI_READY_SHA" = '${{ needs.guard.outputs.sha }}'
-          test "$(gh api repos/smorinlabs/homebrew-tap --jq .default_branch)" = 'main'
-          tar -xf transferred/candidate-bundle.tar
-          candidate="$GITHUB_WORKSPACE/dist/release/homebrew/Casks/skillsmith.rb"
-          destination="$GITHUB_WORKSPACE/tap/Casks/skillsmith.rb"
-          branch='release/skillsmith-v1.0.0'
-          if [ -f "$destination" ]; then
-            cmp -s "$candidate" "$destination" || { echo 'occupied Homebrew cask mismatches the candidate' >&2; exit 1; }
-            state=merged-exact
-          elif git -C tap ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
-            git -C tap fetch --no-tags origin "$branch:refs/remotes/origin/$branch"
-            git -C tap merge-base --is-ancestor origin/main "origin/$branch"
-            test "$(git -C tap rev-list --count "origin/main..origin/$branch")" = '1'
-            test "$(git -C tap rev-list --count "origin/$branch..origin/main")" = '0'
-            test "$(git -C tap diff --name-only "origin/main...origin/$branch")" = 'Casks/skillsmith.rb'
-            git -C tap show "origin/$branch:Casks/skillsmith.rb" > "$RUNNER_TEMP/branch-skillsmith.rb"
-            cmp "$candidate" "$RUNNER_TEMP/branch-skillsmith.rb"
-            gh pr list --repo smorinlabs/homebrew-tap --state open --base main --head "$branch" --json number,baseRefName,headRefName > "$RUNNER_TEMP/pr.json"
-            test "$(jq length "$RUNNER_TEMP/pr.json")" = '1'
-            pr="$(jq -r '.[0].number' "$RUNNER_TEMP/pr.json")"
-            gh pr view "$pr" --repo smorinlabs/homebrew-tap --json files,commits > "$RUNNER_TEMP/pr-detail.json"
-            test "$(jq '.commits | length' "$RUNNER_TEMP/pr-detail.json")" = '1'
-            test "$(jq -r '.files | map(.path) | join("\n")' "$RUNNER_TEMP/pr-detail.json")" = 'Casks/skillsmith.rb'
-            state=open-exact
-          else
-            state=absent
-          fi
-          jq --arg channel homebrew --arg state "$state" '. + {channel:$channel,state:$state,status:"passed"}' transferred/candidate-identity.json > homebrew-preflight.json
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: authority-preflight-homebrew-${{ github.run_id }}
-          path: homebrew-preflight.json
-          if-no-files-found: error
-
   publication-ready:
-    needs: [guard, candidate-source, validation-aggregate, github-preflight, npm-preflight, homebrew-preflight]
+    needs: [guard, candidate-source, validation-aggregate, github-preflight]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     permissions:
@@ -865,12 +704,10 @@ jobs:
     outputs:
       artifact-id: ${{ steps.ready.outputs.artifact-id }}
     steps:
-      - name: Require all three protected authority preflights
+      - name: Require the protected GitHub preflight
         env:
           GITHUB_PREFLIGHT: ${{ needs.github-preflight.result }}
-          HOMEBREW_PREFLIGHT: ${{ needs.homebrew-preflight.result }}
-          NPM_PREFLIGHT: ${{ needs.npm-preflight.result }}
-        run: test "$GITHUB_PREFLIGHT:$NPM_PREFLIGHT:$HOMEBREW_PREFLIGHT" = 'success:success:success'
+        run: test "$GITHUB_PREFLIGHT" = 'success'
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: authority-preflight-*-${{ github.run_id }}
@@ -882,40 +719,34 @@ jobs:
           persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          bun-version: 1.3.14
+          bun-version: 1.4.2
       - name: Seal the sole publication-ready receipt
         env:
-          APPLE_AUTHORITY_READY_SHA: ${{ vars.APPLE_AUTHORITY_READY_SHA }}
           BILLING_READY_SHA: ${{ vars.BILLING_READY_SHA }}
           ENVIRONMENTS_READY_SHA: ${{ vars.ENVIRONMENTS_READY_SHA }}
-          NPM_TRUSTED_PUBLISHERS_READY_SHA: ${{ vars.NPM_TRUSTED_PUBLISHERS_READY_SHA }}
           PUBLIC_AUDIT_APPROVED_SHA: ${{ vars.PUBLIC_AUDIT_APPROVED_SHA }}
           PUBLIC_VISIBILITY_AUTHORIZED_SHA: ${{ vars.PUBLIC_VISIBILITY_AUTHORIZED_SHA }}
           RUNNER_MATRIX_READY_SHA: ${{ vars.RUNNER_MATRIX_READY_SHA }}
-          TAP_CASK_CI_READY_SHA: ${{ vars.TAP_CASK_CI_READY_SHA }}
         run: |
           set -eu
-          test "$(find preflights -type f -name '*-preflight.json' | wc -l | tr -d ' ')" = '3'
+          test "$(find preflights -type f -name '*-preflight.json' | wc -l | tr -d ' ')" = '1'
           sha='${{ needs.guard.outputs.sha }}'
           jq -n \
-            --arg apple "$APPLE_AUTHORITY_READY_SHA" \
             --arg audit "$PUBLIC_AUDIT_APPROVED_SHA" \
             --arg billing "$BILLING_READY_SHA" \
             --arg environments "$ENVIRONMENTS_READY_SHA" \
-            --arg npmTrusts "$NPM_TRUSTED_PUBLISHERS_READY_SHA" \
             --arg runners "$RUNNER_MATRIX_READY_SHA" \
             --arg sha "$sha" \
-            --arg tap "$TAP_CASK_CI_READY_SHA" \
             --arg visibility "$PUBLIC_VISIBILITY_AUTHORIZED_SHA" \
-            '{apple:($apple==$sha),audit:($audit==$sha),billing:($billing==$sha),environments:["release-please","release-candidate","github-release","npm","homebrew"],immutableReleases:true,npmTrusts:(if $npmTrusts==$sha then 5 else 0 end),runnerLabels:["ubuntu-24.04","ubuntu-24.04-arm","macos-15","macos-15-intel"],tapCi:($tap==$sha),visibilityAuthorized:($visibility==$sha),environmentBinding:($environments==$sha),runnerBinding:($runners==$sha)}' > external-readiness.json
+            '{audit:($audit==$sha),billing:($billing==$sha),environments:["release-please","release-candidate","github-release"],immutableReleases:true,runnerLabels:["ubuntu-24.04","ubuntu-24.04-arm","macos-15","macos-15-intel"],visibilityAuthorized:($visibility==$sha),environmentBinding:($environments==$sha),runnerBinding:($runners==$sha)}' > external-readiness.json
           bun - <<'BUN'
           import { readFile, readdir, writeFile } from 'node:fs/promises';
-          import { validatePublicationReadiness } from './scripts/release-gates.ts';
+          import { validateGithubOnlyPublicationReadiness } from './scripts/release-gates.ts';
           const names = (await readdir('preflights')).filter((name) => name.endsWith('-preflight.json')).toSorted();
           const preflights = await Promise.all(names.map(async (name) => JSON.parse(await readFile(`preflights/${name}`, 'utf8'))));
           const external = JSON.parse(await readFile('external-readiness.json', 'utf8'));
           if (!external.environmentBinding || !external.runnerBinding) throw new Error('exact protected environment/runner readiness is absent');
-          const receipt = validatePublicationReadiness({ candidateRetained: true, external, preflights });
+          const receipt = validateGithubOnlyPublicationReadiness({ candidateRetained: true, external, preflights });
           await writeFile('publication-ready.json', `${JSON.stringify(receipt)}\n`, { mode: 0o600 });
           BUN
       - name: Upload publication-ready receipt
@@ -1018,161 +849,8 @@ jobs:
             exit 1
           fi
 
-  npm-publish:
-    needs: [guard, candidate-source, publication-ready, github-publish]
-    runs-on: ubuntu-24.04
-    environment: npm
-    permissions:
-      actions: read
-      contents: read
-      id-token: write
-    steps:
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: '24'
-          registry-url: https://registry.npmjs.org
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          artifact-ids: ${{ needs.candidate-source.outputs.artifact-id }}
-          path: transferred
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          artifact-ids: ${{ needs.publication-ready.outputs.artifact-id }}
-          path: ready
-      - name: Install exact npm
-        run: |
-          npm_prefix="$RUNNER_TEMP/npm-12.0.1"
-          npm install --global --prefix "$npm_prefix" npm@12.0.1
-          echo "$npm_prefix/bin" >> "$GITHUB_PATH"
-      - name: Publish four payloads before the script-free launcher
-        run: |
-          set -eu
-          test -s ready/publication-ready.json
-          jq -e --slurpfile identity transferred/candidate-identity.json '
-            .status == "passed" and
-            .candidateArtifactId == $identity[0].candidateArtifactId and
-            .candidateBundleSha256 == $identity[0].candidateBundleSha256 and
-            .candidateMetadataSha256 == $identity[0].candidateMetadataSha256 and
-            .sha == $identity[0].sha and .tag == $identity[0].tag and .version == $identity[0].version
-          ' ready/publication-ready.json >/dev/null
-          tar -xf transferred/candidate-bundle.tar
-          npm ping --registry https://registry.npmjs.org
-          publish_exact() {
-            tarball="$1"
-            package="$(tar -xOzf "$tarball" package/package.json | jq -er .name)"
-            local_integrity="sha512-$(openssl dgst -sha512 -binary "$tarball" | openssl base64 -A)"
-            if npm view "$package@$RELEASE_VERSION" dist.integrity --json > "$RUNNER_TEMP/npm-publish-view.json" 2> "$RUNNER_TEMP/npm-publish-view.err"; then
-              remote_integrity="$(jq -er . "$RUNNER_TEMP/npm-publish-view.json")"
-              test "$remote_integrity" = "$local_integrity" || { echo "occupied npm package mismatches the candidate: $package" >&2; exit 1; }
-            elif grep -Fq 'E404' "$RUNNER_TEMP/npm-publish-view.err"; then
-              npm publish "$tarball" --access public --provenance
-            else
-              echo "npm registry state is unavailable for $package" >&2
-              cat "$RUNNER_TEMP/npm-publish-view.err" >&2
-              exit 1
-            fi
-            npm view "$package@$RELEASE_VERSION" dist.integrity --json > "$RUNNER_TEMP/npm-published.json" 2> "$RUNNER_TEMP/npm-published.err" || {
-              echo "npm registry state is unavailable after publishing $package" >&2
-              cat "$RUNNER_TEMP/npm-published.err" >&2
-              exit 1
-            }
-            test "$(jq -er . "$RUNNER_TEMP/npm-published.json")" = "$local_integrity"
-          }
-          for tarball in \
-            dist/release/npm/smorinlabs-skillsmith-darwin-arm64-1.0.0.tgz \
-            dist/release/npm/smorinlabs-skillsmith-darwin-x64-1.0.0.tgz \
-            dist/release/npm/smorinlabs-skillsmith-linux-arm64-1.0.0.tgz \
-            dist/release/npm/smorinlabs-skillsmith-linux-x64-1.0.0.tgz; do
-            publish_exact "$tarball"
-          done
-          publish_exact dist/release/npm/smorinlabs-skillsmith-1.0.0.tgz
-
-  homebrew-publish:
-    needs: [guard, candidate-source, publication-ready, npm-publish]
-    runs-on: ubuntu-24.04
-    environment: homebrew
-    permissions:
-      actions: read
-      contents: read
-    steps:
-      - name: Mint short-lived tap App token
-        id: tap-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
-        with:
-          app-id: ${{ vars.HOMEBREW_APP_ID }}
-          private-key: ${{ secrets.HOMEBREW_APP_PRIVATE_KEY }}
-          owner: smorinlabs
-          repositories: homebrew-tap
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          artifact-ids: ${{ needs.candidate-source.outputs.artifact-id }}
-          path: transferred
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          artifact-ids: ${{ needs.publication-ready.outputs.artifact-id }}
-          path: ready
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          repository: smorinlabs/homebrew-tap
-          ref: main
-          path: tap
-          token: ${{ steps.tap-token.outputs.token }}
-          persist-credentials: true
-      - name: Open the reviewed cask PR or accept its exact merged state
-        env:
-          GH_TOKEN: ${{ steps.tap-token.outputs.token }}
-        run: |
-          set -eu
-          test -s ready/publication-ready.json
-          jq -e --slurpfile identity transferred/candidate-identity.json '
-            .status == "passed" and
-            .candidateArtifactId == $identity[0].candidateArtifactId and
-            .candidateBundleSha256 == $identity[0].candidateBundleSha256 and
-            .candidateMetadataSha256 == $identity[0].candidateMetadataSha256 and
-            .sha == $identity[0].sha and .tag == $identity[0].tag and .version == $identity[0].version
-          ' ready/publication-ready.json >/dev/null
-          tar -xf transferred/candidate-bundle.tar
-          candidate="$GITHUB_WORKSPACE/dist/release/homebrew/Casks/skillsmith.rb"
-          destination="$GITHUB_WORKSPACE/tap/Casks/skillsmith.rb"
-          if [ -f "$destination" ]; then
-            cmp -s "$candidate" "$destination" || { echo 'occupied Homebrew cask mismatches the candidate' >&2; exit 1; }
-            exit 0
-          fi
-          branch='release/skillsmith-v1.0.0'
-          cd tap
-          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
-            git fetch --no-tags origin "$branch:refs/remotes/origin/$branch"
-            git merge-base --is-ancestor origin/main "origin/$branch"
-            test "$(git rev-list --count "origin/main..origin/$branch")" = '1'
-            test "$(git rev-list --count "origin/$branch..origin/main")" = '0'
-            test "$(git diff --name-only "origin/main...origin/$branch")" = 'Casks/skillsmith.rb'
-            git show "refs/remotes/origin/$branch:Casks/skillsmith.rb" > "$RUNNER_TEMP/open-skillsmith.rb"
-            cmp "$candidate" "$RUNNER_TEMP/open-skillsmith.rb"
-            gh pr list --repo smorinlabs/homebrew-tap --state open --base main --head "$branch" --json number,url > "$RUNNER_TEMP/open-pr.json"
-            test "$(jq length "$RUNNER_TEMP/open-pr.json")" = '1'
-            pr="$(jq -r '.[0].number' "$RUNNER_TEMP/open-pr.json")"
-            gh pr view "$pr" --repo smorinlabs/homebrew-tap --json files,commits > "$RUNNER_TEMP/open-pr-detail.json"
-            test "$(jq '.commits | length' "$RUNNER_TEMP/open-pr-detail.json")" = '1'
-            test "$(jq -r '.files | map(.path) | join("\n")' "$RUNNER_TEMP/open-pr-detail.json")" = 'Casks/skillsmith.rb'
-            jq -r '.[0].url' "$RUNNER_TEMP/open-pr.json"
-            echo 'The exact tap PR is still open; merge it and rerun with the retained candidate.' >&2
-            exit 1
-          fi
-          git switch -c "$branch"
-          mkdir -p Casks
-          cp "$candidate" Casks/skillsmith.rb
-          git config user.name 'skillsmith-homebrew-app[bot]'
-          git config user.email 'skillsmith-homebrew-app[bot]@users.noreply.github.com'
-          git add Casks/skillsmith.rb
-          git diff --cached --check
-          git commit -m 'feat(cask): add skillsmith 1.0.0'
-          git push origin "$branch"
-          gh pr create --repo smorinlabs/homebrew-tap --base main --head "$branch" --title 'feat(cask): add skillsmith 1.0.0' --body 'Generated from the exact validated smorinlabs/skillsmith v1.0.0 candidate. Merge only after cask CI succeeds.'
-          echo 'The reviewed tap PR must merge before public validation; rerun with the retained candidate afterward.' >&2
-          exit 1
-
   public-validation:
-    needs: [guard, candidate-source, homebrew-publish]
+    needs: [guard, candidate-source, github-publish]
     name: Public v1.0.0 (${{ matrix.runner }})
     strategy:
       fail-fast: false
@@ -1192,19 +870,11 @@ jobs:
       attestations: read
       contents: read
     steps:
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version: 1.3.14
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: '24'
-      - name: Install exact npm
-        run: npm install --global npm@12.0.1
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: public-command-roster-${{ github.run_id }}
           path: roster
-      - name: Prove public direct, npm, Bun, and macOS Homebrew lifecycle and orientation
+      - name: Prove the public direct-download lifecycle and orientation
         env:
           CANDIDATE_ARTIFACT_ID: ${{ needs.candidate-source.outputs.candidate-artifact-id }}
           CANDIDATE_BUNDLE_SHA256: ${{ needs.candidate-source.outputs.bundle-sha256 }}
@@ -1218,7 +888,7 @@ jobs:
           jq -e 'type == "array" and length > 0 and all(type == "string")' "$roster" >/dev/null
           root="$RUNNER_TEMP/public-skillsmith"
           archive="skillsmith-v1.0.0-$TARGET.tar.gz"
-          mkdir -p "$root/release" "$root/direct" "$root/npm" "$root/bun" "$root/owned"
+          mkdir -p "$root/release" "$root/direct" "$root/owned"
           case ":$PATH:" in *":$GITHUB_WORKSPACE:"*) echo 'source checkout is present on the public installation PATH' >&2; exit 1 ;; esac
           gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "$archive" --pattern SHA256SUMS --dir "$root/release"
           expected_archive_sha="$(awk -v name="$archive" '$2 == name {print $1}' "$root/release/SHA256SUMS")"
@@ -1380,60 +1050,10 @@ jobs:
             echo 'muse install refused as unavailable instead of read-only' >&2
             exit 1
           fi
-          npm_home="$root/owned/npm/home"
-          npm_cache="$root/owned/npm/npm-cache"
-          mkdir -p "$npm_home" "$npm_cache"
-          HOME="$npm_home" npm_config_cache="$npm_cache" npm install --global --prefix "$root/npm" --ignore-scripts "@smorinlabs/skillsmith@$RELEASE_VERSION"
-          HOME="$npm_home" npm_config_cache="$npm_cache" npm update --global --prefix "$root/npm" --ignore-scripts @smorinlabs/skillsmith
-          channel=npm
-          verify_orientation "$root/npm/bin/skillsmith"
-          npm_payload="$(find "$root/npm" -type f -path "*/@smorinlabs/skillsmith-$TARGET/bin/skillsmith" -print)"
-          test "$(printf '%s\n' "$npm_payload" | grep -c .)" = '1'
-          npm_sha="$(digest "$npm_payload")"
-          test "$npm_sha" = "$direct_sha"
-          HOME="$npm_home" npm_config_cache="$npm_cache" npm uninstall --global --prefix "$root/npm" --ignore-scripts @smorinlabs/skillsmith "@smorinlabs/skillsmith-$TARGET"
-          test ! -e "$root/npm/bin/skillsmith"
-          test -z "$(find "$root/npm" -path '*@smorinlabs/skillsmith*' -print -quit)"
-
-          bun_home="$root/owned/bun/home"
-          bun_cache="$root/owned/bun/cache"
-          mkdir -p "$bun_home" "$bun_cache"
-          HOME="$bun_home" BUN_INSTALL="$root/bun" BUN_INSTALL_CACHE_DIR="$bun_cache" bun add --global --exact --ignore-scripts "@smorinlabs/skillsmith@$RELEASE_VERSION"
-          HOME="$bun_home" BUN_INSTALL="$root/bun" BUN_INSTALL_CACHE_DIR="$bun_cache" bun update --global @smorinlabs/skillsmith
-          channel=bun
-          verify_orientation "$root/bun/bin/skillsmith"
-          bun_payload="$(find "$root/bun" -type f -path "*/@smorinlabs/skillsmith-$TARGET/bin/skillsmith" -print)"
-          test "$(printf '%s\n' "$bun_payload" | grep -c .)" = '1'
-          bun_sha="$(digest "$bun_payload")"
-          test "$bun_sha" = "$direct_sha"
-          HOME="$bun_home" BUN_INSTALL="$root/bun" BUN_INSTALL_CACHE_DIR="$bun_cache" bun remove --global @smorinlabs/skillsmith "@smorinlabs/skillsmith-$TARGET"
-          test ! -e "$root/bun/bin/skillsmith"
-          test -z "$(find "$root/bun" -path '*@smorinlabs/skillsmith*' -print -quit)"
-
-          channels='["direct","npm","bun"]'
-          channel_digests="$(jq -cn --arg direct "$direct_sha" --arg npm "$npm_sha" --arg bun "$bun_sha" '{direct:$direct,npm:$npm,bun:$bun}')"
-          if [ "$RUNNER_OS" = 'macOS' ]; then
-            brew install --cask smorinlabs/tap/skillsmith
-            brew upgrade --cask skillsmith
-            brew_prefix="$(brew --prefix)"
-            brew_binary="$brew_prefix/bin/skillsmith"
-            channel=homebrew
-            verify_orientation "$brew_binary"
-            homebrew_sha="$(digest "$brew_binary")"
-            test "$homebrew_sha" = "$direct_sha"
-            brew uninstall --cask skillsmith
-            test ! -e "$brew_binary"
-            if brew list --cask skillsmith >/dev/null 2>&1; then
-              echo 'skillsmith cask remains installed after uninstall' >&2
-              exit 1
-            fi
-            channels='["direct","npm","bun","homebrew"]'
-            channel_digests="$(jq -cn --arg direct "$direct_sha" --arg npm "$npm_sha" --arg bun "$bun_sha" --arg homebrew "$homebrew_sha" '{direct:$direct,npm:$npm,bun:$bun,homebrew:$homebrew}')"
-          fi
-          rm -rf "$root/direct" "$root/npm" "$root/bun"
+          channels='["direct"]'
+          channel_digests="$(jq -cn --arg direct "$direct_sha" '{direct:$direct}')"
+          rm -rf "$root/direct"
           test ! -e "$root/direct/skillsmith"
-          test ! -e "$root/npm/bin/skillsmith"
-          test ! -e "$root/bun/bin/skillsmith"
           for owned_path in "$root/owned" "$root/release" "$root/fleet-home"; do
             case "$owned_path" in "$root"/*) ;; *) exit 1 ;; esac
           done
@@ -1447,7 +1067,7 @@ jobs:
             --argjson channelBinarySha256 "$channel_digests" \
             --argjson channels "$channels" \
             --argjson commands "$commands" \
-            '{aliasesAdjacent:true,attestationVerified:true,candidateArtifactId:$artifactId,candidateBundleSha256:$digest,candidateMetadataSha256:$metadataDigest,capabilityOrientation:true,channelBinarySha256:$channelBinarySha256,channels:$channels,cleanOwnedPrefix:true,commands:$commands,completionZshValid:true,directChecksumVerified:true,fleetCases:7,noSourceCheckoutOnPath:true,noToolDiagnosis:true,readOnlyMutationExit:4,requiredSkips:0,runner:$runner,sha:$sha,tag:"v1.0.0",upgradeUninstall:true,version:"1.0.0",writesWithinRoots:true}' \
+            '{aliasesAdjacent:true,attestationVerified:true,candidateArtifactId:$artifactId,candidateBundleSha256:$digest,candidateMetadataSha256:$metadataDigest,capabilityOrientation:true,channelBinarySha256:$channelBinarySha256,channels:$channels,cleanOwnedPrefix:true,commands:$commands,completionZshValid:true,directChecksumVerified:true,fleetCases:7,noSourceCheckoutOnPath:true,noToolDiagnosis:true,readOnlyMutationExit:4,requiredSkips:0,runner:$runner,sha:$sha,tag:"v1.0.0",directUninstall:true,version:"1.0.0",writesWithinRoots:true}' \
             > 'public-${{ matrix.target }}.json'
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -1473,7 +1093,7 @@ jobs:
           persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          bun-version: 1.3.14
+          bun-version: 1.4.2
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: public-receipt-*-${{ github.run_id }}
@@ -1481,4 +1101,4 @@ jobs:
           path: public-receipts
       - name: Close EWP-WF01 with nonempty zero-skip public receipts
         run: |
-          bun -e 'import { readdir, readFile } from "node:fs/promises"; import { validatePublicWorkflowReceipts } from "./scripts/release-gates.ts"; const root="public-receipts"; const receipts=await Promise.all((await readdir(root)).filter(x=>x.endsWith(".json")).map(async x=>JSON.parse(await readFile(root+"/"+x,"utf8")))); console.log(JSON.stringify(validatePublicWorkflowReceipts({receipts})));'
+          bun -e 'import { readdir, readFile } from "node:fs/promises"; import { validateGithubOnlyPublicReceipts } from "./scripts/release-gates.ts"; const root="public-receipts"; const receipts=await Promise.all((await readdir(root)).filter(x=>x.endsWith(".json")).map(async x=>JSON.parse(await readFile(root+"/"+x,"utf8")))); console.log(JSON.stringify(validateGithubOnlyPublicReceipts({receipts})));'

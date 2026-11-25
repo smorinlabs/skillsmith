@@ -809,6 +809,8 @@ export type BuildReleaseCandidateInput = Readonly<{
   sourceRevision: string;
   target: 'all';
   mode?: 'snapshot' | 'release';
+  // `none` builds release-mode candidates with Bun's ad-hoc macOS signatures (ADR 0011).
+  macosSigning?: 'apple' | 'none';
   releaseSecrets?: Readonly<
     Record<
       | 'MACOS_SIGN_P12'
@@ -870,21 +872,22 @@ export const buildReleaseCandidate = async (
     'MACOS_NOTARY_KEY_ID',
     'MACOS_NOTARY_ISSUER_ID',
   ] as const;
+  const appleSigned = mode === 'release' && (input.macosSigning ?? 'apple') === 'apple';
   if (
-    (mode === 'release' &&
+    (appleSigned &&
       (input.releaseSecrets === undefined ||
         secretNames.some((name) => input.releaseSecrets?.[name].length === 0))) ||
-    (mode === 'snapshot' && input.releaseSecrets !== undefined)
+    (!appleSigned && input.releaseSecrets !== undefined)
   ) {
     throw new Error('release signing values must be complete and release-mode-only');
   }
   const env = {
     ...baseEnvironment,
-    ...(mode === 'release' ? input.releaseSecrets : {}),
+    ...(appleSigned ? input.releaseSecrets : {}),
   } as Readonly<Record<string, string>>;
   const canaries = [
     ...(input.canaries ?? []),
-    ...(mode === 'release' ? secretNames.map((name) => env[name] ?? '') : []),
+    ...(appleSigned ? secretNames.map((name) => env[name] ?? '') : []),
   ];
   const goreleaser = Bun.which('goreleaser', { PATH: env.PATH });
   const npm = Bun.which('npm', { PATH: env.PATH });

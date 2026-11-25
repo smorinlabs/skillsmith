@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { buildReleaseCandidate } from './release-artifacts.ts';
+import { resolveMacosSigning } from './release-signing.ts';
 
 const ROOT = resolve(import.meta.dir, '..');
 const SNAPSHOT_INVOCATION = ['goreleaser', 'release', '--snapshot', '--clean'] as const;
@@ -67,25 +68,12 @@ if (revisionResult.exitCode !== 0) {
 }
 const sourceRevision = revisionResult.stdout.toString().trim();
 const credentialCanary = `P17_G6_CREDENTIAL_${randomUUID()}`;
-const releaseSecretNames = [
-  'MACOS_SIGN_P12',
-  'MACOS_SIGN_PASSWORD',
-  'MACOS_NOTARY_KEY',
-  'MACOS_NOTARY_KEY_ID',
-  'MACOS_NOTARY_ISSUER_ID',
-] as const;
-const releaseSecrets =
-  mode === 'release'
-    ? Object.fromEntries(
-        releaseSecretNames.map((name) => {
-          const value = process.env[name];
-          if (value === undefined || value.length === 0) {
-            throw new Error(`release mode requires ${name}`);
-          }
-          return [name, value];
-        }),
-      )
-    : undefined;
+const { signing: macosSigning, releaseSecrets } = resolveMacosSigning({
+  mode,
+  signing: argument('--macos-signing') ?? 'apple',
+  env: process.env,
+  bunVersion: Bun.version,
+});
 if (mode === 'release') {
   const tagResult = Bun.spawnSync(['git', 'describe', '--tags', '--exact-match', sourceRevision], {
     cwd: ROOT,
@@ -105,6 +93,7 @@ const result = await buildReleaseCandidate({
   sourceRevision,
   target: 'all',
   mode,
+  macosSigning,
   releaseSecrets: releaseSecrets as Parameters<typeof buildReleaseCandidate>[0]['releaseSecrets'],
   canaries: [credentialCanary],
 });
