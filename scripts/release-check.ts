@@ -17,6 +17,7 @@ import {
   assertPublicCommandRoster,
   validateReleaseReceiptSet,
 } from './release-gates.ts';
+import { type MacosSigning, macosLanePlan } from './release-signing.ts';
 import { parseJUnitSummary } from './run-test-files-serial.ts';
 import { isAtLeastVersion } from './tool-versions.ts';
 
@@ -116,6 +117,7 @@ type CandidateContext = Readonly<{
   candidateRoot: string;
   caskPath: string;
   inventory: ReturnType<typeof validateGoreleaserInventory>;
+  macosSigning: MacosSigning;
   runId: string;
   sha: string;
   tag: 'v1.0.0';
@@ -134,6 +136,10 @@ async function validateCandidate(): Promise<CandidateContext> {
   const tag = text(identity.tag, 'candidate tag');
   const bundleSha256 = text(identity.candidateBundleSha256, 'candidate bundle SHA-256');
   const metadataSha256 = text(identity.candidateMetadataSha256, 'candidate metadata SHA-256');
+  const macosSigning = text(identity.macosSigning, 'candidate macOS signing mode');
+  if (macosSigning !== 'apple' && macosSigning !== 'none') {
+    fail('candidate macOS signing mode must be apple or none');
+  }
   if (!isAtLeastVersion(Bun.version, MINIMUM_BUN_VERSION)) {
     fail(`Bun ${MINIMUM_BUN_VERSION} or newer is required`);
   }
@@ -166,6 +172,7 @@ async function validateCandidate(): Promise<CandidateContext> {
     candidateRoot,
     caskPath: inventory.caskPath,
     inventory,
+    macosSigning,
     runId: text(identity.runId, 'candidate run ID'),
     sha,
     tag: 'v1.0.0',
@@ -435,14 +442,34 @@ async function macOSCandidate(
   targetId: (typeof RELEASE_TARGETS)[number]['id'],
 ): Promise<void> {
   const binary = candidate.inventory.binaries[targetId];
-  await runChecked(['codesign', '--verify', '--deep', '--strict', binary], {
-    cwd: ROOT,
-    label: 'codesign verification',
-  });
-  await runChecked(['spctl', '--assess', '--type', 'execute', '--verbose=2', binary], {
-    cwd: ROOT,
-    label: 'Gatekeeper assessment',
-  });
+  const plan = macosLanePlan(candidate.macosSigning);
+  if (plan.includes('codesign-verify-deep-strict')) {
+    await runChecked(['codesign', '--verify', '--deep', '--strict', binary], {
+      cwd: ROOT,
+      label: 'codesign verification',
+    });
+  }
+  if (plan.includes('codesign-verify-strict')) {
+    await runChecked(['codesign', '--verify', '--strict', binary], {
+      cwd: ROOT,
+      label: 'ad-hoc codesign verification',
+    });
+  }
+  if (plan.includes('adhoc-signature')) {
+    const details = await runChecked(['codesign', '--display', '--verbose=4', binary], {
+      cwd: ROOT,
+      label: 'codesign signature details',
+    });
+    const output = `${details.stdout.toString()}\n${details.stderr.toString()}`;
+    if (!/^Signature=adhoc$/mu.test(output)) fail('unsigned candidate is not ad-hoc signed');
+  }
+  if (plan.includes('gatekeeper-assess')) {
+    await runChecked(['spctl', '--assess', '--type', 'execute', '--verbose=2', binary], {
+      cwd: ROOT,
+      label: 'Gatekeeper assessment',
+    });
+  }
+  if (!plan.includes('cask-lifecycle')) return;
   const archives = new Map<string, Uint8Array>();
   for (const path of Object.values(candidate.inventory.archives)) {
     archives.set(basename(path), await readFile(path));
