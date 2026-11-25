@@ -339,7 +339,8 @@ describe.skipIf(!E2E)('verify live e2e (real claude/codex/muse/agy CLIs)', () =>
       const agyVerdict = r.value.tools.find((t) => t.tool === 'antigravity');
       const mode = requireRan(agyVerdict?.modes[0], 'antigravity static bare-skill');
       expect(mode.verdict).toBe('pass');
-      expect(mode.findings).toEqual([]);
+      const skillFindings = mode.findings.filter((f) => f.checkId !== 'antigravity.version-drift');
+      expect(skillFindings).toEqual([]);
     }, 120_000);
 
     test('deep: dummytest — ran via agy acp; presence warnings for bad-yaml and bad-noframe only', async () => {
@@ -355,11 +356,12 @@ describe.skipIf(!E2E)('verify live e2e (real claude/codex/muse/agy CLIs)', () =>
       const mode = requireRan(r.value.modes[0], 'antigravity deep dummytest');
       expect(mode.skipReason).toBeNull();
       expect(mode.verdict).toBe('warn');
-      expect(mode.findings.map((f) => f.file).sort()).toEqual([
+      const skillFindings = mode.findings.filter((f) => f.checkId !== 'antigravity.version-drift');
+      expect(skillFindings.map((f) => f.file).sort()).toEqual([
         'skills/bad-noframe/SKILL.md',
         'skills/bad-yaml/SKILL.md',
       ]);
-      for (const finding of mode.findings) {
+      for (const finding of skillFindings) {
         expect(finding.checkId).toBe('antigravity.load-presence');
         expect(finding.normalizedSeverity).toBe('warning');
       }

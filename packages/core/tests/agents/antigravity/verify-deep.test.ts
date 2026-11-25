@@ -73,6 +73,7 @@ const fakeInstalled = (overrides: Partial<ScanEnv> = {}): VerifyPorts => {
   });
   return {
     ...base,
+    ...(overrides.readText ? { readText: overrides.readText } : {}),
     ...(overrides.removeTree
       ? {
           removeTree: async (p) => {
@@ -211,6 +212,38 @@ describe('verifyAntigravity deep mode', () => {
     if (!r.ok) return;
     expect(r.value.verdict).toBe('pass');
     expect(r.value.modes[0]?.findings).toEqual([]);
+  });
+
+  test('reads expected command name from the staged SKILL.md copy rather than re-reading source', async () => {
+    const readPaths: string[] = [];
+    const stagedSuffix = join('.agents', 'skills', 'warn-skill', 'SKILL.md');
+    const env = fakeInstalled({
+      readText: async (p) => {
+        readPaths.push(p);
+        if (p.includes('agy-project') && p.endsWith(stagedSuffix)) {
+          return '---\nname: staged-copy-name\ndescription: staged\n---\n';
+        }
+        return '---\nname: mutated-source-name\ndescription: source\n---\n';
+      },
+      exec: async () => ({
+        code: 0,
+        stdout: acpTranscript(['staged-copy-name']),
+        stderr: '',
+        timedOut: false,
+      }),
+    });
+    const r = await verifyAntigravity(env, {
+      path: join(FIXTURES, 'antigravity-warn'),
+      modes: ['deep'],
+      strict: false,
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.verdict).toBe('pass');
+    expect(r.value.modes[0]?.findings).toEqual([]);
+    expect(readPaths).toHaveLength(1);
+    expect(readPaths[0]).toContain('agy-project');
+    expect(readPaths[0]).toEndWith(stagedSuffix);
   });
 
   test('reports timeout and protocol errors as deep mode errors', async () => {

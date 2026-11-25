@@ -454,8 +454,9 @@ const runDeepMode = async (
     const expected: ExpectedAntigravitySkill[] = [];
     for (const name of names) {
       const src = join(opts.path, 'skills', name);
-      await env.copyTree(src, join(proj, '.agents', 'skills', name));
-      const commandName = await expectedSkillCommandName(env, join(src, 'SKILL.md'), name);
+      const staged = join(proj, '.agents', 'skills', name);
+      await env.copyTree(src, staged);
+      const commandName = await expectedSkillCommandName(env, join(staged, 'SKILL.md'), name);
       expected.push({
         commandName,
         folderName: name,
