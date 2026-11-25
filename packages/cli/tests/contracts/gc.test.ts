@@ -812,8 +812,8 @@ describe('gc command contract', () => {
       outcome: 'forgotten',
     });
     const ledger = JSON.parse(await readLedgerText(selected)) as UnknownRecord;
-    expect(ledger.projects).not.toHaveProperty(selected.projects.retired);
-    expect(ledger.projectRegistrations).not.toHaveProperty(selected.projects.retired);
+    expect(ledger.projects).not.toHaveProperty([selected.projects.retired]);
+    expect(ledger.projectRegistrations).not.toHaveProperty([selected.projects.retired]);
     expect(await pathExists(object.path)).toBeFalse();
     expect(
       await Promise.all([

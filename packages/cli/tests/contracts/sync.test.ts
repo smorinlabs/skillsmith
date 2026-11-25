@@ -524,8 +524,8 @@ describe('sync command contract', () => {
     expect(Object.keys(ledger.projects).sort()).toEqual(
       [selected.projects.a, selected.projects.b, selected.projects.c].sort(),
     );
-    expect(ledger.projects).not.toHaveProperty(selected.projects.bAlias);
-    expect(ledger.projects).not.toHaveProperty(selected.projects.current);
+    expect(ledger.projects).not.toHaveProperty([selected.projects.bAlias]);
+    expect(ledger.projects).not.toHaveProperty([selected.projects.current]);
     await syncError(selected, [
       'sync',
       '--from',
