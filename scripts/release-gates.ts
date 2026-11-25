@@ -26,6 +26,7 @@ export const RELEASE_ENVIRONMENTS = [
 ] as const;
 
 export const PUBLIC_COMMAND_ORDER = [
+  'search',
   'agents',
   'list',
   'commands',
@@ -51,6 +52,24 @@ export const PUBLIC_COMMAND_ORDER = [
   'version',
   'help',
 ] as const;
+
+// Mirrors how a reader scans `skillsmith help`: each command row is indented two spaces and
+// starts with the lowercase command name, optionally followed by `|alias`.
+export function parseHelpCommands(help: string): string[] {
+  return help
+    .split('\n')
+    .filter((line) => /^ {2}[a-z][a-z|-]*/u.test(line))
+    .map((line) => (line.trim().split(/\s+/u)[0] ?? '').split('|')[0] ?? '');
+}
+
+export function assertPublicCommandRoster(help: string): void {
+  const commands = parseHelpCommands(help);
+  if (commands.join('\0') !== PUBLIC_COMMAND_ORDER.join('\0')) {
+    fail(
+      `command roster mismatch: expected ${PUBLIC_COMMAND_ORDER.join(',')}; got ${commands.join(',')}`,
+    );
+  }
+}
 
 export const RELEASE_TOOL_ARCHIVE_SHA256 = {
   actionlint: {
@@ -567,7 +586,7 @@ function publicReceipt(value: unknown, label: string): PublicReceipt {
   }
   const commands = strings(receipt.commands, `${label} command order`);
   if (commands.join('\0') !== PUBLIC_COMMAND_ORDER.join('\0')) {
-    fail(`${label} does not contain all 24 commands in group order`);
+    fail(`${label} does not contain all ${PUBLIC_COMMAND_ORDER.length} commands in group order`);
   }
   const channels = strings(receipt.channels, `${label} channels`);
   const channelDigests = record(receipt.channelBinarySha256, `${label} channel binary digests`);

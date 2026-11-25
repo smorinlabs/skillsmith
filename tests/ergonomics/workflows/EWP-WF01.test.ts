@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 const SHA = 'a'.repeat(40);
 const DIGEST = 'b'.repeat(64);
 const ALL_COMMANDS = [
+  'search',
   'agents',
   'list',
   'commands',
@@ -150,7 +151,7 @@ describe('EWP-WF01', () => {
     ).toThrow();
   });
 
-  test('proves all 24 commands, capability orientation, aliases, and clean no-source lifecycle', async () => {
+  test('proves all 25 commands, capability orientation, aliases, and clean no-source lifecycle', async () => {
     const validate = await requirePublicValidator();
     expect(validate({ receipts: validReceipts() })).toMatchObject({ version: '1.0.0' });
     expect(() =>
