@@ -1,7 +1,7 @@
 import type { ArtifactDigest } from './hash.ts';
 import type { LogicalJournalV1Dto } from './journal-types.ts';
 
-export type LedgerV1ToolId = 'claude-code' | 'codex' | 'muse';
+export type LedgerV1ToolId = 'claude-code' | 'codex' | 'muse' | 'antigravity';
 
 export interface LedgerDevV1Dto {
   readonly sourcePath: string;

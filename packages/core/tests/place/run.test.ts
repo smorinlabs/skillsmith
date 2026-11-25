@@ -222,7 +222,12 @@ const makeVerifyReport = (
     schemaVersion: 1,
     target: { path: '/fake', kind: 'skill' },
     requested: { tools: [tool], modes: ['static'], strict: false, explicitTools: true },
-    verifiedAgainst: { 'claude-code': '1.0.0', codex: '1.0.0', muse: '1.0.0' },
+    verifiedAgainst: {
+      'claude-code': '1.0.0',
+      codex: '1.0.0',
+      muse: '1.0.0',
+      antigravity: '1.0.0',
+    },
     summary: {
       verdict,
       verified: verdict === 'pass' || verdict === 'warn' ? [tool] : [],
@@ -388,6 +393,30 @@ describe('runPromote / runDev — verify gate matrix', () => {
       if (!r.ok) throw new Error(msg(r.error));
       const museCall = calls.find((c) => c.tools?.[0] === 'muse');
       expect(museCall?.deep).toBe(true);
+      expect(r.value.results[0]?.verify?.gate).toBe('passed');
+    } finally {
+      await destroyFixtureFleet(f);
+    }
+  });
+
+  test('antigravity gate mirrors claude-code: called without deep', async () => {
+    const f = await buildFixtureFleet();
+    try {
+      const seed = await runDev(
+        f.env,
+        opts(f, { targets: ['agycut'], tools: ['antigravity'], source: resolve(f.betaSrc) }),
+        passDeps(),
+      );
+      if (!seed.ok) throw new Error(msg(seed.error));
+      const calls: VerifyOptions[] = [];
+      const r = await runPromote(
+        f.env,
+        opts(f, { targets: ['agycut'], tools: ['antigravity'] }),
+        passDeps(calls),
+      );
+      if (!r.ok) throw new Error(msg(r.error));
+      const agyCall = calls.find((c) => c.tools?.[0] === 'antigravity');
+      expect(agyCall?.deep).toBeFalsy();
       expect(r.value.results[0]?.verify?.gate).toBe('passed');
     } finally {
       await destroyFixtureFleet(f);
@@ -857,6 +886,7 @@ describe('runDev — happy paths, --source adoption, missing source', () => {
     const firstLive = join(f.home, '.claude', 'skills', 'boundary-fail');
     const secondLive = join(f.home, '.agents', 'skills', 'boundary-fail');
     const thirdLive = join(f.env.xdg.config, 'muse', 'skills', 'boundary-fail');
+    const fourthLive = join(f.home, '.gemini', 'config', 'skills', 'boundary-fail');
     const verifyCalls: VerifyOptions[] = [];
     let crossedDurableBoundary = 0;
     let failedMandatoryReads = 0;
@@ -889,7 +919,7 @@ describe('runDev — happy paths, --source adoption, missing source', () => {
       passDeps(verifyCalls),
     );
     if (!prepared.ok) throw new Error(msg(prepared.error));
-    expect(prepared.value.plan.operations).toHaveLength(3);
+    expect(prepared.value.plan.operations).toHaveLength(4);
     expect(new Set(prepared.value.plan.operations.map(({ groupId }) => groupId)).size).toBe(1);
 
     const executed = await prepared.value.execute();
@@ -903,6 +933,7 @@ describe('runDev — happy paths, --source adoption, missing source', () => {
     expect(await f.env.pathKind(firstLive)).toBe('symlink');
     expect(await f.env.pathKind(secondLive)).toBe('absent');
     expect(await f.env.pathKind(thirdLive)).toBe('absent');
+    expect(await f.env.pathKind(fourthLive)).toBe('absent');
 
     const canonical = await readLedgerState(f.env, ledgerPath);
     if (!canonical.ok || canonical.value.state !== 'present') {
@@ -913,6 +944,7 @@ describe('runDev — happy paths, --source adoption, missing source', () => {
     ).not.toBeNull();
     expect(getLedgerPairAt(canonical.value.model, null, 'boundary-fail', 'codex')).toBeNull();
     expect(getLedgerPairAt(canonical.value.model, null, 'boundary-fail', 'muse')).toBeNull();
+    expect(getLedgerPairAt(canonical.value.model, null, 'boundary-fail', 'antigravity')).toBeNull();
   });
 
   test('G3B-02: selected store drift after preview is refused with zero execution writes', async () => {

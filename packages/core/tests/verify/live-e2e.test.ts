@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
+import { verifyAntigravity } from '../../src/agents/antigravity/verify.ts';
 import { verifyClaudeCode } from '../../src/agents/claude-code/verify.ts';
 import { verifyCodex } from '../../src/agents/codex/verify.ts';
 import { verifyMuse } from '../../src/agents/muse/verify.ts';
@@ -7,7 +8,7 @@ import { defaultRuntimePorts as defaultScanEnv } from '../../src/ports/default.t
 import { verifyPlugin } from '../../src/verify/run.ts';
 import type { ModeResult } from '../../src/verify/types.ts';
 
-// Env-gated live e2e against the real `claude` / `codex` / `muse` CLIs. CI never sets
+// Env-gated live e2e against the real `claude` / `codex` / `muse` / `agy` CLIs. CI never sets
 // SKILLSMITH_E2E and its runners don't have the tool CLIs installed, so this whole
 // suite reports as skipped and `bun run check` stays green. On a workstation with the
 // CLIs installed, run: `SKILLSMITH_E2E=1 bun test packages/core/tests/verify/live-e2e.test.ts`
@@ -25,6 +26,7 @@ const CLAUDE_NONAME = join(FIXTURES, 'claude-noname');
 const CODEX_BADPLUG = join(FIXTURES, 'codex-badplug');
 const BARE_SKILL = join(FIXTURES, 'bare-skill');
 const MUSE_WARN = join(FIXTURES, 'muse-warn');
+const ANTIGRAVITY_WARN = join(FIXTURES, 'antigravity-warn');
 
 /**
  * Fails loudly with the full mode payload (status/skipReason/command/findings) rather
@@ -39,7 +41,7 @@ const requireRan = (mode: ModeResult | undefined, label: string): ModeResult => 
   return mode;
 };
 
-describe.skipIf(!E2E)('verify live e2e (real claude/codex/muse CLIs)', () => {
+describe.skipIf(!E2E)('verify live e2e (real claude/codex/muse/agy CLIs)', () => {
   describe.skipIf(!Bun.which('claude'))('claude-code', () => {
     test('static: dummytest — fail verdict; frontmatter error + two frontmatter/description warnings', async () => {
       const env = await defaultScanEnv();
@@ -274,6 +276,93 @@ describe.skipIf(!E2E)('verify live e2e (real claude/codex/muse CLIs)', () => {
       expect(errors.every((f) => f.file?.startsWith('.agents/') !== true)).toBe(true);
       expect(errors.every((f) => f.file?.startsWith('.config/') !== true)).toBe(true);
       expect(errors.every((f) => (f.file?.includes('muse-home') ?? false) !== true)).toBe(true);
+    }, 120_000);
+  });
+
+  describe.skipIf(!Bun.which('agy'))('antigravity', () => {
+    test('static: dummytest — fail verdict; two frontmatter errors + description warning', async () => {
+      const env = await defaultScanEnv();
+      const r = await verifyAntigravity(env, {
+        path: DUMMYTEST,
+        modes: ['static'],
+        strict: false,
+      });
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+
+      const mode = requireRan(r.value.modes[0], 'antigravity static dummytest');
+      expect(mode.verdict).toBe('fail');
+      expect(mode.coverage).toEqual({ manifest: false, skills: true });
+
+      const badYaml = mode.findings.find((f) => f.file === 'skills/bad-yaml/SKILL.md');
+      expect(badYaml?.checkId).toBe('antigravity.frontmatter');
+      expect(badYaml?.normalizedSeverity).toBe('error');
+
+      const badNoframe = mode.findings.find((f) => f.file === 'skills/bad-noframe/SKILL.md');
+      expect(badNoframe?.checkId).toBe('antigravity.frontmatter');
+      expect(badNoframe?.normalizedSeverity).toBe('error');
+
+      const badNodesc = mode.findings.find((f) => f.file === 'skills/bad-nodesc/SKILL.md');
+      expect(badNodesc?.checkId).toBe('antigravity.description');
+      expect(badNodesc?.normalizedSeverity).toBe('warning');
+
+      expect(mode.findings.some((f) => f.subject === 'manifest')).toBe(false);
+    }, 120_000);
+
+    test('static: antigravity-warn — warn verdict; folder/name mismatch warning', async () => {
+      const env = await defaultScanEnv();
+      const r = await verifyAntigravity(env, {
+        path: ANTIGRAVITY_WARN,
+        modes: ['static'],
+        strict: false,
+      });
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+
+      const mode = requireRan(r.value.modes[0], 'antigravity static antigravity-warn');
+      expect(mode.verdict).toBe('warn');
+      const mismatch = mode.findings.find((f) => f.checkId === 'antigravity.name-mismatch');
+      expect(mismatch?.normalizedSeverity).toBe('warning');
+      expect(mismatch?.file).toBe('skills/warn-skill/SKILL.md');
+    }, 120_000);
+
+    test('static: bare-skill (wrapped) — pass verdict, no spurious manifest note', async () => {
+      const env = await defaultScanEnv();
+      const r = await verifyPlugin(env, {
+        path: BARE_SKILL,
+        tools: ['antigravity'],
+        strict: false,
+      });
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+
+      const agyVerdict = r.value.tools.find((t) => t.tool === 'antigravity');
+      const mode = requireRan(agyVerdict?.modes[0], 'antigravity static bare-skill');
+      expect(mode.verdict).toBe('pass');
+      expect(mode.findings).toEqual([]);
+    }, 120_000);
+
+    test('deep: dummytest — ran via agy acp; presence warnings for bad-yaml and bad-noframe only', async () => {
+      const env = await defaultScanEnv();
+      const r = await verifyAntigravity(env, {
+        path: DUMMYTEST,
+        modes: ['deep'],
+        strict: false,
+      });
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+
+      const mode = requireRan(r.value.modes[0], 'antigravity deep dummytest');
+      expect(mode.skipReason).toBeNull();
+      expect(mode.verdict).toBe('warn');
+      expect(mode.findings.map((f) => f.file).sort()).toEqual([
+        'skills/bad-noframe/SKILL.md',
+        'skills/bad-yaml/SKILL.md',
+      ]);
+      for (const finding of mode.findings) {
+        expect(finding.checkId).toBe('antigravity.load-presence');
+        expect(finding.normalizedSeverity).toBe('warning');
+      }
     }, 120_000);
   });
 });

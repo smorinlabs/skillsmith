@@ -119,21 +119,26 @@ describe('dev --source — state machine S1-S6 (P13 PRD)', () => {
     const source = await makeSkillSource(f.base, 'delta');
     const r = await runDev(f.env, opts({ targets: ['delta'], source }), passFlipDeps());
     if (!r.ok) throw new Error(msg(r.error));
-    expect(r.value.results).toHaveLength(3);
+    expect(r.value.results).toHaveLength(4);
     expect(r.value.results[0]?.tool).toBe('claude-code');
     expect(actionV2(r.value.results[0])).toBe('created');
     expect(r.value.results[1]?.tool).toBe('codex');
     expect(actionV2(r.value.results[1])).toBe('created');
     expect(r.value.results[2]?.tool).toBe('muse');
     expect(actionV2(r.value.results[2])).toBe('created');
-    expect(summaryV2(r.value).created).toBe(3);
+    expect(r.value.results[3]?.tool).toBe('antigravity');
+    expect(actionV2(r.value.results[3])).toBe('created');
+    expect(summaryV2(r.value).created).toBe(4);
 
     expect(await f.env.pathKind(join(claudeRoot(), 'delta'))).toBe('symlink');
     expect(await f.env.pathKind(join(codexDefaultSkillsDestFor(f.home), 'delta'))).toBe('symlink');
     expect(await f.env.pathKind(join(f.env.xdg.config, 'muse', 'skills', 'delta'))).toBe('symlink');
+    expect(await f.env.pathKind(join(f.home, '.gemini', 'config', 'skills', 'delta'))).toBe(
+      'symlink',
+    );
   });
 
-  test('S1 project scope with default tools skips muse (no roots, no refusal)', async () => {
+  test('S1 project scope with default tools skips muse and antigravity (no roots, no refusal)', async () => {
     const source = await makeSkillSource(f.base, 'eps');
     const r = await runDev(
       f.env,
@@ -147,9 +152,11 @@ describe('dev --source — state machine S1-S6 (P13 PRD)', () => {
 
     expect(await f.env.pathKind(join(f.project, '.claude', 'skills', 'eps'))).toBe('symlink');
     expect(await f.env.pathKind(join(f.project, '.agents', 'skills', 'eps'))).toBe('symlink');
-    // Muse manages no project root: nothing is created for it anywhere.
+    // Muse and Antigravity manage no project root: nothing is created for them anywhere.
     expect(await f.env.pathKind(join(f.env.xdg.config, 'muse', 'skills', 'eps'))).toBe('absent');
     expect(getPair(await readLedgerOf(), 'eps', 'muse')).toBeNull();
+    expect(await f.env.pathKind(join(f.home, '.gemini', 'config', 'skills', 'eps'))).toBe('absent');
+    expect(getPair(await readLedgerOf(), 'eps', 'antigravity')).toBeNull();
   });
 
   test('S1 explicit muse in project scope refuses without writes', async () => {
@@ -314,7 +321,7 @@ describe('dev --source — state machine S1-S6 (P13 PRD)', () => {
 
   test("S4 refusal on one tool does not stop the other tools' pairs (P12 independence)", async () => {
     const source = await makeSkillSource(f.base, 'indy');
-    // claude-code: mismatched hand-made symlink; codex and muse: absent -> should still create.
+    // claude-code: mismatched hand-made symlink; codex, muse, antigravity: absent -> should still create.
     await symlink(resolve(f.betaSrc), join(claudeRoot(), 'indy'));
 
     const r = await runDev(f.env, opts({ targets: ['indy'], source }), passFlipDeps());
@@ -322,10 +329,12 @@ describe('dev --source — state machine S1-S6 (P13 PRD)', () => {
     const claude = r.value.results.find((res) => res.tool === 'claude-code');
     const codex = r.value.results.find((res) => res.tool === 'codex');
     const muse = r.value.results.find((res) => res.tool === 'muse');
+    const antigravity = r.value.results.find((res) => res.tool === 'antigravity');
     expect(actionV2(claude)).toBe('refused');
     expect(actionV2(codex)).toBe('created');
     expect(actionV2(muse)).toBe('created');
-    expect(summaryV2(r.value).created).toBe(2);
+    expect(actionV2(antigravity)).toBe('created');
+    expect(summaryV2(r.value).created).toBe(3);
     expect(summaryV2(r.value).refused).toBe(1);
   });
 

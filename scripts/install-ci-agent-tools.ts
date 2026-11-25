@@ -39,6 +39,9 @@ interface NativeArtifact {
   url: string;
   sha256: string;
   bytes: number;
+  archive?: 'tar.gz';
+  archiveMember?: string;
+  binarySha256?: string;
 }
 interface Tool {
   id: string;
@@ -119,7 +122,15 @@ export const install = async (args: string[]): Promise<void> => {
   const manifest = JSON.parse(manifestBytes.toString()) as { schemaVersion: number; tools: Tool[] };
   const expected: Record<
     string,
-    { binary: string; package: string; provider: 'npm' | 'native'; version: RegExp }
+    {
+      binary: string;
+      package: string;
+      provider: 'npm' | 'native';
+      version: RegExp;
+      urlPrefix?: string;
+      versionToken?: (version: string) => string;
+      archiveMember?: string;
+    }
   > = {
     'claude-code': {
       binary: 'claude',
@@ -150,25 +161,54 @@ export const install = async (args: string[]): Promise<void> => {
       package: 'muse',
       provider: 'native',
       version: /^\d+\.\d+\.\d+-R\d+\.\d+$/,
+      urlPrefix: 'https://lookaside.facebook.com/lookaside/muse/download/',
+      versionToken: (version) => `version=${version}`,
+    },
+    antigravity: {
+      binary: 'agy',
+      package: 'antigravity',
+      provider: 'native',
+      version: /^\d+\.\d+\.\d+$/,
+      urlPrefix: 'https://storage.googleapis.com/antigravity-public/antigravity-cli/',
+      versionToken: (version) => `/${version}-`,
+      archiveMember: 'antigravity',
     },
   };
   const nativePlatforms = ['linux-x64', 'linux-arm64', 'darwin-x64', 'darwin-arm64'];
-  const validNative = (tool: Tool): boolean => {
-    if (tool.provider !== 'native' || !tool.artifacts) return false;
+  const validNative = (tool: Tool, want: (typeof expected)[string]): boolean => {
+    if (tool.provider !== 'native' || !tool.artifacts || !want.urlPrefix || !want.versionToken) {
+      return false;
+    }
     if (
       JSON.stringify(Object.keys(tool.artifacts).sort()) !==
       JSON.stringify([...nativePlatforms].sort())
     )
       return false;
+    const expectedToken = want.versionToken(tool.version);
     return nativePlatforms.every((platform) => {
       const artifact = tool.artifacts?.[platform];
+      if (
+        !artifact ||
+        !artifact.url.startsWith(want.urlPrefix as string) ||
+        !artifact.url.includes(expectedToken) ||
+        !/^[0-9a-f]{64}$/.test(artifact.sha256) ||
+        !Number.isInteger(artifact.bytes) ||
+        artifact.bytes <= 0
+      ) {
+        return false;
+      }
+      if (want.archiveMember !== undefined) {
+        return (
+          artifact.archive === 'tar.gz' &&
+          artifact.archiveMember === want.archiveMember &&
+          typeof artifact.binarySha256 === 'string' &&
+          /^[0-9a-f]{64}$/.test(artifact.binarySha256)
+        );
+      }
       return (
-        !!artifact &&
-        artifact.url.startsWith('https://lookaside.facebook.com/lookaside/muse/download/') &&
-        artifact.url.includes(`version=${tool.version}`) &&
-        /^[0-9a-f]{64}$/.test(artifact.sha256) &&
-        Number.isInteger(artifact.bytes) &&
-        artifact.bytes > 0
+        artifact.archive === undefined &&
+        artifact.archiveMember === undefined &&
+        artifact.binarySha256 === undefined
       );
     });
   };
@@ -183,11 +223,11 @@ export const install = async (args: string[]): Promise<void> => {
       if (!want || want.binary !== tool.binary || want.package !== tool.package) return true;
       if (!want.version.test(tool.version)) return true;
       if ((tool.provider ?? 'npm') !== want.provider) return true;
-      return want.provider === 'npm' ? tool.artifacts !== undefined : !validNative(tool);
+      return want.provider === 'npm' ? tool.artifacts !== undefined : !validNative(tool, want);
     })
   ) {
     throw new Error(
-      'agent manifest must match the five registry IDs and exact supported packages/versions',
+      'agent manifest must match the six registry IDs and exact supported packages/versions',
     );
   }
   const hostPlatform = `${process.platform}-${process.arch}`;
@@ -483,7 +523,35 @@ export const install = async (args: string[]): Promise<void> => {
         );
       if (sha256(payload) !== artifact.sha256)
         throw new Error(`native ${tool.id} checksum mismatch`);
-      await writeFile(join(prefix, 'bin', tool.binary), payload, { flag: 'wx', mode: 0o755 });
+      if (artifact.archive === 'tar.gz' && artifact.archiveMember) {
+        const archivePath = join(root, 'tmp', `${tool.id}.tar.gz`);
+        const extractDir = join(root, 'tmp', `${tool.id}-extract`);
+        await writeFile(archivePath, payload, { flag: 'wx', mode: 0o600 });
+        await mkdir(extractDir, { mode: 0o700 });
+        const tarBin = Bun.which('tar');
+        if (!tarBin) throw new Error(`tar is required to extract native ${tool.id} archive`);
+        await run(
+          `${tool.id}-extract`,
+          [tarBin, '-xzf', archivePath, '-C', extractDir, artifact.archiveMember],
+          env,
+          120_000,
+        );
+        const extractedPath = join(extractDir, artifact.archiveMember);
+        const extractedReal = await realpath(extractedPath);
+        if (!within(extractDir, extractedReal) || !(await lstat(extractedPath)).isFile()) {
+          throw new Error(`native ${tool.id} extracted member is unsafe`);
+        }
+        const binaryBytes = await readFile(extractedReal);
+        if (artifact.binarySha256 && sha256(binaryBytes) !== artifact.binarySha256) {
+          throw new Error(`native ${tool.id} extracted binary checksum mismatch`);
+        }
+        await writeFile(join(prefix, 'bin', tool.binary), binaryBytes, {
+          flag: 'wx',
+          mode: 0o755,
+        });
+      } else {
+        await writeFile(join(prefix, 'bin', tool.binary), payload, { flag: 'wx', mode: 0o755 });
+      }
     }
     await unlink(join(root, 'bin/npm'));
     await symlink(git.realPath, join(root, 'bin/git'));
@@ -515,12 +583,13 @@ export const install = async (args: string[]): Promise<void> => {
         const binding = await executable(join(prefix, 'bin', tool.binary));
         if (!within(prefix, binding.realPath))
           throw new Error(`executable escapes prefix: ${tool.id}`);
-        if (binding.sha256 !== artifact.sha256)
+        const expectedBinarySha256 = artifact.binarySha256 ?? artifact.sha256;
+        if (binding.sha256 !== expectedBinarySha256)
           throw new Error(`native executable checksum mismatch: ${tool.id}`);
         const version = await run(
           `${tool.binary}-version`,
           [join(root, 'bin', tool.binary), '--version'],
-          { ...versionEnv, MUSE_NO_AUTO_UPDATE: '1' },
+          { ...versionEnv, ...(tool.id === 'muse' ? { MUSE_NO_AUTO_UPDATE: '1' } : {}) },
           30_000,
         );
         if (

@@ -8,7 +8,7 @@ Use Skillsmith to inspect skills already on your machine, install shared skills 
 repositories, develop skills from local checkouts, and reproduce a collection from recorded
 installation declarations and revisions.
 
-Skillsmith detects Claude Code, Codex, Kilo Code, opencode, and Muse. Management and
+Skillsmith detects Claude Code, Codex, Kilo Code, opencode, Muse, and Antigravity. Management and
 verification support depend on the target tool and installation scope; see
 [Supported tools](#supported-tools) and the [capability matrix](#capability-and-version-matrix).
 
@@ -126,6 +126,7 @@ projects. The installation saves declarations and resolved revisions by default.
 | `kilo-code`    | `kilo`        | PATH lookup → `--version` → classify install path |
 | `opencode`     | `opencode`    | PATH lookup → `--version` → classify install path |
 | `muse`         | `muse`        | PATH lookup → `--version` → classify install path |
+| `antigravity`  | `agy`         | PATH lookup → `--version` → classify install path |
 
 The install-method classifier recognizes `brew`, `npm-global`, `bun-global`, `native-installer`,
 and `app-bundle`, and falls back to `unknown`. Each tool owns a separate directory under
@@ -133,8 +134,8 @@ and `app-bundle`, and falls back to `unknown`. Each tool owns a separate directo
 detection pipeline without touching the others.
 
 Detection, inventory, `doctor`, and `check` support Claude Code, Codex, Kilo Code, opencode,
-and Muse. `verify` supports Claude Code, Codex, and Muse. Write and mutation commands support
-Claude Code and Codex, plus Muse in the user and custom scopes; Kilo Code and opencode are read-only/detection today.
+Muse, and Antigravity. `verify` supports Claude Code, Codex, Muse, and Antigravity. Write and mutation commands support
+Claude Code and Codex, plus Muse and Antigravity in the user and custom scopes; Kilo Code and opencode are read-only/detection today.
 
 Missing a tool? Open an issue with a `skillsmith agents --format json` dump and the OS / install method you used.
 
@@ -160,25 +161,26 @@ Generated from the live tool registry for Skillsmith 1.0.0. A scope list means t
 | `kilo-code` | capability v1 | not applicable |
 | `opencode` | capability v1 | not applicable |
 | `muse` | capability v2 | 1.3.0 |
+| `antigravity` | capability v2 | 1.5.16 |
 
-| Operation | `claude-code` | `codex` | `kilo-code` | `opencode` | `muse` |
-|---|---|---|---|---|---|
-| `detect` | yes | yes | yes | yes | yes |
-| `inventory-skills` | user, project, system, managed | user, project, system, managed | user, project, system, managed | user, project, system, managed | user, project, system, managed |
-| `inventory-commands` | user, project, system, managed | user, project, system, managed | user, project, system, managed | user, project, system, managed | user, project, system, managed |
-| `diagnostics` | user, project, system, managed | user, project, system, managed | user, project, system, managed | user, project, system, managed | user, project, system, managed |
-| `install` | user, project, custom | user, project, custom | — | — | user, custom |
-| `uninstall` | user, project, custom | user, project, custom | — | — | user, custom |
-| `dev` | user, project, custom | user, project, custom | — | — | user, custom |
-| `promote` | user, project, custom | user, project, custom | — | — | user, custom |
-| `undo` | user, project, custom | user, project, custom | — | — | user, custom |
-| `verify-static` | artifact | artifact | — | — | artifact |
-| `verify-deep` | artifact | artifact | — | — | artifact |
-| `plan` | user, project, custom | user, project, custom | — | — | user, custom |
-| `apply` | user, project, custom | user, project, custom | — | — | user, custom |
-| `sync` | user, project, custom | user, project, custom | — | — | user, custom |
-| `update` | user, project, custom | user, project, custom | — | — | user, custom |
-| `adapt` | — | — | — | — | — |
+| Operation | `claude-code` | `codex` | `kilo-code` | `opencode` | `muse` | `antigravity` |
+|---|---|---|---|---|---|---|
+| `detect` | yes | yes | yes | yes | yes | yes |
+| `inventory-skills` | user, project, system, managed | user, project, system, managed | user, project, system, managed | user, project, system, managed | user, project, system, managed | user, project, system, managed |
+| `inventory-commands` | user, project, system, managed | user, project, system, managed | user, project, system, managed | user, project, system, managed | user, project, system, managed | user, project, system, managed |
+| `diagnostics` | user, project, system, managed | user, project, system, managed | user, project, system, managed | user, project, system, managed | user, project, system, managed | user, project, system, managed |
+| `install` | user, project, custom | user, project, custom | — | — | user, custom | user, custom |
+| `uninstall` | user, project, custom | user, project, custom | — | — | user, custom | user, custom |
+| `dev` | user, project, custom | user, project, custom | — | — | user, custom | user, custom |
+| `promote` | user, project, custom | user, project, custom | — | — | user, custom | user, custom |
+| `undo` | user, project, custom | user, project, custom | — | — | user, custom | user, custom |
+| `verify-static` | artifact | artifact | — | — | artifact | artifact |
+| `verify-deep` | artifact | artifact | — | — | artifact | artifact |
+| `plan` | user, project, custom | user, project, custom | — | — | user, custom | user, custom |
+| `apply` | user, project, custom | user, project, custom | — | — | user, custom | user, custom |
+| `sync` | user, project, custom | user, project, custom | — | — | user, custom | user, custom |
+| `update` | user, project, custom | user, project, custom | — | — | user, custom | user, custom |
+| `adapt` | — | — | — | — | — | — |
 <!-- skillsmith-capability-matrix:end -->
 
 ## Defaults, concepts, and files
@@ -243,10 +245,13 @@ The default writable skill directories are:
 | Claude Code | `~/.claude/skills/` | `<project>/.claude/skills/` |
 | Codex | `~/.agents/skills/` | `<project>/.agents/skills/` |
 | Muse | `~/.config/muse/skills/` | Project writes are not supported. |
+| Antigravity | `~/.gemini/config/skills/` | Project writes are not supported. |
 
 Tool-specific configuration can change these paths. Muse's user directory follows
-`XDG_CONFIG_HOME`. Codex's legacy `~/.codex/skills/` directory remains visible to inventory;
-new standard user placements use `~/.agents/skills/`. Use `list --long` to inspect actual paths.
+`XDG_CONFIG_HOME`. Antigravity's `~/.agents/skills/` compatibility directory and Codex's legacy
+`~/.codex/skills/` directory remain visible to inventory; new standard user placements use
+`~/.gemini/config/skills/` for Antigravity and `~/.agents/skills/` for Codex. Use `list --long` to
+inspect actual paths.
 
 ### Source syntax
 
@@ -309,8 +314,8 @@ Pinned declarations also need an explicit `--ref` when selecting a newer release
 Choose the source, target tool, installation scope, revision policy, and file placement
 independently. User scope applies across projects; project scope applies to one project.
 Write workflows support Claude Code and Codex in user, project, and custom scopes.
-Muse supports writes in user and custom scopes. Verification supports Claude Code, Codex,
-and Muse. Kilo Code and opencode support detection, inventory, and diagnostics.
+Muse and Antigravity support writes in user and custom scopes. Verification supports Claude Code,
+Codex, Muse, and Antigravity. Kilo Code and opencode support detection, inventory, and diagnostics.
 See the [capability matrix](#capability-and-version-matrix) for the complete operation list.
 
 | Scenario | Mode or command | What to expect |
@@ -772,8 +777,8 @@ intent. Branch, tag, and full-SHA refs are inspected exactly, without naming heu
 inspected commit is materialized once for planning and execution. `--pin` stores that full SHA as
 the declaration intent. `--check` and `--dry-run` make no durable writes. A multi-declaration
 mutation requires approval of the exact group and operation order, or `--yes`; noninteractive bulk
-mutation without `--yes` is a usage error. Claude Code uses its static update gate, while Codex
-and Muse use static-plus-deep gates. Human output and strict `update@1` JSON project the same selected SHA,
+mutation without `--yes` is a usage error. Claude Code and Antigravity use their static update
+gates, while Codex and Muse use static-plus-deep gates. Human output and strict `update@1` JSON project the same selected SHA,
 skill, group, operation, diagnostic, and summary facts; `--check` exits 7 when an update is available.
 
 `undo` selects a target or `--all` within the user and current-project placement history. It aborts
@@ -788,7 +793,7 @@ deprecated compatibility spellings routed through this same undo plan.
 
 `init` creates one declaration-empty canonical manifest. It selects the Git root when available and
 otherwise the XDG user configuration path; `--file`, `--user`, or `--project` select it explicitly.
-Claude Code, Codex, and Muse defaults may be repeated with `--tool`; subsequent writes must use
+Claude Code, Codex, Muse, and Antigravity defaults may be repeated with `--tool`; subsequent writes must use
 a scope supported by the selected tool. Existing canonical-equivalent state
 is a noop, exact legacy project configuration is migrated losslessly, and other existing state
 requires `--force`; future schemas are never downgraded. The sibling lock, live roots, store, and

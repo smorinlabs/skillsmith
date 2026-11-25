@@ -1,7 +1,7 @@
 # Agent executable environments
 
 The ordinary test owner `packages/cli/tests/commands/agent-environments.test.ts` runs three cases:
-five-tool discovery, Claude installation prerequisites, and Codex installation prerequisites.
+six-tool discovery, Claude installation prerequisites, and Codex installation prerequisites.
 It defaults to deliberate absence and adds no skips. CI runs that owner and the eight P4A fixture
 cases separately in both the `present` and `absent` environments, using Bun 1.4.2 on Ubuntu 24.04.
 
@@ -14,17 +14,18 @@ The baseline in `.github/ci-agent-tools.json` is:
 | Kilo Code | `kilo` | `@kilocode/cli` | `7.4.5` |
 | OpenCode | `opencode` | `opencode-ai` | `1.17.18` |
 | Muse | `muse` | native binary (pinned per-platform artifact) | `1.3.0-R3401.1` |
+| Antigravity | `agy` | native binary archive (pinned per-platform `.tar.gz`) | `1.5.16` |
 
 These versions are a reproducible baseline. Kilo Code and OpenCode remain read-only
-Skillsmith adapters; Muse supports the full lifecycle in the user and custom scopes. The tests
+Skillsmith adapters; Muse and Antigravity support the full lifecycle in the user and custom scopes. The tests
 compare the manifest IDs and capability facts with the actual
-registry. Muse ships no npm package: the manifest pins one checksum-verified native binary per
-supported platform, and the installer fetches only that pinned URL, accepting the bytes only
-when their size and SHA-256 match the pin.
+registry. Muse and Antigravity ship no npm package: the manifest pins one checksum-verified native
+artifact per supported platform, and the installer fetches only that pinned URL, accepting the bytes
+only when their size and SHA-256 (plus extracted binary SHA-256 for archives) match the pin.
 
 ## CI environments
 
-The ordinary CI job prepares these five tools in a new owned directory below `RUNNER_TEMP` before
+The ordinary CI job prepares these six tools in a new owned directory below `RUNNER_TEMP` before
 its canonical repository gate. It appends only that directory's `prefix/bin` to `GITHUB_PATH`,
 records each `command -v` binding and runs each `--version` probe with a 30-second bound, then
 runs this same three-case owner with `SKILLSMITH_CI_AGENT_MODE=present`, its owned prefix, and a
@@ -36,7 +37,7 @@ does not include installed packages, npm caches, or configuration directories.
 That ordinary prefix supplies dependencies such as the inherited-`PATH` WF02 and WF14 workflows;
 it does not set `SKILLSMITH_CI_AGENT_MODE` or report selectors for the canonical gate. The separate
 `agent-environments` matrix remains the deliberate two-lane check: its present lane installs and
-verifies the five tools, while its absent lane keeps the fixture-owned empty PATH and fixed-path
+verifies the six tools, while its absent lane keeps the fixture-owned empty PATH and fixed-path
 discovery controls. The present owner verifies each symlink target, package receipt, hash, and
 version; the ordinary shell gate compares the `command -v` binding itself with `prefix/bin`.
 
@@ -61,10 +62,11 @@ SKILLSMITH_CI_AGENT_MODE=present SKILLSMITH_CI_AGENT_PREFIX=/tmp/skillsmith-agen
 The installer bootstraps npm `12.0.1` in that root, then installs the exact four npm packages
 with their required optional dependencies. Its npm lifecycle allow-list names only
 `@anthropic-ai/claude-code`, `@kilocode/cli`, and `opencode-ai`; Codex has no postinstall script.
-Muse is not on npm: the installer downloads the pinned native binary for the host platform over
-HTTPS, rejects size or SHA-256 mismatches against the manifest pin, and installs it executable
-into the owned prefix. Its `--version` probe sets `MUSE_NO_AUTO_UPDATE=1` so the launcher's
-self-update check never runs during installation. Node must satisfy npm's
+Muse and Antigravity are not on npm: the installer downloads the pinned native artifact for the host
+platform over HTTPS, rejects size or SHA-256 mismatches against the manifest pin (extracting the
+pinned archive member and verifying `binarySha256` for `.tar.gz` bundles), and installs it
+executable into the owned prefix. Muse's `--version` probe sets `MUSE_NO_AUTO_UPDATE=1` so its
+launcher's self-update check never runs during installation. Node must satisfy npm's
 `^22.22.2 || ^24.15.0 || >=26.0.0` requirement; CI selects Node 24. Repository dependencies still
 use `bun install --frozen-lockfile --ignore-scripts`. No global host tools or repository locks
 are updated. Each installation retains `receipt.json` and process stdout/stderr under `logs/`.
@@ -81,18 +83,18 @@ excluding installed package, npm cache, and npm configuration trees.
 ## What the checks establish
 
 Each product child receives fresh owned HOME, XDG, data, Git configuration, cwd, temp, and PATH.
-The PATH contains only owned Git/Node bindings and, in present mode, the five verified tools.
-The existing scanner-isolation preload excludes the ten fixed external executable candidates
+The PATH contains only owned Git/Node bindings and, in present mode, the six verified tools.
+The existing scanner-isolation preload excludes the twelve fixed external executable candidates
 and records a fresh trace for each invocation. No inherited provider credentials or agent
 configuration overrides enter these child environments.
 
 Presence checks direct version output against exact pinned version tokens, then compare the actual
 Skillsmith v2 discovery report with the owned binding paths and cardinality. Discovery version
-metadata is best effort: for any of the five tools it must be either the observed direct first line
+metadata is best effort: for any of the six tools it must be either the observed direct first line
 or the literal `unknown` sentinel. The sentinel does not replace a successful direct probe or the
 exact installer pin. The controls clone a valid present report to prove that `unknown` is accepted
 and that a wrong non-sentinel version is rejected by the same checker. The Codex binding is removed
-temporarily to prove incomplete discovery fails the same five-tool completeness assertion, restored
+temporarily to prove incomplete discovery fails the same six-tool completeness assertion, restored
 in `finally`, and checked again.
 
 Claude and Codex install from synthetic HTTPS identities rewritten to local fixture Git

@@ -24,8 +24,15 @@ describe('detectAll', () => {
     const r = await detectAll(env([]));
     expect(r.ok).toBe(true);
     if (r.ok) {
-      expect(r.value.size).toBe(5);
-      for (const t of ['claude-code', 'codex', 'kilo-code', 'opencode', 'muse'] as const) {
+      expect(r.value.size).toBe(6);
+      for (const t of [
+        'claude-code',
+        'codex',
+        'kilo-code',
+        'opencode',
+        'muse',
+        'antigravity',
+      ] as const) {
         expect(r.value.has(t)).toBe(true);
         expect(r.value.get(t)).toEqual([]);
       }

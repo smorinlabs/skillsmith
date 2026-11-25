@@ -38,6 +38,47 @@
           "bytes": 288852800
         }
       }
+    },
+    {
+      "id": "antigravity",
+      "binary": "agy",
+      "package": "antigravity",
+      "version": "1.5.16",
+      "provider": "native",
+      "artifacts": {
+        "linux-x64": {
+          "url": "https://storage.googleapis.com/antigravity-public/antigravity-cli/1.5.16-5250855658717184/linux-x64/cli_linux_x64.tar.gz",
+          "sha256": "9bdab234d06bad1a61be2321072652eb06be78baff1acbfae47331da5a090abc",
+          "bytes": 101821670,
+          "archive": "tar.gz",
+          "archiveMember": "antigravity",
+          "binarySha256": "05245f4346d16b679fd059a73081af0161607a76b4a164642bd007430934e785"
+        },
+        "linux-arm64": {
+          "url": "https://storage.googleapis.com/antigravity-public/antigravity-cli/1.5.16-5250855658717184/linux-arm/cli_linux_arm64.tar.gz",
+          "sha256": "7ddeec790084e550af18adb04a5b6c5fdf2db3e1026854f49901a04cb4265c7e",
+          "bytes": 92724848,
+          "archive": "tar.gz",
+          "archiveMember": "antigravity",
+          "binarySha256": "7d077f7953c1f80d3fe3cac6c491c5c389bde3d05f8b3fc71b1a3f7e7f6a9cef"
+        },
+        "darwin-x64": {
+          "url": "https://storage.googleapis.com/antigravity-public/antigravity-cli/1.5.16-5250855658717184/darwin-x64/cli_mac_x64.tar.gz",
+          "sha256": "14cd76a31e42ad461d6f8adf7631306cac37553f547aba0a0f111b0824d21c0c",
+          "bytes": 92242508,
+          "archive": "tar.gz",
+          "archiveMember": "antigravity",
+          "binarySha256": "392853bbd5421242108b39be95709e921d6e1b4cbe33e1ae815276a5206c1e80"
+        },
+        "darwin-arm64": {
+          "url": "https://storage.googleapis.com/antigravity-public/antigravity-cli/1.5.16-5250855658717184/darwin-arm/cli_mac_arm64.tar.gz",
+          "sha256": "ba47202f712de4c4a78fd787d81ba206d73e11c97572fc69420f29a77efc8d95",
+          "bytes": 86506312,
+          "archive": "tar.gz",
+          "archiveMember": "antigravity",
+          "binarySha256": "b746bd68eb150f594e53af1e5577c8b101eaf33bd44ca10ac683af90e0630cf3"
+        }
+      }
     }
   ]
 }

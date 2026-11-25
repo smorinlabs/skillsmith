@@ -74,8 +74,15 @@ const legacyPlacementBundle = (placement: PlacementBundle): PlacementBundle => (
 });
 
 describe('agents registry', () => {
-  test('listSupportedTools returns all five tools in order', () => {
-    expect(listSupportedTools()).toEqual(['claude-code', 'codex', 'kilo-code', 'opencode', 'muse']);
+  test('listSupportedTools returns all six tools in order', () => {
+    expect(listSupportedTools()).toEqual([
+      'claude-code',
+      'codex',
+      'kilo-code',
+      'opencode',
+      'muse',
+      'antigravity',
+    ]);
   });
 
   test('registry has an Agent for every supported tool', () => {
@@ -95,6 +102,8 @@ describe('agents registry', () => {
   test('retains adapter-owned update verification policy', () => {
     expect(toolRegistry.get('claude-code')?.verification?.gatePolicy.update).toBe('static');
     expect(toolRegistry.get('codex')?.verification?.gatePolicy.update).toBe('static+deep');
+    expect(toolRegistry.get('muse')?.verification?.gatePolicy.update).toBe('static+deep');
+    expect(toolRegistry.get('antigravity')?.verification?.gatePolicy.update).toBe('static');
   });
 
   test('rejects invalid or unsupported update verification policy', () => {

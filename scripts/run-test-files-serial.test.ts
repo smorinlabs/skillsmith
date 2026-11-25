@@ -340,8 +340,8 @@ describe('serial test-file terminal runner', () => {
       expect(result.exitCode).toBe(0);
       expect(result.runnerAfter).toEqual(result.runnerBefore);
       expect(result.stdout).toContain('serial test-file env-gated skips:');
-      expect(result.expectedSkips).toBeGreaterThanOrEqual(42);
-      expect(result.expectedSkips).toBeLessThanOrEqual(54);
+      expect(result.expectedSkips).toBeGreaterThanOrEqual(46);
+      expect(result.expectedSkips).toBeLessThanOrEqual(58);
       const receipt = result.stdout.match(/SERIAL_TEST_FILE_RECEIPT (.+)/)?.[1];
       expect(receipt).toBeDefined();
       expect(JSON.parse(receipt as string)).toMatchObject({
@@ -609,7 +609,7 @@ describe('serial test-file terminal runner', () => {
       expect(calls).toEqual(files);
       expect(allowed.size).toBe(12);
       expect(ALLOWED_LIVE_E2E_SKIPS.size).toBe(8);
-      expect([...ALLOWED_LIVE_E2E_SKIPS.values()].reduce((sum, count) => sum + count, 0)).toBe(42);
+      expect([...ALLOWED_LIVE_E2E_SKIPS.values()].reduce((sum, count) => sum + count, 0)).toBe(46);
       expect(ENV_STRACE_SKIP_COUNT).toBe(5);
       expect(ENV_NATIVE_SKIP_COUNT).toBe(1);
       expect(ENV_EWP_SKIP_COUNT).toBe(1);
@@ -620,9 +620,9 @@ describe('serial test-file terminal runner', () => {
         duplicates: 0,
         executed: 14,
         passed: 14,
-        skipped: 42 + straceSkips + nativeSkips + ewpSkips + ENV_GORELEASER_SKIP_COUNT,
+        skipped: 46 + straceSkips + nativeSkips + ewpSkips + ENV_GORELEASER_SKIP_COUNT,
         tests:
-          44 +
+          48 +
           Math.max(1, straceSkips) +
           Math.max(1, nativeSkips) +
           Math.max(1, ewpSkips) +
@@ -713,12 +713,12 @@ describe('serial test-file terminal runner', () => {
       runFilesSerially(
         terminalFiles(),
         async (file) => {
-          const skipped = file === liveFile ? 10 : (allowed.get(file) ?? 0);
+          const skipped = file === liveFile ? 14 : (allowed.get(file) ?? 0);
           return { exitCode: 0, junit: junit(file, Math.max(1, skipped), skipped) };
         },
         allowed,
       ),
-    ).rejects.toThrow(`${liveFile} reported 10 skipped tests; expected 11`);
+    ).rejects.toThrow(`${liveFile} reported 14 skipped tests; expected 15`);
 
     await expect(
       runFilesSerially(
@@ -778,7 +778,7 @@ describe('serial test-file terminal runner', () => {
         new Map([...allowed].map(([file, count], index) => [file, count - Number(index === 0)])),
       ),
     ).toThrow(
-      'live-E2E skip allowlist drifted for packages/core/tests/verify/live-e2e.test.ts: 10; expected 11',
+      'live-E2E skip allowlist drifted for packages/core/tests/verify/live-e2e.test.ts: 14; expected 15',
     );
     const tamperedEnv = new Map(allowed);
     tamperedEnv.set(ENV_STRACE_SKIP_FILE, ENV_STRACE_SKIP_COUNT - 1);

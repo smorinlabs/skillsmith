@@ -18,7 +18,12 @@ const report: VerifyReport = {
     strict: false,
     explicitTools: false,
   },
-  verifiedAgainst: { 'claude-code': '2.1.202', codex: '0.142.5', muse: '1.3.0' },
+  verifiedAgainst: {
+    'claude-code': '2.1.202',
+    codex: '0.142.5',
+    muse: '1.3.0',
+    antigravity: '1.5.16',
+  },
   summary: {
     verdict: 'fail',
     verified: [],

@@ -515,6 +515,7 @@ describe('G4A-01 install command contract', () => {
       'kilo-code',
       'opencode',
       'muse',
+      'antigravity',
     ]);
 
     const automatic = await unwrapInstall(

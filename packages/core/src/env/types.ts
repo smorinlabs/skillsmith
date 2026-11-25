@@ -8,6 +8,12 @@ export interface XdgDirs {
   cache: string;
 }
 
+export interface JsonRpcNotificationMatch {
+  readonly method: string;
+  readonly path?: readonly string[];
+  readonly equals?: string;
+}
+
 export interface ExecOptions {
   cwd?: string;
   env?: Record<string, string>; // merged over the host environment, e.g. { CODEX_HOME: '<tmp>' }
@@ -15,7 +21,9 @@ export interface ExecOptions {
   timeoutMs?: number;
   input?: string;
   // Finite JSON-lines conversation; wait for each matching response before advancing.
-  jsonRpc?: readonly { id?: number; method: string; params?: unknown }[];
+  jsonRpc?: readonly { jsonrpc?: '2.0'; id?: number; method: string; params?: unknown }[];
+  // Optional notification to wait for after the final response before closing stdin.
+  jsonRpcUntilNotification?: JsonRpcNotificationMatch;
   signal?: AbortSignal;
 }
 

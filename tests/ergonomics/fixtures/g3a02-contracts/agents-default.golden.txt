@@ -23,3 +23,5 @@
 | /opt/opencode nightly | 0.2 next | brew |
 
 ## muse — not detected
+
+## antigravity — not detected

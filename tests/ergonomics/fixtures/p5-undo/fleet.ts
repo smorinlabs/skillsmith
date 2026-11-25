@@ -60,6 +60,7 @@ export interface UndoFleet {
     readonly userClaude: string;
     readonly userCodex: string;
     readonly userMuse: string;
+    readonly userAntigravity: string;
     readonly projectClaude: string;
     readonly projectCodex: string;
   }>;
@@ -205,6 +206,24 @@ export const createUndoFleet = async (): Promise<UndoFleet> => {
       { mode: 0o755 },
     ),
     writeFile(
+      join(bin, 'agy'),
+      [
+        '#!/bin/sh',
+        'if [ "$#" -eq 1 ] && [ "$1" = "--version" ]; then echo "1.5.16"; exit 0; fi',
+        'if [ "$1" = "plugin" ] && [ "$2" = "validate" ]; then echo "{\\"dir\\":\\"/tmp/plugin\\",\\"manifest\\":\\".antigravity-plugin/plugin.json\\",\\"name\\":\\"review\\",\\"agentPluginsSpec\\":false,\\"components\\":{\\"agents\\":0,\\"hooks\\":0,\\"mcpServers\\":0,\\"rules\\":0,\\"sidecars\\":0,\\"skills\\":1},\\"findings\\":[]}"; exit 0; fi',
+        'if [ "$1" = "acp" ]; then',
+        '  read -r _line1 && echo "{\\"jsonrpc\\":\\"2.0\\",\\"id\\":1,\\"result\\":{\\"protocolVersion\\":1}}"',
+        '  read -r _line2 && echo "{\\"jsonrpc\\":\\"2.0\\",\\"id\\":2,\\"result\\":{}}"',
+        '  read -r _line3 && echo "{\\"jsonrpc\\":\\"2.0\\",\\"id\\":3,\\"result\\":{\\"sessionId\\":\\"s1\\"}}"',
+        '  echo "{\\"jsonrpc\\":\\"2.0\\",\\"method\\":\\"session/update\\",\\"params\\":{\\"sessionId\\":\\"s1\\",\\"update\\":{\\"sessionUpdate\\":\\"available_commands_update\\",\\"availableCommands\\":[{\\"name\\":\\"review\\",\\"description\\":\\"\\"}]}}}"',
+        '  exit 0',
+        'fi',
+        'exit 64',
+        '',
+      ].join('\n'),
+      { mode: 0o755 },
+    ),
+    writeFile(
       gitConfig,
       [
         '[protocol "file"]',
@@ -249,6 +268,7 @@ export const createUndoFleet = async (): Promise<UndoFleet> => {
       userClaude: join(home, '.claude', 'skills', 'review'),
       userCodex: join(home, '.agents', 'skills', 'review'),
       userMuse: join(config, 'muse', 'skills', 'review'),
+      userAntigravity: join(home, '.gemini', 'config', 'skills', 'review'),
       projectClaude: join(projectRoot, '.claude', 'skills', 'review'),
       projectCodex: join(projectRoot, '.agents', 'skills', 'review'),
     }),

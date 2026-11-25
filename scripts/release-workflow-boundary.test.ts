@@ -137,7 +137,7 @@ const PARITY_STEPS = [
   { label: 'credential scanners', pattern: /\.\/scripts\/install-trufflehog\.sh/u },
   { label: 'actionlint', pattern: /\.\/scripts\/install-actionlint\.sh/u },
   { label: 'ordinary agent tools', pattern: /bun scripts\/install-ci-agent-tools\.ts --root /u },
-  { label: 'agent bindings', pattern: /for name in claude codex kilo opencode muse; do/u },
+  { label: 'agent bindings', pattern: /for name in claude codex kilo opencode muse agy; do/u },
   { label: 'release-test npm', pattern: /npm@12\.0\.1/u },
   { label: 'tool versions', pattern: /assertReleaseToolVersions\(versions\)/u },
   { label: 'capability pin', pattern: /envCapabilitiesPinned: true/u },

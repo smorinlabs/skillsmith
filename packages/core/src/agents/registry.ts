@@ -14,6 +14,7 @@ import {
   type ToolOperation,
   type ToolOperationFact,
 } from './adapter-types.ts';
+import { antigravityAdapter } from './antigravity/index.ts';
 import { claudeCodeAdapter } from './claude-code/index.ts';
 import { codexAdapter } from './codex/index.ts';
 import { kiloCodeAdapter } from './kilo-code/index.ts';
@@ -27,6 +28,7 @@ const BUILT_IN_ADAPTERS = [
   kiloCodeAdapter,
   opencodeAdapter,
   museAdapter,
+  antigravityAdapter,
 ] as const;
 
 type AdapterId<Adapter> = Adapter extends { readonly descriptor: { readonly id: infer Id } }
