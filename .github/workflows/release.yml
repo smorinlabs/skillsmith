@@ -491,6 +491,7 @@ jobs:
           SKILLSMITH_RELEASE_CANDIDATE_ROOT: ${{ github.workspace }}/dist/release
           SKILLSMITH_RELEASE_RECEIPT_PATH: ${{ github.workspace }}/receipt-common.json
           SKILLSMITH_E2E: '1'
+          SKILLSMITH_REQUIRE_GORELEASER: '1'
         run: |
           tar -xf transferred/candidate-bundle.tar
           just release-check common

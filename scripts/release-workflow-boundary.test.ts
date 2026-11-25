@@ -159,6 +159,14 @@ function assertCommonLaneParity(ci: Workflow, release: Workflow): void {
   );
   const ordinary = (value: Job): string | undefined =>
     commands(value).match(/echo "ORDINARY_AGENT_PREFIX=[^"]+"/u)?.[0];
+  const requireGoreleaser = (value: Job): unknown =>
+    (value.steps ?? []).find((step) =>
+      /run-test-files-shard\.ts|just release-check common/u.test(step.run ?? ''),
+    )?.env?.SKILLSMITH_REQUIRE_GORELEASER;
+  boundary(
+    requireGoreleaser(common) === '1' && requireGoreleaser(shard) === '1',
+    'common release lane must require goreleaser like the CI test shards',
+  );
   boundary(
     ordinary(common) !== undefined && ordinary(common) === ordinary(shard),
     'common release lane must export the same ORDINARY_AGENT_PREFIX',
@@ -300,5 +308,10 @@ describe('release workflow boundary', () => {
       (step) => !(step.run ?? '').includes('envCapabilitiesPinned'),
     );
     expect(() => assertCommonLaneParity(ci, noPin)).toThrow('capability pin');
+    const optional = clone(release);
+    for (const step of job(optional, 'common').steps ?? [])
+      if (step.env?.SKILLSMITH_REQUIRE_GORELEASER)
+        step.env.SKILLSMITH_REQUIRE_GORELEASER = undefined;
+    expect(() => assertCommonLaneParity(ci, optional)).toThrow('require goreleaser');
   });
 });
