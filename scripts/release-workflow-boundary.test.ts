@@ -131,6 +131,54 @@ function assertImmutableReleaseBoundary(workflow: Workflow, text: string): void 
   boundary(asserted > published, 'github-publish must assert immutability after publication');
 }
 
+// Steps the CI test shards run before the canonical gate; the common release lane runs the
+// same canonical gate at the tag, so it needs the same prerequisites.
+const PARITY_STEPS = [
+  { label: 'credential scanners', pattern: /\.\/scripts\/install-trufflehog\.sh/u },
+  { label: 'actionlint', pattern: /\.\/scripts\/install-actionlint\.sh/u },
+  { label: 'ordinary agent tools', pattern: /bun scripts\/install-ci-agent-tools\.ts --root /u },
+  { label: 'agent bindings', pattern: /for name in claude codex kilo opencode muse; do/u },
+  { label: 'release-test npm', pattern: /npm@12\.0\.1/u },
+  { label: 'tool versions', pattern: /assertReleaseToolVersions\(versions\)/u },
+  { label: 'capability pin', pattern: /envCapabilitiesPinned: true/u },
+];
+
+function assertCommonLaneParity(ci: Workflow, release: Workflow): void {
+  const shard = job(ci, 'test-shard');
+  const common = job(release, 'common');
+  const goreleaser = (value: Job): unknown =>
+    (value.steps ?? []).find((step) => step.uses?.startsWith('goreleaser/goreleaser-action@'))
+      ?.with;
+  for (const { label, pattern } of PARITY_STEPS) {
+    boundary(pattern.test(commands(shard)), `ci test-shard lost its ${label} step`);
+    boundary(pattern.test(commands(common)), `common release lane lacks the ${label} step`);
+  }
+  boundary(
+    JSON.stringify(goreleaser(common)) === JSON.stringify(goreleaser(shard)),
+    'common release lane must install the CI GoReleaser version (install-only)',
+  );
+  const ordinary = (value: Job): string | undefined =>
+    commands(value).match(/echo "ORDINARY_AGENT_PREFIX=[^"]+"/u)?.[0];
+  boundary(
+    ordinary(common) !== undefined && ordinary(common) === ordinary(shard),
+    'common release lane must export the same ORDINARY_AGENT_PREFIX',
+  );
+  const order = [
+    'install-ci-agent-tools',
+    'assertReleaseToolVersions',
+    'just release-check common',
+  ];
+  const positions = order.map((needle) =>
+    (common.steps ?? []).findIndex((step) => (step.run ?? '').includes(needle)),
+  );
+  boundary(
+    positions.every(
+      (position, index) => position >= 0 && (index === 0 || position > (positions[index - 1] ?? 0)),
+    ),
+    'common release lane must install and check tools before the canonical gate',
+  );
+}
+
 describe('release workflow boundary', () => {
   test('the draft release is resolved once by ID, by a job that cannot run code or mutate', async () => {
     const text = await source('.github/workflows/release.yml');
@@ -225,5 +273,32 @@ describe('release workflow boundary', () => {
     for (const step of job(copy, 'github-publish').steps ?? [])
       step.run = step.run?.replace(/--jq \.immutable\)" = 'true'/gu, "--jq .draft)\" = 'false'");
     expect(() => assertImmutableReleaseBoundary(copy, text)).toThrow('assert immutability');
+  });
+
+  test('the common release lane installs the CI test-shard prerequisites before the gate', async () => {
+    const [ciText, releaseText] = await Promise.all([
+      source('.github/workflows/ci.yml'),
+      source('.github/workflows/release.yml'),
+    ]);
+    const ci = parse(ciText);
+    const release = parse(releaseText);
+    expect(() => assertCommonLaneParity(ci, release)).not.toThrow();
+    const withoutTools = clone(release);
+    const common = job(withoutTools, 'common');
+    common.steps = common.steps?.filter(
+      (step) => !(step.run ?? '').includes('install-ci-agent-tools'),
+    );
+    expect(() => assertCommonLaneParity(ci, withoutTools)).toThrow('ordinary agent tools');
+    const oldGoreleaser = clone(release);
+    for (const step of job(oldGoreleaser, 'common').steps ?? [])
+      if (step.uses?.startsWith('goreleaser/goreleaser-action@'))
+        step.with = { ...step.with, version: 'v2.17.1' };
+    expect(() => assertCommonLaneParity(ci, oldGoreleaser)).toThrow('GoReleaser');
+    const noPin = clone(release);
+    const pinned = job(noPin, 'common');
+    pinned.steps = pinned.steps?.filter(
+      (step) => !(step.run ?? '').includes('envCapabilitiesPinned'),
+    );
+    expect(() => assertCommonLaneParity(ci, noPin)).toThrow('capability pin');
   });
 });

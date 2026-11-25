@@ -393,20 +393,94 @@ jobs:
         with:
           artifact-ids: ${{ needs.candidate-source.outputs.artifact-id }}
           path: transferred
-      - name: Install exact repository and real-tool dependencies
+      - name: Install dependencies without lifecycle scripts
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: Install exact actionlint and credential scanners
         run: |
-          npm_prefix="$RUNNER_TEMP/npm-12.0.1"
-          npm install --global --prefix "$npm_prefix" npm@12.0.1
-          echo "$npm_prefix/bin" >> "$GITHUB_PATH"
-          tool_prefix="$RUNNER_TEMP/real-tools"
-          npm install --global --prefix "$tool_prefix" @anthropic-ai/claude-code@2.1.202 @openai/codex@0.142.5
-          echo "$tool_prefix/bin" >> "$GITHUB_PATH"
-          bun install --frozen-lockfile --ignore-scripts
-          tool_bin="$RUNNER_TEMP/release-tools"
+          tool_bin="$RUNNER_TEMP/skillsmith-tools"
           SKILLSMITH_TOOL_BIN_DIR="$tool_bin" ./scripts/install-actionlint.sh
           SKILLSMITH_TOOL_BIN_DIR="$tool_bin" ./scripts/install-gitleaks.sh
           SKILLSMITH_TOOL_BIN_DIR="$tool_bin" ./scripts/install-trufflehog.sh
           echo "$tool_bin" >> "$GITHUB_PATH"
+      - name: Install exact ordinary agent tools
+        run: |
+          agent_root="$RUNNER_TEMP/skillsmith-ordinary-agent-tools"
+          bun scripts/install-ci-agent-tools.ts --root "$agent_root"
+          echo "ORDINARY_AGENT_PREFIX=$agent_root/prefix" >> "$GITHUB_ENV"
+          echo "$agent_root/prefix/bin" >> "$GITHUB_PATH"
+      - name: Check ordinary agent command bindings
+        run: |
+          for name in claude codex kilo opencode muse; do
+            expected="$ORDINARY_AGENT_PREFIX/bin/$name"
+            actual=$(command -v "$name" || true)
+            if [ "$actual" != "$expected" ]; then
+              echo "expected $name at $expected, found $actual" >&2
+              exit 1
+            fi
+            timeout --signal=TERM --kill-after=5s 30s "$actual" --version
+          done
+      - name: Install pinned release-test npm in owned prefix
+        run: |
+          npm_prefix="$RUNNER_TEMP/skillsmith-ordinary-npm-12.0.1"
+          npm install --global --prefix "$npm_prefix" --engine-strict --ignore-scripts --no-audit --no-fund npm@12.0.1
+          echo "$npm_prefix/bin" >> "$GITHUB_PATH"
+      - name: Install pinned release-test GoReleaser
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94
+        with:
+          version: v2.18.2
+          install-only: true
+      - name: Check minimum release-test tool versions before canonical gate
+        run: |
+          bun --eval '
+          import { spawnSync } from "node:child_process";
+          import { assertReleaseToolVersions } from "./scripts/release-artifacts.ts";
+
+          const probe = (name) => {
+            const executable = Bun.which(name);
+            if (executable === null) throw new Error("required release-test tool missing from PATH: " + name);
+            const result = spawnSync(executable, ["--version"], {
+              cwd: process.cwd(),
+              env: process.env,
+              encoding: "utf8",
+              timeout: 30000,
+              maxBuffer: 1024 * 1024,
+            });
+            console.log(JSON.stringify({
+              tool: name,
+              executable,
+              status: result.status,
+              signal: result.signal,
+              stdout: result.stdout,
+              stderr: result.stderr,
+              error: result.error?.message ?? null,
+            }));
+            if (result.error || result.signal !== null || result.status !== 0) {
+              throw new Error("native version probe failed: " + name);
+            }
+            return result.stdout.trim();
+          };
+          const versions = {
+            bun: probe("bun"),
+            goreleaser: probe("goreleaser").match(/GitVersion:\s*v?([^\s]+)/u)?.[1] ?? "",
+            npm: probe("npm"),
+          };
+          assertReleaseToolVersions(versions);
+          console.log(JSON.stringify({ status: "MINIMUM_RELEASE_TEST_TOOL_VERSIONS_CONFIRMED", versions }));
+          '
+      - name: Pin environment-gated test capabilities
+        run: |
+          bun --eval '
+          import { statfsSync } from "node:fs";
+          import { tmpdir } from "node:os";
+          import { resolve } from "node:path";
+          const strace = Bun.which("strace");
+          if (strace === null) throw new Error("serial gate requires strace on Linux (lane-2 fault injection); install it or expect lane-2 skips");
+          const base = resolve(process.env.TMPDIR ?? tmpdir());
+          const stats = statfsSync(base);
+          const free = stats.bavail * stats.bsize;
+          if (free < 300 * 1024 * 1024) throw new Error("serial gate requires 300MB free under " + base + "; found " + free + " bytes");
+          console.log(JSON.stringify({ envCapabilitiesPinned: true, strace, scratchBase: base, freeBytes: free }));
+          '
       - name: Run canonical and real Claude/Codex release-candidate compatibility gates
         env:
           GITHUB_REF_NAME: ${{ needs.guard.outputs.tag }}

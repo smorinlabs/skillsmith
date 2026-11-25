@@ -628,9 +628,27 @@ describe('EWP-P6-TS06', () => {
   });
 
   test('family 6: real Claude and Codex execute named nonempty zero-skip candidate selectors', async () => {
-    const workflow = await source('.github/workflows/release.yml');
-    expect(workflow).toContain('@anthropic-ai/claude-code@2.1.202');
-    expect(workflow).toContain('@openai/codex@0.142.5');
+    const [workflow, agentTools, releaseCheck] = await Promise.all([
+      source('.github/workflows/release.yml'),
+      source('.github/ci-agent-tools.json'),
+      source('scripts/release-check.ts'),
+    ]);
+    // P24: the common lane installs the CI agent-tool manifest (all five tools) instead of an
+    // ad hoc npm install of two; the exact Claude and Codex pins now live in that manifest.
+    // Previous form: https://github.com/smorinlabs/skillsmith/blob/1161d1e87f77aa861ad0f6e73096767096aaf9da/tests/ergonomics/phase/EWP-P6-TS06.test.ts#L630-L637
+    expect(jobBlock(workflow, 'common', 'native')).toContain(
+      'bun scripts/install-ci-agent-tools.ts --root',
+    );
+    const pins = Object.fromEntries(
+      (JSON.parse(agentTools) as { tools: { id: string; version: string }[] }).tools.map((tool) => [
+        tool.id,
+        tool.version,
+      ]),
+    );
+    expect(pins['claude-code']).toBe('2.1.202');
+    expect(pins.codex).toBe('0.142.5');
+    expect(releaseCheck).toContain("['claude', '2.1.202']");
+    expect(releaseCheck).toContain("['codex', '0.142.5']");
     expect(workflow).toContain('SKILLSMITH_E2E:');
     expect(workflow).toContain('release-candidate compatibility');
     expect(workflow).toContain('requiredSkips');
