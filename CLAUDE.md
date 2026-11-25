@@ -119,7 +119,7 @@ release-please rewrites these: root `package.json`, `packages/cli/package.json`,
 
 Runtime `VERSION` is read from `packages/core/package.json` at import time (`packages/core/src/version.ts`), so the CLI's `--version` follows automatically.
 
-Emergency manual path: `docs/releases.md:95`.
+Release flow, recovery, and owner steps: [`docs/releases.md`](docs/releases.md). Do not tag or publish by hand.
 
 ## project-harness — project workflow skills
 

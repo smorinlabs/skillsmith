@@ -1,55 +1,49 @@
 # Release process
 
-Skillsmith prepares releases with Release Please and promotes one signed candidate through GitHub,
-npm/Bun, and Homebrew. The first public release is exactly `v1.0.0`.
+Skillsmith prepares releases with Release Please and promotes one validated candidate. `v1.0.0` is a
+GitHub Release only, with ad-hoc signed (not notarized) macOS binaries
+([ADR 0011](adr/0011-github-only-v1-release.md), amending [ADR 0010](adr/0010-release-validation-and-publication.md)).
+npm, Homebrew, and Apple signing start at the first signed release.
 
 ## Responsibilities
 
-- Release Please is the only version, changelog, tag, and draft-release authority. The first release
-  uses the one-shot `Release-As: 1.0.0` commit footer.
-- GoReleaser 2.17.1 or newer and Bun 1.3.14 or newer build four targets (minimum versions; release workflows
-  build with them, and per-PR CI tests the newer Bun and GoReleaser pinned in `ci.yml`): Linux x64/arm64 and macOS x64/arm64.
-- The release workflow signs and notarizes macOS binaries before it creates archives, npm payloads,
-  checksums, or the Homebrew cask.
-- Local `just check` runs the ordinary checks and every tracked Bun test file exactly once,
-  serially, in a fresh Bun process. [Product CI](ci.md) distributes the tests across four shards
-  and validates their combined evidence before the overall `CI result` can succeed.
-- `just release-check <lane>` validates a transferred candidate in one common lane, four native
-  lanes, and a credential-free aggregate.
+- Release Please is the only version, changelog, tag, and draft-release authority. With
+  `force-tag-creation`, merging a release PR creates the `v<version>` tag at the merge commit and then
+  an exact draft release.
+- GoReleaser builds the four targets with Bun (Linux x64/arm64, macOS x64/arm64), the archives, and
+  `SHA256SUMS`. `release.yml` uses Bun 1.4.2 and GoReleaser v2.18.2, the versions per-PR CI tests.
+  Unsigned macOS builds require Bun 1.4.1 or newer.
+- Local `just check` runs the ordinary checks and every tracked Bun test file exactly once, serially,
+  in a fresh Bun process. [Product CI](ci.md) distributes the tests across six shards and validates
+  their combined evidence before `CI result` can succeed.
+- `just release-check <lane>` validates a transferred candidate in one common lane, four native lanes,
+  and a credential-free aggregate.
 
-## P19 product-only closeout and release hold
+## Scope of v1.0.0
 
-Publication and pre-publication execution remain deferred under [#53](https://github.com/smorinlabs/skillsmith/issues/53).
-The release process below describes the future resumed workflow, not authorization to run it now.
-
-Under the [user-approved Q2.A decision](https://github.com/smorinlabs/skillsmith/issues/51#issuecomment-5689864463),
-`.github/workflows/ci.yml` runs the non-test checks, four test shards with global evidence
-validation, PR-title validation, and native build/smoke checks automatically, with the same native
-runner matrix. Homebrew candidate install/upgrade qualification and its dedicated Node/npm/GoReleaser
-setup are in `.github/workflows/release-qualification.yml`. That workflow has only an explicit
-`workflow_dispatch` trigger and defaults `resume_release_qualification` to false.
-
-Do not dispatch release qualification while the hold remains. Its macOS arm64/x64 receipts and
-outstanding platform fixes remain required release work under [#52](https://github.com/smorinlabs/skillsmith/issues/52)
-and [#58](https://github.com/smorinlabs/skillsmith/issues/58). Ordinary CI success does not establish
-those receipts. The signed-candidate, authority, and publication gates in `release.yml` are unchanged.
+The owner resumed publication for this scope only
+([#53 decision](https://github.com/smorinlabs/skillsmith/issues/53#issuecomment-7148336499)). P17 and the
+PUB issues stay open. Release qualification (`.github/workflows/release-qualification.yml`, dispatch
+only) remains the Homebrew qualification path for the signed release.
 
 ## Preparation
 
-Every push to `main` runs `.github/workflows/release-please.yml`. A protected
-`release-please` environment mints a short-lived GitHub App token; there is no token fallback. The
-workflow opens or updates a release PR and creates only a draft GitHub release after merge.
+Every push to `main` runs `.github/workflows/release-please.yml`. A protected `release-please`
+environment mints a short-lived GitHub App token; there is no token fallback. The workflow opens or
+updates a release PR.
 
 A second App-authenticated job checks out the exact same-repository release branch, runs
-`bun install --ignore-scripts`, and regenerates command references. It refuses changes outside
-`bun.lock`, `README.md`, and `docs/commands.md`.
+`bun install --ignore-scripts`, syncs the two `bun.lock` workspace versions
+(`scripts/release-identity.ts --sync-lock`), and regenerates command references. It refuses changes
+outside `bun.lock`, `README.md`, and `docs/commands.md`, and fails if the release identity disagrees.
 
-To prepare `v1.0.0`:
+Before merging the release PR:
 
-1. Put `Release-As: 1.0.0` in the initiating conventional commit body.
-2. Review the Release Please PR, including all three package versions, lockfile, generated docs,
-   and changelog.
-3. Merge the release PR. Release Please creates tag `v1.0.0` and an exact draft release.
+1. Confirm its diff is `CHANGELOG.md` and derived files only, with exactly one section for the
+   version, and that CI is green on its head.
+2. Complete the owner setup below.
+3. Merge it with a merge commit. Release Please creates the tag and the draft. From then until
+   publication, merge nothing else to `main`.
 
 Do not hand-edit a release version, create the tag manually, or publish the draft manually.
 
@@ -57,62 +51,71 @@ Do not hand-edit a release version, create the tag manually, or publish the draf
 
 The tag starts `.github/workflows/release.yml`:
 
-1. An unprivileged guard binds the tag, commit, protected-main ancestry, manifest, package and lock
-   versions, generated docs, and GitHub release state.
-2. The `release-candidate` environment builds, signs, notarizes, scans, and retains one private
-   candidate bundle for 90 days.
-3. Credential-free common and four-runner native jobs validate the exact bundle. An `always()`
-   aggregate accepts exactly five successful same-candidate receipts and zero required skips.
-4. Separate protected jobs preflight GitHub release authority, five npm trusted-publisher bindings,
-   and Homebrew tap App authority. A credential-free aggregate must accept all three.
-5. GitHub assets and attestations publish first; four npm payload packages publish before the
-   launcher; then the Homebrew App opens a reviewed cask PR in `smorinlabs/homebrew-tap`.
-6. After the tap PR is merged, a four-runner public workflow proves clean direct, npm, Bun, and
-   macOS Homebrew install/orientation/upgrade/uninstall behavior.
+1. `guard` (read-only) binds the tag, commit, protected-main ancestry, versions, lockfile, and
+   generated docs.
+2. `release-lookup` finds the one release with the exact tag by listing releases, retrying six times
+   ten seconds apart, and passes its ID on. It reads drafts with `contents: write` and runs no
+   repository code and no mutation.
+3. The `release-candidate` environment builds the unsigned-macOS candidate, scans it, and retains the
+   bundle for 90 days. No secrets are present.
+4. Credential-free `common` and four native lanes validate the exact bundle, including the command
+   roster before publication. An `always()` aggregate accepts exactly five receipts with zero
+   required skips.
+5. `github-preflight` (environment `github-release`) checks the draft and any existing assets.
+   `publication-ready` binds the five owner variables to the tag commit.
+6. `github-publish` (environment `github-release`) uploads missing assets, attests them, publishes
+   the draft as latest, and asserts that the published release is immutable.
+7. `public-validation` downloads the public assets on all four runners and proves checksum,
+   attestation, orientation, the command roster, the agent fleet matrix, and a clean direct
+   uninstall. `public-aggregate` accepts the four receipts.
 
-These services cannot publish atomically. If an outage occurs after a public mutation, rerun the
-manual recovery path with the original run ID, artifact ID, Actions artifact digest, and bundle
-SHA-256. Exact-existing state is accepted and missing state resumes in order. A mismatch or an
-expired candidate fails closed; recovery never rebuilds or resigns.
-
-## Required external setup
-
-Publication remains disabled until all of these facts are independently verified:
-
-- GitHub billing permits all four hosted runner labels: `ubuntu-24.04`, `ubuntu-24.04-arm`,
-  `macos-15`, and `macos-15-intel`.
-- Environments exist for `release-please`, `release-candidate`, `github-release`, `npm`, and
-  `homebrew`, with the exact job bindings and reviewers.
-- Apple signing/notarization values exist only in `release-candidate`.
-- npm trusted publishing is configured for all five `@smorinlabs/skillsmith*` packages, exact
-  workflow `release.yml`, and environment `npm`.
-- GitHub immutable releases are enabled and the GitHub release environment can attest and publish.
-- `smorinlabs/homebrew-tap` has full-SHA-pinned cask CI and the Homebrew App can open, but not
-  directly merge, the cask PR.
-- The repository's full history, releases/assets, Actions data, conversations, attachments, refs,
-  licenses, and publication surfaces pass the public-visibility audit, followed by explicit owner
-  authorization to make the repository public.
-
-## Install channels after `v1.0.0` is public
+If an outage interrupts publication, rerun with the original candidate:
 
 ```sh
-# Direct archive: choose the exact OS/architecture asset and verify SHA256SUMS.
-gh release download v1.0.0 --repo smorinlabs/skillsmith
-
-# npm or Bun use the same launcher and platform payload bytes.
-npm install --global @smorinlabs/skillsmith@1.0.0
-bun add --global @smorinlabs/skillsmith@1.0.0
-
-# Homebrew becomes available only after the reviewed tap PR merges.
-brew install --cask smorinlabs/tap/skillsmith
+gh workflow run release.yml --ref v1.0.0 -f exact_tag=v1.0.0 -f candidate_run_id=<run> -f candidate_artifact_id=<id> -f candidate_bundle_sha256=<sha256> -f candidate_artifact_digest=sha256:<digest>
 ```
 
-Before public promotion, source checkout remains the only availability claim in the README. A
-locally generated candidate is validation input, not a public release.
+Exact existing state is accepted and missing state resumes. A mismatch or an expired candidate fails
+closed; recovery never rebuilds. If the run fails before publication, delete the tag and the draft
+and recut the same version.
 
-## Routine releases after 1.0
+## Owner setup
 
-Continue merging conventional commits. Release Please calculates ordinary Semantic Versioning,
-updates one rolling release PR, and repeats the same candidate and publication graph. Do not use a
-sticky `release-as` setting and do not publish `@skillsmith/core`; that package remains an explicit
-post-1.0 follow-up.
+Before merging the release PR:
+
+- Enable immutable releases for the repository.
+- Create the `release-candidate` and `github-release` environments with a required reviewer.
+- Delete stray draft releases for the version, so exactly one draft exists after tagging.
+- Confirm Actions billing permits `ubuntu-24.04`, `ubuntu-24.04-arm`, `macos-15`, and `macos-15-intel`.
+- Complete the public-exposure audit.
+
+After the merge, read the merge commit SHA (also the tag commit) and set these repository variables
+to it before approving `release-candidate`:
+
+| Variable | Attests |
+|---|---|
+| `ENVIRONMENTS_READY_SHA` | the environments exist with reviewers and immutable releases are on |
+| `RUNNER_MATRIX_READY_SHA` | the four runner labels are available |
+| `BILLING_READY_SHA` | billing does not block the run |
+| `PUBLIC_AUDIT_APPROVED_SHA` | the public-exposure audit is approved for this source |
+| `PUBLIC_VISIBILITY_AUTHORIZED_SHA` | the owner authorizes this release to be public |
+
+Then approve `release-candidate`, and `github-release` twice: the preflight, then the publish.
+
+## Install after `v1.0.0` is public
+
+Download the archive for your OS and architecture, and verify it against `SHA256SUMS`:
+
+```sh
+gh release download v1.0.0 --repo smorinlabs/skillsmith
+shasum -a 256 --check --ignore-missing SHA256SUMS
+```
+
+macOS binaries are ad-hoc signed, not notarized. A browser-downloaded archive is quarantined, and
+Gatekeeper blocks it until the quarantine attribute is cleared. `gh release download` does not set
+that attribute.
+
+## After 1.0
+
+`release.yml` still hardcodes `v1.0.0`. Generalize it before merging any later release PR. npm and
+Homebrew return with Apple signing by restoring the jobs that ADR 0011 links.
