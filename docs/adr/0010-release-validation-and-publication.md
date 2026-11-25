@@ -1,6 +1,6 @@
 # ADR 0010: Validate one release candidate before controlled publication
 
-Status: Accepted
+Status: Accepted; amended for v1.0.0 by [ADR 0011](0011-github-only-v1-release.md) (GitHub Release only, unsigned macOS)
 
 ## Context
 

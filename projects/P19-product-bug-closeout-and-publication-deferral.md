@@ -47,6 +47,14 @@ pending; its historical catalog gates are not changed to passing by this deferra
 - [ ] [P19-TS03] Required ordinary static/tests/build checks pass at exact reviewed commits; deferred release checks are separately identified.
 - [x] [P19-TS04] Remote PR/issue/workflow state is freshly verified; no publication or visibility change occurred; P17 remains pending.
 
+## Publication resumption pointer — 2026-11-24
+
+The owner resumed publication for a GitHub-only v1.0.0 with unsigned macOS binaries
+([#53 decision](https://github.com/smorinlabs/skillsmith/issues/53#issuecomment-7148336499)).
+That work is tracked in [P24](P24-v1-github-release-only.md) and
+[ADR 0011](../docs/adr/0011-github-only-v1-release.md). P19 still does not authorize publication;
+its deferred inventory below stays open, and P17 remains pending.
+
 ## Approved closeout direction — 2026-09-15
 
 - [Q1.A](https://github.com/smorinlabs/skillsmith/issues/41#issuecomment-5689778855): keep

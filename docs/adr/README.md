@@ -13,7 +13,8 @@ Records of non-obvious design decisions. Each ADR follows the [Michael Nygard fo
 | [0007](0007-tool-adapter-registry.md) | Validated tool-adapter registry as capability authority | Accepted |
 | [0008](0008-wire-contract-registry.md) | Versioned wire codecs and an immutable contract registry | Accepted |
 | [0009](0009-operation-scoped-observation.md) | Operation-scoped typed observation | Accepted |
-| [0010](0010-release-validation-and-publication.md) | Validate one release candidate before controlled publication | Accepted |
+| [0010](0010-release-validation-and-publication.md) | Validate one release candidate before controlled publication | Accepted; amended by 0011 |
+| [0011](0011-github-only-v1-release.md) | Ship v1.0.0 as a GitHub Release only, with unsigned macOS binaries | Accepted |
 
 ## When to write an ADR
 
