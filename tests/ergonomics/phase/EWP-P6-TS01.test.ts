@@ -27,6 +27,20 @@ const QUALIFICATION_WORKFLOW_SOURCE = join(
   'workflows',
   'release-qualification.yml',
 );
+// Families 3, 5, 6, 7 and 9 build a real GoReleaser snapshot candidate. Without goreleaser on
+// PATH they skip locally with the reason below. CI sets SKILLSMITH_REQUIRE_GORELEASER=1, under
+// which they run and fail if goreleaser is missing. Mirrored by goreleaserCandidateBuildEnabled
+// in scripts/run-test-files-serial.ts, which expects exactly five skips when this is false.
+// Before this gate the families always ran (unconditional `test(...)`): see
+// https://github.com/smorinlabs/skillsmith/blob/1161d1e87f77aa861ad0f6e73096767096aaf9da/tests/ergonomics/phase/EWP-P6-TS01.test.ts#L1031
+const CANDIDATE_BUILD_ENABLED =
+  process.env.SKILLSMITH_REQUIRE_GORELEASER === '1' || Bun.which('goreleaser') !== null;
+if (!CANDIDATE_BUILD_ENABLED) {
+  console.warn(
+    'EWP-P6-TS01: skipping families 3, 5, 6, 7 and 9: goreleaser is not on PATH. ' +
+      'CI sets SKILLSMITH_REQUIRE_GORELEASER=1, which fails these families instead of skipping.',
+  );
+}
 const MAX_NATIVE_BINARY_BYTES = 134_217_728;
 const HEX_40 = 'a'.repeat(40);
 const HEX_64 = 'b'.repeat(64);
@@ -1028,33 +1042,36 @@ describe('EWP-P6-TS01', () => {
     ).toThrow();
   });
 
-  test('family 3: standard GoReleaser inventory, four checksums, and no custom artifact graph', async () => {
-    const releaseSource = await readFile(RELEASE_SOURCE, 'utf8');
-    expect(releaseSource).not.toContain('renderReleaseManifest');
-    expect(releaseSource).not.toContain('renderSha256Sums');
-    expect(releaseSource).not.toContain('renderHomebrewFormula');
-    expect(await pathExists(FORMULA_SOURCE)).toBeFalse();
+  test.skipIf(!CANDIDATE_BUILD_ENABLED)(
+    'family 3: standard GoReleaser inventory, four checksums, and no custom artifact graph',
+    async () => {
+      const releaseSource = await readFile(RELEASE_SOURCE, 'utf8');
+      expect(releaseSource).not.toContain('renderReleaseManifest');
+      expect(releaseSource).not.toContain('renderSha256Sums');
+      expect(releaseSource).not.toContain('renderHomebrewFormula');
+      expect(await pathExists(FORMULA_SOURCE)).toBeFalse();
 
-    const release = await api();
-    expect(typeof release.validateGoreleaserInventory).toBe('function');
-    const candidate = await getCandidate();
-    expect(await pathExists(candidate.artifactsPath)).toBeTrue();
-    expect(await pathExists(candidate.metadataPath)).toBeTrue();
-    expect(await pathExists(candidate.checksumsPath)).toBeTrue();
-    expect(await pathExists(join(candidate.outputRoot, 'release-manifest.json'))).toBeFalse();
-    const sums = (await readFile(candidate.checksumsPath, 'utf8')).trimEnd().split('\n');
-    expect(sums).toHaveLength(4);
-    expect(sums.map((line) => line.slice(66))).toEqual(
-      sums.map((line) => line.slice(66)).toSorted(),
-    );
-    expect(
-      sums.every((line) => /^[0-9a-f]{64} {2}skillsmith-v.+\.tar\.gz$/u.test(line)),
-    ).toBeTrue();
-    release.validateGoreleaserInventory?.(
-      JSON.parse(await readFile(candidate.artifactsPath, 'utf8')),
-      { workingDirectory: ROOT, outputRoot: candidate.outputRoot },
-    );
-  });
+      const release = await api();
+      expect(typeof release.validateGoreleaserInventory).toBe('function');
+      const candidate = await getCandidate();
+      expect(await pathExists(candidate.artifactsPath)).toBeTrue();
+      expect(await pathExists(candidate.metadataPath)).toBeTrue();
+      expect(await pathExists(candidate.checksumsPath)).toBeTrue();
+      expect(await pathExists(join(candidate.outputRoot, 'release-manifest.json'))).toBeFalse();
+      const sums = (await readFile(candidate.checksumsPath, 'utf8')).trimEnd().split('\n');
+      expect(sums).toHaveLength(4);
+      expect(sums.map((line) => line.slice(66))).toEqual(
+        sums.map((line) => line.slice(66)).toSorted(),
+      );
+      expect(
+        sums.every((line) => /^[0-9a-f]{64} {2}skillsmith-v.+\.tar\.gz$/u.test(line)),
+      ).toBeTrue();
+      release.validateGoreleaserInventory?.(
+        JSON.parse(await readFile(candidate.artifactsPath, 'utf8')),
+        { workingDirectory: ROOT, outputRoot: candidate.outputRoot },
+      );
+    },
+  );
 
   test('family 4: signed completions, order-independent closed archives, and safe extraction', async () => {
     const release = await api();
@@ -1095,462 +1112,474 @@ describe('EWP-P6-TS01', () => {
     release.assertCompletionIdentity?.(observed);
   });
 
-  test('family 5: GoReleaser compiles once per target and fans out identical candidate bytes', async () => {
-    const buildSource = await readFile(BUILD_SOURCE, 'utf8');
-    expect(buildSource).toContain('goreleaser');
-    expect(buildSource).toContain('release');
-    expect(buildSource).toContain('--snapshot');
-    expect(buildSource).toContain('--clean');
-    expect(buildSource).not.toMatch(
-      /Bun\.spawn(?:Sync)?\(\s*\[\s*['"]bun['"]\s*,\s*['"]build['"]/u,
-    );
+  test.skipIf(!CANDIDATE_BUILD_ENABLED)(
+    'family 5: GoReleaser compiles once per target and fans out identical candidate bytes',
+    async () => {
+      const buildSource = await readFile(BUILD_SOURCE, 'utf8');
+      expect(buildSource).toContain('goreleaser');
+      expect(buildSource).toContain('release');
+      expect(buildSource).toContain('--snapshot');
+      expect(buildSource).toContain('--clean');
+      expect(buildSource).not.toMatch(
+        /Bun\.spawn(?:Sync)?\(\s*\[\s*['"]bun['"]\s*,\s*['"]build['"]/u,
+      );
 
-    const candidate = await getCandidate();
-    const rootVersion = String((await readJson(join(ROOT, 'package.json'))).version);
-    expect(candidate.version).toBe(rootVersion);
-    expect(candidate.sourceRevision).toMatch(/^[0-9a-f]{40}$/u);
-    expect(candidate.targets.map(({ id }) => id)).toEqual(EXPECTED_TARGETS.map(({ id }) => id));
-    for (const target of candidate.targets) {
-      expect(await pathExists(target.binaryPath), target.id).toBeTrue();
-      expect(await pathExists(target.archivePath), target.id).toBeTrue();
-      expect(await pathExists(target.npmPath), target.id).toBeTrue();
-      expect(target.binarySha256, target.id).toBe(target.npmBinarySha256);
-      expect(target.binarySha256, target.id).toMatch(/^[0-9a-f]{64}$/u);
-      expect((await stat(target.binaryPath)).size, target.id).toBeLessThan(MAX_NATIVE_BINARY_BYTES);
-    }
+      const candidate = await getCandidate();
+      const rootVersion = String((await readJson(join(ROOT, 'package.json'))).version);
+      expect(candidate.version).toBe(rootVersion);
+      expect(candidate.sourceRevision).toMatch(/^[0-9a-f]{40}$/u);
+      expect(candidate.targets.map(({ id }) => id)).toEqual(EXPECTED_TARGETS.map(({ id }) => id));
+      for (const target of candidate.targets) {
+        expect(await pathExists(target.binaryPath), target.id).toBeTrue();
+        expect(await pathExists(target.archivePath), target.id).toBeTrue();
+        expect(await pathExists(target.npmPath), target.id).toBeTrue();
+        expect(target.binarySha256, target.id).toBe(target.npmBinarySha256);
+        expect(target.binarySha256, target.id).toMatch(/^[0-9a-f]{64}$/u);
+        expect((await stat(target.binaryPath)).size, target.id).toBeLessThan(
+          MAX_NATIVE_BINARY_BYTES,
+        );
+      }
 
-    const host = candidate.targets.find(({ id }) => id === hostTargetId());
-    expect(host).toBeDefined();
-    const release = await api();
-    expect(typeof release.installDirectArchive).toBe('function');
-    expect(typeof release.uninstallDirectArchive).toBe('function');
-    if (
-      host === undefined ||
-      release.installDirectArchive === undefined ||
-      release.uninstallDirectArchive === undefined
-    ) {
-      return;
-    }
-    const prefix = await mkdtemp(join(tmpdir(), 'skillsmith-g6-direct-install-'));
-    temporaryRoots.push(prefix);
-    const installed = await release.installDirectArchive({
-      archivePath: host.archivePath,
-      prefix,
-    });
-    const execution = Bun.spawnSync([installed.binary, 'version'], {
-      cwd: prefix,
-      env: { PATH: '/usr/bin:/bin', HOME: prefix, LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8' },
-      stdout: 'pipe',
-      stderr: 'pipe',
-    });
-    expect(execution.exitCode, execution.stderr.toString()).toBe(0);
-    expect(execution.stdout.toString().trim()).toBe(candidate.version);
-    await release.uninstallDirectArchive({ prefix });
-    for (const path of Object.values(installed)) expect(await pathExists(path)).toBeFalse();
-  });
-
-  test('family 6: five tracked script-free packages and exact npm/Bun launcher behavior', async () => {
-    const launcherManifest = await readJson(String(packageManifestPaths.launcher));
-    expect(launcherManifest.name).toBe('@smorinlabs/skillsmith');
-    expect(launcherManifest.version).toBe('0.0.0');
-    expect(launcherManifest.bin).toEqual({ skillsmith: 'bin/skillsmith.cjs' });
-    expect(launcherManifest.scripts).toBeUndefined();
-    const optional = launcherManifest.optionalDependencies as Record<string, string>;
-    expect(Object.keys(optional ?? {}).toSorted()).toEqual(
-      EXPECTED_TARGETS.map(({ id }) => `@smorinlabs/skillsmith-${id}`).toSorted(),
-    );
-    expect(new Set(Object.values(optional ?? {}))).toEqual(new Set(['0.0.0']));
-
-    const launcher = await readFile(LAUNCHER_SOURCE, 'utf8');
-    const lines = launcher.split('\n');
-    expect(lines[0]).toBe('#!/bin/sh');
-    expect(lines[1]).toBe(
-      '\':\' //; runtime="$(command -v bun 2>/dev/null || command -v node 2>/dev/null)" || { echo "skillsmith requires Bun or Node.js" >&2; exit 1; }',
-    );
-    expect(lines[2]).toBe('\':\' //; exec "$runtime" "$0" "$@"');
-    expect(launcher).not.toMatch(/postinstall|https?:\/\//u);
-
-    const release = await api();
-    expect(typeof release.validateNpmPackageEntries).toBe('function');
-    release.validateNpmPackageEntries?.('launcher', EXPECTED_LAUNCHER_ENTRIES);
-    release.validateNpmPackageEntries?.('payload', EXPECTED_PAYLOAD_ENTRIES);
-    expect(() =>
-      release.validateNpmPackageEntries?.('payload', [
-        ...EXPECTED_PAYLOAD_ENTRIES,
-        { path: 'package/postinstall.js', mode: '0644' },
-      ]),
-    ).toThrow();
-
-    const root = await mkdtemp(join(tmpdir(), 'skillsmith-g6-launcher-runtime-'));
-    temporaryRoots.push(root);
-    const probe = join(root, 'skillsmith.cjs');
-    await writeFile(probe, launcher, { mode: 0o755 });
-    await chmod(probe, 0o755);
-    for (const runtime of ['node', 'bun']) {
-      const child = Bun.spawnSync([runtime, probe, 'version'], {
-        cwd: root,
+      const host = candidate.targets.find(({ id }) => id === hostTargetId());
+      expect(host).toBeDefined();
+      const release = await api();
+      expect(typeof release.installDirectArchive).toBe('function');
+      expect(typeof release.uninstallDirectArchive).toBe('function');
+      if (
+        host === undefined ||
+        release.installDirectArchive === undefined ||
+        release.uninstallDirectArchive === undefined
+      ) {
+        return;
+      }
+      const prefix = await mkdtemp(join(tmpdir(), 'skillsmith-g6-direct-install-'));
+      temporaryRoots.push(prefix);
+      const installed = await release.installDirectArchive({
+        archivePath: host.archivePath,
+        prefix,
+      });
+      const execution = Bun.spawnSync([installed.binary, 'version'], {
+        cwd: prefix,
+        env: { PATH: '/usr/bin:/bin', HOME: prefix, LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8' },
         stdout: 'pipe',
         stderr: 'pipe',
       });
-      expect(child.stderr.toString(), runtime).not.toContain('SyntaxError');
-      expect(child.exitCode, runtime).toBe(1);
-      expect(child.stderr.toString(), runtime).toContain(
-        `@smorinlabs/skillsmith-${hostTargetId()}`,
-      );
-    }
+      expect(execution.exitCode, execution.stderr.toString()).toBe(0);
+      expect(execution.stdout.toString().trim()).toBe(candidate.version);
+      await release.uninstallDirectArchive({ prefix });
+      for (const path of Object.values(installed)) expect(await pathExists(path)).toBeFalse();
+    },
+  );
 
-    const candidate = await getCandidate();
-    const registry = await startRegistry(candidate);
-    const deny = startDenyServer();
-    try {
-      for (const lane of ['npm', 'bun'] as const) {
-        const installRoot = await mkdtemp(join(tmpdir(), `skillsmith-g6-${lane}-install-`));
-        temporaryRoots.push(installRoot);
-        const prefix = join(installRoot, 'prefix');
-        const home = join(installRoot, 'home');
-        const cache = join(installRoot, 'cache');
-        const work = join(installRoot, 'work');
-        const temp = join(installRoot, 'tmp');
+  test.skipIf(!CANDIDATE_BUILD_ENABLED)(
+    'family 6: five tracked script-free packages and exact npm/Bun launcher behavior',
+    async () => {
+      const launcherManifest = await readJson(String(packageManifestPaths.launcher));
+      expect(launcherManifest.name).toBe('@smorinlabs/skillsmith');
+      expect(launcherManifest.version).toBe('0.0.0');
+      expect(launcherManifest.bin).toEqual({ skillsmith: 'bin/skillsmith.cjs' });
+      expect(launcherManifest.scripts).toBeUndefined();
+      const optional = launcherManifest.optionalDependencies as Record<string, string>;
+      expect(Object.keys(optional ?? {}).toSorted()).toEqual(
+        EXPECTED_TARGETS.map(({ id }) => `@smorinlabs/skillsmith-${id}`).toSorted(),
+      );
+      expect(new Set(Object.values(optional ?? {}))).toEqual(new Set(['0.0.0']));
+
+      const launcher = await readFile(LAUNCHER_SOURCE, 'utf8');
+      const lines = launcher.split('\n');
+      expect(lines[0]).toBe('#!/bin/sh');
+      expect(lines[1]).toBe(
+        '\':\' //; runtime="$(command -v bun 2>/dev/null || command -v node 2>/dev/null)" || { echo "skillsmith requires Bun or Node.js" >&2; exit 1; }',
+      );
+      expect(lines[2]).toBe('\':\' //; exec "$runtime" "$0" "$@"');
+      expect(launcher).not.toMatch(/postinstall|https?:\/\//u);
+
+      const release = await api();
+      expect(typeof release.validateNpmPackageEntries).toBe('function');
+      release.validateNpmPackageEntries?.('launcher', EXPECTED_LAUNCHER_ENTRIES);
+      release.validateNpmPackageEntries?.('payload', EXPECTED_PAYLOAD_ENTRIES);
+      expect(() =>
+        release.validateNpmPackageEntries?.('payload', [
+          ...EXPECTED_PAYLOAD_ENTRIES,
+          { path: 'package/postinstall.js', mode: '0644' },
+        ]),
+      ).toThrow();
+
+      const root = await mkdtemp(join(tmpdir(), 'skillsmith-g6-launcher-runtime-'));
+      temporaryRoots.push(root);
+      const probe = join(root, 'skillsmith.cjs');
+      await writeFile(probe, launcher, { mode: 0o755 });
+      await chmod(probe, 0o755);
+      for (const runtime of ['node', 'bun']) {
+        const child = Bun.spawnSync([runtime, probe, 'version'], {
+          cwd: root,
+          stdout: 'pipe',
+          stderr: 'pipe',
+        });
+        expect(child.stderr.toString(), runtime).not.toContain('SyntaxError');
+        expect(child.exitCode, runtime).toBe(1);
+        expect(child.stderr.toString(), runtime).toContain(
+          `@smorinlabs/skillsmith-${hostTargetId()}`,
+        );
+      }
+
+      const candidate = await getCandidate();
+      const registry = await startRegistry(candidate);
+      const deny = startDenyServer();
+      try {
+        for (const lane of ['npm', 'bun'] as const) {
+          const installRoot = await mkdtemp(join(tmpdir(), `skillsmith-g6-${lane}-install-`));
+          temporaryRoots.push(installRoot);
+          const prefix = join(installRoot, 'prefix');
+          const home = join(installRoot, 'home');
+          const cache = join(installRoot, 'cache');
+          const work = join(installRoot, 'work');
+          const temp = join(installRoot, 'tmp');
+          await Promise.all(
+            [prefix, home, cache, work, temp].map((path) => mkdir(path, { recursive: true })),
+          );
+          const toolPath = await createPrivateToolPath(
+            lane === 'npm' ? ['sh', 'node', 'npm'] : ['sh', 'bun'],
+          );
+          const environment = {
+            PATH: toolPath,
+            HOME: home,
+            TMPDIR: temp,
+            XDG_CONFIG_HOME: join(home, 'config'),
+            XDG_CACHE_HOME: join(home, 'cache'),
+            XDG_DATA_HOME: join(home, 'data'),
+            LANG: 'C.UTF-8',
+            LC_ALL: 'C.UTF-8',
+            TZ: 'UTC',
+            NO_COLOR: '1',
+            NO_PROXY: '127.0.0.1,localhost',
+            no_proxy: '127.0.0.1,localhost',
+            HTTP_PROXY: deny.origin,
+            HTTPS_PROXY: deny.origin,
+            http_proxy: deny.origin,
+            https_proxy: deny.origin,
+            NO_UPDATE_NOTIFIER: '1',
+            npm_config_update_notifier: 'false',
+            ...(lane === 'bun' ? { BUN_INSTALL: prefix } : {}),
+          };
+          const userConfig = join(installRoot, 'npmrc');
+          await writeFile(userConfig, '', { mode: 0o600 });
+          const installCommand =
+            lane === 'npm'
+              ? [
+                  join(toolPath, 'npm'),
+                  'install',
+                  '--global',
+                  '--prefix',
+                  prefix,
+                  '--registry',
+                  registry.origin,
+                  '--cache',
+                  cache,
+                  '--userconfig',
+                  userConfig,
+                  '--ignore-scripts',
+                  '--no-audit',
+                  '--no-fund',
+                  '--loglevel',
+                  'error',
+                  `@smorinlabs/skillsmith@${candidate.version}`,
+                ]
+              : [
+                  join(toolPath, 'bun'),
+                  'add',
+                  '--global',
+                  '--exact',
+                  '--registry',
+                  registry.origin,
+                  '--cache-dir',
+                  cache,
+                  '--ignore-scripts',
+                  `@smorinlabs/skillsmith@${candidate.version}`,
+                ];
+          const install = await runAsync(installCommand, { cwd: work, env: environment });
+          expect(install.exitCode, `${lane}: ${install.stderr.toString()}`).toBe(0);
+          const packageRoot =
+            lane === 'npm'
+              ? join(prefix, 'lib', 'node_modules')
+              : join(prefix, 'install', 'global', 'node_modules');
+          expect(await installedPackageNames(packageRoot), lane).toEqual([
+            'skillsmith',
+            `skillsmith-${hostTargetId()}`,
+          ]);
+          const executable = join(prefix, 'bin', 'skillsmith');
+          const version = await runAsync([executable, 'version'], { cwd: work, env: environment });
+          expect(version.exitCode, `${lane}: ${version.stderr.toString()}`).toBe(0);
+          expect(version.stdout.toString().trim(), lane).toBe(candidate.version);
+          const help = await runAsync([executable, '--help'], { cwd: work, env: environment });
+          expect(help.exitCode, lane).toBe(0);
+          expect(help.stdout.toString(), lane).toContain('SkillSmith');
+          for (const [shell, expected] of Object.entries(EXPECTED_COMPLETIONS)) {
+            const completion = await runAsync([executable, 'completion', shell], {
+              cwd: work,
+              env: environment,
+            });
+            expect(completion.exitCode, `${lane}/${shell}`).toBe(0);
+            expect(sha256(completion.stdout), `${lane}/${shell}`).toBe(expected.sha256);
+          }
+          expect(Bun.which(lane === 'npm' ? 'bun' : 'node', { PATH: toolPath })).toBeNull();
+          const uninstallCommand =
+            lane === 'npm'
+              ? [
+                  join(toolPath, 'npm'),
+                  'uninstall',
+                  '--global',
+                  '--prefix',
+                  prefix,
+                  '--cache',
+                  cache,
+                  '--userconfig',
+                  userConfig,
+                  '--ignore-scripts',
+                  '--no-audit',
+                  '--no-fund',
+                  '--loglevel',
+                  'error',
+                  '@smorinlabs/skillsmith',
+                  `@smorinlabs/skillsmith-${hostTargetId()}`,
+                ]
+              : [
+                  join(toolPath, 'bun'),
+                  'remove',
+                  '--global',
+                  '--cache-dir',
+                  cache,
+                  '@smorinlabs/skillsmith',
+                  `@smorinlabs/skillsmith-${hostTargetId()}`,
+                ];
+          const uninstall = await runAsync(uninstallCommand, { cwd: work, env: environment });
+          expect(uninstall.exitCode, `${lane}: ${uninstall.stderr.toString()}`).toBe(0);
+          expect(await installedPackageNames(packageRoot)).toEqual([]);
+          expect(await pathExists(executable)).toBeFalse();
+        }
+
+        const omitRoot = await mkdtemp(join(tmpdir(), 'skillsmith-g6-omit-optional-'));
+        temporaryRoots.push(omitRoot);
+        const prefix = join(omitRoot, 'prefix');
+        const cache = join(omitRoot, 'cache');
+        const work = join(omitRoot, 'work');
+        const home = join(omitRoot, 'home');
         await Promise.all(
-          [prefix, home, cache, work, temp].map((path) => mkdir(path, { recursive: true })),
+          [prefix, cache, work, home].map((path) => mkdir(path, { recursive: true })),
         );
-        const toolPath = await createPrivateToolPath(
-          lane === 'npm' ? ['sh', 'node', 'npm'] : ['sh', 'bun'],
-        );
+        const toolPath = await createPrivateToolPath(['sh', 'bun']);
         const environment = {
           PATH: toolPath,
           HOME: home,
-          TMPDIR: temp,
-          XDG_CONFIG_HOME: join(home, 'config'),
-          XDG_CACHE_HOME: join(home, 'cache'),
-          XDG_DATA_HOME: join(home, 'data'),
           LANG: 'C.UTF-8',
           LC_ALL: 'C.UTF-8',
-          TZ: 'UTC',
-          NO_COLOR: '1',
           NO_PROXY: '127.0.0.1,localhost',
           no_proxy: '127.0.0.1,localhost',
           HTTP_PROXY: deny.origin,
           HTTPS_PROXY: deny.origin,
-          http_proxy: deny.origin,
-          https_proxy: deny.origin,
-          NO_UPDATE_NOTIFIER: '1',
-          npm_config_update_notifier: 'false',
-          ...(lane === 'bun' ? { BUN_INSTALL: prefix } : {}),
+          BUN_INSTALL: prefix,
         };
-        const userConfig = join(installRoot, 'npmrc');
-        await writeFile(userConfig, '', { mode: 0o600 });
-        const installCommand =
-          lane === 'npm'
-            ? [
-                join(toolPath, 'npm'),
-                'install',
-                '--global',
-                '--prefix',
-                prefix,
-                '--registry',
-                registry.origin,
-                '--cache',
-                cache,
-                '--userconfig',
-                userConfig,
-                '--ignore-scripts',
-                '--no-audit',
-                '--no-fund',
-                '--loglevel',
-                'error',
-                `@smorinlabs/skillsmith@${candidate.version}`,
-              ]
-            : [
-                join(toolPath, 'bun'),
-                'add',
-                '--global',
-                '--exact',
-                '--registry',
-                registry.origin,
-                '--cache-dir',
-                cache,
-                '--ignore-scripts',
-                `@smorinlabs/skillsmith@${candidate.version}`,
-              ];
-        const install = await runAsync(installCommand, { cwd: work, env: environment });
-        expect(install.exitCode, `${lane}: ${install.stderr.toString()}`).toBe(0);
-        const packageRoot =
-          lane === 'npm'
-            ? join(prefix, 'lib', 'node_modules')
-            : join(prefix, 'install', 'global', 'node_modules');
-        expect(await installedPackageNames(packageRoot), lane).toEqual([
-          'skillsmith',
-          `skillsmith-${hostTargetId()}`,
-        ]);
-        const executable = join(prefix, 'bin', 'skillsmith');
-        const version = await runAsync([executable, 'version'], { cwd: work, env: environment });
-        expect(version.exitCode, `${lane}: ${version.stderr.toString()}`).toBe(0);
-        expect(version.stdout.toString().trim(), lane).toBe(candidate.version);
-        const help = await runAsync([executable, '--help'], { cwd: work, env: environment });
-        expect(help.exitCode, lane).toBe(0);
-        expect(help.stdout.toString(), lane).toContain('SkillSmith');
-        for (const [shell, expected] of Object.entries(EXPECTED_COMPLETIONS)) {
-          const completion = await runAsync([executable, 'completion', shell], {
-            cwd: work,
-            env: environment,
-          });
-          expect(completion.exitCode, `${lane}/${shell}`).toBe(0);
-          expect(sha256(completion.stdout), `${lane}/${shell}`).toBe(expected.sha256);
-        }
-        expect(Bun.which(lane === 'npm' ? 'bun' : 'node', { PATH: toolPath })).toBeNull();
-        const uninstallCommand =
-          lane === 'npm'
-            ? [
-                join(toolPath, 'npm'),
-                'uninstall',
-                '--global',
-                '--prefix',
-                prefix,
-                '--cache',
-                cache,
-                '--userconfig',
-                userConfig,
-                '--ignore-scripts',
-                '--no-audit',
-                '--no-fund',
-                '--loglevel',
-                'error',
-                '@smorinlabs/skillsmith',
-                `@smorinlabs/skillsmith-${hostTargetId()}`,
-              ]
-            : [
-                join(toolPath, 'bun'),
-                'remove',
-                '--global',
-                '--cache-dir',
-                cache,
-                '@smorinlabs/skillsmith',
-                `@smorinlabs/skillsmith-${hostTargetId()}`,
-              ];
-        const uninstall = await runAsync(uninstallCommand, { cwd: work, env: environment });
-        expect(uninstall.exitCode, `${lane}: ${uninstall.stderr.toString()}`).toBe(0);
-        expect(await installedPackageNames(packageRoot)).toEqual([]);
-        expect(await pathExists(executable)).toBeFalse();
+        const omitted = await runAsync(
+          [
+            join(toolPath, 'bun'),
+            'add',
+            '--global',
+            '--exact',
+            '--registry',
+            registry.origin,
+            '--cache-dir',
+            cache,
+            '--ignore-scripts',
+            '--omit',
+            'optional',
+            `@smorinlabs/skillsmith@${candidate.version}`,
+          ],
+          { cwd: work, env: environment },
+        );
+        expect(omitted.exitCode, omitted.stderr.toString()).toBe(0);
+        expect(
+          await installedPackageNames(join(prefix, 'install', 'global', 'node_modules')),
+        ).toEqual(['skillsmith']);
+        const missing = await runAsync([join(prefix, 'bin', 'skillsmith'), 'version'], {
+          cwd: work,
+          env: environment,
+        });
+        expect(missing.exitCode).toBe(1);
+        expect(missing.stderr.toString()).toContain('reinstall without --omit=optional');
+        expect(registry.unexpected).toEqual([]);
+        expect(deny.requests).toEqual([]);
+      } finally {
+        registry.stop();
+        deny.stop();
       }
+    },
+  );
 
-      const omitRoot = await mkdtemp(join(tmpdir(), 'skillsmith-g6-omit-optional-'));
-      temporaryRoots.push(omitRoot);
-      const prefix = join(omitRoot, 'prefix');
-      const cache = join(omitRoot, 'cache');
-      const work = join(omitRoot, 'work');
-      const home = join(omitRoot, 'home');
-      await Promise.all(
-        [prefix, cache, work, home].map((path) => mkdir(path, { recursive: true })),
-      );
-      const toolPath = await createPrivateToolPath(['sh', 'bun']);
+  test.skipIf(!CANDIDATE_BUILD_ENABLED)(
+    'family 7: generated binary cask, bounded loopback derivation, no bypass, and Homebrew supported-platform receipt',
+    async () => {
+      const config = await readFile(GORELEASER_SOURCE, 'utf8');
+      expect(config).toContain('homebrew_casks:');
+      expect(config).not.toContain('brews:');
+      const release = await api();
+      expect(typeof release.deriveProductionCaskFixture).toBe('function');
+      const candidate = await getCandidate();
+      const cask = await readFile(candidate.caskPath, 'utf8');
+      expect(cask).toContain('cask "skillsmith"');
+      expect(cask).toContain('binary "skillsmith"');
+      expect(cask).toContain('bash_completion');
+      expect(cask).toContain('zsh_completion');
+      expect(cask).toContain('fish_completion');
+      expect(cask).not.toMatch(/preflight|postflight|xattr|quarantine|curl|system\s+["']sh/u);
+      for (const target of EXPECTED_TARGETS) {
+        expect(cask, target.id).toContain(`skillsmith-v#{version}-${target.id}.tar.gz`);
+      }
+      const fixture = release.deriveProductionCaskFixture?.({
+        cask,
+        origin: 'http://127.0.0.1:43117',
+      });
+      expect(fixture).toContain('http://127.0.0.1:43117');
+      expect(cask).not.toContain('127.0.0.1');
+
+      if (process.env.P17_G6_01_HOMEBREW_RECEIPT !== '1') return;
+      expect(process.env.RUNNER_OS).toBe('macOS');
+      expect(process.platform).toBe('darwin');
+      expect(process.arch).toBe('arm64');
+      expect(process.env.RUNNER_ARCH).toBe('ARM64');
+      const brew = Bun.which('brew');
+      const ruby = Bun.which('ruby');
+      if (brew === null || ruby === null) {
+        throw new Error('supported Homebrew receipt requires brew and Ruby');
+      }
+      const receiptRoot = await mkdtemp(join(tmpdir(), 'skillsmith-g6-homebrew-receipt-'));
+      temporaryRoots.push(receiptRoot);
+      const home = join(receiptRoot, 'home');
+      const cache = join(receiptRoot, 'cache');
+      const temp = join(receiptRoot, 'tmp');
+      await Promise.all([home, cache, temp].map((path) => mkdir(path, { recursive: true })));
+      const archiveServer = await startArchiveServer(candidate);
+      const deny = startDenyServer();
       const environment = {
-        PATH: toolPath,
+        PATH: [
+          dirname(brew),
+          dirname(process.execPath),
+          '/usr/bin',
+          '/bin',
+          '/usr/sbin',
+          '/sbin',
+        ].join(':'),
         HOME: home,
+        TMPDIR: temp,
+        XDG_CONFIG_HOME: join(home, 'config'),
+        XDG_CACHE_HOME: join(home, 'xdg-cache'),
+        XDG_DATA_HOME: join(home, 'data'),
         LANG: 'C.UTF-8',
         LC_ALL: 'C.UTF-8',
+        TZ: 'UTC',
+        NO_COLOR: '1',
+        HOMEBREW_CACHE: cache,
+        HOMEBREW_NO_AUTO_UPDATE: '1',
+        HOMEBREW_NO_INSTALL_FROM_API: '1',
+        HOMEBREW_NO_ANALYTICS: '1',
+        HOMEBREW_NO_ENV_HINTS: '1',
         NO_PROXY: '127.0.0.1,localhost',
         no_proxy: '127.0.0.1,localhost',
         HTTP_PROXY: deny.origin,
         HTTPS_PROXY: deny.origin,
-        BUN_INSTALL: prefix,
+        http_proxy: deny.origin,
+        https_proxy: deny.origin,
       };
-      const omitted = await runAsync(
-        [
-          join(toolPath, 'bun'),
-          'add',
-          '--global',
-          '--exact',
-          '--registry',
-          registry.origin,
-          '--cache-dir',
-          cache,
-          '--ignore-scripts',
-          '--omit',
-          'optional',
-          `@smorinlabs/skillsmith@${candidate.version}`,
-        ],
-        { cwd: work, env: environment },
-      );
-      expect(omitted.exitCode, omitted.stderr.toString()).toBe(0);
-      expect(
-        await installedPackageNames(join(prefix, 'install', 'global', 'node_modules')),
-      ).toEqual(['skillsmith']);
-      const missing = await runAsync([join(prefix, 'bin', 'skillsmith'), 'version'], {
-        cwd: work,
-        env: environment,
-      });
-      expect(missing.exitCode).toBe(1);
-      expect(missing.stderr.toString()).toContain('reinstall without --omit=optional');
-      expect(registry.unexpected).toEqual([]);
-      expect(deny.requests).toEqual([]);
-    } finally {
-      registry.stop();
-      deny.stop();
-    }
-  });
-
-  test('family 7: generated binary cask, bounded loopback derivation, no bypass, and Homebrew supported-platform receipt', async () => {
-    const config = await readFile(GORELEASER_SOURCE, 'utf8');
-    expect(config).toContain('homebrew_casks:');
-    expect(config).not.toContain('brews:');
-    const release = await api();
-    expect(typeof release.deriveProductionCaskFixture).toBe('function');
-    const candidate = await getCandidate();
-    const cask = await readFile(candidate.caskPath, 'utf8');
-    expect(cask).toContain('cask "skillsmith"');
-    expect(cask).toContain('binary "skillsmith"');
-    expect(cask).toContain('bash_completion');
-    expect(cask).toContain('zsh_completion');
-    expect(cask).toContain('fish_completion');
-    expect(cask).not.toMatch(/preflight|postflight|xattr|quarantine|curl|system\s+["']sh/u);
-    for (const target of EXPECTED_TARGETS) {
-      expect(cask, target.id).toContain(`skillsmith-v#{version}-${target.id}.tar.gz`);
-    }
-    const fixture = release.deriveProductionCaskFixture?.({
-      cask,
-      origin: 'http://127.0.0.1:43117',
-    });
-    expect(fixture).toContain('http://127.0.0.1:43117');
-    expect(cask).not.toContain('127.0.0.1');
-
-    if (process.env.P17_G6_01_HOMEBREW_RECEIPT !== '1') return;
-    expect(process.env.RUNNER_OS).toBe('macOS');
-    expect(process.platform).toBe('darwin');
-    expect(process.arch).toBe('arm64');
-    expect(process.env.RUNNER_ARCH).toBe('ARM64');
-    const brew = Bun.which('brew');
-    const ruby = Bun.which('ruby');
-    if (brew === null || ruby === null) {
-      throw new Error('supported Homebrew receipt requires brew and Ruby');
-    }
-    const receiptRoot = await mkdtemp(join(tmpdir(), 'skillsmith-g6-homebrew-receipt-'));
-    temporaryRoots.push(receiptRoot);
-    const home = join(receiptRoot, 'home');
-    const cache = join(receiptRoot, 'cache');
-    const temp = join(receiptRoot, 'tmp');
-    await Promise.all([home, cache, temp].map((path) => mkdir(path, { recursive: true })));
-    const archiveServer = await startArchiveServer(candidate);
-    const deny = startDenyServer();
-    const environment = {
-      PATH: [
-        dirname(brew),
-        dirname(process.execPath),
-        '/usr/bin',
-        '/bin',
-        '/usr/sbin',
-        '/sbin',
-      ].join(':'),
-      HOME: home,
-      TMPDIR: temp,
-      XDG_CONFIG_HOME: join(home, 'config'),
-      XDG_CACHE_HOME: join(home, 'xdg-cache'),
-      XDG_DATA_HOME: join(home, 'data'),
-      LANG: 'C.UTF-8',
-      LC_ALL: 'C.UTF-8',
-      TZ: 'UTC',
-      NO_COLOR: '1',
-      HOMEBREW_CACHE: cache,
-      HOMEBREW_NO_AUTO_UPDATE: '1',
-      HOMEBREW_NO_INSTALL_FROM_API: '1',
-      HOMEBREW_NO_ANALYTICS: '1',
-      HOMEBREW_NO_ENV_HINTS: '1',
-      NO_PROXY: '127.0.0.1,localhost',
-      no_proxy: '127.0.0.1,localhost',
-      HTTP_PROXY: deny.origin,
-      HTTPS_PROXY: deny.origin,
-      http_proxy: deny.origin,
-      https_proxy: deny.origin,
-    };
-    const runBrew = async (command: readonly string[], cwd = receiptRoot): Promise<string> => {
-      const result = await runAsync(command, { cwd, env: environment });
-      if (result.exitCode !== 0) {
-        throw new Error(
-          `Homebrew receipt failed (${result.exitCode}): ${command.join(' ')}: ${result.stderr
-            .toString()
-            .slice(0, 2000)}`,
-        );
-      }
-      return result.stdout.toString().trim();
-    };
-    const tapName = 'p17/g6-receipt';
-    const qualifiedCask = `${tapName}/skillsmith`;
-    let tapped = false;
-    let installed = false;
-    try {
-      await runBrew([brew, 'tap-new', tapName]);
-      tapped = true;
-      const tapRoot = await runBrew([brew, '--repository', tapName]);
-      const caskRoot = join(tapRoot, 'Casks');
-      const caskPath = join(caskRoot, 'skillsmith.rb');
-      await mkdir(caskRoot, { recursive: true });
-      const localCask = release.deriveProductionCaskFixture?.({
-        cask,
-        origin: archiveServer.origin,
-      });
-      if (localCask === undefined) throw new Error('bounded production cask fixture is absent');
-      await writeFile(caskPath, localCask, { mode: 0o644 });
-      await chmod(caskPath, 0o644);
-      await runBrew([ruby, '-c', caskPath]);
-      await runBrew([brew, 'install', '--cask', qualifiedCask]);
-      installed = true;
-      const brewPrefix = await runBrew([brew, '--prefix']);
-      const binary = join(brewPrefix, 'bin', 'skillsmith');
-      const version = await runBrew([binary, 'version']);
-      expect(version).toBe(candidate.version);
-      const selected = candidate.targets.find(({ id }) => id === 'darwin-arm64');
-      if (selected === undefined) throw new Error('Darwin arm64 candidate is absent');
-      expect(sha256(await readFile(binary))).toBe(selected.binarySha256);
-      const completionPaths = {
-        bash: join(brewPrefix, 'etc', 'bash_completion.d', 'skillsmith'),
-        zsh: join(brewPrefix, 'share', 'zsh', 'site-functions', '_skillsmith'),
-        fish: join(brewPrefix, 'share', 'fish', 'vendor_completions.d', 'skillsmith.fish'),
-      } as const;
-      for (const [shell, path] of Object.entries(completionPaths)) {
-        expect(sha256(await readFile(path)), shell).toBe(
-          EXPECTED_COMPLETIONS[shell as keyof typeof EXPECTED_COMPLETIONS].sha256,
-        );
-      }
-      await runBrew([brew, 'uninstall', '--cask', '--force', qualifiedCask]);
-      installed = false;
-      expect(await pathExists(binary)).toBeFalse();
-      for (const path of Object.values(completionPaths)) expect(await pathExists(path)).toBeFalse();
-      await runBrew([brew, 'untap', '--force', tapName]);
-      tapped = false;
-      expect(archiveServer.unexpected).toEqual([]);
-      expect(deny.requests).toEqual([]);
-      const archiveRoute = `/${selected.archivePath.split('/').at(-1) ?? ''}`;
-      expect(new Set(archiveServer.requests)).toEqual(
-        new Set([`HEAD ${archiveRoute}`, `GET ${archiveRoute}`]),
-      );
-      process.stdout.write(
-        `P17-G6-01-HOMEBREW-RECEIPT ${JSON.stringify({
-          sourceRevision: candidate.sourceRevision,
-          version: candidate.version,
-          selectedArchiveSha256: selected.archiveSha256,
-          installedBinarySha256: selected.binarySha256,
-          skippedTests: 0,
-          productionCaskUnchanged: true,
-          quarantineBypass: false,
-        })}\n`,
-      );
-    } finally {
-      if (installed) {
-        await runAsync([brew, 'uninstall', '--cask', '--force', qualifiedCask], {
-          cwd: receiptRoot,
-          env: environment,
+      const runBrew = async (command: readonly string[], cwd = receiptRoot): Promise<string> => {
+        const result = await runAsync(command, { cwd, env: environment });
+        if (result.exitCode !== 0) {
+          throw new Error(
+            `Homebrew receipt failed (${result.exitCode}): ${command.join(' ')}: ${result.stderr
+              .toString()
+              .slice(0, 2000)}`,
+          );
+        }
+        return result.stdout.toString().trim();
+      };
+      const tapName = 'p17/g6-receipt';
+      const qualifiedCask = `${tapName}/skillsmith`;
+      let tapped = false;
+      let installed = false;
+      try {
+        await runBrew([brew, 'tap-new', tapName]);
+        tapped = true;
+        const tapRoot = await runBrew([brew, '--repository', tapName]);
+        const caskRoot = join(tapRoot, 'Casks');
+        const caskPath = join(caskRoot, 'skillsmith.rb');
+        await mkdir(caskRoot, { recursive: true });
+        const localCask = release.deriveProductionCaskFixture?.({
+          cask,
+          origin: archiveServer.origin,
         });
+        if (localCask === undefined) throw new Error('bounded production cask fixture is absent');
+        await writeFile(caskPath, localCask, { mode: 0o644 });
+        await chmod(caskPath, 0o644);
+        await runBrew([ruby, '-c', caskPath]);
+        await runBrew([brew, 'install', '--cask', qualifiedCask]);
+        installed = true;
+        const brewPrefix = await runBrew([brew, '--prefix']);
+        const binary = join(brewPrefix, 'bin', 'skillsmith');
+        const version = await runBrew([binary, 'version']);
+        expect(version).toBe(candidate.version);
+        const selected = candidate.targets.find(({ id }) => id === 'darwin-arm64');
+        if (selected === undefined) throw new Error('Darwin arm64 candidate is absent');
+        expect(sha256(await readFile(binary))).toBe(selected.binarySha256);
+        const completionPaths = {
+          bash: join(brewPrefix, 'etc', 'bash_completion.d', 'skillsmith'),
+          zsh: join(brewPrefix, 'share', 'zsh', 'site-functions', '_skillsmith'),
+          fish: join(brewPrefix, 'share', 'fish', 'vendor_completions.d', 'skillsmith.fish'),
+        } as const;
+        for (const [shell, path] of Object.entries(completionPaths)) {
+          expect(sha256(await readFile(path)), shell).toBe(
+            EXPECTED_COMPLETIONS[shell as keyof typeof EXPECTED_COMPLETIONS].sha256,
+          );
+        }
+        await runBrew([brew, 'uninstall', '--cask', '--force', qualifiedCask]);
+        installed = false;
+        expect(await pathExists(binary)).toBeFalse();
+        for (const path of Object.values(completionPaths))
+          expect(await pathExists(path)).toBeFalse();
+        await runBrew([brew, 'untap', '--force', tapName]);
+        tapped = false;
+        expect(archiveServer.unexpected).toEqual([]);
+        expect(deny.requests).toEqual([]);
+        const archiveRoute = `/${selected.archivePath.split('/').at(-1) ?? ''}`;
+        expect(new Set(archiveServer.requests)).toEqual(
+          new Set([`HEAD ${archiveRoute}`, `GET ${archiveRoute}`]),
+        );
+        process.stdout.write(
+          `P17-G6-01-HOMEBREW-RECEIPT ${JSON.stringify({
+            sourceRevision: candidate.sourceRevision,
+            version: candidate.version,
+            selectedArchiveSha256: selected.archiveSha256,
+            installedBinarySha256: selected.binarySha256,
+            skippedTests: 0,
+            productionCaskUnchanged: true,
+            quarantineBypass: false,
+          })}\n`,
+        );
+      } finally {
+        if (installed) {
+          await runAsync([brew, 'uninstall', '--cask', '--force', qualifiedCask], {
+            cwd: receiptRoot,
+            env: environment,
+          });
+        }
+        if (tapped) {
+          await runAsync([brew, 'untap', '--force', tapName], {
+            cwd: receiptRoot,
+            env: environment,
+          });
+        }
+        archiveServer.stop();
+        deny.stop();
       }
-      if (tapped) {
-        await runAsync([brew, 'untap', '--force', tapName], {
-          cwd: receiptRoot,
-          env: environment,
-        });
-      }
-      archiveServer.stop();
-      deny.stop();
-    }
-  });
+    },
+  );
 
   test('family 8: controlled credential-free environment, canary refusal, and honest cache claims', async () => {
     const release = await api();
@@ -1602,256 +1631,264 @@ describe('EWP-P6-TS01', () => {
     expect(buildSource).not.toContain('canaries: [secretCanary, ROOT]');
   });
 
-  test('family 9: immutable two-version fixtures across direct/npm/Bun and Homebrew supported-platform upgrade', async () => {
-    const release = await api();
-    expect(Object.keys(release.FIXTURE_EXECUTABLES ?? {}).toSorted()).toEqual([
-      '0.0.0-g6-fixture.1',
-      '0.0.0-g6-fixture.2',
-    ]);
-    const first = release.FIXTURE_EXECUTABLES?.['0.0.0-g6-fixture.1'];
-    const second = release.FIXTURE_EXECUTABLES?.['0.0.0-g6-fixture.2'];
-    expect(first?.sha256).toBe('d2e29c65bd9afe1235f3105cbe297bd84c564a9c0026cc6320f059cd987797a6');
-    expect(second?.sha256).toBe('70f27666626752210b31be697cd63ff6554a6342936ea2ca435e1c5d53c7c3e9');
-    expect(first === undefined ? '' : sha256(first.bytes)).toBe(first?.sha256);
-    expect(second === undefined ? '' : sha256(second.bytes)).toBe(second?.sha256);
-    expect(first?.sha256).not.toBe(second?.sha256);
-    expect(typeof release.assertLifecycleCaskPair).toBe('function');
-    release.assertLifecycleCaskPair?.({
-      first: `version "0.0.0-g6-fixture.1"\nurl "http://127.0.0.1/one.tar.gz"\nsha256 "${HEX_64}"\n`,
-      second: `version "0.0.0-g6-fixture.2"\nurl "http://127.0.0.1/two.tar.gz"\nsha256 "${'c'.repeat(64)}"\n`,
-      firstVersion: '0.0.0-g6-fixture.1',
-      secondVersion: '0.0.0-g6-fixture.2',
-    });
-    expect(() =>
+  test.skipIf(!CANDIDATE_BUILD_ENABLED)(
+    'family 9: immutable two-version fixtures across direct/npm/Bun and Homebrew supported-platform upgrade',
+    async () => {
+      const release = await api();
+      expect(Object.keys(release.FIXTURE_EXECUTABLES ?? {}).toSorted()).toEqual([
+        '0.0.0-g6-fixture.1',
+        '0.0.0-g6-fixture.2',
+      ]);
+      const first = release.FIXTURE_EXECUTABLES?.['0.0.0-g6-fixture.1'];
+      const second = release.FIXTURE_EXECUTABLES?.['0.0.0-g6-fixture.2'];
+      expect(first?.sha256).toBe(
+        'd2e29c65bd9afe1235f3105cbe297bd84c564a9c0026cc6320f059cd987797a6',
+      );
+      expect(second?.sha256).toBe(
+        '70f27666626752210b31be697cd63ff6554a6342936ea2ca435e1c5d53c7c3e9',
+      );
+      expect(first === undefined ? '' : sha256(first.bytes)).toBe(first?.sha256);
+      expect(second === undefined ? '' : sha256(second.bytes)).toBe(second?.sha256);
+      expect(first?.sha256).not.toBe(second?.sha256);
+      expect(typeof release.assertLifecycleCaskPair).toBe('function');
       release.assertLifecycleCaskPair?.({
-        first: 'version "0.0.0-g6-fixture.1"\nbinary "skillsmith"\n',
-        second: 'version "0.0.0-g6-fixture.2"\nbinary "other"\n',
+        first: `version "0.0.0-g6-fixture.1"\nurl "http://127.0.0.1/one.tar.gz"\nsha256 "${HEX_64}"\n`,
+        second: `version "0.0.0-g6-fixture.2"\nurl "http://127.0.0.1/two.tar.gz"\nsha256 "${'c'.repeat(64)}"\n`,
         firstVersion: '0.0.0-g6-fixture.1',
         secondVersion: '0.0.0-g6-fixture.2',
-      }),
-    ).toThrow();
-
-    const candidates = [
-      await createLifecycleCandidate('0.0.0-g6-fixture.1'),
-      await createLifecycleCandidate('0.0.0-g6-fixture.2'),
-    ] as const;
-    const fixtureCasks = await Promise.all(
-      candidates.map((candidate) => readFile(candidate.caskPath, 'utf8')),
-    );
-    release.assertLifecycleCaskPair?.({
-      first: fixtureCasks[0],
-      second: fixtureCasks[1],
-      firstVersion: candidates[0].version,
-      secondVersion: candidates[1].version,
-    });
-    for (const [index, cask] of fixtureCasks.entries()) {
-      expect(cask.match(/^\s*url "/gmu), `fixture ${index + 1}`).toHaveLength(4);
-      expect(cask.match(/^\s*sha256 "[0-9a-f]{64}"$/gmu), `fixture ${index + 1}`).toHaveLength(4);
-    }
-
-    if (
-      release.installDirectArchive === undefined ||
-      release.uninstallDirectArchive === undefined
-    ) {
-      throw new Error('direct archive lifecycle adapter is absent');
-    }
-    const directPrefix = await mkdtemp(join(tmpdir(), 'skillsmith-g6-direct-upgrade-'));
-    temporaryRoots.push(directPrefix);
-    let directPaths: Readonly<Record<'binary' | 'bash' | 'zsh' | 'fish', string>> | undefined;
-    for (const candidate of candidates) {
-      const selected = candidate.targets.find(({ id }) => id === hostTargetId());
-      if (selected === undefined) throw new Error('host lifecycle archive is absent');
-      directPaths = await release.installDirectArchive({
-        archivePath: selected.archivePath,
-        prefix: directPrefix,
       });
-      const version = Bun.spawnSync([directPaths.binary, 'version'], {
-        cwd: directPrefix,
-        env: { PATH: '/usr/bin:/bin', HOME: directPrefix, LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8' },
-        stdout: 'pipe',
-        stderr: 'pipe',
-      });
-      expect(version.exitCode, version.stderr.toString()).toBe(0);
-      expect(version.stdout.toString().trim()).toBe(candidate.version);
-      expect(sha256(await readFile(directPaths.binary))).toBe(selected.binarySha256);
-      for (const [shell, path] of Object.entries(directPaths).filter(
-        ([name]) => name !== 'binary',
-      )) {
-        expect(sha256(await readFile(path)), shell).toBe(
-          EXPECTED_COMPLETIONS[shell as keyof typeof EXPECTED_COMPLETIONS].sha256,
-        );
-      }
-    }
-    await release.uninstallDirectArchive({ prefix: directPrefix });
-    if (directPaths === undefined) throw new Error('direct fixture lifecycle did not run');
-    for (const path of Object.values(directPaths)) expect(await pathExists(path)).toBeFalse();
+      expect(() =>
+        release.assertLifecycleCaskPair?.({
+          first: 'version "0.0.0-g6-fixture.1"\nbinary "skillsmith"\n',
+          second: 'version "0.0.0-g6-fixture.2"\nbinary "other"\n',
+          firstVersion: '0.0.0-g6-fixture.1',
+          secondVersion: '0.0.0-g6-fixture.2',
+        }),
+      ).toThrow();
 
-    const registry = await startRegistry(candidates);
-    const deny = startDenyServer();
-    try {
-      await runPackageUpgradeLane('npm', candidates, registry, deny.origin);
-      await runPackageUpgradeLane('bun', candidates, registry, deny.origin);
-      expect(registry.unexpected).toEqual([]);
-      expect(deny.requests).toEqual([]);
-    } finally {
-      registry.stop();
-      deny.stop();
-    }
-
-    const production = await getCandidate();
-    const leakOutputs: Record<string, Uint8Array | string> = {
-      checksums: await readFile(production.checksumsPath),
-      cask: await readFile(production.caskPath),
-    };
-    for (const target of production.targets) {
-      leakOutputs[`raw-${target.id}`] = await readFile(target.binaryPath);
-      leakOutputs[`archive-${target.id}`] = tarEntry(target.archivePath, 'skillsmith');
-      leakOutputs[`npm-${target.id}`] = tarEntry(target.npmPath, 'package/bin/skillsmith');
-    }
-    release.assertNoReleaseLeaks?.({
-      canaries: candidates.flatMap(({ version }) => [version]),
-      outputs: leakOutputs,
-    });
-
-    if (process.env.P17_G6_01_HOMEBREW_RECEIPT !== '1') return;
-    expect(process.env.RUNNER_OS).toBe('macOS');
-    expect(process.platform).toBe('darwin');
-    expect(process.arch).toBe('arm64');
-    const brew = Bun.which('brew');
-    const ruby = Bun.which('ruby');
-    if (brew === null || ruby === null)
-      throw new Error('Homebrew lifecycle requires brew and Ruby');
-    const receiptRoot = await mkdtemp(join(tmpdir(), 'skillsmith-g6-homebrew-upgrade-'));
-    temporaryRoots.push(receiptRoot);
-    const home = join(receiptRoot, 'home');
-    const cache = join(receiptRoot, 'cache');
-    const temp = join(receiptRoot, 'tmp');
-    await Promise.all([home, cache, temp].map((path) => mkdir(path, { recursive: true })));
-    const archiveServer = await startArchiveServer(candidates);
-    const brewDeny = startDenyServer();
-    const environment = {
-      PATH: [dirname(brew), '/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(':'),
-      HOME: home,
-      TMPDIR: temp,
-      XDG_CONFIG_HOME: join(home, 'config'),
-      XDG_CACHE_HOME: join(home, 'xdg-cache'),
-      XDG_DATA_HOME: join(home, 'data'),
-      LANG: 'C.UTF-8',
-      LC_ALL: 'C.UTF-8',
-      TZ: 'UTC',
-      NO_COLOR: '1',
-      HOMEBREW_CACHE: cache,
-      HOMEBREW_NO_AUTO_UPDATE: '1',
-      HOMEBREW_NO_INSTALL_FROM_API: '1',
-      HOMEBREW_NO_ANALYTICS: '1',
-      HOMEBREW_NO_ENV_HINTS: '1',
-      NO_PROXY: '127.0.0.1,localhost',
-      no_proxy: '127.0.0.1,localhost',
-      HTTP_PROXY: brewDeny.origin,
-      HTTPS_PROXY: brewDeny.origin,
-      http_proxy: brewDeny.origin,
-      https_proxy: brewDeny.origin,
-    };
-    const runBrew = async (command: readonly string[]): Promise<string> => {
-      const result = await runAsync(command, { cwd: receiptRoot, env: environment });
-      if (result.exitCode !== 0) {
-        throw new Error(
-          `Homebrew upgrade failed (${result.exitCode}): ${command.join(' ')}: ${result.stderr
-            .toString()
-            .slice(0, 2000)}`,
-        );
-      }
-      return result.stdout.toString().trim();
-    };
-    const tapName = 'p17/g6-lifecycle';
-    const qualifiedCask = `${tapName}/skillsmith`;
-    let tapped = false;
-    let installed = false;
-    try {
-      await runBrew([brew, 'tap-new', tapName]);
-      tapped = true;
-      const tapRoot = await runBrew([brew, '--repository', tapName]);
-      const caskPath = join(tapRoot, 'Casks', 'skillsmith.rb');
-      await mkdir(dirname(caskPath), { recursive: true });
-      const localCasks = candidates.map((candidate) =>
-        lifecycleCask(candidate, archiveServer.origin),
+      const candidates = [
+        await createLifecycleCandidate('0.0.0-g6-fixture.1'),
+        await createLifecycleCandidate('0.0.0-g6-fixture.2'),
+      ] as const;
+      const fixtureCasks = await Promise.all(
+        candidates.map((candidate) => readFile(candidate.caskPath, 'utf8')),
       );
       release.assertLifecycleCaskPair?.({
-        first: localCasks[0],
-        second: localCasks[1],
+        first: fixtureCasks[0],
+        second: fixtureCasks[1],
         firstVersion: candidates[0].version,
         secondVersion: candidates[1].version,
       });
-      await writeFile(caskPath, localCasks[0], { mode: 0o644 });
-      await runBrew([ruby, '-c', caskPath]);
-      await runBrew([brew, 'install', '--cask', qualifiedCask]);
-      installed = true;
-      const brewPrefix = await runBrew([brew, '--prefix']);
-      const binary = join(brewPrefix, 'bin', 'skillsmith');
-      expect(await runBrew([binary, 'version'])).toBe(candidates[0].version);
-      expect(sha256(await readFile(binary))).toBe(first?.sha256);
-      await writeFile(caskPath, localCasks[1], { mode: 0o644 });
-      await runBrew([ruby, '-c', caskPath]);
-      await runBrew([brew, 'upgrade', '--cask', qualifiedCask]);
-      expect(await runBrew([binary, 'version'])).toBe(candidates[1].version);
-      expect(sha256(await readFile(binary))).toBe(second?.sha256);
-      const completionPaths = {
-        bash: join(brewPrefix, 'etc', 'bash_completion.d', 'skillsmith'),
-        zsh: join(brewPrefix, 'share', 'zsh', 'site-functions', '_skillsmith'),
-        fish: join(brewPrefix, 'share', 'fish', 'vendor_completions.d', 'skillsmith.fish'),
-      } as const;
-      for (const [shell, path] of Object.entries(completionPaths)) {
-        expect(sha256(await readFile(path)), shell).toBe(
-          EXPECTED_COMPLETIONS[shell as keyof typeof EXPECTED_COMPLETIONS].sha256,
-        );
+      for (const [index, cask] of fixtureCasks.entries()) {
+        expect(cask.match(/^\s*url "/gmu), `fixture ${index + 1}`).toHaveLength(4);
+        expect(cask.match(/^\s*sha256 "[0-9a-f]{64}"$/gmu), `fixture ${index + 1}`).toHaveLength(4);
       }
-      await runBrew([brew, 'uninstall', '--cask', '--force', qualifiedCask]);
-      installed = false;
-      expect(await pathExists(binary)).toBeFalse();
-      for (const path of Object.values(completionPaths)) expect(await pathExists(path)).toBeFalse();
-      await runBrew([brew, 'untap', '--force', tapName]);
-      tapped = false;
-      expect(archiveServer.unexpected).toEqual([]);
-      expect(brewDeny.requests).toEqual([]);
-      const expectedRoutes = candidates.flatMap((candidate) => {
-        const selected = candidate.targets.find(({ id }) => id === 'darwin-arm64');
-        if (selected === undefined) throw new Error('Darwin arm64 lifecycle archive is absent');
-        const route = `/${selected.archivePath.split('/').at(-1) ?? ''}`;
-        return [`HEAD ${route}`, `GET ${route}`];
+
+      if (
+        release.installDirectArchive === undefined ||
+        release.uninstallDirectArchive === undefined
+      ) {
+        throw new Error('direct archive lifecycle adapter is absent');
+      }
+      const directPrefix = await mkdtemp(join(tmpdir(), 'skillsmith-g6-direct-upgrade-'));
+      temporaryRoots.push(directPrefix);
+      let directPaths: Readonly<Record<'binary' | 'bash' | 'zsh' | 'fish', string>> | undefined;
+      for (const candidate of candidates) {
+        const selected = candidate.targets.find(({ id }) => id === hostTargetId());
+        if (selected === undefined) throw new Error('host lifecycle archive is absent');
+        directPaths = await release.installDirectArchive({
+          archivePath: selected.archivePath,
+          prefix: directPrefix,
+        });
+        const version = Bun.spawnSync([directPaths.binary, 'version'], {
+          cwd: directPrefix,
+          env: { PATH: '/usr/bin:/bin', HOME: directPrefix, LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8' },
+          stdout: 'pipe',
+          stderr: 'pipe',
+        });
+        expect(version.exitCode, version.stderr.toString()).toBe(0);
+        expect(version.stdout.toString().trim()).toBe(candidate.version);
+        expect(sha256(await readFile(directPaths.binary))).toBe(selected.binarySha256);
+        for (const [shell, path] of Object.entries(directPaths).filter(
+          ([name]) => name !== 'binary',
+        )) {
+          expect(sha256(await readFile(path)), shell).toBe(
+            EXPECTED_COMPLETIONS[shell as keyof typeof EXPECTED_COMPLETIONS].sha256,
+          );
+        }
+      }
+      await release.uninstallDirectArchive({ prefix: directPrefix });
+      if (directPaths === undefined) throw new Error('direct fixture lifecycle did not run');
+      for (const path of Object.values(directPaths)) expect(await pathExists(path)).toBeFalse();
+
+      const registry = await startRegistry(candidates);
+      const deny = startDenyServer();
+      try {
+        await runPackageUpgradeLane('npm', candidates, registry, deny.origin);
+        await runPackageUpgradeLane('bun', candidates, registry, deny.origin);
+        expect(registry.unexpected).toEqual([]);
+        expect(deny.requests).toEqual([]);
+      } finally {
+        registry.stop();
+        deny.stop();
+      }
+
+      const production = await getCandidate();
+      const leakOutputs: Record<string, Uint8Array | string> = {
+        checksums: await readFile(production.checksumsPath),
+        cask: await readFile(production.caskPath),
+      };
+      for (const target of production.targets) {
+        leakOutputs[`raw-${target.id}`] = await readFile(target.binaryPath);
+        leakOutputs[`archive-${target.id}`] = tarEntry(target.archivePath, 'skillsmith');
+        leakOutputs[`npm-${target.id}`] = tarEntry(target.npmPath, 'package/bin/skillsmith');
+      }
+      release.assertNoReleaseLeaks?.({
+        canaries: candidates.flatMap(({ version }) => [version]),
+        outputs: leakOutputs,
       });
-      expect(new Set(archiveServer.requests)).toEqual(new Set(expectedRoutes));
-      for (const route of expectedRoutes) {
-        expect(
-          archiveServer.requests.filter((request) => request === route).length,
-        ).toBeGreaterThanOrEqual(1);
-      }
-      process.stdout.write(
-        `P17-G6-01-HOMEBREW-UPGRADE-RECEIPT ${JSON.stringify({
+
+      if (process.env.P17_G6_01_HOMEBREW_RECEIPT !== '1') return;
+      expect(process.env.RUNNER_OS).toBe('macOS');
+      expect(process.platform).toBe('darwin');
+      expect(process.arch).toBe('arm64');
+      const brew = Bun.which('brew');
+      const ruby = Bun.which('ruby');
+      if (brew === null || ruby === null)
+        throw new Error('Homebrew lifecycle requires brew and Ruby');
+      const receiptRoot = await mkdtemp(join(tmpdir(), 'skillsmith-g6-homebrew-upgrade-'));
+      temporaryRoots.push(receiptRoot);
+      const home = join(receiptRoot, 'home');
+      const cache = join(receiptRoot, 'cache');
+      const temp = join(receiptRoot, 'tmp');
+      await Promise.all([home, cache, temp].map((path) => mkdir(path, { recursive: true })));
+      const archiveServer = await startArchiveServer(candidates);
+      const brewDeny = startDenyServer();
+      const environment = {
+        PATH: [dirname(brew), '/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(':'),
+        HOME: home,
+        TMPDIR: temp,
+        XDG_CONFIG_HOME: join(home, 'config'),
+        XDG_CACHE_HOME: join(home, 'xdg-cache'),
+        XDG_DATA_HOME: join(home, 'data'),
+        LANG: 'C.UTF-8',
+        LC_ALL: 'C.UTF-8',
+        TZ: 'UTC',
+        NO_COLOR: '1',
+        HOMEBREW_CACHE: cache,
+        HOMEBREW_NO_AUTO_UPDATE: '1',
+        HOMEBREW_NO_INSTALL_FROM_API: '1',
+        HOMEBREW_NO_ANALYTICS: '1',
+        HOMEBREW_NO_ENV_HINTS: '1',
+        NO_PROXY: '127.0.0.1,localhost',
+        no_proxy: '127.0.0.1,localhost',
+        HTTP_PROXY: brewDeny.origin,
+        HTTPS_PROXY: brewDeny.origin,
+        http_proxy: brewDeny.origin,
+        https_proxy: brewDeny.origin,
+      };
+      const runBrew = async (command: readonly string[]): Promise<string> => {
+        const result = await runAsync(command, { cwd: receiptRoot, env: environment });
+        if (result.exitCode !== 0) {
+          throw new Error(
+            `Homebrew upgrade failed (${result.exitCode}): ${command.join(' ')}: ${result.stderr
+              .toString()
+              .slice(0, 2000)}`,
+          );
+        }
+        return result.stdout.toString().trim();
+      };
+      const tapName = 'p17/g6-lifecycle';
+      const qualifiedCask = `${tapName}/skillsmith`;
+      let tapped = false;
+      let installed = false;
+      try {
+        await runBrew([brew, 'tap-new', tapName]);
+        tapped = true;
+        const tapRoot = await runBrew([brew, '--repository', tapName]);
+        const caskPath = join(tapRoot, 'Casks', 'skillsmith.rb');
+        await mkdir(dirname(caskPath), { recursive: true });
+        const localCasks = candidates.map((candidate) =>
+          lifecycleCask(candidate, archiveServer.origin),
+        );
+        release.assertLifecycleCaskPair?.({
+          first: localCasks[0],
+          second: localCasks[1],
           firstVersion: candidates[0].version,
           secondVersion: candidates[1].version,
-          firstSha256: first?.sha256,
-          secondSha256: second?.sha256,
-          skippedTests: 0,
-          quarantineBypass: false,
-        })}\n`,
-      );
-    } finally {
-      if (installed) {
-        await runAsync([brew, 'uninstall', '--cask', '--force', qualifiedCask], {
-          cwd: receiptRoot,
-          env: environment,
         });
-      }
-      if (tapped) {
-        await runAsync([brew, 'untap', '--force', tapName], {
-          cwd: receiptRoot,
-          env: environment,
+        await writeFile(caskPath, localCasks[0], { mode: 0o644 });
+        await runBrew([ruby, '-c', caskPath]);
+        await runBrew([brew, 'install', '--cask', qualifiedCask]);
+        installed = true;
+        const brewPrefix = await runBrew([brew, '--prefix']);
+        const binary = join(brewPrefix, 'bin', 'skillsmith');
+        expect(await runBrew([binary, 'version'])).toBe(candidates[0].version);
+        expect(sha256(await readFile(binary))).toBe(first?.sha256);
+        await writeFile(caskPath, localCasks[1], { mode: 0o644 });
+        await runBrew([ruby, '-c', caskPath]);
+        await runBrew([brew, 'upgrade', '--cask', qualifiedCask]);
+        expect(await runBrew([binary, 'version'])).toBe(candidates[1].version);
+        expect(sha256(await readFile(binary))).toBe(second?.sha256);
+        const completionPaths = {
+          bash: join(brewPrefix, 'etc', 'bash_completion.d', 'skillsmith'),
+          zsh: join(brewPrefix, 'share', 'zsh', 'site-functions', '_skillsmith'),
+          fish: join(brewPrefix, 'share', 'fish', 'vendor_completions.d', 'skillsmith.fish'),
+        } as const;
+        for (const [shell, path] of Object.entries(completionPaths)) {
+          expect(sha256(await readFile(path)), shell).toBe(
+            EXPECTED_COMPLETIONS[shell as keyof typeof EXPECTED_COMPLETIONS].sha256,
+          );
+        }
+        await runBrew([brew, 'uninstall', '--cask', '--force', qualifiedCask]);
+        installed = false;
+        expect(await pathExists(binary)).toBeFalse();
+        for (const path of Object.values(completionPaths))
+          expect(await pathExists(path)).toBeFalse();
+        await runBrew([brew, 'untap', '--force', tapName]);
+        tapped = false;
+        expect(archiveServer.unexpected).toEqual([]);
+        expect(brewDeny.requests).toEqual([]);
+        const expectedRoutes = candidates.flatMap((candidate) => {
+          const selected = candidate.targets.find(({ id }) => id === 'darwin-arm64');
+          if (selected === undefined) throw new Error('Darwin arm64 lifecycle archive is absent');
+          const route = `/${selected.archivePath.split('/').at(-1) ?? ''}`;
+          return [`HEAD ${route}`, `GET ${route}`];
         });
+        expect(new Set(archiveServer.requests)).toEqual(new Set(expectedRoutes));
+        for (const route of expectedRoutes) {
+          expect(
+            archiveServer.requests.filter((request) => request === route).length,
+          ).toBeGreaterThanOrEqual(1);
+        }
+        process.stdout.write(
+          `P17-G6-01-HOMEBREW-UPGRADE-RECEIPT ${JSON.stringify({
+            firstVersion: candidates[0].version,
+            secondVersion: candidates[1].version,
+            firstSha256: first?.sha256,
+            secondSha256: second?.sha256,
+            skippedTests: 0,
+            quarantineBypass: false,
+          })}\n`,
+        );
+      } finally {
+        if (installed) {
+          await runAsync([brew, 'uninstall', '--cask', '--force', qualifiedCask], {
+            cwd: receiptRoot,
+            env: environment,
+          });
+        }
+        if (tapped) {
+          await runAsync([brew, 'untap', '--force', tapName], {
+            cwd: receiptRoot,
+            env: environment,
+          });
+        }
+        archiveServer.stop();
+        brewDeny.stop();
       }
-      archiveServer.stop();
-      brewDeny.stop();
-    }
-  });
+    },
+  );
 
   test('family 10: truthful guidance, immutable tracked manifests, and no premature publication', async () => {
     const trackedBefore = await Promise.all(

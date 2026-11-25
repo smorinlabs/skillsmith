@@ -16,6 +16,8 @@ import {
   ALLOWED_LIVE_E2E_SKIPS,
   ENV_EWP_SKIP_COUNT,
   ENV_EWP_SKIP_FILE,
+  ENV_GORELEASER_SKIP_COUNT,
+  ENV_GORELEASER_SKIP_FILE,
   ENV_NATIVE_SKIP_COUNT,
   ENV_NATIVE_SKIP_FILE,
   ENV_STRACE_SKIP_COUNT,
@@ -118,9 +120,15 @@ const nativeProbes = (enabled: boolean): EnvSkipProbes =>
     ? { statfs: () => ({ bavail: NATIVE_MIN_FREE_BYTES, bsize: 1 }) }
     : { statfs: () => ({ bavail: 0, bsize: 4096 }) };
 
+const goreleaserProbes = (enabled: boolean): EnvSkipProbes => ({
+  goreleaser: () => (enabled ? '/usr/local/bin/goreleaser' : null),
+  env: {},
+});
+
 const closedGates: EnvSkipProbes = {
   ...straceProbes(false),
   ...nativeProbes(false),
+  ...goreleaserProbes(false),
 };
 
 function junit(file: string, tests = 1, skipped = 0): string {
@@ -182,8 +190,17 @@ async function terminalIntegration(mode: 'commit' | 'pass' | 'fail', poison = 't
       `import { test } from 'bun:test';\n${Array.from({ length: count }, (_, i) => `test.skip('live ${i}', () => {});`).join('\n')}\n`,
     );
   }
-  for (const file of [ENV_STRACE_SKIP_FILE, ENV_NATIVE_SKIP_FILE, ENV_EWP_SKIP_FILE])
+  for (const file of [
+    ENV_STRACE_SKIP_FILE,
+    ENV_NATIVE_SKIP_FILE,
+    ENV_EWP_SKIP_FILE,
+    ENV_GORELEASER_SKIP_FILE,
+  ])
     mkdirSync(join(root, file, '..'), { recursive: true });
+  writeFileSync(
+    join(root, ENV_GORELEASER_SKIP_FILE),
+    `import { test } from 'bun:test';\nconst CANDIDATE_BUILD_ENABLED = process.env.SKILLSMITH_REQUIRE_GORELEASER === '1' || Bun.which('goreleaser') !== null;\n${Array.from({ length: ENV_GORELEASER_SKIP_COUNT }, (_, i) => `test.skipIf(!CANDIDATE_BUILD_ENABLED)('goreleaser ${i}', () => {});`).join('\n')}\n`,
+  );
   writeFileSync(
     join(root, ENV_STRACE_SKIP_FILE),
     `import { test } from 'bun:test';\nconst lane2StraceOk = process.platform === 'linux' && Bun.which('strace') !== null;\n${Array.from({ length: ENV_STRACE_SKIP_COUNT }, (_, i) => `test.skipIf(!lane2StraceOk)('strace ${i}', () => {});`).join('\n')}\n`,
@@ -324,13 +341,13 @@ describe('serial test-file terminal runner', () => {
       expect(result.runnerAfter).toEqual(result.runnerBefore);
       expect(result.stdout).toContain('serial test-file env-gated skips:');
       expect(result.expectedSkips).toBeGreaterThanOrEqual(42);
-      expect(result.expectedSkips).toBeLessThanOrEqual(49);
+      expect(result.expectedSkips).toBeLessThanOrEqual(54);
       const receipt = result.stdout.match(/SERIAL_TEST_FILE_RECEIPT (.+)/)?.[1];
       expect(receipt).toBeDefined();
       expect(JSON.parse(receipt as string)).toMatchObject({
-        discovered: 12,
-        executed: 12,
-        passed: 12,
+        discovered: 13,
+        executed: 13,
+        passed: 13,
         skipped: result.expectedSkips,
       });
     },
@@ -510,17 +527,20 @@ describe('serial test-file terminal runner', () => {
     ).toBe(false);
 
     const resolved = resolveAllowedSkips(closedGates);
-    expect(resolved.size).toBe(11);
+    expect(resolved.size).toBe(12);
+    expect(resolved.get(ENV_GORELEASER_SKIP_FILE)).toBe(ENV_GORELEASER_SKIP_COUNT);
     expect(resolved.get(ENV_STRACE_SKIP_FILE)).toBe(ENV_STRACE_SKIP_COUNT);
     expect(resolved.get(ENV_NATIVE_SKIP_FILE)).toBe(ENV_NATIVE_SKIP_COUNT);
     expect(resolved.get(ENV_EWP_SKIP_FILE)).toBe(ENV_EWP_SKIP_COUNT);
     const open = resolveAllowedSkips({
       ...straceProbes(true),
       ...nativeProbes(true),
+      ...goreleaserProbes(true),
     });
     expect(open.get(ENV_STRACE_SKIP_FILE)).toBe(0);
     expect(open.get(ENV_NATIVE_SKIP_FILE)).toBe(0);
     expect(open.get(ENV_EWP_SKIP_FILE)).toBe(0);
+    expect(open.get(ENV_GORELEASER_SKIP_FILE)).toBe(0);
   });
 
   test('child environment drops GIT_* and the git exec path a hook prepends to PATH', () => {
@@ -541,7 +561,11 @@ describe('serial test-file terminal runner', () => {
   });
 
   test('sharded CI expects the pinned-capability skips, independent of the validating machine', () => {
-    const open = resolveAllowedSkips({ ...straceProbes(true), ...nativeProbes(true) });
+    const open = resolveAllowedSkips({
+      ...straceProbes(true),
+      ...nativeProbes(true),
+      ...goreleaserProbes(true),
+    });
     expect([...PINNED_CAPABILITY_SKIPS]).toEqual([...open]);
     expect(
       validateTerminalManifest([...PINNED_CAPABILITY_SKIPS.keys()], PINNED_CAPABILITY_SKIPS),
@@ -564,6 +588,7 @@ describe('serial test-file terminal runner', () => {
         platform: linux ? 'linux' : 'darwin',
         which: () => (straceFound ? '/usr/bin/strace' : null),
         ...nativeProbes(native),
+        ...goreleaserProbes(false),
       });
       const files = terminalFiles('alpha.test.ts', 'omega.test.ts');
       const calls: string[] = [];
@@ -582,20 +607,26 @@ describe('serial test-file terminal runner', () => {
       const nativeSkips = native ? 0 : ENV_NATIVE_SKIP_COUNT;
       const ewpSkips = linux ? 0 : ENV_EWP_SKIP_COUNT;
       expect(calls).toEqual(files);
-      expect(allowed.size).toBe(11);
+      expect(allowed.size).toBe(12);
       expect(ALLOWED_LIVE_E2E_SKIPS.size).toBe(8);
       expect([...ALLOWED_LIVE_E2E_SKIPS.values()].reduce((sum, count) => sum + count, 0)).toBe(42);
       expect(ENV_STRACE_SKIP_COUNT).toBe(5);
       expect(ENV_NATIVE_SKIP_COUNT).toBe(1);
       expect(ENV_EWP_SKIP_COUNT).toBe(1);
+      expect(ENV_GORELEASER_SKIP_COUNT).toBe(5);
       expect(receipt).toEqual({
-        assertions: 91,
-        discovered: 13,
+        assertions: 98,
+        discovered: 14,
         duplicates: 0,
-        executed: 13,
-        passed: 13,
-        skipped: 42 + straceSkips + nativeSkips + ewpSkips,
-        tests: 44 + Math.max(1, straceSkips) + Math.max(1, nativeSkips) + Math.max(1, ewpSkips),
+        executed: 14,
+        passed: 14,
+        skipped: 42 + straceSkips + nativeSkips + ewpSkips + ENV_GORELEASER_SKIP_COUNT,
+        tests:
+          44 +
+          Math.max(1, straceSkips) +
+          Math.max(1, nativeSkips) +
+          Math.max(1, ewpSkips) +
+          ENV_GORELEASER_SKIP_COUNT,
       });
     },
   );
@@ -621,6 +652,12 @@ describe('serial test-file terminal runner', () => {
     const ewp = readTracked(ENV_EWP_SKIP_FILE);
     expect(ewp).toContain("test.skipIf(process.platform !== 'linux')");
     expect(ewp.match(/test\.skipIf\(/g) ?? []).toHaveLength(ENV_EWP_SKIP_COUNT);
+
+    const candidate = readTracked(ENV_GORELEASER_SKIP_FILE);
+    expect(candidate).toContain('const CANDIDATE_BUILD_ENABLED =');
+    expect(candidate.match(/test\.skipIf\(!CANDIDATE_BUILD_ENABLED\)\(/g) ?? []).toHaveLength(
+      ENV_GORELEASER_SKIP_COUNT,
+    );
   });
 
   test('fails before starting another file on the first nonzero process', async () => {
@@ -641,7 +678,7 @@ describe('serial test-file terminal runner', () => {
         },
         allowed,
       ),
-    ).rejects.toThrow(`broken.test.ts exited 9 after 13/${files.length} files`);
+    ).rejects.toThrow(`broken.test.ts exited 9 after 14/${files.length} files`);
     expect(calls).toEqual(files.slice(0, -1));
   });
 
@@ -733,7 +770,7 @@ describe('serial test-file terminal runner', () => {
     expect(calls).toEqual([]);
 
     expect(() => validateTerminalManifest(files, new Map([...allowed].slice(1)))).toThrow(
-      'skip allowlist has 10 files; expected 11',
+      'skip allowlist has 11 files; expected 12',
     );
     expect(() =>
       validateTerminalManifest(
@@ -757,6 +794,11 @@ describe('serial test-file terminal runner', () => {
     tamperedEwp.set(ENV_EWP_SKIP_FILE, ENV_EWP_SKIP_COUNT + 1);
     expect(() => validateTerminalManifest(files, tamperedEwp)).toThrow(
       `environment-gated skip entry drifted for ${ENV_EWP_SKIP_FILE}: ${ENV_EWP_SKIP_COUNT + 1}; expected 0 or ${ENV_EWP_SKIP_COUNT}`,
+    );
+    const tamperedGoreleaser = new Map(allowed);
+    tamperedGoreleaser.set(ENV_GORELEASER_SKIP_FILE, ENV_GORELEASER_SKIP_COUNT - 1);
+    expect(() => validateTerminalManifest(files, tamperedGoreleaser)).toThrow(
+      `environment-gated skip entry drifted for ${ENV_GORELEASER_SKIP_FILE}: ${ENV_GORELEASER_SKIP_COUNT - 1}; expected 0 or ${ENV_GORELEASER_SKIP_COUNT}`,
     );
   });
 
