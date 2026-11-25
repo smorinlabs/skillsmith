@@ -285,8 +285,8 @@ describe('EWP-P5-TS01', () => {
       expect(Object.keys(ledger.projects).sort()).toEqual(
         [fleet.projects.a, fleet.projects.c].sort(),
       );
-      expect(ledger.projects).not.toHaveProperty(fleet.projects.bAlias);
-      expect(ledger.projects).not.toHaveProperty(fleet.projects.current);
+      expect(ledger.projects).not.toHaveProperty([fleet.projects.bAlias]);
+      expect(ledger.projects).not.toHaveProperty([fleet.projects.current]);
 
       const aliasSame = await runSyncCli(fleet, [
         'sync',
@@ -503,8 +503,8 @@ describe('EWP-P5-TS01', () => {
         expect(userLedger.skills).toHaveProperty('lint.tools.codex');
         expect(userLedger.skills).toHaveProperty('review.tools.claude-code');
         expect(userLedger.skills).toHaveProperty('policy.tools.claude-code');
-        expect(userLedger.projects).toHaveProperty(userDestinationFleet.projects.c);
-        expect(userLedger.projects).not.toHaveProperty(userDestinationFleet.projects.bAlias);
+        expect(userLedger.projects).toHaveProperty([userDestinationFleet.projects.c]);
+        expect(userLedger.projects).not.toHaveProperty([userDestinationFleet.projects.bAlias]);
       } finally {
         await destroySyncFleet(userDestinationFleet);
       }
