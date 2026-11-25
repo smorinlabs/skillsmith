@@ -514,6 +514,18 @@ jobs:
           name: release-validation-${{ github.run_id }}
           path: validation-aggregate.json
           if-no-files-found: error
+      - name: Record the public command roster for post-publication validation
+        run: |
+          bun - <<'BUN'
+          import { writeFile } from 'node:fs/promises';
+          import { PUBLIC_COMMAND_ORDER } from './scripts/release-gates.ts';
+          await writeFile('public-command-roster.json', `${JSON.stringify(PUBLIC_COMMAND_ORDER)}\n`);
+          BUN
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: public-command-roster-${{ github.run_id }}
+          path: public-command-roster.json
+          if-no-files-found: error
 
   github-preflight:
     needs: [guard, candidate-source, validation-aggregate]
@@ -1051,6 +1063,7 @@ jobs:
             target: darwin-x64
     runs-on: ${{ matrix.runner }}
     permissions:
+      actions: read
       attestations: read
       contents: read
     steps:
@@ -1062,6 +1075,10 @@ jobs:
           node-version: '24'
       - name: Install exact npm
         run: npm install --global npm@12.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: public-command-roster-${{ github.run_id }}
+          path: roster
       - name: Prove public direct, npm, Bun, and macOS Homebrew lifecycle and orientation
         env:
           CANDIDATE_ARTIFACT_ID: ${{ needs.candidate-source.outputs.candidate-artifact-id }}
@@ -1072,6 +1089,8 @@ jobs:
           TARGET: ${{ matrix.target }}
         run: |
           set -eu
+          roster="$GITHUB_WORKSPACE/roster/public-command-roster.json"
+          jq -e 'type == "array" and length > 0 and all(type == "string")' "$roster" >/dev/null
           root="$RUNNER_TEMP/public-skillsmith"
           archive="skillsmith-v1.0.0-$TARGET.tar.gz"
           mkdir -p "$root/release" "$root/direct" "$root/npm" "$root/bun" "$root/owned"
@@ -1127,9 +1146,9 @@ jobs:
             command -v zsh >/dev/null
             zsh -n "$root/_skillsmith"
             awk '/^  [a-z][a-z|]*/ { command=$1; sub(/\|.*/, "", command); print command }' "$root/help.txt" > "$root/commands.txt"
-            printf '%s\n' agents list commands status install uninstall update undo dev verify promote init export plan apply sync doctor check gc config completion version help > "$root/expected-commands.txt"
+            jq -r '.[]' "$roster" > "$root/expected-commands.txt"
             cmp "$root/expected-commands.txt" "$root/commands.txt"
-            test "$(sort "$root/commands.txt" | uniq | wc -l | tr -d ' ')" = '23'
+            test "$(sort "$root/commands.txt" | uniq | wc -l | tr -d ' ')" = "$(jq length "$roster")"
             grep -Fq 'list|ls [options]' "$root/help.txt"
             grep -Fq 'install|i [options]' "$root/help.txt"
             grep -Fq 'uninstall|remove|rm [options]' "$root/help.txt"
@@ -1293,7 +1312,7 @@ jobs:
           for owned_path in "$root/owned" "$root/release" "$root/fleet-home"; do
             case "$owned_path" in "$root"/*) ;; *) exit 1 ;; esac
           done
-          commands='["agents","list","commands","status","install","uninstall","update","undo","dev","verify","promote","init","export","plan","apply","sync","doctor","check","gc","config","completion","version","help"]'
+          commands="$(jq -c . "$roster")"
           jq -n \
             --arg artifactId "$CANDIDATE_ARTIFACT_ID" \
             --arg digest "$CANDIDATE_BUNDLE_SHA256" \
