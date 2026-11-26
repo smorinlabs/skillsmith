@@ -31,6 +31,46 @@ function fail(message: string): never {
   throw new Error(message);
 }
 
+// P17-G6-04 names the real Claude Code and Codex suites as the release's real-tool evidence.
+// live-e2e.test.ts also holds Muse and Antigravity suites, which the release does not pin, so
+// the gate selects the two named suites and counts them individually rather than the file total.
+export const LIVE_RELEASE_SUITES: ReadonlyMap<string, number> = new Map([
+  ['claude-code', 5],
+  ['codex', 3],
+]);
+export const LIVE_RELEASE_TEST_NAME_PATTERN = '\\) (claude-code|codex) ';
+
+export function liveReleaseEvidence(xml: string): number {
+  const suites = Array.from(xml.matchAll(/<testsuite\b([^>]*)>/g), (match) => match[1] ?? '');
+  const attribute = (fragment: string, name: string): string | undefined =>
+    new RegExp(`\\b${name}="([^"]*)"`).exec(fragment)?.[1];
+  let total = 0;
+  for (const [name, expected] of LIVE_RELEASE_SUITES) {
+    const matches = suites.filter((fragment) => attribute(fragment, 'name') === name);
+    if (matches.length !== 1) fail(`real-tool receipt has ${matches.length} ${name} suites`);
+    const suite = matches[0] ?? '';
+    const tests = Number(attribute(suite, 'tests'));
+    if (tests !== expected)
+      fail(`real-tool receipt ran ${tests} ${name} tests; expected ${expected}`);
+    if (attribute(suite, 'skipped') !== '0' || attribute(suite, 'failures') !== '0') {
+      fail(`real-tool receipt skipped or failed ${name} tests`);
+    }
+    total += tests;
+  }
+  return total;
+}
+
+// npm fetches metadata for every optional dependency, including the three platform packages the
+// host cannot install. The stub registry answers those with 404, which npm treats as skippable.
+export function isReleasePlatformPackage(name: string): boolean {
+  return RELEASE_TARGETS.some((target) => name === `@smorinlabs/skillsmith-${target.id}`);
+}
+
+// `skillsmith doctor` needs git on PATH; without it the installed launcher's doctor run fails.
+export function packageLaneTools(lane: 'npm' | 'bun'): readonly string[] {
+  return lane === 'npm' ? ['sh', 'git', 'node', 'npm'] : ['sh', 'bun', 'git'];
+}
+
 function requiredEnvironment(name: string): string {
   const value = process.env[name];
   if (value === undefined || value.length === 0) fail(`${name} is required`);
@@ -286,7 +326,7 @@ async function startRegistry(paths: readonly string[]) {
       const name = decodeURIComponent(url.pathname.slice(1));
       const selected = packages.get(name);
       if (selected === undefined) {
-        unexpected.push(`GET ${url.pathname}`);
+        if (!isReleasePlatformPackage(name)) unexpected.push(`GET ${url.pathname}`);
         return new Response('not found', { status: 404 });
       }
       const version = text(selected.manifest.version, `${name} version`);
@@ -339,10 +379,7 @@ async function packageLifecycle(
         await Promise.all(
           [prefix, cache, home, work].map((path) => mkdir(path, { recursive: true })),
         );
-        const toolPath = await privateToolPath(
-          lane === 'npm' ? ['sh', 'node', 'npm'] : ['sh', 'bun'],
-          join(root, 'tools'),
-        );
+        const toolPath = await privateToolPath(packageLaneTools(lane), join(root, 'tools'));
         const environment = {
           PATH: toolPath,
           HOME: home,
@@ -427,7 +464,8 @@ async function packageLifecycle(
         if (await Bun.file(join(prefix, 'bin', 'skillsmith')).exists()) {
           fail(`${lane} uninstall retained the launcher`);
         }
-        if (registry.unexpected.length > 0) fail(`${lane} requested unexpected registry routes`);
+        if (registry.unexpected.length > 0)
+          fail(`${lane} requested unexpected registry routes: ${registry.unexpected.join(', ')}`);
       } finally {
         await rm(root, { force: true, recursive: true });
       }
@@ -564,6 +602,7 @@ async function commonLane(candidate: CandidateContext): Promise<number> {
         'test',
         'packages/core/tests/verify/live-e2e.test.ts',
         '--max-concurrency=1',
+        `--test-name-pattern=${LIVE_RELEASE_TEST_NAME_PATTERN}`,
         '--reporter=junit',
         `--reporter-outfile=${reportPath}`,
       ],
@@ -573,12 +612,9 @@ async function commonLane(candidate: CandidateContext): Promise<number> {
         label: 'release-candidate compatibility',
       },
     );
-    const summary = parseJUnitSummary(
-      await readFile(reportPath, 'utf8'),
-      'packages/core/tests/verify/live-e2e.test.ts',
-    );
-    if (summary.skipped !== 0 || summary.tests !== 8) fail('real-tool receipt is empty or skipped');
-    return summary.tests;
+    const report = await readFile(reportPath, 'utf8');
+    parseJUnitSummary(report, 'packages/core/tests/verify/live-e2e.test.ts');
+    return liveReleaseEvidence(report);
   } finally {
     await rm(reportRoot, { force: true, recursive: true });
   }
