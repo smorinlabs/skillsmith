@@ -19,3 +19,5 @@ build/
 coverage/
 *.tsbuildinfo
 .superpowers/
+# Release jobs download the candidate bundle here inside the checkout.
+/transferred/

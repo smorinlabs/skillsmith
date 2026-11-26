@@ -351,6 +351,30 @@ function assertGhReleaseNamesRepository(workflow: Workflow): void {
         );
 }
 
+// The common lane runs `just check`, whose serial test terminal refuses SKILLSMITH_E2E and a dirty
+// checkout. release-check.ts sets SKILLSMITH_E2E only for the real-tool suites, so no common step
+// may set it, and every artifact downloaded inside the checkout must land in a git-ignored path.
+function assertCommonLaneTerminalInputs(workflow: Workflow, gitignore: string): void {
+  const common = job(workflow, 'common');
+  for (const step of common.steps ?? [])
+    boundary(
+      step.env?.SKILLSMITH_E2E === undefined,
+      `common step sets SKILLSMITH_E2E: ${step.name ?? step.uses ?? 'unnamed'}`,
+    );
+  const ignored = new Set(gitignore.split('\n').map((line) => line.trim()));
+  for (const name of ['common', 'native'])
+    for (const step of job(workflow, name).steps ?? []) {
+      if (!step.uses?.startsWith('actions/download-artifact@')) continue;
+      const path = String(step.with?.path ?? '');
+      if (path.startsWith('${{ runner.temp }}')) continue;
+      const top = path.split('/')[0] ?? '';
+      boundary(
+        ignored.has(`/${top}/`) || ignored.has(`${top}/`),
+        `${name} downloads into ${path}, which git does not ignore`,
+      );
+    }
+}
+
 // Public validation runs the released binary on clean hosted runners. The Ubuntu images do not
 // ship zsh; the JSON agents report lists every supported tool, so only tools with installations
 // count as detected; and doctor needs git, which a stub-only PATH would otherwise hide.
@@ -540,6 +564,25 @@ describe('release workflow boundary', () => {
     job(partial, 'common').if = "${{ !cancelled() && needs.guard.result == 'success' }}";
     expect(() => assertSkippedCandidateDoesNotPropagate(partial)).toThrow(
       'common must require candidate-source to succeed',
+    );
+  });
+
+  test('the common lane hands just check a clean checkout and no SKILLSMITH_E2E', async () => {
+    const [workflowText, gitignore] = await Promise.all([
+      source('.github/workflows/release.yml'),
+      source('.gitignore'),
+    ]);
+    const workflow = parse(workflowText);
+    expect(() => assertCommonLaneTerminalInputs(workflow, gitignore)).not.toThrow();
+    const leaked = clone(workflow);
+    for (const step of job(leaked, 'common').steps ?? [])
+      if (step.env?.SKILLSMITH_RELEASE_RECEIPT_PATH) step.env.SKILLSMITH_E2E = '1';
+    expect(() => assertCommonLaneTerminalInputs(leaked, gitignore)).toThrow(
+      'common step sets SKILLSMITH_E2E',
+    );
+    const unignored = gitignore.replace('/transferred/', '');
+    expect(() => assertCommonLaneTerminalInputs(workflow, unignored)).toThrow(
+      'common downloads into transferred, which git does not ignore',
     );
   });
 
