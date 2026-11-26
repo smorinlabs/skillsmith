@@ -291,6 +291,23 @@ function assertGithubOnlyGraph(workflow: Workflow, text: string): void {
   );
 }
 
+// The guard regenerates the command reference, which imports workspace packages. Bun resolves
+// them only after an install, so the locked install must precede that check.
+function assertGuardInstallsWorkspace(workflow: Workflow): void {
+  const steps = job(workflow, 'guard').steps ?? [];
+  const install = steps.findIndex((step) =>
+    /^\s*bun install --frozen-lockfile --ignore-scripts\s*$/mu.test(step.run ?? ''),
+  );
+  const reference = steps.findIndex((step) =>
+    (step.run ?? '').includes('scripts/generate-command-reference.ts --check'),
+  );
+  boundary(reference >= 0, 'guard must check the generated command reference');
+  boundary(
+    install >= 0 && install < reference,
+    'guard must install the locked workspace before checking the command reference',
+  );
+}
+
 describe('release workflow boundary', () => {
   test('the draft release is resolved once by ID, by a job that cannot run code or mutate', async () => {
     const text = await source('.github/workflows/release.yml');
@@ -417,6 +434,15 @@ describe('release workflow boundary', () => {
       if (step.env?.SKILLSMITH_REQUIRE_GORELEASER)
         step.env.SKILLSMITH_REQUIRE_GORELEASER = undefined;
     expect(() => assertCommonLaneParity(ci, optional)).toThrow('require goreleaser');
+  });
+
+  test('the guard installs the locked workspace before checking the command reference', async () => {
+    const workflow = parse(await source('.github/workflows/release.yml'));
+    expect(() => assertGuardInstallsWorkspace(workflow)).not.toThrow();
+    const missing = clone(workflow);
+    const guard = job(missing, 'guard');
+    guard.steps = guard.steps?.filter((step) => !(step.run ?? '').includes('bun install'));
+    expect(() => assertGuardInstallsWorkspace(missing)).toThrow('install the locked workspace');
   });
 
   test('the job graph is exactly the GitHub-only release, with deferred jobs deleted', async () => {

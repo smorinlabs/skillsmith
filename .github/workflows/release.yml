@@ -54,6 +54,8 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.4.2
+      - name: Install locked workspace dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
       - name: Bind exact tag, source, versions, and generated state
         id: guard
         run: |
