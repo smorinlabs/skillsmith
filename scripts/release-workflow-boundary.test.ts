@@ -308,6 +308,81 @@ function assertGuardInstallsWorkspace(workflow: Workflow): void {
   );
 }
 
+// Exactly one of the candidate jobs runs, so the other is always skipped. GitHub's implicit
+// success() skips a job when any ancestor was skipped, even through an always() job, so every
+// downstream job needs an explicit condition on its own direct needs.
+const EXCLUSIVE_CANDIDATES = ['candidate', 'retained-candidate'] as const;
+
+function assertSkippedCandidateDoesNotPropagate(workflow: Workflow): void {
+  const ancestors = (name: string, seen = new Set<string>()): Set<string> => {
+    for (const parent of needs(job(workflow, name))) {
+      if (seen.has(parent)) continue;
+      seen.add(parent);
+      ancestors(parent, seen);
+    }
+    return seen;
+  };
+  for (const [name, value] of Object.entries(workflow.jobs)) {
+    const upstream = ancestors(name);
+    if (!EXCLUSIVE_CANDIDATES.some((candidate) => upstream.has(candidate))) continue;
+    const condition = String(value.if ?? '');
+    if (/\balways\(\)/u.test(condition)) continue;
+    boundary(
+      condition.includes('!cancelled()'),
+      `${name} must not rely on implicit success() below a skipped candidate job`,
+    );
+    for (const parent of needs(value))
+      boundary(
+        condition.includes(`needs.${parent}.result == 'success'`),
+        `${name} must require ${parent} to succeed`,
+      );
+  }
+}
+
+// Release jobs check out no repository before publishing, so gh cannot infer the target
+// repository; every gh release command names it explicitly.
+function assertGhReleaseNamesRepository(workflow: Workflow): void {
+  for (const [name, value] of Object.entries(workflow.jobs))
+    for (const line of commands(value).split('\n'))
+      if (/\bgh\s+release\s+\w+/u.test(line))
+        boundary(
+          line.includes('--repo "$GITHUB_REPOSITORY"'),
+          `${name} runs gh release without --repo: ${line.trim()}`,
+        );
+}
+
+// Public validation runs the released binary on clean hosted runners. The Ubuntu images do not
+// ship zsh; the JSON agents report lists every supported tool, so only tools with installations
+// count as detected; and doctor needs git, which a stub-only PATH would otherwise hide.
+function assertPublicValidationRunnerAssumptions(workflow: Workflow): void {
+  const publicJob = job(workflow, 'public-validation');
+  const steps = publicJob.steps ?? [];
+  const zshCheck = steps.findIndex((step) => /\bzsh -n\b/u.test(step.run ?? ''));
+  boundary(zshCheck >= 0, 'public-validation must syntax-check the zsh completion');
+  const zshInstall = steps.findIndex(
+    (step) =>
+      /apt-get install\b[^\n]*\bzsh\b/u.test(step.run ?? '') &&
+      String(step.if ?? '').includes("runner.os == 'Linux'"),
+  );
+  boundary(
+    zshInstall >= 0 && zshInstall < zshCheck,
+    'public-validation must install zsh on Linux runners before the completion check',
+  );
+  const script = commands(publicJob);
+  boundary(
+    !/\.detections \| length/u.test(script),
+    'public-validation must count only detected tools, not every listed tool',
+  );
+  boundary(
+    script.includes('select(.installations | length > 0)'),
+    'public-validation must count tools that have installations',
+  );
+  boundary(
+    script.includes('ln -s "$(command -v git)" "$root/fleet/git"'),
+    'public-validation fleet PATH must provide git',
+  );
+}
+
 describe('release workflow boundary', () => {
   test('the draft release is resolved once by ID, by a job that cannot run code or mutate', async () => {
     const text = await source('.github/workflows/release.yml');
@@ -443,6 +518,58 @@ describe('release workflow boundary', () => {
     const guard = job(missing, 'guard');
     guard.steps = guard.steps?.filter((step) => !(step.run ?? '').includes('bun install'));
     expect(() => assertGuardInstallsWorkspace(missing)).toThrow('install the locked workspace');
+  });
+
+  test('a skipped candidate job does not skip the jobs after candidate-source', async () => {
+    const workflow = parse(await source('.github/workflows/release.yml'));
+    expect(() => assertSkippedCandidateDoesNotPropagate(workflow)).not.toThrow();
+    for (const name of [
+      'common',
+      'native',
+      'github-preflight',
+      'github-publish',
+      'public-validation',
+    ]) {
+      const implicit = clone(workflow);
+      job(implicit, name).if = undefined;
+      expect(() => assertSkippedCandidateDoesNotPropagate(implicit)).toThrow(
+        `${name} must not rely on implicit success()`,
+      );
+    }
+    const partial = clone(workflow);
+    job(partial, 'common').if = "${{ !cancelled() && needs.guard.result == 'success' }}";
+    expect(() => assertSkippedCandidateDoesNotPropagate(partial)).toThrow(
+      'common must require candidate-source to succeed',
+    );
+  });
+
+  test('every gh release command names the repository', async () => {
+    const workflow = parse(await source('.github/workflows/release.yml'));
+    expect(() => assertGhReleaseNamesRepository(workflow)).not.toThrow();
+    const unnamed = clone(workflow);
+    for (const step of job(unnamed, 'github-publish').steps ?? [])
+      step.run = step.run?.replace(' --repo "$GITHUB_REPOSITORY" --draft=false', ' --draft=false');
+    expect(() => assertGhReleaseNamesRepository(unnamed)).toThrow('github-publish runs gh release');
+  });
+
+  test('public validation matches what the hosted runners and the binary provide', async () => {
+    const workflow = parse(await source('.github/workflows/release.yml'));
+    expect(() => assertPublicValidationRunnerAssumptions(workflow)).not.toThrow();
+    const noZsh = clone(workflow);
+    const publicJob = job(noZsh, 'public-validation');
+    publicJob.steps = publicJob.steps?.filter((step) => !/apt-get/u.test(step.run ?? ''));
+    expect(() => assertPublicValidationRunnerAssumptions(noZsh)).toThrow('install zsh');
+    const listed = clone(workflow);
+    for (const step of job(listed, 'public-validation').steps ?? [])
+      step.run = step.run?.replaceAll(
+        '[.detections[] | select(.installations | length > 0)] | length',
+        '.detections | length',
+      );
+    expect(() => assertPublicValidationRunnerAssumptions(listed)).toThrow('count only detected');
+    const noGit = clone(workflow);
+    for (const step of job(noGit, 'public-validation').steps ?? [])
+      step.run = step.run?.replace('ln -s "$(command -v git)" "$root/fleet/git"', ':');
+    expect(() => assertPublicValidationRunnerAssumptions(noGit)).toThrow('provide git');
   });
 
   test('the job graph is exactly the GitHub-only release, with deferred jobs deleted', async () => {
