@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 
-## [1.0.0](https://github.com/smorinlabs/skillsmith/compare/v0.7.0...v1.0.0) (2026-11-25)
+## [1.0.0](https://github.com/smorinlabs/skillsmith/compare/v0.7.0...v1.0.0) (2026-11-26)
 
 
 ### Features
@@ -127,6 +127,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 * reject malformed wildcard input ([9afd564](https://github.com/smorinlabs/skillsmith/commit/9afd564e6fed3aefa10ce1adf2b14780dde09538))
 * reject source URLs from Phase 5 reports ([223377b](https://github.com/smorinlabs/skillsmith/commit/223377b87578f325e72343af00741645535f1157))
 * **release:** accept GoReleaser 2.18 casks without verified lines ([e374a66](https://github.com/smorinlabs/skillsmith/commit/e374a6600b922b21388a078c19f6b9c0ce8f49d7))
+* **release:** install the locked workspace before the guard checks ([4332b45](https://github.com/smorinlabs/skillsmith/commit/4332b450727842c853e8c32d1e4471cf89a5d3a4))
 * report tool versions that do not meet the minimum accurately ([676ce33](https://github.com/smorinlabs/skillsmith/commit/676ce33dcb641de20a4af3152ec07e93d7b9f6f9))
 * resolve verification and inventory review findings ([9ead9ec](https://github.com/smorinlabs/skillsmith/commit/9ead9eca4215aebabd2409d15834620c8a8fa233))
 * revalidate retained artifacts before cleanup ([a311a53](https://github.com/smorinlabs/skillsmith/commit/a311a53a1543b08e3dde06ce1f1fd94c89a04fec))
