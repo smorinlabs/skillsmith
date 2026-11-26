@@ -649,7 +649,12 @@ describe('EWP-P6-TS06', () => {
     expect(pins.codex).toBe('0.142.5');
     expect(releaseCheck).toContain("['claude', '2.1.202']");
     expect(releaseCheck).toContain("['codex', '0.142.5']");
-    expect(workflow).toContain('SKILLSMITH_E2E:');
+    // The serial terminal inside `just check` refuses SKILLSMITH_E2E, so the workflow must not set
+    // it; release-check.ts sets it only for the named Claude Code and Codex suites.
+    // Previous form: https://github.com/smorinlabs/skillsmith/blob/da2a64f/tests/ergonomics/phase/EWP-P6-TS06.test.ts#L652
+    expect(workflow).not.toContain('SKILLSMITH_E2E');
+    expect(releaseCheck).toContain("SKILLSMITH_E2E: '1'");
+    expect(releaseCheck).toContain('--test-name-pattern=${LIVE_RELEASE_TEST_NAME_PATTERN}');
     expect(workflow).toContain('release-candidate compatibility');
     expect(workflow).toContain('requiredSkips');
   });
