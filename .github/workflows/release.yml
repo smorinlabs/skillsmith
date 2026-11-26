@@ -367,6 +367,7 @@ jobs:
 
   common:
     needs: [guard, candidate-source]
+    if: ${{ !cancelled() && needs.guard.result == 'success' && needs.candidate-source.result == 'success' }}
     runs-on: ubuntu-24.04
     permissions:
       actions: read
@@ -511,6 +512,7 @@ jobs:
 
   native:
     needs: [guard, candidate-source]
+    if: ${{ !cancelled() && needs.guard.result == 'success' && needs.candidate-source.result == 'success' }}
     name: Native candidate (${{ matrix.lane }})
     strategy:
       fail-fast: false
@@ -640,6 +642,7 @@ jobs:
   # contents:write only reads the draft release (see release-lookup); no mutation, no code.
   github-preflight:
     needs: [guard, release-lookup, candidate-source, validation-aggregate]
+    if: ${{ !cancelled() && needs.guard.result == 'success' && needs.release-lookup.result == 'success' && needs.candidate-source.result == 'success' && needs.validation-aggregate.result == 'success' }}
     runs-on: ubuntu-24.04
     environment: github-release
     permissions:
@@ -761,6 +764,7 @@ jobs:
 
   github-publish:
     needs: [guard, release-lookup, candidate-source, publication-ready]
+    if: ${{ !cancelled() && needs.guard.result == 'success' && needs.release-lookup.result == 'success' && needs.candidate-source.result == 'success' && needs.publication-ready.result == 'success' }}
     runs-on: ubuntu-24.04
     environment: github-release
     permissions:
@@ -853,6 +857,7 @@ jobs:
 
   public-validation:
     needs: [guard, candidate-source, github-publish]
+    if: ${{ !cancelled() && needs.guard.result == 'success' && needs.candidate-source.result == 'success' && needs.github-publish.result == 'success' }}
     name: Public v1.0.0 (${{ matrix.runner }})
     strategy:
       fail-fast: false

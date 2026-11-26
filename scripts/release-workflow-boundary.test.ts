@@ -308,6 +308,37 @@ function assertGuardInstallsWorkspace(workflow: Workflow): void {
   );
 }
 
+// Exactly one of the candidate jobs runs, so the other is always skipped. GitHub's implicit
+// success() skips a job when any ancestor was skipped, even through an always() job, so every
+// downstream job needs an explicit condition on its own direct needs.
+const EXCLUSIVE_CANDIDATES = ['candidate', 'retained-candidate'] as const;
+
+function assertSkippedCandidateDoesNotPropagate(workflow: Workflow): void {
+  const ancestors = (name: string, seen = new Set<string>()): Set<string> => {
+    for (const parent of needs(job(workflow, name))) {
+      if (seen.has(parent)) continue;
+      seen.add(parent);
+      ancestors(parent, seen);
+    }
+    return seen;
+  };
+  for (const [name, value] of Object.entries(workflow.jobs)) {
+    const upstream = ancestors(name);
+    if (!EXCLUSIVE_CANDIDATES.some((candidate) => upstream.has(candidate))) continue;
+    const condition = String(value.if ?? '');
+    if (/\balways\(\)/u.test(condition)) continue;
+    boundary(
+      condition.includes('!cancelled()'),
+      `${name} must not rely on implicit success() below a skipped candidate job`,
+    );
+    for (const parent of needs(value))
+      boundary(
+        condition.includes(`needs.${parent}.result == 'success'`),
+        `${name} must require ${parent} to succeed`,
+      );
+  }
+}
+
 describe('release workflow boundary', () => {
   test('the draft release is resolved once by ID, by a job that cannot run code or mutate', async () => {
     const text = await source('.github/workflows/release.yml');
@@ -443,6 +474,29 @@ describe('release workflow boundary', () => {
     const guard = job(missing, 'guard');
     guard.steps = guard.steps?.filter((step) => !(step.run ?? '').includes('bun install'));
     expect(() => assertGuardInstallsWorkspace(missing)).toThrow('install the locked workspace');
+  });
+
+  test('a skipped candidate job does not skip the jobs after candidate-source', async () => {
+    const workflow = parse(await source('.github/workflows/release.yml'));
+    expect(() => assertSkippedCandidateDoesNotPropagate(workflow)).not.toThrow();
+    for (const name of [
+      'common',
+      'native',
+      'github-preflight',
+      'github-publish',
+      'public-validation',
+    ]) {
+      const implicit = clone(workflow);
+      job(implicit, name).if = undefined;
+      expect(() => assertSkippedCandidateDoesNotPropagate(implicit)).toThrow(
+        `${name} must not rely on implicit success()`,
+      );
+    }
+    const partial = clone(workflow);
+    job(partial, 'common').if = "${{ !cancelled() && needs.guard.result == 'success' }}";
+    expect(() => assertSkippedCandidateDoesNotPropagate(partial)).toThrow(
+      'common must require candidate-source to succeed',
+    );
   });
 
   test('the job graph is exactly the GitHub-only release, with deferred jobs deleted', async () => {
