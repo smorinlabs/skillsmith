@@ -128,6 +128,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 * reject source URLs from Phase 5 reports ([223377b](https://github.com/smorinlabs/skillsmith/commit/223377b87578f325e72343af00741645535f1157))
 * **release:** accept GoReleaser 2.18 casks without verified lines ([e374a66](https://github.com/smorinlabs/skillsmith/commit/e374a6600b922b21388a078c19f6b9c0ce8f49d7))
 * **release:** install the locked workspace before the guard checks ([4332b45](https://github.com/smorinlabs/skillsmith/commit/4332b450727842c853e8c32d1e4471cf89a5d3a4))
+* **release:** repair the publish and public-validation jobs ([5d600f4](https://github.com/smorinlabs/skillsmith/commit/5d600f4128c4ccc0046546f82e25ee09d0c018fd))
+* **release:** stop a skipped candidate job from skipping validation ([8a38104](https://github.com/smorinlabs/skillsmith/commit/8a3810411c78cd210f7fc35c06521821412f4daa))
 * report tool versions that do not meet the minimum accurately ([676ce33](https://github.com/smorinlabs/skillsmith/commit/676ce33dcb641de20a4af3152ec07e93d7b9f6f9))
 * resolve verification and inventory review findings ([9ead9ec](https://github.com/smorinlabs/skillsmith/commit/9ead9eca4215aebabd2409d15834620c8a8fa233))
 * revalidate retained artifacts before cleanup ([a311a53](https://github.com/smorinlabs/skillsmith/commit/a311a53a1543b08e3dde06ce1f1fd94c89a04fec))
