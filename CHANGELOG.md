@@ -127,7 +127,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 * reject malformed wildcard input ([9afd564](https://github.com/smorinlabs/skillsmith/commit/9afd564e6fed3aefa10ce1adf2b14780dde09538))
 * reject source URLs from Phase 5 reports ([223377b](https://github.com/smorinlabs/skillsmith/commit/223377b87578f325e72343af00741645535f1157))
 * **release:** accept GoReleaser 2.18 casks without verified lines ([e374a66](https://github.com/smorinlabs/skillsmith/commit/e374a6600b922b21388a078c19f6b9c0ce8f49d7))
+* **release:** give the common lane a clean checkout without SKILLSMITH_E2E ([e0121e0](https://github.com/smorinlabs/skillsmith/commit/e0121e05c43397db09eb326c4056ae27495f19b2))
 * **release:** install the locked workspace before the guard checks ([4332b45](https://github.com/smorinlabs/skillsmith/commit/4332b450727842c853e8c32d1e4471cf89a5d3a4))
+* **release:** repair the package and real-tool checks in release-check ([f968556](https://github.com/smorinlabs/skillsmith/commit/f968556ca45dc0f812e4ee435024410588653ed1))
 * **release:** repair the publish and public-validation jobs ([5d600f4](https://github.com/smorinlabs/skillsmith/commit/5d600f4128c4ccc0046546f82e25ee09d0c018fd))
 * **release:** stop a skipped candidate job from skipping validation ([8a38104](https://github.com/smorinlabs/skillsmith/commit/8a3810411c78cd210f7fc35c06521821412f4daa))
 * report tool versions that do not meet the minimum accurately ([676ce33](https://github.com/smorinlabs/skillsmith/commit/676ce33dcb641de20a4af3152ec07e93d7b9f6f9))
@@ -141,6 +143,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ### Miscellaneous Chores
 
 * **main:** instruct 1.0 major release for P17 graduation ([fc8aa78](https://github.com/smorinlabs/skillsmith/commit/fc8aa7841bb75f592095125a0d77f7e144321b7d))
+
+### Tests
+
+* **release:** expect release-check, not the workflow, to set SKILLSMITH_E2E ([46feb3e](https://github.com/smorinlabs/skillsmith/commit/46feb3eb585a71de77dfa74abecb01f39a8bbd4b))
+
 
 ## [0.8.0](https://github.com/smorinlabs/skillsmith/compare/v0.7.0...v0.8.0) (2026-09-07)
 
